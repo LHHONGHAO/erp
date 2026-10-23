@@ -88,6 +88,17 @@
 .resize-table-th {
   position: relative;
 }
+/* 列宽拖拽手柄：悬停高亮 */
+.table-draggable-handle:hover::after,
+.table-draggable-handle:active::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 4px;
+  width: 2px;
+  background: #1890ff;
+}
 /* 单据下拉框-按钮 */
 .dropdown-btn {
   float:left;

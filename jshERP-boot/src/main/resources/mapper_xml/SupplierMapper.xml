@@ -8,6 +8,10 @@
     <result column="phone_num" jdbcType="VARCHAR" property="phoneNum" />
     <result column="email" jdbcType="VARCHAR" property="email" />
     <result column="description" jdbcType="VARCHAR" property="description" />
+    <result column="wechat_account" jdbcType="VARCHAR" property="wechatAccount" />
+    <result column="douyin_account" jdbcType="VARCHAR" property="douyinAccount" />
+    <result column="alipay_account" jdbcType="VARCHAR" property="alipayAccount" />
+    <result column="other_account" jdbcType="VARCHAR" property="otherAccount" />
     <result column="isystem" jdbcType="TINYINT" property="isystem" />
     <result column="type" jdbcType="VARCHAR" property="type" />
     <result column="enabled" jdbcType="BIT" property="enabled" />
@@ -87,7 +91,8 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, supplier, contacts, phone_num, email, description, isystem, type, enabled, advance_in, 
+    id, supplier, contacts, phone_num, email, description, wechat_account, douyin_account, 
+    alipay_account, other_account, isystem, type, enabled, advance_in, 
     begin_need_get, begin_need_pay, all_need_get, all_need_pay, fax, telephone, address, 
     tax_num, bank_name, account_number, tax_rate, sort, creator, tenant_id, delete_flag
   </sql>
@@ -124,7 +129,8 @@
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Supplier">
     insert into jsh_supplier (id, supplier, contacts, 
       phone_num, email, description, 
-      isystem, type, enabled, 
+      wechat_account, douyin_account, alipay_account, 
+      other_account, isystem, type, enabled, 
       advance_in, begin_need_get, begin_need_pay, 
       all_need_get, all_need_pay, fax, 
       telephone, address, tax_num, 
@@ -133,7 +139,8 @@
       delete_flag)
     values (#{id,jdbcType=BIGINT}, #{supplier,jdbcType=VARCHAR}, #{contacts,jdbcType=VARCHAR}, 
       #{phoneNum,jdbcType=VARCHAR}, #{email,jdbcType=VARCHAR}, #{description,jdbcType=VARCHAR}, 
-      #{isystem,jdbcType=TINYINT}, #{type,jdbcType=VARCHAR}, #{enabled,jdbcType=BIT}, 
+      #{wechatAccount,jdbcType=VARCHAR}, #{douyinAccount,jdbcType=VARCHAR}, #{alipayAccount,jdbcType=VARCHAR}, 
+      #{otherAccount,jdbcType=VARCHAR}, #{isystem,jdbcType=TINYINT}, #{type,jdbcType=VARCHAR}, #{enabled,jdbcType=BIT}, 
       #{advanceIn,jdbcType=DECIMAL}, #{beginNeedGet,jdbcType=DECIMAL}, #{beginNeedPay,jdbcType=DECIMAL}, 
       #{allNeedGet,jdbcType=DECIMAL}, #{allNeedPay,jdbcType=DECIMAL}, #{fax,jdbcType=VARCHAR}, 
       #{telephone,jdbcType=VARCHAR}, #{address,jdbcType=VARCHAR}, #{taxNum,jdbcType=VARCHAR}, 
@@ -161,6 +168,18 @@
       </if>
       <if test="description != null">
         description,
+      </if>
+      <if test="wechatAccount != null">
+        wechat_account,
+      </if>
+      <if test="douyinAccount != null">
+        douyin_account,
+      </if>
+      <if test="alipayAccount != null">
+        alipay_account,
+      </if>
+      <if test="otherAccount != null">
+        other_account,
       </if>
       <if test="isystem != null">
         isystem,
@@ -238,6 +257,18 @@
       </if>
       <if test="description != null">
         #{description,jdbcType=VARCHAR},
+      </if>
+      <if test="wechatAccount != null">
+        #{wechatAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="douyinAccount != null">
+        #{douyinAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="alipayAccount != null">
+        #{alipayAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="otherAccount != null">
+        #{otherAccount,jdbcType=VARCHAR},
       </if>
       <if test="isystem != null">
         #{isystem,jdbcType=TINYINT},
@@ -325,6 +356,18 @@
       <if test="record.description != null">
         description = #{record.description,jdbcType=VARCHAR},
       </if>
+      <if test="record.wechatAccount != null">
+        wechat_account = #{record.wechatAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="record.douyinAccount != null">
+        douyin_account = #{record.douyinAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="record.alipayAccount != null">
+        alipay_account = #{record.alipayAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="record.otherAccount != null">
+        other_account = #{record.otherAccount,jdbcType=VARCHAR},
+      </if>
       <if test="record.isystem != null">
         isystem = #{record.isystem,jdbcType=TINYINT},
       </if>
@@ -395,6 +438,10 @@
       phone_num = #{record.phoneNum,jdbcType=VARCHAR},
       email = #{record.email,jdbcType=VARCHAR},
       description = #{record.description,jdbcType=VARCHAR},
+      wechat_account = #{record.wechatAccount,jdbcType=VARCHAR},
+      douyin_account = #{record.douyinAccount,jdbcType=VARCHAR},
+      alipay_account = #{record.alipayAccount,jdbcType=VARCHAR},
+      other_account = #{record.otherAccount,jdbcType=VARCHAR},
       isystem = #{record.isystem,jdbcType=TINYINT},
       type = #{record.type,jdbcType=VARCHAR},
       enabled = #{record.enabled,jdbcType=BIT},
@@ -435,6 +482,18 @@
       </if>
       <if test="description != null">
         description = #{description,jdbcType=VARCHAR},
+      </if>
+      <if test="wechatAccount != null">
+        wechat_account = #{wechatAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="douyinAccount != null">
+        douyin_account = #{douyinAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="alipayAccount != null">
+        alipay_account = #{alipayAccount,jdbcType=VARCHAR},
+      </if>
+      <if test="otherAccount != null">
+        other_account = #{otherAccount,jdbcType=VARCHAR},
       </if>
       <if test="isystem != null">
         isystem = #{isystem,jdbcType=TINYINT},
@@ -503,6 +562,10 @@
       phone_num = #{phoneNum,jdbcType=VARCHAR},
       email = #{email,jdbcType=VARCHAR},
       description = #{description,jdbcType=VARCHAR},
+      wechat_account = #{wechatAccount,jdbcType=VARCHAR},
+      douyin_account = #{douyinAccount,jdbcType=VARCHAR},
+      alipay_account = #{alipayAccount,jdbcType=VARCHAR},
+      other_account = #{otherAccount,jdbcType=VARCHAR},
       isystem = #{isystem,jdbcType=TINYINT},
       type = #{type,jdbcType=VARCHAR},
       enabled = #{enabled,jdbcType=BIT},

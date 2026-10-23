@@ -125,8 +125,8 @@
         currdatetime:'',
         uuid:'',
         randCodeImage:'',
-        registerFlag:'',
-        checkcodeFlag:'',
+        registerFlag:'0',
+        checkcodeFlag:'1',
         mainStyle: '',
         btnStyle: 'margin-top:16px',
         requestCodeSuccess:false,
@@ -348,6 +348,8 @@
       getRegisterFlag(){
         getAction('/platformConfig/getPlatform/registerFlag').then((res) => {
           this.registerFlag = res + ''
+        }).catch(() => {
+          this.registerFlag = '0'
         })
       },
       getCheckcodeFlag(){
@@ -360,6 +362,10 @@
             this.mainStyle = 'padding-top:20px'
             this.btnStyle = 'margin-top:26px'
           }
+        }).catch(() => {
+          this.checkcodeFlag = '1'
+          this.mainStyle = ''
+          this.btnStyle = 'margin-top:16px'
         })
       },
       //获取密码加密规则

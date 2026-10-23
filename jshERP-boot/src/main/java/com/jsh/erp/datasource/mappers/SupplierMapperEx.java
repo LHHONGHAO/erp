@@ -43,4 +43,15 @@ public interface SupplierMapperEx {
     Supplier getInfoByName(
             @Param("name") String name,
             @Param("type") String type);
+
+    Integer countMemberToday(
+            @Param("datePrefix") String datePrefix);
+
+    String getMaxMemberSeqToday(
+            @Param("datePrefix") String datePrefix);
+
+    List<Supplier> findByContactsOrPhone(
+            @Param("contacts") String contacts,
+            @Param("telephone") String telephone,
+            @Param("type") String type);
 }

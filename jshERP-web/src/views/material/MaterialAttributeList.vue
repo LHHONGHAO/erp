@@ -102,17 +102,17 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width: 100,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {title: '属性名', dataIndex: 'attributeName', width: 150},
           {title: '属性值', dataIndex: 'attributeValue', width: 750,
             scopedSlots: { customRender: 'customRenderAttributeValue' }
-          }
+},
         ],
         url: {
           list: "/materialAttribute/list",

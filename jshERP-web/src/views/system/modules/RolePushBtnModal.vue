@@ -115,7 +115,7 @@
             title: '按钮列表',
             dataIndex: 'action',
             align:"center",
-            scopedSlots: { customRender: 'action' }
+            fixed: 'right', scopedSlots: { customRender: 'action' }
           }
         ],
         url: {

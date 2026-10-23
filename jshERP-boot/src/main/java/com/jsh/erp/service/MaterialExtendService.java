@@ -5,11 +5,14 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.jsh.erp.constants.BusinessConstants;
 import com.jsh.erp.constants.ExceptionConstants;
+import com.jsh.erp.datasource.entities.Material;
+import com.jsh.erp.datasource.entities.MaterialExample;
 import com.jsh.erp.datasource.entities.MaterialExtend;
 import com.jsh.erp.datasource.entities.MaterialExtendExample;
 import com.jsh.erp.datasource.entities.User;
 import com.jsh.erp.datasource.mappers.MaterialExtendMapper;
 import com.jsh.erp.datasource.mappers.MaterialExtendMapperEx;
+import com.jsh.erp.datasource.mappers.MaterialMapper;
 import com.jsh.erp.datasource.vo.MaterialExtendVo4List;
 import com.jsh.erp.exception.BusinessRunTimeException;
 import com.jsh.erp.exception.JshException;
@@ -38,6 +41,12 @@ public class MaterialExtendService {
     private UserService userService;
     @Resource
     private RedisService redisService;
+    @Resource
+    private SkuCodeGenerator skuCodeGenerator;
+    @Resource
+    private MaterialMapper materialMapper;
+    @Resource
+    private MaterialAttrValueService materialAttrValueService;
     
     public MaterialExtend getMaterialExtend(long id)throws Exception {
         MaterialExtend result=null;
@@ -95,19 +104,22 @@ public class MaterialExtendService {
                         updatedJson.add(tempJson);
                     }
                 }
-                //针对多属性商品要考虑到有条码被删的情况，需要和原来的条码明细进行对比
+                //针对多属性商品要考虑到有SKU被删的情况，需要和原来的SKU明细进行对比
                 if(StringUtil.isNotEmpty(obj.getString("manySku"))) {
-                    //1.先查询原来的条码列表
+                    //1.先查询原来的SKU列表
                     List<MaterialExtendVo4List> meList = materialExtendMapperEx.getDetailList(materialId);
-                    //2.构造新的条码列表map
-                    Map<String, String> barCodeMap = new HashMap<>();
+                    //2.构造新的SKU id列表map（只保留真实ID，即长度<=19的）
+                    Map<Long, Long> idMap = new HashMap<>();
                     for (int i = 0; i < meArr.size(); i++) {
                         JSONObject tempJson = meArr.getJSONObject(i);
-                        barCodeMap.put(tempJson.getString("barCode"),tempJson.getString("barCode"));
+                        String tempId = tempJson.getString("id");
+                        if(tempId != null && tempId.length() <= 19) {
+                            idMap.put(tempJson.getLong("id"), tempJson.getLong("id"));
+                        }
                     }
-                    //3.如果老的条码在新的里面不存在，则丢入删除队列
+                    //3.如果老的SKU id在新的里面不存在，则丢入删除队列
                     for(MaterialExtendVo4List me: meList) {
-                        if(barCodeMap.get(me.getBarCode()) == null) {
+                        if(idMap.get(me.getId()) == null) {
                             deletedJson.add(me.getId());
                         }
                     }
@@ -126,25 +138,38 @@ public class MaterialExtendService {
                 this.batchDeleteMaterialExtendByIds(bf.toString(), request);
             }
         }
+        Set<String> generatedSkuCodes = new HashSet<>();
         if (null != insertedJson) {
+            Material material = materialMapper.selectByPrimaryKey(materialId);
+            String materialCode = material != null ? material.getCode() : null;
+            Long categoryId = material != null ? material.getCategoryId() : null;
             for (int i = 0; i < insertedJson.size(); i++) {
                 MaterialExtend materialExtend = new MaterialExtend();
                 JSONObject tempInsertedJson = JSONObject.parseObject(insertedJson.getString(i));
                 materialExtend.setMaterialId(materialId);
+                // 设置规格值组合JSON
+                String specValues = tempInsertedJson.getString("specValues");
+                if (StringUtils.isNotEmpty(specValues)) {
+                    materialExtend.setSpecValues(specValues);
+                }
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("barCode"))) {
-                    int exist = checkIsBarCodeExist(0L, tempInsertedJson.getString("barCode"));
-                    if(exist>0) {
-                        throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_BARCODE_EXISTS_CODE,
-                                String.format(ExceptionConstants.MATERIAL_BARCODE_EXISTS_MSG,tempInsertedJson.getString("barCode")));
-                    } else {
-                        materialExtend.setBarCode(tempInsertedJson.getString("barCode"));
-                    }
+                    materialExtend.setBarCode(tempInsertedJson.getString("barCode"));
                 }
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("commodityUnit"))) {
                     materialExtend.setCommodityUnit(tempInsertedJson.getString("commodityUnit"));
                 }
-                if (tempInsertedJson.get("sku")!=null) {
+                if (StringUtils.isNotEmpty(tempInsertedJson.getString("sku"))) {
                     materialExtend.setSku(tempInsertedJson.getString("sku"));
+                }
+                // SKU码统一由后端按新版规则生成：SPU码 + 颜色码 + 尺码码
+                String skuCode = StringUtil.isNotEmpty(materialCode)
+                        ? generateSkuCode(categoryId, materialId, materialCode, specValues) : null;
+                if (StringUtil.isNotEmpty(skuCode)) {
+                    if (!generatedSkuCodes.add(skuCode)) {
+                        throw new BusinessRunTimeException(400,
+                                "商品存在重复规格组合，SKU编码重复：" + materialExtend.getSku());
+                    }
+                    materialExtend.setSkuCode(skuCode);
                 }
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("purchaseDecimal"))) {
                     materialExtend.setPurchaseDecimal(tempInsertedJson.getBigDecimal("purchaseDecimal"));
@@ -158,28 +183,43 @@ public class MaterialExtendService {
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("lowDecimal"))) {
                     materialExtend.setLowDecimal(tempInsertedJson.getBigDecimal("lowDecimal"));
                 }
+                if (StringUtils.isNotEmpty(tempInsertedJson.getString("image"))) {
+                    materialExtend.setImgUrl(tempInsertedJson.getString("image"));
+                }
                 this.insertMaterialExtend(materialExtend);
             }
         }
         if (null != updatedJson) {
+            Material material = materialMapper.selectByPrimaryKey(materialId);
+            String materialCode = material != null ? material.getCode() : null;
+            Long categoryId = material != null ? material.getCategoryId() : null;
             for (int i = 0; i < updatedJson.size(); i++) {
                 JSONObject tempUpdatedJson = JSONObject.parseObject(updatedJson.getString(i));
                 MaterialExtend materialExtend = new MaterialExtend();
                 materialExtend.setId(tempUpdatedJson.getLong("id"));
+                // 设置规格值组合JSON
+                String specValues = tempUpdatedJson.getString("specValues");
+                if (StringUtils.isNotEmpty(specValues)) {
+                    materialExtend.setSpecValues(specValues);
+                }
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("barCode"))) {
-                    int exist = checkIsBarCodeExist(tempUpdatedJson.getLong("id"), tempUpdatedJson.getString("barCode"));
-                    if(exist>0) {
-                        throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_BARCODE_EXISTS_CODE,
-                                String.format(ExceptionConstants.MATERIAL_BARCODE_EXISTS_MSG,tempUpdatedJson.getString("barCode")));
-                    } else {
-                        materialExtend.setBarCode(tempUpdatedJson.getString("barCode"));
-                    }
+                    materialExtend.setBarCode(tempUpdatedJson.getString("barCode"));
                 }
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("commodityUnit"))) {
                     materialExtend.setCommodityUnit(tempUpdatedJson.getString("commodityUnit"));
                 }
-                if (tempUpdatedJson.get("sku")!=null) {
+                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("sku"))) {
                     materialExtend.setSku(tempUpdatedJson.getString("sku"));
+                }
+                // 忽略客户端旧码，统一按新版规则生成 SKU 码
+                String skuCode = StringUtil.isNotEmpty(materialCode)
+                        ? generateSkuCode(categoryId, materialId, materialCode, specValues) : null;
+                if (StringUtil.isNotEmpty(skuCode)) {
+                    if (!generatedSkuCodes.add(skuCode)) {
+                        throw new BusinessRunTimeException(400,
+                                "商品存在重复规格组合，SKU编码重复：" + materialExtend.getSku());
+                    }
+                    materialExtend.setSkuCode(skuCode);
                 }
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("purchaseDecimal"))) {
                     materialExtend.setPurchaseDecimal(tempUpdatedJson.getBigDecimal("purchaseDecimal"));
@@ -193,12 +233,15 @@ public class MaterialExtendService {
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("lowDecimal"))) {
                     materialExtend.setLowDecimal(tempUpdatedJson.getBigDecimal("lowDecimal"));
                 }
+                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("image"))) {
+                    materialExtend.setImgUrl(tempUpdatedJson.getString("image"));
+                }
                 this.updateMaterialExtend(materialExtend);
                 //如果金额为空，此处单独置空
                 materialExtendMapperEx.specialUpdatePrice(materialExtend);
             }
         }
-        //处理条码的排序，基本单位排第一个
+        //处理SKU的排序，基本单位排第一个
         if (null != sortJson && sortJson.size()>0) {
             //此处为更新的逻辑
             for (int i = 0; i < sortJson.size(); i++) {
@@ -231,6 +274,70 @@ public class MaterialExtendService {
             }
         }
         return null;
+    }
+
+    /**
+     * 从 specModules 构建 "规格值文本 → valueCode" 的映射
+     * 遍历前端传来的规格模块，为每个规格值自动查找/创建属性值字典记录
+     */
+    private Map<String, String> buildValueCodeMap(JSONObject obj) {
+        Map<String, String> map = new HashMap<>();
+        if (obj == null) return map;
+        JSONArray specModules = obj.getJSONArray("specModules");
+        Long categoryId = obj.getLong("categoryId");
+        if (specModules == null || specModules.isEmpty()) return map;
+        for (int i = 0; i < specModules.size(); i++) {
+            JSONObject module = specModules.getJSONObject(i);
+            String moduleName = module.getString("name");
+            if (!StringUtil.isNotEmpty(moduleName)) continue;
+            JSONArray values = module.getJSONArray("values");
+            if (values == null || values.isEmpty()) continue;
+            for (int j = 0; j < values.size(); j++) {
+                JSONObject value = values.getJSONObject(j);
+                String text = value.getString("text");
+                if (StringUtil.isNotEmpty(text)) {
+                    String detail = value.getJSONObject("subValues") == null ? null : value.getJSONObject("subValues").toJSONString();
+                    String code = materialAttrValueService.getOrCreateValueCode(categoryId, moduleName, text, detail);
+                    if (StringUtil.isNotEmpty(code)) {
+                        map.put(text, code);
+                    }
+                }
+            }
+        }
+        return map;
+    }
+
+    /** Generate a variant-level SKU code: SPU + color code + size code. */
+    private String generateSkuCode(Long categoryId, Long materialId, String materialCode, String specValues) {
+        List<String> orderedCodes = new ArrayList<>();
+        if (StringUtil.isNotEmpty(specValues)) {
+            try {
+                JSONArray arr = JSONArray.parseArray(specValues);
+                for (int i = 0; i < arr.size(); i++) {
+                    JSONObject item = arr.getJSONObject(i);
+                    String attributeName = item.getString("attributeName");
+                    String valueText = item.getString("valueText");
+                    if (!StringUtil.isNotEmpty(valueText)) {
+                        continue;
+                    }
+                    // 优先使用前端带出的编码，缺失时查询/创建属性值字典
+                    String valueCode = item.getString("valueCode");
+                    if (!StringUtil.isNotEmpty(valueCode)) {
+                        JSONObject subValues = item.getJSONObject("subValues");
+                        String detail = subValues == null ? null : subValues.toJSONString();
+                        valueCode = materialAttrValueService.getOrCreateValueCode(categoryId, attributeName, valueText, detail);
+                    }
+                    if (!StringUtil.isNotEmpty(valueCode)) {
+                        continue;
+                    }
+                    orderedCodes.add(valueCode);
+                }
+            } catch (Exception e) {
+                logger.error("解析规格值生成SKU码失败 materialId={} specValues={}", materialId, specValues, e);
+            }
+        }
+        // 类别允许任意多个规格维度，所有值编码都需纳入SKU码以保持组合唯一。
+        return skuCodeGenerator.generateSkuCode(materialCode, orderedCodes);
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
@@ -398,23 +505,37 @@ public class MaterialExtendService {
         }
     }
 
+    public MaterialExtend getInfoBySkuCode(String skuCode)throws Exception {
+        if(!StringUtil.isNotEmpty(skuCode)) {
+            return null;
+        }
+        MaterialExtendExample example = new MaterialExtendExample();
+        example.createCriteria().andSkuCodeEqualTo(skuCode)
+                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
+        if(list!=null && list.size()>0) {
+            return list.get(0);
+        } else {
+            return null;
+        }
+    }
+
     /**
      * 商品的副条码和数据库里面的商品条码存在重复（除自身商品之外）
+     * bar_code已移到jsh_material主表，改为查询主表
      * @param manyBarCode
      * @param barCode
      * @return
      */
     public int getCountByManyBarCodeWithoutUs(String manyBarCode, String barCode) {
-        MaterialExtendExample example = new MaterialExtendExample();
+        // bar_code已移到jsh_material表，直接查询主表
+        MaterialExample example = new MaterialExample();
         example.createCriteria().andBarCodeEqualTo(manyBarCode).andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
+        List<Material> list = materialMapper.selectByExample(example);
         if(list!=null && list.size()>0) {
-            for(MaterialExtend me: list) {
-                List<MaterialExtend> basicMeList = materialExtendMapperEx.getBasicInfoByMid(me.getMaterialId());
-                for(MaterialExtend basicMe: basicMeList) {
-                    if(basicMe!=null && !barCode.equals(basicMe.getBarCode())) {
-                        return 1;
-                    }
+            for(Material m: list) {
+                if(m!=null && !barCode.equals(m.getBarCode())) {
+                    return 1;
                 }
             }
         }

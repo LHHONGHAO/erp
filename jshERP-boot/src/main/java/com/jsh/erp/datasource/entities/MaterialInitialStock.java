@@ -7,6 +7,10 @@ public class MaterialInitialStock {
 
     private Long materialId;
 
+    private Long materialExtendId;
+
+    private String skuCode;
+
     private Long depotId;
 
     private BigDecimal number;
@@ -33,6 +37,22 @@ public class MaterialInitialStock {
 
     public void setMaterialId(Long materialId) {
         this.materialId = materialId;
+    }
+
+    public Long getMaterialExtendId() {
+        return materialExtendId;
+    }
+
+    public void setMaterialExtendId(Long materialExtendId) {
+        this.materialExtendId = materialExtendId;
+    }
+
+    public String getSkuCode() {
+        return skuCode;
+    }
+
+    public void setSkuCode(String skuCode) {
+        this.skuCode = skuCode == null ? null : skuCode.trim();
     }
 
     public Long getDepotId() {

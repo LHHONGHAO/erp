@@ -95,12 +95,13 @@
                         </template>
                       </template>
                     </a-row>
-                    <a-row style="padding-top: 10px;">
-                      <a-col>
-                        恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
-                      </a-col>
-                    </a-row>
                   </a-checkbox-group>
+                  <a-row style="padding-top: 10px;">
+                    <a-col>
+                      <a-checkbox :checked="columnsAllChecked" @change="handleSelectAllColumns">全选</a-checkbox>
+                      恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
+                    </a-col>
+                  </a-row>
                 </template>
                 <a-icon type="setting" />
               </a-popover>
@@ -197,9 +198,6 @@
               return (t !== '合计') ? (parseInt(index) + 1) : t
             }
           },
-          {title: '欠款详情', dataIndex: 'action', align:"center", width: 80,
-            scopedSlots: { customRender: 'action' }
-          },
           {title: '供应商', dataIndex: 'supplier', width: 150, ellipsis:true},
           {title: '联系人', dataIndex: 'contacts', width: 100, ellipsis:true},
           {title: '手机号码', dataIndex: 'telephone', width: 100},
@@ -210,6 +208,9 @@
           {title: '本期付款', dataIndex: 'backMoney', sorter: (a, b) => a.backMoney - b.backMoney, width: 80},
           {dataIndex: 'allNeed', sorter: (a, b) => a.allNeed - b.allNeed, width: 80,
             scopedSlots: { title: 'allNeedTitle' }
+},
+          {title: '欠款详情', dataIndex: 'action', align:"center", width: 80,
+            fixed: 'right', scopedSlots: { customRender: 'action' }
           }
         ],
         url: {

@@ -120,29 +120,6 @@
           <a-button v-if="checkFlag && btnEnableList.indexOf(2)>-1" icon="check" @click="batchSetStatus(1)">审核</a-button>
           <a-button v-if="checkFlag && btnEnableList.indexOf(7)>-1" icon="stop" @click="batchSetStatus(0)">反审核</a-button>
           <a-button v-if="isShowExcel && btnEnableList.indexOf(3)>-1" icon="download" @click="handleExport">导出</a-button>
-          <a-popover trigger="click" placement="right">
-            <template slot="content">
-              <a-checkbox-group @change="onColChange" v-model="settingDataIndex" :defaultValue="settingDataIndex">
-                <a-row style="width: 500px">
-                  <template v-for="(item,index) in defColumns">
-                    <template>
-                      <a-col :span="8">
-                        <a-checkbox :value="item.dataIndex">
-                          <j-ellipsis :value="item.title" :length="10"></j-ellipsis>
-                        </a-checkbox>
-                      </a-col>
-                    </template>
-                  </template>
-                </a-row>
-                <a-row style="padding-top: 10px;">
-                  <a-col>
-                    恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
-                  </a-col>
-                </a-row>
-              </a-checkbox-group>
-            </template>
-            <a-button icon="setting">列设置</a-button>
-          </a-popover>
           <a-tooltip placement="left" title="销售订单不涉及收款金额，销售订单可以转销售出库单，但需要先对销售订单进行审核。
           勾选单据之后可以进行批量操作（删除、审核、反审核）" slot="action">
             <a-icon v-if="btnEnableList.indexOf(1)>-1" type="question-circle" style="font-size:20px;float:right;" />
@@ -150,19 +127,23 @@
         </div>
         <!-- table区域-begin -->
         <div>
-          <a-table
+          <data-table
             ref="table"
-            size="middle"
             bordered
-            rowKey="id"
-            :columns="columns"
-            :dataSource="dataSource"
-            :components="handleDrag(columns)"
+            draggable
+            row-key="id"
+            table-key="bill_sale_order"
+            :extra-columns="defColumns"
+            :default-columns="defDataIndex"
+            storage-key="columns_XSDD"
+            :summary="summaryEnabled"
+            summary-fields="materialCount,totalPrice"
+            :data-source="dataSource"
             :pagination="ipagination"
             :scroll="scroll"
             :loading="loading"
-            :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
-            :expandedRowKeys="expandedRowKeys"
+            :row-selection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
+            :expanded-row-keys="expandedRowKeys"
             @expand="onExpand"
             @change="handleTableChange">
             <span slot="action" slot-scope="text, record">
@@ -188,18 +169,19 @@
               <a-tag v-if="purchaseStatus == '2'" color="cyan">完成采购</a-tag>
               <a-tag v-if="purchaseStatus == '3'" color="blue">部分采购</a-tag>
             </template>
-            <a-table
-              bordered
-              size="small"
-              slot="expandedRowRender"
-              slot-scope="record"
-              :loading="record.loading"
-              :columns="detailColumns"
-              :dataSource="record.childrens"
-              :row-key="record => record.id"
-              :pagination="false">
-            </a-table>
-          </a-table>
+            <template slot="expandedRowRender" slot-scope="record">
+              <data-table
+                size="small"
+                bordered
+                :show-column-setting="false"
+                :extra-columns="detailColumns"
+                :data-source="record.childrens"
+                :loading="record.loading"
+                row-key="id"
+                :pagination="false">
+              </data-table>
+            </template>
+          </data-table>
         </div>
         <!-- table区域-end -->
         <!-- 表单区域 -->
@@ -225,6 +207,7 @@
   import { getCurrentSystemConfig } from '@/api/api'
   import JEllipsis from '@/components/jeecg/JEllipsis'
   import JDate from '@/components/jeecg/JDate'
+  import DataTable from '@/components/DataTable'
   export default {
     name: "SaleOrderList",
     mixins:[JeecgListMixin,BillListMixin],
@@ -237,6 +220,7 @@
       QuickEditModal,
       JEllipsis,
       JDate,
+      DataTable,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -274,11 +258,11 @@
           'changeAmount','status','purchaseStatus'],
         // 默认列
         defColumns: [
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             align:"center", width: 180,
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           { title: '客户', dataIndex: 'organName',width:120, ellipsis:true},
           { title: '单据编号', dataIndex: 'number',width:140},
@@ -312,7 +296,7 @@
           },
           { title: '状态', dataIndex: 'status', width: 70, align: "center",
             scopedSlots: { customRender: 'customRenderStatus' }
-          }
+},
         ],
         url: {
           list: "/depotHead/list",

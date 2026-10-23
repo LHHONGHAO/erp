@@ -21,21 +21,6 @@
                   <a-input ref="material" placeholder="请输入条码、名称、助记码等查询" v-model="queryParam.q"></a-input>
                 </a-form-item>
               </a-col>
-              <a-col :md="6" :sm="8">
-                <a-form-item label="规格型号" :labelCol="labelCol" :wrapperCol="wrapperCol">
-                  <a-input placeholder="请输入规格、型号" v-model="queryParam.standardOrModel"></a-input>
-                </a-form-item>
-              </a-col>
-              <a-col :md="6" :sm="8">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="仓库">
-                  <a-select placeholder="选择仓库" v-model="queryParam.depotId" @change="onDepotChange"
-                    :dropdownMatchSelectWidth="false" showSearch optionFilterProp="children" allow-clear>
-                    <a-select-option v-for="(item,index) in depotList" :key="index" :value="item.id">
-                      {{ item.depotName }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
               <span style="float: left;overflow: hidden;" class="table-page-search-submitButtons">
                 <a-col :md="6" :sm="8">
                   <a-button type="primary" @click="loadMaterialData(1)">查询</a-button>
@@ -52,11 +37,6 @@
             </a-row>
             <template v-if="toggleSearchStatus">
               <a-row :gutter="24">
-                <a-col :md="6" :sm="8">
-                  <a-form-item label="颜色" :labelCol="{span: 5}" :wrapperCol="{span: 18, offset: 1}">
-                    <a-input placeholder="请输入颜色" v-model="queryParam.color"></a-input>
-                  </a-form-item>
-                </a-col>
                 <a-col :md="6" :sm="8">
                   <a-form-item label="品牌" :labelCol="{span: 5}" :wrapperCol="{span: 18, offset: 1}">
                     <a-input placeholder="请输入品牌" v-model="queryParam.brand"></a-input>
@@ -108,35 +88,45 @@
               </a-row>
             </template>
           </a-form>
-          <a-table
-            ref="table"
-            :scroll="scrollTrigger"
-            size="middle"
-            rowKey="id"
-            :columns="columns"
-            :dataSource="dataSource"
-            :pagination="ipagination"
-            :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange,type: getType}"
+          <data-table
+            ref="dataTable"
+            row-key="skuRowKey"
+            table-key="material_select"
+            :extra-columns="extraColumns"
+            :default-columns="defaultColumns"
+            :data-source="tableRows"
             :loading="loading"
-            :customRow="rowAction"
-            @change="handleTableChange">
+            :pagination="ipagination"
+            :row-selection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange,type: getType}"
+            :scroll="scrollTrigger"
+            :custom-row="rowAction"
+            @change="handleTableChange"
+          >
             <template slot="customBarCode" slot-scope="text, record">
-              <div :style="record.imgName?'float:left;line-height:30px':'float:left;'">{{record.mBarCode}}</div>
-              <a-popover placement="right" trigger="click">
-                <template slot="content">
-                  <img :src="getImgUrl(record.imgName, record.imgLarge)" width="500px" />
-                </template>
-                <div class="item-info" v-if="record.imgName">
-                  <img v-if="record.imgName" :src="getImgUrl(record.imgName, record.imgSmall)" class="item-img" title="查看大图" />
-                </div>
-              </a-popover>
+              {{record.mBarCode || record.barCode}}
             </template>
             <template slot="customName" slot-scope="text, record">
               {{record.name}}
               <a-tag v-if="record.enableSerialNumber==1" color="orange">序</a-tag>
               <a-tag v-if="record.enableBatchNumber==1" color="orange">批</a-tag>
             </template>
-          </a-table>
+            <template slot="customSkuImg" slot-scope="text, record">
+              <div v-if="record.imgName" style="text-align:center">
+                <img :src="getImgUrl(record.imgName)" style="width:50px;height:50px;object-fit:cover;border:1px solid #eee;border-radius:3px;" />
+              </div>
+              <div v-else style="text-align:center;color:#ccc;font-size:24px;">
+                <a-icon type="picture" />
+              </div>
+            </template>
+            <template slot="customSpecValues" slot-scope="text, record">
+              {{ parseSpecValues(record.specValues) }}
+            </template>
+            <template slot="customRenderStock" slot-scope="text, record">
+              <a-tooltip :title="record.bigUnitStock">
+                {{text}}
+              </a-tooltip>
+            </template>
+          </data-table>
         </div>
       </a-col>
     </a-row>
@@ -147,31 +137,30 @@
 <script>
   import { getAction, getFileAccessHttpUrl } from '@/api/manage'
   import {filterObj, getMpListShort} from '@/utils/util'
-  import {getMaterialBySelect, queryMaterialCategoryTreeList} from '@/api/api'
+  import {queryMaterialCategoryTreeList} from '@/api/api'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import {mixinDevice} from '@/utils/mixin'
+  import DataTable from '@/components/DataTable'
   import Vue from 'vue'
 
   export default {
     name: 'JSelectMaterialModal',
     mixins:[JeecgListMixin, mixinDevice],
     components: {
-      MaterialModal: () => import('@/views/material/modules/MaterialModal')
+      MaterialModal: () => import('@/views/material/modules/MaterialModal'),
+      DataTable
     },
     props: ['rows', 'multi', 'barCode'],
     data() {
       return {
         modalWidth: 1450,
         queryTitle: {
-          mp1: '扩展1',
-          mp2: '扩展2',
-          mp3: '扩展3'
+          mp1: '面料',
+          mp2: '安全类别',
+          mp3: '执行标准'
         },
         queryParam: {
           q: '',
-          standardOrModel: '',
-          depotId: undefined,
-          color: '',
           brand: '',
           categoryId: undefined,
           mfrs: '',
@@ -190,23 +179,40 @@
           sm: { span: 16 },
         },
         categoryTree:[],
-        columns: [
-          {dataIndex: 'mBarCode', title: '条码', scopedSlots: { customRender: 'customBarCode' }},
-          {dataIndex: 'name', title: '名称', scopedSlots: { customRender: 'customName' }},
-          {dataIndex: 'categoryName', title: '类别'},
-          {dataIndex: 'standard', title: '规格'},
-          {dataIndex: 'model', title: '型号'},
-          {dataIndex: 'color', title: '颜色'},
-          {dataIndex: 'brand', title: '品牌'},
-          {dataIndex: 'mfrs', title: '制造商'},
-          {dataIndex: 'unit', title: '单位'},
-          {dataIndex: 'sku', title: '多属性'},
-          {dataIndex: 'stock', title: '库存'},
-          {dataIndex: 'otherField1', title: '扩展1'},
-          {dataIndex: 'otherField2', title: '扩展2'},
-          {dataIndex: 'otherField3', title: '扩展3'}
+        // 商品信息 + SKU信息（一行一个SKU）
+        extraColumns: [
+          {title: '名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
+          {title: '商品编码', dataIndex: 'code', width: 130},
+          {title: '图片', dataIndex: 'imgName', width: 70, align: 'center', scopedSlots: { customRender: 'customSkuImg' }},
+          {title: 'SKU编码', dataIndex: 'skuCode', width: 160},
+          {title: '规格值', dataIndex: 'specValues', width: 180, scopedSlots: { customRender: 'customSpecValues' }},
+          {title: '单位', dataIndex: 'unit', width: 100, ellipsis:true},
+          {title: '品牌', dataIndex: 'brand', width: 100, ellipsis:true},
+          {title: '助记码', dataIndex: 'mnemonic', width: 80, ellipsis:true},
+          {title: '类别', dataIndex: 'categoryName', width: 100, ellipsis:true},
+          {title: '基础重量', dataIndex: 'weight', width: 80},
+          {title: '制造商', dataIndex: 'mfrs', width: 120, ellipsis:true},
+          {title: '面料', dataIndex: 'otherField1', width: 100, ellipsis:true},
+          {title: '安全类别', dataIndex: 'otherField2', width: 100, ellipsis:true},
+          {title: '执行标准', dataIndex: 'otherField3', width: 100, ellipsis:true},
+          {title: '扩展4', dataIndex: 'otherField4', width: 100, ellipsis:true},
+          {title: '扩展5', dataIndex: 'otherField5', width: 100, ellipsis:true},
+          {title: '扩展6', dataIndex: 'otherField6', width: 100, ellipsis:true},
+          {title: '扩展7', dataIndex: 'otherField7', width: 100, ellipsis:true},
+          {title: '商品ID', dataIndex: 'id', width: 80},
+          {title: '条码', dataIndex: 'mBarCode', width: 120, scopedSlots: { customRender: 'customBarCode' }},
+          {title: '初始库存', dataIndex: 'initialStock', width: 80},
+          {title: '库存', dataIndex: 'stock', width: 80, scopedSlots: { customRender: 'customRenderStock' }},
+          {title: '采购价', dataIndex: 'purchaseDecimal', width: 80},
+          {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
+          {title: '销售价', dataIndex: 'wholesaleDecimal', width: 80},
+          {title: '最低售价', dataIndex: 'lowDecimal', width: 80},
+          {title: '备注', dataIndex: 'remark', width: 120, ellipsis:true}
         ],
-        scrollTrigger: {},
+        // 默认显示的列（商品信息 + SKU信息）
+        defaultColumns: ['name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
+          'otherField1','otherField2','otherField3','mBarCode','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal'],
+        scrollTrigger: {x: 1800},
         dataSource: [],
         selectedRowKeys: [],
         selectMaterialRows: [],
@@ -240,6 +246,12 @@
       // 计算属性的 getter
       getType: function () {
         return this.multi == true ? 'checkbox' : 'radio';
+      },
+      // 一行一个SKU，补充唯一行标识（商品ID + SKU_ID）
+      tableRows() {
+        return (this.dataSource || []).map(row => Object.assign({}, row, {
+          skuRowKey: row.id + '_' + (row.meId != null ? row.meId : 0)
+        }))
       }
     },
     watch: {
@@ -270,14 +282,16 @@
         }
         this.loading = true
         let params = this.getQueryParams()//查询条件
-        getMaterialBySelect(params).then((res) => {
-          if (res) {
-            this.dataSource = res.rows
-            this.ipagination.total = res.total
-            if(res.total ===1) {
-              if(this.queryParam.q === this.dataSource[0].mBarCode||
-                this.queryParam.q === this.dataSource[0].name||
-                this.queryParam.q === this.dataSource[0].mnemonic) {
+        getAction('/material/listSku', params).then((res) => {
+          if (res && res.code === 200 && res.data) {
+            this.dataSource = res.data.rows || []
+            this.ipagination.total = res.data.total || 0
+            if(this.ipagination.total ===1 && this.dataSource.length === 1) {
+              let row = this.dataSource[0]
+              let rowBarCode = row.mBarCode || row.barCode
+              if(this.queryParam.q === rowBarCode||
+                this.queryParam.q === row.name||
+                this.queryParam.q === row.mnemonic) {
                 this.title = '选择商品【再次回车可以直接选中】'
                 this.$nextTick(() => this.$refs.material.focus());
               } else {
@@ -311,9 +325,9 @@
         this.modalWidth = realScreenWidth<1600?'1300px':'1550px'
         let screenWidth = document.body.clientWidth;
         if (screenWidth < 500) {
-          this.scrollTrigger = {x: 800};
+          this.scrollTrigger = {x: 1800};
         } else {
-          this.scrollTrigger = {};
+          this.scrollTrigger = {x: 1800};
         }
       },
       //动态替换扩展字段
@@ -325,17 +339,14 @@
             this.queryTitle.mp1 = mpArr[0]
             this.queryTitle.mp2 = mpArr[1]
             this.queryTitle.mp3 = mpArr[2]
-            for (let i = 0; i < this.columns.length; i++) {
-              if(this.columns[i].dataIndex === 'otherField1') {
-                this.columns[i].title = mpArr[0]
+            this.$nextTick(() => {
+              const dt = this.$refs.dataTable
+              if (dt) {
+                dt.updateColumnTitle('otherField1', mpArr[0])
+                dt.updateColumnTitle('otherField2', mpArr[1])
+                dt.updateColumnTitle('otherField3', mpArr[2])
               }
-              if(this.columns[i].dataIndex === 'otherField2') {
-                this.columns[i].title = mpArr[1]
-              }
-              if(this.columns[i].dataIndex === 'otherField3') {
-                this.columns[i].title = mpArr[2]
-              }
-            }
+            })
           }
         }
       },
@@ -351,11 +362,25 @@
         this.form.resetFields();
       },
       getQueryParams() {
-        let param = Object.assign({}, this.queryParam, this.isorter);
-        param.mpList = getMpListShort(Vue.ls.get('materialPropertyList'))  //扩展属性
-        param.page = this.ipagination.current;
-        param.rows = this.ipagination.pageSize;
-        return filterObj(param);
+        let searchObj = {
+          materialParam: this.queryParam.q,
+          brand: this.queryParam.brand,
+          categoryId: this.queryParam.categoryId,
+          mfrs: this.queryParam.mfrs,
+          otherField1: this.queryParam.otherField1,
+          otherField2: this.queryParam.otherField2,
+          otherField3: this.queryParam.otherField3,
+          enableSerialNumber: this.queryParam.enableSerialNumber,
+          enableBatchNumber: this.queryParam.enableBatchNumber,
+          mpList: getMpListShort(Vue.ls.get('materialPropertyList'))  //扩展属性
+        }
+        return {
+          search: JSON.stringify(filterObj(searchObj)),
+          column: this.isorter.column,
+          order: this.isorter.order,
+          currentPage: this.ipagination.current,
+          pageSize: this.ipagination.pageSize
+        }
       },
       getQueryField() {
         let str = 'id,';
@@ -408,15 +433,27 @@
           that.$message.warning('请选择商品！')
         }
       },
+      /** 规格值JSON转为“颜色:蓝色 / 规格:200*230” */
+      parseSpecValues(specValues) {
+        if (!specValues) return ''
+        try {
+          const arr = JSON.parse(specValues)
+          if (!Array.isArray(arr)) return specValues
+          return arr.map(item => item.attributeName + ':' + item.valueText).join(' / ')
+        } catch (e) {
+          return specValues
+        }
+      },
       //获取选择信息
       getSelectMaterialRows(rowId) {
         let dataSource = this.dataSource;
         let materialIds = "";
         this.selectMaterialRows = [];
         for (let i = 0, len = dataSource.length; i < len; i++) {
-          if (this.selectedRowKeys.includes(dataSource[i].id)) {
+          let rowKey = dataSource[i].id + '_' + (dataSource[i].meId != null ? dataSource[i].meId : 0)
+          if (this.selectedRowKeys.includes(rowKey)) {
             this.selectMaterialRows.push(dataSource[i]);
-            materialIds = materialIds + "," + dataSource[i].mBarCode
+            materialIds = materialIds + "," + (dataSource[i].mBarCode || dataSource[i].barCode || '')
           }
         }
         this.selectMaterialIds = materialIds.substring(1);
@@ -445,11 +482,13 @@
       },
       onSearch() {
         if(this.dataSource && this.dataSource.length===1) {
-          if(this.queryParam.q === this.dataSource[0].mBarCode||
-            this.queryParam.q === this.dataSource[0].name||
-            this.queryParam.q === this.dataSource[0].mnemonic) {
+          let row = this.dataSource[0]
+          let rowBarCode = row.mBarCode || row.barCode
+          if(this.queryParam.q === rowBarCode||
+            this.queryParam.q === row.name||
+            this.queryParam.q === row.mnemonic) {
             let arr = []
-            arr.push(this.dataSource[0].id)
+            arr.push(row.id + '_' + (row.meId != null ? row.meId : 0))
             this.selectedRowKeys = arr
             this.handleSubmit()
           } else {
@@ -467,13 +506,13 @@
           on: {
             dblclick: () => {
               let arr = []
-              arr.push(record.id)
+              arr.push(record.id + '_' + (record.meId != null ? record.meId : 0))
               this.selectedRowKeys = arr
               this.handleSubmit()
             }
           }
         }
-      }
+      },
     }
   }
 </script>

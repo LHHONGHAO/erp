@@ -40,6 +40,7 @@ import '@/assets/less/JAreaLinkage.less'
 import VueAreaLinkage from 'vue-area-linkage'
 import DictData from '@/components/DictData'
 import DictTag from '@/components/DictTag'
+import { initModalDrag } from '@/utils/dragModal'
 
 Vue.config.productionTip = false
 Vue.component('DictTag', DictTag)
@@ -59,6 +60,8 @@ new Vue({
   router,
   store,
   mounted () {
+    // 初始化全局弹窗拖动功能
+    initModalDrag()
     // store.commit('SET_SIDEBAR_TYPE', Vue.ls.get(SIDEBAR_TYPE, true))
     store.commit('SET_SIDEBAR_TYPE', true)
     store.commit('TOGGLE_THEME', Vue.ls.get(DEFAULT_THEME, config.navTheme))

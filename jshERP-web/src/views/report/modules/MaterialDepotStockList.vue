@@ -24,6 +24,7 @@
         :columns="columns"
         :dataSource="dataSource"
         :components="handleDrag(columns)"
+        :scroll="{ x: scroll.x }"
         :pagination="ipagination"
         :loading="loading"
         @change="handleTableChange">

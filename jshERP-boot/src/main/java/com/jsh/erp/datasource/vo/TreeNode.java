@@ -40,6 +40,21 @@ public class TreeNode {
      * */
     private List<TreeNode> children;
 
+    /**
+     * specConfig 规格配置（一级类目）
+     * */
+    private String specConfig;
+
+    /**
+     * categoryLevel 类目级别
+     * */
+    private Short categoryLevel;
+
+    /**
+     * parentId 父节点ID
+     * */
+    private Long parentId;
+
     public Long getId() {
         return id;
     }
@@ -110,5 +125,29 @@ public class TreeNode {
 
     public void setChildren(List<TreeNode> children) {
         this.children = children;
+    }
+
+    public String getSpecConfig() {
+        return specConfig;
+    }
+
+    public void setSpecConfig(String specConfig) {
+        this.specConfig = specConfig;
+    }
+
+    public Short getCategoryLevel() {
+        return categoryLevel;
+    }
+
+    public void setCategoryLevel(Short categoryLevel) {
+        this.categoryLevel = categoryLevel;
+    }
+
+    public Long getParentId() {
+        return parentId;
+    }
+
+    public void setParentId(Long parentId) {
+        this.parentId = parentId;
     }
 }

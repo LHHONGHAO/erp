@@ -54,6 +54,7 @@
         :columns="columns"
         :dataSource="dataSource"
         :components="handleDrag(columns)"
+        :scroll="{ x: scroll.x }"
         :pagination="ipagination"
         :loading="loading"
         @change="handleTableChange">
@@ -76,12 +77,13 @@
                     </template>
                   </template>
                 </a-row>
-                <a-row style="padding-top: 10px;">
-                  <a-col>
-                    恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
-                  </a-col>
-                </a-row>
               </a-checkbox-group>
+              <a-row style="padding-top: 10px;">
+                <a-col>
+                  <a-checkbox :checked="columnsAllChecked" @change="handleSelectAllColumns">全选</a-checkbox>
+                  恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
+                </a-col>
+              </a-row>
             </template>
             <a-icon type="setting" />
           </a-popover>

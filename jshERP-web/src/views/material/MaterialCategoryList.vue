@@ -79,6 +79,29 @@
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="备注">
             <a-textarea placeholder="请输入备注":rows="2" v-decorator.trim="[ 'remark' ]" />
           </a-form-item>
+          <!-- 当前类别规格配置 -->
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="类别规格设置" v-if="hasSelectedCategory">
+            <div v-for="(module, mIndex) in specModules" :key="mIndex" style="border:1px solid #eee;border-radius:4px;padding:10px;margin-top:10px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <a-input v-model="module.name" style="width:220px" placeholder="请输入规格名称" />
+                <a-switch size="small" v-model="module.enableImage" />
+                <span>可添加规格图片</span>
+                <a-button type="link" size="small" @click="removeSpecModule(mIndex)"><a-icon type="delete" /></a-button>
+              </div>
+              <div style="margin:10px 0 0 4px;">
+                <div style="font-size:12px;color:#888;margin-bottom:6px;">组合子规格（可选，例如：被套、床单、枕套）</div>
+                <div v-for="(child, childIndex) in module.childNames" :key="childIndex" style="display:flex;align-items:center;margin-bottom:6px;">
+                  <a-input v-model="module.childNames[childIndex]" style="width:220px" placeholder="请输入子规格名称" />
+                  <a-button type="link" size="small" @click="removeChildSpec(mIndex, childIndex)"><a-icon type="delete" /></a-button>
+                </div>
+                <a-button type="link" size="small" icon="plus" @click="addChildSpec(mIndex)">添加子规格</a-button>
+              </div>
+            </div>
+            <div style="margin-top:8px;">
+              <a-button type="dashed" icon="plus" @click="addSpecModule">添加规格</a-button>
+              <span v-if="specModules.length===0" style="color:#999;font-size:12px;margin-left:8px;">规格值在商品信息页面维护</span>
+            </div>
+          </a-form-item>
         </a-form>
         <div class="anty-form-btn">
           <a-button @click="emptyCurrForm" type="default" htmlType="button" icon="sync">重置</a-button>
@@ -158,11 +181,15 @@ export default {
         deleteBatch: '/materialCategory/deleteBatch'
       },
       orgCategoryDisabled:false,
+      specModules: [],
     }
   },
   computed: {
     importExcelUrl: function () {
       return `${window._CONFIG['domianURL']}/${this.url.importExcelUrl}`;
+    },
+    hasSelectedCategory() {
+      return this.currSelected && this.currSelected.id != null
     }
   },
   methods: {
@@ -290,6 +317,9 @@ export default {
             record.parentId = res.data.parentId;
             record.sort = res.data.sort;
             record.remark = res.data.remark;
+            record.categoryLevel = res.data.categoryLevel;
+            record.specConfig = res.data.specConfig
+            this.specModules = this.parseSpecConfig(record.specConfig)
             console.log('onSelect-record', record)
             this.currSelected = Object.assign({}, record)
             this.model = this.currSelected
@@ -326,6 +356,7 @@ export default {
       this.currSelected = {}
       this.form.resetFields()
       this.selectedKeys = []
+      this.specModules = []
     },
     handleNodeTypeChange(val) {
       this.currSelected.nodeType = val
@@ -344,6 +375,31 @@ export default {
             return
           }
           let formData = Object.assign(this.currSelected, values)
+          const configuredModules = this.specModules.map(item => ({
+            name: (item.name || '').trim(),
+            enableImage: !!item.enableImage,
+            childNames: (item.childNames || []).map(name => (name || '').trim()).filter(Boolean)
+          }))
+          if (configuredModules.some(item => !item.name)) {
+            this.$message.warning('请填写所有规格名称')
+            return
+          }
+          const names = configuredModules.map(item => item.name.toLowerCase())
+          if (new Set(names).size !== names.length) {
+            this.$message.warning('规格名称不能重复')
+            return
+          }
+          for (let i = 0; i < configuredModules.length; i++) {
+            const childNames = configuredModules[i].childNames
+            if (new Set(childNames.map(name => name.toLowerCase())).size !== childNames.length) {
+              this.$message.warning('同一规格下的子规格名称不能重复')
+              return
+            }
+          }
+          // 保存当前类别的规格配置
+          if (this.hasSelectedCategory) {
+            formData.specConfig = configuredModules.length ? JSON.stringify(configuredModules) : null
+          }
           console.log('Received values of form: ', formData)
           httpAction(this.url.edit, formData, 'put').then((res) => {
             if (res.code == 200) {
@@ -445,7 +501,23 @@ export default {
           this.getAllKeys(node.children[a])
         }
       }
-    }
+    },
+    parseSpecConfig(config) {
+      if (!config) return []
+      try {
+        const parsed = JSON.parse(config)
+        if (!Array.isArray(parsed)) return []
+        return parsed.map(item => typeof item === 'string'
+          ? { name: item, enableImage: false, childNames: [] }
+          : { name: item.name || '', enableImage: !!item.enableImage, childNames: Array.isArray(item.childNames) ? item.childNames.slice() : [] })
+      } catch (e) { return [] }
+    },
+    addSpecModule() {
+      this.specModules.push({ name: '', enableImage: false, childNames: [] })
+    },
+    addChildSpec(index) { this.$set(this.specModules[index], 'childNames', (this.specModules[index].childNames || []).concat([''])) },
+    removeChildSpec(index, childIndex) { this.specModules[index].childNames.splice(childIndex, 1) },
+    removeSpecModule(index) { this.specModules.splice(index, 1) },
     // <!---- author:os_chengtgen -- date:20190827 --  for:切换父子勾选模式 =======------>
 
   },

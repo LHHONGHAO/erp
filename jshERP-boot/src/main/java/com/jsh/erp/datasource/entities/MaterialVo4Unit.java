@@ -44,6 +44,18 @@ public class MaterialVo4Unit extends Material{
 
     private String sku;
 
+    private String skuCode;
+
+    private String unitCode;
+
+    private String unitStatus;
+
+    private String depotName;
+
+    private java.util.Date inboundTime;
+
+    private String specValues;
+
     private Long depotId;
 
     /**
@@ -59,6 +71,8 @@ public class MaterialVo4Unit extends Material{
     private String imgSmall;
 
     private String imgLarge;
+
+    private String imgName;
 
     private BigDecimal taxRate;
 
@@ -226,6 +240,38 @@ public class MaterialVo4Unit extends Material{
         this.sku = sku;
     }
 
+    public String getSkuCode() {
+        return skuCode;
+    }
+
+    public void setSkuCode(String skuCode) {
+        this.skuCode = skuCode;
+    }
+
+    public String getUnitCode() { return unitCode; }
+
+    public void setUnitCode(String unitCode) { this.unitCode = unitCode; }
+
+    public String getUnitStatus() { return unitStatus; }
+
+    public void setUnitStatus(String unitStatus) { this.unitStatus = unitStatus; }
+
+    public String getDepotName() { return depotName; }
+
+    public void setDepotName(String depotName) { this.depotName = depotName; }
+
+    public java.util.Date getInboundTime() { return inboundTime; }
+
+    public void setInboundTime(java.util.Date inboundTime) { this.inboundTime = inboundTime; }
+
+    public String getSpecValues() {
+        return specValues;
+    }
+
+    public void setSpecValues(String specValues) {
+        this.specValues = specValues;
+    }
+
     public Long getDepotId() {
         return depotId;
     }
@@ -256,6 +302,14 @@ public class MaterialVo4Unit extends Material{
 
     public void setImgLarge(String imgLarge) {
         this.imgLarge = imgLarge;
+    }
+
+    public String getImgName() {
+        return imgName;
+    }
+
+    public void setImgName(String imgName) {
+        this.imgName = imgName;
     }
 
     public String getBigUnitInitialStock() {

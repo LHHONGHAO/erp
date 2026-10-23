@@ -109,4 +109,37 @@
         and ifnull(delete_flag,'0') !='1'
         limit 1
     </select>
+
+    <select id="countMemberToday" resultType="java.lang.Integer">
+        select count(*) from jsh_supplier
+        where type = '会员' and supplier like concat(#{datePrefix}, '%')
+        and ifnull(delete_flag,'0') !='1'
+    </select>
+
+    <select id="getMaxMemberSeqToday" resultType="java.lang.String">
+        select max(supplier) from jsh_supplier
+        where type = '会员' and supplier like concat(#{datePrefix}, '%')
+        and ifnull(delete_flag,'0') !='1'
+    </select>
+
+    <select id="findByContactsOrPhone" resultType="com.jsh.erp.datasource.entities.Supplier">
+        select * from jsh_supplier
+        where type = #{type}
+        and ifnull(delete_flag,'0') !='1'
+        <if test="contacts != null and contacts !=''">
+            and contacts = #{contacts}
+        </if>
+        <if test="telephone != null and telephone !=''">
+            and (
+                telephone like concat('%', #{telephone}, '%')
+                or phone_num like concat('%', #{telephone}, '%')
+            )
+        </if>
+        <if test="contacts == null or contacts ==''">
+            <if test="telephone == null or telephone ==''">
+                and 1=0
+            </if>
+        </if>
+        limit 1
+    </select>
 </mapper>

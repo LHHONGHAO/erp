@@ -526,86 +526,48 @@
 
                     </div>
 
-                    <div v-else-if="col.type === formTypes.image" :key="i">
-                      <template v-if="uploadValues[id] != null" v-for="(file,fileKey) of [(uploadValues[id]||{})]">
-                        <div :key="fileKey" style="position: relative;">
-                          <template v-if="!uploadValues[id] || !(uploadValues[id]['url'] || uploadValues[id]['path'] || uploadValues[id]['message'])">
-                            <a-icon type="loading"/>
-                          </template>
-                          <template v-else-if="uploadValues[id]['path']">
-                            <img class="j-editable-image" :src="getCellImageView(id)" alt="无图片" @click="handleMoreOperation(id,'img')"/>
-                          </template>
-                          <template v-else>
-                            <a-icon type="exclamation-circle" style="color: red;" @click="handleClickShowImageError(id)"/>
-                          </template>
-                          <template slot="addonBefore" style="width: 30px">
-                            <a-tooltip v-if="file.status==='uploading'" :title="`上传中(${Math.floor(file.percent)}%)`">
-                              <a-icon type="loading"/>
-                            </a-tooltip>
-                            <a-tooltip v-else-if="file.status==='done'" title="上传完成">
-                              <a-icon type="check-circle" style="color:#00DB00;"/>
-                            </a-tooltip>
-                            <a-tooltip v-else title="上传失败">
-                              <a-icon type="exclamation-circle" style="color:red;"/>
-                            </a-tooltip>
-                          </template>
-
-                          <template style="width: 30px">
-                            <a-dropdown :trigger="['click']" placement="bottomRight" :getPopupContainer="getParentContainer" style="margin-left: 10px;">
-                              <a-tooltip title="操作" :getPopupContainer="getParentContainer">
-                                <a-icon
-                                  v-if="file.status!=='uploading'"
-                                  type="setting"
-                                  style="cursor: pointer;"/>
-                              </a-tooltip>
-
-                              <a-menu slot="overlay">
-                                <a-menu-item v-if="col.allowDownload!==false" @click="handleClickDownFileByUrl(id)">
-                                  <span><a-icon type="download"/>&nbsp;下载</span>
-                                </a-menu-item>
-                                <a-menu-item @click="handleClickDelFile(id)">
-                                  <span><a-icon type="delete"/>&nbsp;删除</span>
-                                </a-menu-item>
-                                <a-menu-item @click="handleMoreOperation(id,'img')">
-                                  <span><a-icon type="bars" /> 更多</span>
-                                </a-menu-item>
-                              </a-menu>
-                            </a-dropdown>
-                          </template>
-
-                        </div>
+                    <div v-else-if="col.type === formTypes.image" :key="i" style="display:flex;justify-content:center;align-items:center;">
+                      <template v-for="(inputId,j) in [`${col.key}${row.id}`]">
+                      <!-- 已上传：显示图片预览，可点击操作 -->
+                      <template v-if="uploadValues[inputId] != null && uploadValues[inputId]['path']">
+                        <a-dropdown :trigger="['click']" placement="bottomRight" :getPopupContainer="getParentContainer">
+                          <img class="j-editable-image" :src="getCellImageView(inputId)" alt="图片" />
+                          <a-menu slot="overlay">
+                            <a-menu-item v-if="col.allowDownload!==false" @click="handleClickDownFileByUrl(inputId)">
+                              <span><a-icon type="download"/>&nbsp;下载</span>
+                            </a-menu-item>
+                            <a-menu-item @click="handleClickDelFile(inputId)">
+                              <span><a-icon type="delete"/>&nbsp;删除</span>
+                            </a-menu-item>
+                            <a-menu-item @click="handleMoreOperation(inputId,'img')">
+                              <span><a-icon type="bars" /> 查看大图</span>
+                            </a-menu-item>
+                          </a-menu>
+                        </a-dropdown>
                       </template>
-
-                      <div :hidden="uploadValues[id] != null">
-                        <a-tooltip
-                          :key="i"
-                          :id="id"
-                          placement="top"
-                          :title="(tooltips[id] || {}).title"
-                          :visible="(tooltips[id] || {}).visible || false"
-                          :autoAdjustOverflow="true"
-                          :getPopupContainer="getParentContainer"
-                        >
-
-                          <span
-                            @mouseover="()=>{handleMouseoverCommono(row,col)}"
-                            @mouseout="()=>{handleMouseoutCommono(row,col)}">
-                            <a-upload
-                              name="file"
-                              :data="{'isup':1}"
-                              :multiple="false"
-                              :action="getUploadAction(col.action)"
-                              :headers="uploadGetHeaders(row,col)"
-                              :showUploadList="false"
-                              v-bind="buildProps(row,col)"
-                              @change="(v)=>handleChangeUpload(v,id,row,col)"
-                            >
-                              <a-button icon="upload">上传图片</a-button>
-                            </a-upload>
-                          </span>
-                        </a-tooltip>
-                      </div>
-
+                      <!-- 未上传 + 上传中：a-upload 始终保持挂载，仅切换内部图标，避免上传过程中组件被销毁导致请求被取消 -->
+                      <a-upload
+                        v-else
+                        name="file"
+                        :data="{'biz':'material','isup':1}"
+                        :multiple="false"
+                        :action="getUploadAction(col.action)"
+                        :headers="uploadGetHeaders(row,col)"
+                        :showUploadList="false"
+                        v-bind="buildProps(row,col)"
+                        :disabled="uploadValues[inputId] != null && uploadValues[inputId]['status'] === 'uploading'"
+                        @change="(v)=>handleChangeUpload(v,inputId,row,col)"
+                      >
+                        <!-- 上传中：显示 loading，a-upload 不销毁，请求不被取消 -->
+                        <div v-if="uploadValues[inputId] != null && uploadValues[inputId]['status'] === 'uploading'" class="j-editable-image" style="display:flex;align-items:center;justify-content:center;background:#fafafa;cursor:default;">
+                          <a-icon type="loading" />
+                        </div>
+                        <!-- 未上传或上传失败：显示添加框 -->
+                        <div v-else class="j-editable-image" style="display:flex;align-items:center;justify-content:center;background:#fafafa;cursor:pointer;">
+                          <a-icon type="plus" style="font-size:16px;color:#bbb;" />
+                        </div>
+                      </a-upload>
+                      </template>
                     </div>
                     <!-- update-end-author:taoyan date:0827 for：图片逻辑新增 -->
 
@@ -813,7 +775,7 @@
   import JSelectList from '@/components/jeecgbiz/JSelectList'
 
   // 行高，需要在实例加载完成前用到
-  let rowHeight = 42
+  let rowHeight = 54
 
   export default {
     name: 'JEditableTable',
@@ -1932,7 +1894,15 @@
               }
               // upload 在 .ant-upload .ant-btn 上设置 border-color
               if (column.type === FormTypes.upload || column.type === FormTypes.file || column.type === FormTypes.image) {
-                element = element.getElementsByClassName('ant-upload')[0].getElementsByClassName('ant-btn')[0]
+                let uploadEl = element.getElementsByClassName('ant-upload')[0]
+                if (uploadEl) {
+                  let btnEl = uploadEl.getElementsByClassName('ant-btn')[0]
+                  if (btnEl) {
+                    element = btnEl
+                  } else {
+                    element = uploadEl
+                  }
+                }
               }
               element.style.borderColor = borderColor
               element.style.boxShadow = boxShadow
@@ -2407,6 +2377,7 @@
       },
       handleChangeUpload(info, id, row, column) {
         let { file } = info
+        console.log('[JEditableTable] handleChangeUpload: status=' + file.status + ', id=' + id + ', hasResponse=' + !!file.response + ', response=' + JSON.stringify(file.response))
         let value = {
           name: file.name,
           type: file.type,
@@ -2418,11 +2389,24 @@
           value['responseName'] = file.response[column.responseName]
         }
         if (file.status === 'done') {
-          value['path'] = file.response[column.responseName]
+          let resp = file.response
+          let code = (resp && resp.code) || 0
+          console.log('[JEditableTable] upload done, code:', code, 'resp:', resp)
+          if (code === 200) {
+            let respName = column.responseName || 'message'
+            value['path'] = (resp && resp[respName]) || (resp && resp.message)
+            console.log('[JEditableTable] set path:', value['path'])
+          } else {
+            value['message'] = (resp && resp.data) || (resp && resp.message) || '上传失败'
+            value['status'] = 'error'
+            console.log('[JEditableTable] upload error:', value['message'])
+          }
         } else if (file.status === 'error') {
-          value['message'] = file.response.message || '未知错误'
+          value['message'] = (file.response && file.response.message) || '未知错误'
         }
-        this.uploadValues = this.bindValuesChange(value, id, 'uploadValues')
+        // 使用新对象引用确保 Vue 响应式更新
+        this.$set(this.uploadValues, id, value)
+        this.$forceUpdate()
       },
       handleMoreOperation(id,flag){
         //console.log("this.uploadValues[id]",this.uploadValues[id])
@@ -2671,18 +2655,23 @@
       /** upload 辅助方法：获取 headers */
       uploadGetHeaders(row, column) {
         let headers = {}
-        if (column.token === true) {
+        // 后端 LogCostFilter 要求所有请求携带 X-Access-Token 进行认证
+        if (column.token !== false) {
           headers['X-Access-Token'] = this.accessToken
         }
+        console.log('[JEditableTable] uploadGetHeaders: token=' + this.accessToken + ', column.token=' + column.token)
         return headers
       },
       /** 上传请求地址 */
       getUploadAction(value) {
+        let action = ''
         if (!value) {
-          return window._CONFIG['domianURL'] + '/sys/common/upload'
+          action = window._CONFIG['domianURL'] + '/sys/common/upload'
         } else {
-          return value
+          action = value
         }
+        console.log('[JEditableTable] getUploadAction: action=' + action + ', inputValue=' + value)
+        return action
       },
       /** 预览图片地址 */
       getCellImageView(id) {
@@ -2692,7 +2681,7 @@
             return currUploadObj['url'];
           }else if(currUploadObj['path']){
             let readpath = currUploadObj['path'].split(',')[0]
-            return getFileAccessHttpUrl(readpath)
+            return getFileAccessHttpUrl('systemConfig/static/' + readpath)
           }
         }
         return ''
@@ -3019,6 +3008,7 @@
         /*flex: 1;*/
         padding: 6px @spacing 6px 0;
         justify-content: center;
+        align-items: center;
 
         &:last-child {
           padding-right: @spacing;
@@ -3080,8 +3070,11 @@
         }
 
         .j-editable-image {
-          height: 32px;
-          max-width: 100px !important;
+          height: 48px;
+          width: 48px;
+          object-fit: cover;
+          border-radius: 3px;
+          border: 1px solid #d9d9d9;
           cursor: pointer;
 
           &:hover {

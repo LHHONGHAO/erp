@@ -66,6 +66,7 @@
         :columns="columns"
         :dataSource="dataSource"
         :components="handleDrag(columns)"
+        :scroll="{ x: scroll.x }"
         :pagination="ipagination"
         :loading="loading"
         :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
@@ -124,10 +125,10 @@
         },
         // 表头
         columns: [
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
-            scopedSlots: {customRender: 'action'},
+            fixed: 'right', scopedSlots: {customRender: 'action'},
             align: "center",
             width: 80
           },
@@ -141,7 +142,7 @@
             scopedSlots: { customRender: 'customRenderStatus' }
           },
           { title: '备注', dataIndex: 'remark',width:100},
-          { title: '创建时间', dataIndex: 'createTime',width:100}
+          { title: '创建时间', dataIndex: 'createTime',width:100},
         ],
         dataSource:[],
         url: {

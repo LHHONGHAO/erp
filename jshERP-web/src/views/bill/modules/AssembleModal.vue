@@ -37,20 +37,25 @@
           <a-col :lg="6" :md="12" :sm="24"></a-col>
           <a-col :lg="6" :md="12" :sm="24"></a-col>
         </a-row>
-        <j-editable-table id="billModal"
-          :ref="refKeys[0]"
+        <data-table
+          ref="materialDataTable"
           :loading="materialTable.loading"
-          :columns="materialTable.columns"
-          :dataSource="materialTable.dataSource"
-          :minWidth="minWidth"
-          :maxHeight="300"
-          :rowNumber="true"
-          :rowSelection="true"
-          :actionButton="true"
-          @valueChange="onValueChange"
-          @added="onAdded"
-          @deleted="onDeleted">
-          <template #buttonAfter>
+          :data-source="materialTable.dataSource"
+          :extra-columns="detailColumns"
+          table-key="bill_assemble_detail"
+          :default-columns="defDataIndex"
+          :scroll="{ x: minWidth }"
+          :actions="detailActions"
+          :statistics-fields="detailStatisticsFields"
+          :summary="true"
+          :summary-fields="detailSummaryFields"
+          :detail="true"
+          :editable="true"
+          :preserve-column-setting="true"
+          @edit-change="onDetailEditChange">
+          <template slot="toolbar">
+            <a-button type="primary" icon="plus" @click="openSelectMaterial">新增商品</a-button>
+            <a-button @click="handleBatchSetDepot">批量设置仓库</a-button>
             <a-row :gutter="24" style="float:left;" data-step="4" data-title="扫码录入" data-intro="此功能支持扫码枪扫描商品条码进行录入">
               <a-col v-if="scanStatus" :md="6" :sm="24">
                 <a-button @click="scanEnter">扫码录入</a-button>
@@ -63,15 +68,10 @@
               </a-col>
             </a-row>
           </template>
-          <template #depotBatchSet>
-            <a-icon type="down" @click="handleBatchSetDepot" />
+          <template slot="barCode" slot-scope="text, record">
+            <j-select-list kind="material" :value="record.barCode" :rows="getPopupRows(record)" :multi="true" @change="v => onDetailPopupChange('barCode', v, record)" />
           </template>
-          <template #depotAdd>
-            <a-divider v-if="quickBtn.depot" style="margin: 4px 0;" />
-            <div v-if="quickBtn.depot" class="dropdown-btn" @click="addDepot"><a-icon type="plus" /> 新增</div>
-            <div class="dropdown-btn" @mousedown="e => e.preventDefault()" @click="initDepot"><a-icon type="reload" /> 刷新</div>
-          </template>
-        </j-editable-table>
+        </data-table>
         <a-row class="form-row" :gutter="24">
           <a-col :lg="24" :md="24" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="{xs: { span: 24 },sm: { span: 24 }}" label="">
@@ -93,6 +93,7 @@
     <workflow-iframe ref="modalWorkflow" @ok="workflowModalFormOk"></workflow-iframe>
     <bill-print-iframe ref="modalPrint"></bill-print-iframe>
     <bill-print-pro-iframe ref="modalPrintPro"></bill-print-pro-iframe>
+    <j-select-material-modal ref="selectMaterialModal" :multi="true" @ok="onSelectMaterialOk"></j-select-material-modal>
   </j-modal>
 </template>
 <script>
@@ -105,14 +106,18 @@
   import { FormTypes } from '@/utils/JEditableTableUtil'
   import { JEditableTableMixin } from '@/mixins/JEditableTableMixin'
   import { BillModalMixin } from '../mixins/BillModalMixin'
+  import { DataTableDetailMixin } from '../mixins/DataTableDetailMixin'
   import { getAction } from '@/api/manage'
   import { getMpListShort } from "@/utils/util"
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
+  import DataTable from '@/components/DataTable'
+  import JSelectList from '@/components/jeecgbiz/JSelectList'
+  import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
   import Vue from 'vue'
   export default {
     name: "AssembleModal",
-    mixins: [JEditableTableMixin, BillModalMixin],
+    mixins: [JEditableTableMixin, BillModalMixin, DataTableDetailMixin],
     components: {
       DepotModal,
       BatchSetDepot,
@@ -120,7 +125,10 @@
       BillPrintIframe,
       BillPrintProIframe,
       JUpload,
-      JDate
+      JDate,
+      DataTable,
+      JSelectList,
+      JSelectMaterialModal
     },
     data () {
       return {
@@ -144,36 +152,39 @@
         },
         refKeys: ['materialDataTable', ],
         activeKey: 'materialDataTable',
+        // 列设置：所有可选列
+        defColumns: [
+          { title: '商品类型',key: 'mType',width:'7%', type: FormTypes.normal },
+          { title: '仓库名称', key: 'depotId', width: '8%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
+            allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
+          { title: '规格', key: 'standard', width: '9%', type: FormTypes.normal },
+          { title: '型号', key: 'model', width: '9%', type: FormTypes.normal },
+          { title: '颜色', key: 'color', width: '5%', type: FormTypes.normal },
+          { title: '品牌', key: 'brand', width: '6%', type: FormTypes.normal },
+          { title: '制造商', key: 'mfrs', width: '6%', type: FormTypes.normal },
+          { title: '扩展1', key: 'otherField1', width: '4%', type: FormTypes.normal },
+          { title: '扩展2', key: 'otherField2', width: '4%', type: FormTypes.normal },
+          { title: '扩展3', key: 'otherField3', width: '4%', type: FormTypes.normal },
+          { title: '库存', key: 'stock', width: '5%', type: FormTypes.normal },
+          { title: '单位', key: 'unit', width: '4%', type: FormTypes.normal },
+          { title: '多属性', key: 'sku', width: '4%', type: FormTypes.normal },
+          { title: '数量', key: 'operNumber', width: '5%', type: FormTypes.inputNumber,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '单价', key: 'unitPrice', width: '5%', type: FormTypes.inputNumber },
+          { title: '金额', key: 'allPrice', width: '5%', type: FormTypes.inputNumber },
+          { title: '备注', key: 'remark', width: '5%', type: FormTypes.input }
+        ],
+        defDataIndex: ['mType','depotId','barCode','name','standard','model','color','brand','mfrs','otherField1','otherField2','otherField3','stock','unit','sku','operNumber','unitPrice','allPrice','remark'],
         materialTable: {
           loading: false,
           dataSource: [],
-          columns: [
-            { title: '商品类型',key: 'mType',width:'7%', type: FormTypes.normal },
-            { title: '仓库名称', key: 'depotId', width: '8%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
-              allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
-            { title: '规格', key: 'standard', width: '9%', type: FormTypes.normal },
-            { title: '型号', key: 'model', width: '9%', type: FormTypes.normal },
-            { title: '颜色', key: 'color', width: '5%', type: FormTypes.normal },
-            { title: '品牌', key: 'brand', width: '6%', type: FormTypes.normal },
-            { title: '制造商', key: 'mfrs', width: '6%', type: FormTypes.normal },
-            { title: '扩展1', key: 'otherField1', width: '4%', type: FormTypes.normal },
-            { title: '扩展2', key: 'otherField2', width: '4%', type: FormTypes.normal },
-            { title: '扩展3', key: 'otherField3', width: '4%', type: FormTypes.normal },
-            { title: '库存', key: 'stock', width: '5%', type: FormTypes.normal },
-            { title: '单位', key: 'unit', width: '4%', type: FormTypes.normal },
-            { title: '多属性', key: 'sku', width: '4%', type: FormTypes.normal },
-            { title: '数量', key: 'operNumber', width: '5%', type: FormTypes.inputNumber,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '单价', key: 'unitPrice', width: '5%', type: FormTypes.inputNumber },
-            { title: '金额', key: 'allPrice', width: '5%', type: FormTypes.inputNumber },
-            { title: '备注', key: 'remark', width: '5%', type: FormTypes.input }
-          ]
+          columns: []
         },
         confirmLoading: false,
         validatorRules:{
@@ -201,6 +212,7 @@
       }
     },
     created () {
+      this.initColumns()
     },
     methods: {
       //调用完edit()方法之后会自动调用此方法
@@ -282,6 +294,10 @@
         } else {
           target.setValues([{rowKey: row.id, values: {mType: '组合件'}}])
         }
+      },
+      // 初始化明细列：完整列定义交给 DataTable 组件，由列设置（tableKey + defaultColumns）控制显隐
+      initColumns() {
+        this.materialTable.columns = this.defColumns.map(c => Object.assign({}, c))
       }
     }
   }

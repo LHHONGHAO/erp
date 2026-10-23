@@ -129,10 +129,10 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
-            scopedSlots: {customRender: 'action'},
+            fixed: 'right', scopedSlots: {customRender: 'action'},
             align: "center",
             width: 100
           },
@@ -148,7 +148,7 @@
           },
           { title: '创建时间', dataIndex: 'createTimeStr', width: 100, align: "center"},
           { title: '到期时间', dataIndex: 'expireTimeStr', width: 100, align: "center"},
-          { title: '备注', dataIndex: 'remark', width: 200, align: "center", ellipsis:true}
+          { title: '备注', dataIndex: 'remark', width: 200, align: "center", ellipsis:true},
         ],
         url: {
           list: "/tenant/list",

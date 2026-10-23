@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.MaterialInstanceMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.MaterialInstance">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="unit_code" jdbcType="VARCHAR" property="unitCode" />
+    <result column="material_id" jdbcType="BIGINT" property="materialId" />
+    <result column="material_extend_id" jdbcType="BIGINT" property="materialExtendId" />
+    <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
+    <result column="inbound_depot_id" jdbcType="BIGINT" property="inboundDepotId" />
+    <result column="current_depot_id" jdbcType="BIGINT" property="currentDepotId" />
+    <result column="inbound_type" jdbcType="VARCHAR" property="inboundType" />
+    <result column="inbound_head_id" jdbcType="BIGINT" property="inboundHeadId" />
+    <result column="inbound_item_id" jdbcType="BIGINT" property="inboundItemId" />
+    <result column="inbound_time" jdbcType="TIMESTAMP" property="inboundTime" />
+    <result column="outbound_depot_id" jdbcType="BIGINT" property="outboundDepotId" />
+    <result column="outbound_type" jdbcType="VARCHAR" property="outboundType" />
+    <result column="outbound_head_id" jdbcType="BIGINT" property="outboundHeadId" />
+    <result column="outbound_item_id" jdbcType="BIGINT" property="outboundItemId" />
+    <result column="outbound_time" jdbcType="TIMESTAMP" property="outboundTime" />
+    <result column="status" jdbcType="VARCHAR" property="status" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+    <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
+    <result column="remark" jdbcType="VARCHAR" property="remark" />
+    <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+    <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, unit_code, material_id, material_extend_id, sku_code, inbound_depot_id, current_depot_id, inbound_type,
+    inbound_head_id, inbound_item_id, inbound_time, outbound_depot_id, outbound_type, outbound_head_id,
+    outbound_item_id, outbound_time, status, tenant_id, delete_flag, remark, create_time, update_time
+  </sql>
+
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List" /> from jsh_material_instance where id = #{id}
+  </select>
+
+  <select id="selectByUnitCode" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List" /> from jsh_material_instance
+    where unit_code = #{unitCode} and ifnull(delete_flag,'0') != '1' limit 1
+  </select>
+
+  <select id="selectBySkuAndDepot" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List" /> from jsh_material_instance
+    where material_extend_id = #{materialExtendId} and status = 'IN_STOCK' and ifnull(delete_flag,'0') != '1'
+    <if test="depotId != null">and current_depot_id = #{depotId}</if>
+    <if test="tenantId != null">and tenant_id = #{tenantId}</if>
+    order by id asc
+  </select>
+
+  <select id="selectByInboundItemId" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List" /> from jsh_material_instance
+    where inbound_item_id = #{inboundItemId} and ifnull(delete_flag,'0') != '1'
+  </select>
+
+  <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.MaterialInstance" useGeneratedKeys="true" keyProperty="id">
+    insert into jsh_material_instance
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="unitCode != null">unit_code,</if>
+      <if test="materialId != null">material_id,</if>
+      <if test="materialExtendId != null">material_extend_id,</if>
+      <if test="skuCode != null">sku_code,</if>
+      <if test="inboundDepotId != null">inbound_depot_id,</if>
+      <if test="currentDepotId != null">current_depot_id,</if>
+      <if test="inboundType != null">inbound_type,</if>
+      <if test="inboundHeadId != null">inbound_head_id,</if>
+      <if test="inboundItemId != null">inbound_item_id,</if>
+      <if test="inboundTime != null">inbound_time,</if>
+      <if test="outboundDepotId != null">outbound_depot_id,</if>
+      <if test="outboundType != null">outbound_type,</if>
+      <if test="outboundHeadId != null">outbound_head_id,</if>
+      <if test="outboundItemId != null">outbound_item_id,</if>
+      <if test="outboundTime != null">outbound_time,</if>
+      <if test="status != null">status,</if>
+      <if test="deleteFlag != null">delete_flag,</if>
+      <if test="remark != null">remark,</if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="unitCode != null">#{unitCode},</if>
+      <if test="materialId != null">#{materialId},</if>
+      <if test="materialExtendId != null">#{materialExtendId},</if>
+      <if test="skuCode != null">#{skuCode},</if>
+      <if test="inboundDepotId != null">#{inboundDepotId},</if>
+      <if test="currentDepotId != null">#{currentDepotId},</if>
+      <if test="inboundType != null">#{inboundType},</if>
+      <if test="inboundHeadId != null">#{inboundHeadId},</if>
+      <if test="inboundItemId != null">#{inboundItemId},</if>
+      <if test="inboundTime != null">#{inboundTime},</if>
+      <if test="outboundDepotId != null">#{outboundDepotId},</if>
+      <if test="outboundType != null">#{outboundType},</if>
+      <if test="outboundHeadId != null">#{outboundHeadId},</if>
+      <if test="outboundItemId != null">#{outboundItemId},</if>
+      <if test="outboundTime != null">#{outboundTime},</if>
+      <if test="status != null">#{status},</if>
+      <if test="deleteFlag != null">#{deleteFlag},</if>
+      <if test="remark != null">#{remark},</if>
+    </trim>
+  </insert>
+
+  <update id="updateByPrimaryKeySelective" parameterType="com.jsh.erp.datasource.entities.MaterialInstance">
+    update jsh_material_instance
+    <set>
+      <if test="unitCode != null">unit_code = #{unitCode},</if>
+      <if test="materialId != null">material_id = #{materialId},</if>
+      <if test="materialExtendId != null">material_extend_id = #{materialExtendId},</if>
+      <if test="skuCode != null">sku_code = #{skuCode},</if>
+      <if test="inboundDepotId != null">inbound_depot_id = #{inboundDepotId},</if>
+      <if test="currentDepotId != null">current_depot_id = #{currentDepotId},</if>
+      <if test="inboundType != null">inbound_type = #{inboundType},</if>
+      <if test="inboundHeadId != null">inbound_head_id = #{inboundHeadId},</if>
+      <if test="inboundItemId != null">inbound_item_id = #{inboundItemId},</if>
+      <if test="inboundTime != null">inbound_time = #{inboundTime},</if>
+      <if test="outboundDepotId != null">outbound_depot_id = #{outboundDepotId},</if>
+      <if test="outboundType != null">outbound_type = #{outboundType},</if>
+      <if test="outboundHeadId != null">outbound_head_id = #{outboundHeadId},</if>
+      <if test="outboundItemId != null">outbound_item_id = #{outboundItemId},</if>
+      <if test="outboundTime != null">outbound_time = #{outboundTime},</if>
+      <if test="status != null">status = #{status},</if>
+      <if test="tenantId != null">tenant_id = #{tenantId},</if>
+      <if test="deleteFlag != null">delete_flag = #{deleteFlag},</if>
+      <if test="remark != null">remark = #{remark},</if>
+    </set>
+    where id = #{id}
+  </update>
+</mapper>

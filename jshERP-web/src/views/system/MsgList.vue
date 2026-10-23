@@ -102,7 +102,7 @@
           title: '操作',
           dataIndex: 'action',
           align:"center",
-          scopedSlots: { customRender: 'action' },
+          fixed: 'right', scopedSlots: { customRender: 'action' },
           width: 50
         }],
 		    url: {

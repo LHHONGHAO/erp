@@ -2,13 +2,24 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.jsh.erp.datasource.mappers.MaterialExtendMapperEx" >
     <resultMap extends="com.jsh.erp.datasource.mappers.MaterialExtendMapper.BaseResultMap" id="ResultMapList" type="com.jsh.erp.datasource.vo.MaterialExtendVo4List">
-
+        <result column="attribute" jdbcType="LONGVARCHAR" property="attribute" />
+        <result column="current_stock" jdbcType="DECIMAL" property="currentStock" />
     </resultMap>
 
     <select id="getDetailList" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="ResultMapList">
-        select distinct d.id,d.bar_code,d.commodity_unit,d.sku,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,
-                        d.low_decimal,d.default_flag
+        select d.id,d.spec_values,d.bar_code,d.commodity_unit,d.sku,d.sku_code,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,
+               d.low_decimal,d.default_flag,d.img_url,d.store,
+               IFNULL(s.current_stock,0) as current_stock,
+               m.attribute as attribute
         from jsh_material_extend d
+        left join jsh_material m on d.material_id = m.id
+        left join (
+            select material_extend_id, sum(current_number) as current_stock
+            from jsh_material_current_stock
+            where ifnull(delete_flag,'0') !='1'
+            and material_extend_id is not null
+            group by material_extend_id
+        ) s on d.id = s.material_extend_id
         where d.material_id = #{materialId}
         and ifnull(d.delete_flag,'0') !='1'
         order by d.default_flag desc,d.id asc
@@ -82,4 +93,5 @@
         where material_id=#{materialId} and default_flag='1'
         and ifnull(delete_Flag,'0') !='1'
     </select>
+
 </mapper>

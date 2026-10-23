@@ -63,24 +63,29 @@
             </a-form-item>
           </a-col>
         </a-row>
-        <j-editable-table
-          :ref="refKeys[0]"
+        <data-table
+          ref="accountDataTable"
           :loading="accountTable.loading"
-          :columns="accountTable.columns"
-          :dataSource="accountTable.dataSource"
-          :minWidth="minWidth"
-          :maxHeight="300"
-          :rowNumber="true"
-          :rowSelection="true"
-          :actionButton="true"
-          @added="onAdded"
-          @valueChange="onValueChange">
-          <template #inOutItemAdd>
-            <a-divider v-if="quickBtn.inOutItem" style="margin: 4px 0;" />
-            <div v-if="quickBtn.inOutItem" class="dropdown-btn" @click="addInOutItem('in')"><a-icon type="plus" /> 新增收支项目</div>
-            <div class="dropdown-btn" @mousedown="e => e.preventDefault()" @click="initInOutItem('in')"><a-icon type="reload" /> 刷新列表</div>
+          :data-source="accountTable.dataSource"
+          :extra-columns="detailColumns"
+          table-key="financial_item_in_detail"
+          :default-columns="defDataIndex"
+          :row-key="detailRowKey"
+          :scroll="{ x: minWidth }"
+          :actions="detailActions"
+          :statistics-fields="detailStatisticsFields"
+          :summary="true"
+          :summary-fields="detailSummaryFields"
+          :detail="true"
+          :editable="true"
+          :preserve-column-setting="true"
+          @edit-change="onDetailEditChange">
+          <template slot="toolbar">
+            <a-button type="primary" icon="plus" @click="addDetailRow">插入行</a-button>
+            <a-button v-if="quickBtn.inOutItem" type="primary" icon="plus" @click="addInOutItem('in')">新增收支项目</a-button>
+            <a-button icon="reload" @click="initInOutItem('in')">刷新列表</a-button>
           </template>
-        </j-editable-table>
+        </data-table>
         <a-row class="form-row" :gutter="24">
           <a-col :lg="24" :md="24" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="{xs: { span: 24 },sm: { span: 24 }}" label="">
@@ -139,11 +144,13 @@
   import { FormTypes } from '@/utils/JEditableTableUtil'
   import { JEditableTableMixin } from '@/mixins/JEditableTableMixin'
   import { FinancialModalMixin } from '../mixins/FinancialModalMixin'
+  import { FinancialDataTableDetailMixin } from '../mixins/FinancialDataTableDetailMixin'
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
+  import DataTable from '@/components/DataTable'
   export default {
     name: "ItemInModal",
-    mixins: [JEditableTableMixin, FinancialModalMixin],
+    mixins: [JEditableTableMixin, FinancialModalMixin, FinancialDataTableDetailMixin],
     components: {
       AccountModal,
       PersonModal,
@@ -151,6 +158,7 @@
       InOutItemModal,
       JUpload,
       JDate,
+      DataTable,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -177,18 +185,20 @@
         },
         refKeys: ['accountDataTable', ],
         activeKey: 'accountDataTable',
+        defColumns: [
+          { title: '收入项目',key: 'inOutItemId',width: '20%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
+            allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '金额',key: 'eachAmount', width: '10%', type: FormTypes.inputNumber, statistics: true, placeholder: '请选择${title}',
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '备注',key: 'remark', width: '30%', type: FormTypes.input, placeholder: '请选择${title}'}
+        ],
+        defDataIndex: ['inOutItemId','eachAmount','remark'],
         accountTable: {
           loading: false,
           dataSource: [],
-          columns: [
-            { title: '收入项目',key: 'inOutItemId',width: '20%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
-              allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '金额',key: 'eachAmount', width: '10%', type: FormTypes.inputNumber, statistics: true, placeholder: '请选择${title}',
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '备注',key: 'remark', width: '30%', type: FormTypes.input, placeholder: '请选择${title}'}
-          ]
+          columns: []
         },
         confirmLoading: false,
         validatorRules:{
@@ -221,8 +231,13 @@
       }
     },
     created () {
+      this.initColumns()
     },
     methods: {
+      // 初始化明细列：完整列定义交给 DataTable 组件，由列设置（tableKey + defaultColumns）控制显隐
+      initColumns() {
+        this.accountTable.columns = this.defColumns.map(c => Object.assign({}, c))
+      },
       //调用完edit()方法之后会自动调用此方法
       editAfter() {
         this.billStatus = '0'

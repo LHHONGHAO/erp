@@ -18,5 +18,16 @@ export default new Router({
   mode: 'history',
   base: process.env.BASE_URL,
   scrollBehavior: () => ({ y: 0 }),
-  routes: constantRouterMap
+  routes: constantRouterMap.concat([
+    {
+      path: '/test/datatable',
+      name: 'testDataTable',
+      component: () => import('@/views/TestDataTable')
+    },
+    {
+      path: '/system/tableColumnConfig',
+      name: 'tableColumnConfig',
+      component: () => import('@/views/system/TableColumnConfig')
+    }
+  ])
 })

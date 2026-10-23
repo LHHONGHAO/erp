@@ -64,15 +64,15 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width: 100,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {title: '名称', dataIndex: 'nativeName', width: 100},
-          {title: '别名', dataIndex: 'anotherName', width: 100}
+          {title: '别名', dataIndex: 'anotherName', width: 100},
         ],
         url: {
           list: "/materialProperty/list",

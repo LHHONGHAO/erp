@@ -400,10 +400,11 @@ public class DepotItemService {
                 JSONObject rowObj = JSONObject.parseObject(rowArr.getString(i));
                 depotItem.setHeaderId(headerId);
                 String barCode = rowObj.getString("barCode");
-                MaterialExtend materialExtend = materialExtendService.getInfoByBarCode(barCode);
+                String skuCode = rowObj.getString("skuCode");
+                MaterialExtend materialExtend = materialExtendService.getInfoBySkuCode(skuCode);
                 if(materialExtend == null) {
-                    throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_BARCODE_IS_NOT_EXIST_CODE,
-                            String.format(ExceptionConstants.MATERIAL_BARCODE_IS_NOT_EXIST_MSG, barCode));
+                    throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_SKUCODE_IS_NOT_EXIST_CODE,
+                            String.format(ExceptionConstants.MATERIAL_SKUCODE_IS_NOT_EXIST_MSG, skuCode));
                 }
                 depotItem.setMaterialId(materialExtend.getMaterialId());
                 depotItem.setMaterialExtendId(materialExtend.getId());
@@ -502,7 +503,7 @@ public class DepotItemService {
                 Unit unitInfo = materialService.findUnit(materialExtend.getMaterialId()); //查询多单位信息
                 if (StringUtil.isExist(rowObj.get("operNumber"))) {
                     depotItem.setOperNumber(rowObj.getBigDecimal("operNumber"));
-                    String unit = rowObj.get("unit").toString();
+                    String unit = rowObj.get("unit") == null ? "" : rowObj.get("unit").toString();
                     BigDecimal oNumber = rowObj.getBigDecimal("operNumber");
                     if (StringUtil.isNotEmpty(unitInfo.getName())) {
                         String basicUnit = unitInfo.getBasicUnit(); //基本单位
@@ -538,7 +539,7 @@ public class DepotItemService {
                         //当前单据的类型
                         String currentSubType = depotHead.getSubType();
                         //在更新模式进行状态赋值
-                        String unit = rowObj.get("unit").toString();
+                        String unit = rowObj.get("unit") == null ? "" : rowObj.get("unit").toString();
                         Long preHeaderId = depotHeadService.getDepotHead(linkStr).getId();
                         if(null!=preHeaderId) {
                             //前一个单据的数量

@@ -8,11 +8,15 @@ public class MaterialExtend {
 
     private Long materialId;
 
+    private String specValues;
+
     private String barCode;
 
     private String commodityUnit;
 
     private String sku;
+
+    private String skuCode;
 
     private BigDecimal purchaseDecimal;
 
@@ -36,6 +40,10 @@ public class MaterialExtend {
 
     private String deleteFlag;
 
+    private String imgUrl;
+
+    private String store;
+
     public Long getId() {
         return id;
     }
@@ -50,6 +58,14 @@ public class MaterialExtend {
 
     public void setMaterialId(Long materialId) {
         this.materialId = materialId;
+    }
+
+    public String getSpecValues() {
+        return specValues;
+    }
+
+    public void setSpecValues(String specValues) {
+        this.specValues = specValues == null ? null : specValues.trim();
     }
 
     public String getBarCode() {
@@ -74,6 +90,14 @@ public class MaterialExtend {
 
     public void setSku(String sku) {
         this.sku = sku == null ? null : sku.trim();
+    }
+
+    public String getSkuCode() {
+        return skuCode;
+    }
+
+    public void setSkuCode(String skuCode) {
+        this.skuCode = skuCode == null ? null : skuCode.trim();
     }
 
     public BigDecimal getPurchaseDecimal() {
@@ -162,5 +186,21 @@ public class MaterialExtend {
 
     public void setDeleteFlag(String deleteFlag) {
         this.deleteFlag = deleteFlag == null ? null : deleteFlag.trim();
+    }
+
+    public String getImgUrl() {
+        return imgUrl;
+    }
+
+    public void setImgUrl(String imgUrl) {
+        this.imgUrl = imgUrl == null ? null : imgUrl.trim();
+    }
+
+    public String getStore() {
+        return store;
+    }
+
+    public void setStore(String store) {
+        this.store = store == null ? null : store.trim();
     }
 }

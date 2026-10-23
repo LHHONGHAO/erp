@@ -8,3 +8,15 @@
 
 ## front
 **/*.lock
+
+## local config with secrets (不入库：含数据库密码与OCR密钥)
+jshERP-boot/application-dev.yml
+jshERP-boot/config/
+
+## logs
+*.log
+*_log.txt
+frontend.local.*
+
+## ide
+**/.trae

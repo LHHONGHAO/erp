@@ -96,12 +96,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width: 150,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {title: '编号 ', dataIndex: 'number', width: 80},
           {title: '名称', dataIndex: 'name', width: 120, ellipsis:true},
@@ -114,7 +114,7 @@
             title: '是否启用', dataIndex: 'enabled', width: 80, align: "center",
             scopedSlots: { customRender: 'customRenderFlag' }
           },
-          {title: '图标', dataIndex: 'icon', width: 120}
+          {title: '图标', dataIndex: 'icon', width: 120},
         ],
         url: {
           list: "/function/list",

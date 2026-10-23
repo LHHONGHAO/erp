@@ -119,10 +119,10 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
-            scopedSlots: {customRender: 'action'},
+            fixed: 'right', scopedSlots: {customRender: 'action'},
             align: "center",
             width: 200
           },
@@ -136,7 +136,7 @@
           { title: '排序', dataIndex: 'userBlngOrgaDsplSeq', width: 40, align: "left"},
           { title: '状态',dataIndex: 'status',width:60,align:"center",
             scopedSlots: { customRender: 'customRenderFlag' }
-          }
+},
         ],
         url: {
           list: "/user/list",

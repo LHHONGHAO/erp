@@ -30,7 +30,7 @@
         <result column="MMfrs" jdbcType="VARCHAR" property="MMfrs" />
         <result column="weight" jdbcType="VARCHAR" property="weight" />
         <result column="position" jdbcType="VARCHAR" property="position" />
-        <result column="img_name" jdbcType="VARCHAR" property="imgName" />
+        <result column="imgName" jdbcType="VARCHAR" property="imgName" />
         <result column="MOtherField1" jdbcType="VARCHAR" property="MOtherField1" />
         <result column="MOtherField2" jdbcType="VARCHAR" property="MOtherField2" />
         <result column="MOtherField3" jdbcType="VARCHAR" property="MOtherField3" />
@@ -41,6 +41,14 @@
         <result column="AnotherDepotName" jdbcType="VARCHAR" property="AnotherDepotName" />
         <result column="barCode" jdbcType="VARCHAR" property="barCode" />
         <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
+        <result column="categoryName" jdbcType="VARCHAR" property="categoryName" />
+        <result column="skuCode" jdbcType="VARCHAR" property="skuCode" />
+        <result column="commodityUnit" jdbcType="VARCHAR" property="commodityUnit" />
+        <result column="meId" jdbcType="BIGINT" property="meId" />
+        <result column="commodityDecimal" jdbcType="DECIMAL" property="commodityDecimal" />
+        <result column="wholesaleDecimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
+        <result column="lowDecimal" jdbcType="DECIMAL" property="lowDecimal" />
+        <result column="stock" jdbcType="DECIMAL" property="stock" />
     </resultMap>
 
     <resultMap extends="com.jsh.erp.datasource.mappers.DepotItemMapper.BaseResultMap" id="ResultByMaterial" type="com.jsh.erp.datasource.entities.DepotItemVo4WithInfoEx">
@@ -58,6 +66,7 @@
         <result column="unit_name" jdbcType="VARCHAR" property="unitName" />
         <result column="MColor" jdbcType="VARCHAR" property="MColor" />
         <result column="brand" jdbcType="VARCHAR" property="brand" />
+        <result column="imgName" jdbcType="VARCHAR" property="imgName" />
         <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
         <result column="currentUnitPrice" jdbcType="DECIMAL" property="currentUnitPrice" />
     </resultMap>
@@ -335,12 +344,20 @@
     </select>
 
     <select id="getDetailList" parameterType="com.jsh.erp.datasource.entities.DepotItemExample" resultMap="ResultWithInfoExMap">
-        select di.*,m.name MName,m.model MModel,m.unit MaterialUnit,m.color MColor,m.standard MStandard,m.mfrs MMfrs,m.weight, m.position, m.img_name,
+        select di.*,m.name MName,m.model MModel,m.unit MaterialUnit,m.color MColor,m.standard MStandard,m.mfrs MMfrs,m.weight, m.position, me.img_url as imgName,
         m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3,m.enable_serial_number, m.enable_batch_number,
-        m.brand, dp1.name DepotName,dp2.name AnotherDepotName, me.bar_code barCode, me.purchase_decimal
+        m.brand, dp1.name DepotName,dp2.name AnotherDepotName, me.bar_code barCode, me.purchase_decimal,
+        mc.name categoryName, me.sku_code skuCode, me.commodity_unit commodityUnit, me.id meId,
+        me.commodity_decimal commodityDecimal, me.wholesale_decimal wholesaleDecimal, me.low_decimal lowDecimal,
+        IFNULL(s.current_stock,0) as stock
         from jsh_depot_item di
         left join jsh_material m on di.material_id=m.id  and ifnull(m.delete_flag,'0') !='1'
         left join jsh_material_extend me on me.id=di.material_extend_id  and ifnull(me.delete_Flag,'0') !='1'
+        left join jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
+        left join (select material_extend_id, sum(current_number) as current_stock
+                   from jsh_material_current_stock
+                   where ifnull(delete_flag,'0') !='1'
+                   group by material_extend_id) s on me.id = s.material_extend_id
         left join jsh_depot dp1 on di.depot_id=dp1.id and ifnull(dp1.delete_Flag,'0') !='1'
         left join jsh_depot dp2 on di.another_depot_id=dp2.id and ifnull(dp2.delete_Flag,'0') !='1'
         where di.header_id = #{headerId}
@@ -349,7 +366,7 @@
     </select>
 
     <select id="getBillDetailListByIds" resultType="com.jsh.erp.datasource.entities.DepotItemVo4WithInfoEx">
-        select di.*,m.name MName,m.model MModel,m.unit MaterialUnit,m.color MColor,m.standard MStandard,m.mfrs MMfrs,m.weight, m.position, m.img_name,
+        select di.*,m.name MName,m.model MModel,m.unit MaterialUnit,m.color MColor,m.standard MStandard,m.mfrs MMfrs,m.weight, m.position, me.img_url as imgName,
         m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3,m.enable_serial_number, m.enable_batch_number,
         m.brand, dp1.name DepotName,dp2.name AnotherDepotName, me.bar_code barCode, me.purchase_decimal
         from jsh_depot_item di
@@ -367,7 +384,7 @@
 
     <select id="getInOutStock" parameterType="com.jsh.erp.datasource.entities.DepotItemExample" resultMap="ResultByMaterial">
         select m.id MId, me.bar_code, m.name MName, m.mfrs MMfrs, m.model MModel, m.standard MStandard, m.brand,
-        m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3, m.img_name,
+        m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3, me.img_url as imgName,
         concat_ws('', m.unit, u.basic_unit) MaterialUnit, m.color MColor, m.unit_id, u.name unit_name,
         ifnull(me.purchase_decimal,0) purchase_decimal, ifnull(mcs.current_unit_price,0) currentUnitPrice
         from jsh_material m
@@ -394,7 +411,7 @@
         </if>
         and ifnull(m.delete_flag,'0') !='1'
         group by m.id, me.bar_code, m.name, m.mfrs, m.model, m.standard, m.brand,
-        m.other_field1,m.other_field2,m.other_field3, m.img_name ,m.unit, u.basic_unit, m.color, m.unit_id, u.name,
+        m.other_field1,m.other_field2,m.other_field3, me.img_url ,m.unit, u.basic_unit, m.color, m.unit_id, u.name,
         me.purchase_decimal, mcs.current_unit_price
         order by m.id desc
         <if test="offset != null and rows != null">

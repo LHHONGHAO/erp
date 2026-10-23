@@ -6,15 +6,11 @@
 import { filterObj, getMpListShort, getNowFormatStr } from '@/utils/util'
 import { deleteAction, getAction, postAction, downFile, downFilePost, getFileAccessHttpUrl } from '@/api/manage'
 import Vue from 'vue'
-import VueDraggableResizable from 'vue-draggable-resizable'
 import { ACCESS_TOKEN } from "@/store/mutation-types"
 import {mixinDevice} from '@/utils/mixin.js'
 
 export const JeecgListMixin = {
   mixins: [mixinDevice],
-  components: {
-    VueDraggableResizable
-  },
   data(){
     return {
       //token header
@@ -85,6 +81,13 @@ export const JeecgListMixin = {
   },
   mounted () {
     this.initScroll()
+  },
+  computed: {
+    //列设置弹窗中是否已全部勾选（序号列常驻，不参与判断）
+    columnsAllChecked() {
+      const allKeys = (this.defColumns || []).map(item => item.dataIndex).filter(k => !!k && k !== 'rowIndex')
+      return allKeys.length > 0 && allKeys.every(k => (this.settingDataIndex || []).includes(k))
+    }
   },
   methods:{
     loadData(arg) {
@@ -293,8 +296,17 @@ export const JeecgListMixin = {
     //加载初始化列
     initColumnsSetting(){
       let columnsStr = Vue.ls.get(this.pageName)
-      if(columnsStr && columnsStr.indexOf(',')>-1) {
-        this.settingDataIndex = columnsStr.split(',')
+      let saved = null
+      if (Array.isArray(columnsStr)) {
+        saved = columnsStr
+      } else if (typeof columnsStr === 'string' && columnsStr.length > 0) {
+        // 兼容只勾选一列的历史保存值（无逗号）
+        saved = columnsStr.split(',')
+      }
+      if (saved) {
+        const allKeys = (this.defColumns || []).map(item => item.dataIndex)
+        const valid = saved.filter(k => !!k && allKeys.indexOf(k) > -1)
+        this.settingDataIndex = valid.length > 0 ? valid : this.defDataIndex
       } else {
         this.settingDataIndex = this.defDataIndex
       }
@@ -309,11 +321,21 @@ export const JeecgListMixin = {
       })
       let columnsStr = checkedValues.join()
       Vue.ls.set(this.pageName, columnsStr)
+      this.$nextTick(() => this.syncTableWidth())
     },
     //恢复默认
     handleRestDefault() {
       Vue.ls.remove(this.pageName)
       this.initColumnsSetting()
+      this.$nextTick(() => this.syncTableWidth())
+    },
+    //全选列 / 取消全选（序号列常驻，保证列设置入口不消失）
+    handleSelectAllColumns(e) {
+      const checked = !!(e && e.target && e.target.checked)
+      const allKeys = (this.defColumns || []).map(item => item.dataIndex).filter(k => !!k)
+      const checkedKeys = checked ? allKeys : allKeys.filter(k => k === 'rowIndex')
+      this.settingDataIndex = checkedKeys
+      this.onColChange(checkedKeys)
     },
     /* 导出 */
     handleExportXls2(){
@@ -440,7 +462,8 @@ export const JeecgListMixin = {
     /* 初始化表格横向或纵向滚动 */
     initScroll() {
       if (this.isMobile()) {
-        this.scroll.y = ''
+        this.syncTableWidth()
+        this.scroll = Object.assign({}, this.scroll, { y: '' })
       } else {
         let basicWidth = 150
         let basicLength = 274
@@ -455,47 +478,205 @@ export const JeecgListMixin = {
         if(operatorDom && operatorDom[0]) {
           operatorDomLen = operatorDom[0].offsetHeight+10
         }
-        this.scroll.x = document.documentElement.clientWidth-basicWidth-64
-        this.scroll.y = document.documentElement.clientHeight-searchWrapperDomLen-operatorDomLen-basicLength
+        //表格宽度固定为列宽之和（小于容器时右侧留空），列宽不可计算时兜底为容器宽度
+        let total = this.syncTableWidth()
+        if (!total) {
+          total = document.documentElement.clientWidth-basicWidth-64
+        }
+        this.scroll = Object.assign({}, this.scroll, {
+          x: total,
+          y: document.documentElement.clientHeight-searchWrapperDomLen-operatorDomLen-basicLength
+        })
       }
     },
-    //拖拽组件
+    /** 解析列宽：仅接受数字或像素字符串，其余返回 0 */
+    parseColumnWidth(width) {
+      if (typeof width === 'number') {
+        return width > 0 ? Math.round(width) : 0
+      }
+      if (typeof width === 'string') {
+        const str = width.trim()
+        if (/^\d+(\.\d+)?(px)?$/.test(str)) {
+          return Math.round(parseFloat(str))
+        }
+      }
+      return 0
+    },
+    /** 选择列/展开列等非数据列占用的宽度（表头单元格比列定义多出的部分） */
+    getExtraHeaderWidth(colCount) {
+      const table = this.$refs && this.$refs.table
+      const root = table && table.$el
+      if (!root) return 0
+      // 固定列在主表头中以占位单元格渲染，同样计入主表头宽度
+      const head = root.querySelector('.ant-table-thead')
+      if (!head) return 0
+      const ths = head.querySelectorAll('tr:first-child > th')
+      const count = (colCount === undefined ? (this.columns || []).length : colCount)
+      const extra = ths.length - count
+      if (extra <= 0) return 0
+      let width = 0
+      for (let i = 0; i < extra; i++) {
+        width += Math.round(ths[i].getBoundingClientRect().width)
+      }
+      return width
+    },
+    /** 当前显示列的总宽度（含固定列）；任一列缺少数值列宽时返回 0 */
+    getColumnsTotalWidth(cols) {
+      const list = cols || this.columns || []
+      if (list.length === 0) return 0
+      let total = 0
+      for (let i = 0; i < list.length; i++) {
+        const width = this.parseColumnWidth(list[i].width)
+        if (!width) return 0
+        total += width
+      }
+      return total + this.getExtraHeaderWidth(list.length)
+    },
+    /**
+     * 把表格宽度同步为“列宽之和”，实现固定宽度：
+     * 拖拽某列只改变该列与表格总宽，其它列宽度不变（不足处右侧留空）
+     * @returns {number} 同步后的表格宽度，无法计算时返回 0
+     */
+    syncTableWidth() {
+      const total = this.getColumnsTotalWidth(this.columns)
+      if (!total) return 0
+      if (Math.round(Number((this.scroll || {}).x)) !== total) {
+        //整体替换对象，确保表格收到新的 scroll 引用后重新渲染并应用固定宽度
+        this.scroll = Object.assign({}, this.scroll, { x: total })
+      }
+      return total
+    },
+    //表头列宽拖拽（Excel 方式：只调整当前列，其它列宽不变，表格总宽随之增减）
     handleDrag(column){
+      const self = this
       return {
         header: {
           cell: (h, props, children) => {
             const { key, ...restProps } = props
-            // 父表格列宽拖拽逻辑
-            const col = column.find((col) => {
-              const k = col.dataIndex || col.key
-              return k === key
-            })
-            if (!col || !col.width) {
-              return h('th', { ...restProps }, children)
-            }
-
-            const dragProps = {
-              key: col.dataIndex || col.key,
+            const drag = h('span', {
+              key: 'resize-handle',
               class: 'table-draggable-handle',
-              attrs: {
-                w: 10,
-                x: col.width,
-                z: 1,
-                axis: 'x',
-                draggable: true,
-                resizable: false,
+              style: {
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                right: '-5px',
+                width: '10px',
+                zIndex: 3,
+                cursor: 'col-resize'
               },
+              attrs: { title: '拖动调整列宽' },
               on: {
-                dragging: (x, y) => {
-                  col.width = Math.max(x, 1)
-                },
-              },
-            }
-            const drag = h(VueDraggableResizable, { ...dragProps })
-            return h('th', { ...restProps, class: 'resize-table-th' }, [children, drag])
+                mousedown: (e) => self.onColumnResizeStart(e, key, column),
+                click: (e) => e.stopPropagation()
+              }
+            })
+            const thClass = restProps.class ? restProps.class + ' resize-table-th' : 'resize-table-th'
+            return h('th', { ...restProps, class: thClass }, [children, drag])
           },
         }
       }
+    },
+    //开始拖拽列宽：冻结所有列当前宽度，拖动时只改当前列
+    onColumnResizeStart(e, fallbackKey, defaultColumns) {
+      if (e.button !== undefined && e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      const handle = e.currentTarget || e.target
+      const th = handle && handle.closest ? handle.closest('th') : null
+      if (!th || !th.parentNode) return
+      // 固定列（左侧/右侧）由独立表格渲染，不参与列宽拖拽，避免列索引错位
+      if (th.closest('.ant-table-fixed-right') || th.closest('.ant-table-fixed-left')) return
+      const root = th.closest('.ant-table-wrapper') || th.closest('.ant-table')
+      if (!root) return
+      const headerThs = Array.prototype.slice.call(th.parentNode.children)
+      const index = headerThs.indexOf(th)
+      if (index < 0) return
+      //列对象在拖拽时解析，避免 components 初始化时缓存旧列数组
+      let colList = defaultColumns || []
+      let colIndex = colList.findIndex(c => (c.dataIndex || c.key) === fallbackKey)
+      if (colIndex < 0 && this.columns) {
+        colList = this.columns
+        colIndex = colList.findIndex(c => (c.dataIndex || c.key) === fallbackKey)
+      }
+      if (colIndex < 0) return
+      //选择列/展开列等非数据列在表头中的偏移
+      const offset = index - colIndex
+
+      //冻结所有列的当前实际宽度
+      const startWidths = headerThs.map((el, i) => {
+        const column = colList[i - offset]
+        return this.parseColumnWidth(column && column.width) || Math.round(el.getBoundingClientRect().width)
+      })
+      const startTotal = startWidths.reduce((sum, w) => sum + w, 0)
+      const tableStates = Array.prototype.slice.call(root.querySelectorAll('table'))
+        .map(table => ({
+          table,
+          cols: Array.prototype.slice.call(table.querySelectorAll('colgroup > col'))
+        }))
+        .filter(state => state.cols.length === headerThs.length)
+      tableStates.forEach(({ table, cols }) => {
+        table.style.tableLayout = 'fixed'
+        table.style.width = startTotal + 'px'
+        cols.forEach((colEl, i) => {
+          if (startWidths[i] == null) return
+          colEl.style.width = startWidths[i] + 'px'
+          colEl.style.minWidth = startWidths[i] + 'px'
+        })
+      })
+      headerThs.forEach((el, i) => { el.style.width = startWidths[i] + 'px' })
+
+      const startX = e.clientX
+      const startWidth = startWidths[index] || 0
+      let lastWidth = startWidth
+      let frame = null
+
+      const apply = () => {
+        frame = null
+        const total = startTotal + (lastWidth - startWidth)
+        tableStates.forEach(({ table, cols }) => {
+          table.style.width = total + 'px'
+          const colEl = cols[index]
+          if (colEl) {
+            colEl.style.width = lastWidth + 'px'
+            colEl.style.minWidth = lastWidth + 'px'
+          }
+        })
+        th.style.width = lastWidth + 'px'
+      }
+      const onMove = (ev) => {
+        lastWidth = Math.max(40, Math.round(startWidth + ev.clientX - startX))
+        if (!frame) frame = window.requestAnimationFrame(apply)
+      }
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        if (frame) window.cancelAnimationFrame(frame)
+        apply()
+        if (lastWidth !== startWidth) {
+          //仅更新拖动的列，避免把浏览器分配后的实际宽度写回其它列定义。
+          const resizedColumn = colList[colIndex]
+          if (resizedColumn) this.$set(resizedColumn, 'width', lastWidth)
+          //表格宽度固定为本次实测列宽之和（含自动插入列），其它列宽不参与分摊
+          const total = startTotal + (lastWidth - startWidth)
+          if (Math.round(Number((this.scroll || {}).x)) !== total) {
+            this.scroll = Object.assign({}, this.scroll, { x: total })
+          }
+          if (typeof this.onColumnWidthsChanged === 'function') this.onColumnWidthsChanged()
+        }
+        this.$nextTick(() => {
+          headerThs.forEach(el => { el.style.width = '' })
+          tableStates.forEach(({ cols }) => {
+            cols.forEach(colEl => { colEl.style.minWidth = '' })
+          })
+        })
+      }
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
     },
     /** 表格增加合计行 */
     tableAddTotalRow(columns, dataSource) {

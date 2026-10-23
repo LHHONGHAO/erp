@@ -66,13 +66,19 @@ public class MaterialService {
     @Resource
     private MaterialCurrentStockMapperEx materialCurrentStockMapperEx;
     @Resource
+    private MaterialInstanceMapper materialInstanceMapper;
+    @Resource
     private DepotService depotService;
+    @Resource
+    private SkuCodeGenerator skuCodeGenerator;
     @Resource
     private MaterialExtendService materialExtendService;
     @Resource
     private SystemConfigService systemConfigService;
     @Resource
     private RoleService roleService;
+    @Resource
+    private MaterialSpecTemplateService materialSpecTemplateService;
 
     @Value(value="${file.uploadType}")
     private Long fileUploadType;
@@ -118,7 +124,7 @@ public class MaterialService {
     }
 
     public List<MaterialVo4Unit> select(String materialParam, String standard, String model, String color, String brand, String mfrs,
-                                        String otherField1, String otherField2, String otherField3, String weight, String expiryNum, String enableSerialNumber,
+                                        String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String weight, String expiryNum, String enableSerialNumber,
                                         String enableBatchNumber, String position, String enabled, String remark, String categoryId,
                                         String mpList)
             throws Exception{
@@ -134,7 +140,7 @@ public class MaterialService {
             }
             PageUtils.startPage();
             list= materialMapperEx.selectByConditionMaterial(materialParam, standard, model, color, brand, mfrs,
-                    otherField1, otherField2, otherField3, weight, expiryNum,
+                    otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum,
                     enableSerialNumber, enableBatchNumber, position, enabled, remark, idList, mpList);
             if (null != list && list.size()>0) {
                 Map<Long,BigDecimal> initialStockMap = getInitialStockMapByMaterialList(list);
@@ -157,17 +163,67 @@ public class MaterialService {
         return list;
     }
 
+    /**
+     * SKU维度商品列表：一行一个SKU，商品信息与SKU信息合并
+     */
+    public List<MaterialVo4Unit> selectSkuList(String materialParam, String standard, String model, String color, String brand, String mfrs,
+                                               String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String weight, String expiryNum, String enableSerialNumber,
+                                               String enableBatchNumber, String position, String enabled, String remark, String categoryId,
+                                               String mpList)
+            throws Exception{
+        String[] mpArr = new String[]{};
+        if(StringUtil.isNotEmpty(mpList)){
+            mpArr= mpList.split(",");
+        }
+        List<MaterialVo4Unit> list = new ArrayList<>();
+        try{
+            List<Long> idList = new ArrayList<>();
+            if(StringUtil.isNotEmpty(categoryId)){
+                idList = getListByParentId(Long.parseLong(categoryId));
+            }
+            PageUtils.startPage();
+            list = materialMapperEx.selectSkuListByConditionMaterial(materialParam, standard, model, color, brand, mfrs,
+                    otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum,
+                    enableSerialNumber, enableBatchNumber, position, enabled, remark, idList);
+            if (null != list && list.size()>0) {
+                for (MaterialVo4Unit m : list) {
+                    if(fileUploadType == 2) {
+                        m.setImgSmall("small");
+                        m.setImgLarge("large");
+                    }
+                    m.setMaterialOther(getMaterialOtherByParam(mpArr, m));
+                    if(m.getInitialStock()==null) {
+                        m.setInitialStock(BigDecimal.ZERO);
+                    }
+                    m.setBigUnitInitialStock(getBigUnitStock(m.getInitialStock(), m.getUnitId()));
+                    if(m.getStock()==null) {
+                        m.setStock(BigDecimal.ZERO);
+                    }
+                    m.setBigUnitStock(getBigUnitStock(m.getStock(), m.getUnitId()));
+                }
+            }
+        } catch(Exception e){
+            JshException.readFail(logger, e);
+        }
+        return list;
+    }
+
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int insertMaterial(JSONObject obj, HttpServletRequest request)throws Exception {
         Material m = JSONObject.parseObject(obj.toJSONString(), Material.class);
         m.setEnabled(true);
-        //构造多属性数组字符串
-        m.setAttribute(parseAttributeBySku(obj));
+        // 自动生成新版 SPU 码：SP + 两位类型码 + 款号
+        m.setCode(generateSpuCode(m.getCategoryId(),
+                StringUtil.isNotEmpty(m.getModel()) ? m.getModel() : m.getCode()));
         try{
             materialMapperEx.insertSelectiveEx(m);
             Long mId = m.getId();
+            // 保存商品规格模板（定义该商品使用哪些规格属性）
+            JSONArray specModules = obj.getJSONArray("specModules");
+            materialSpecTemplateService.saveSpecTemplate(mId, specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"), mId, "insert");
-            if(obj.get("stock")!=null) {
+            boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, mId, false);
+            if(!hasSkuOpeningStock && obj.get("stock")!=null) {
                 JSONArray stockArr = obj.getJSONArray("stock");
                 for (int i = 0; i < stockArr.size(); i++) {
                     JSONObject jsonObj = stockArr.getJSONObject(i);
@@ -183,8 +239,8 @@ public class MaterialService {
                         }
                         Long depotId = jsonObj.getLong("id");
                         if(StringUtil.isNotEmpty(number) && Double.parseDouble(number)>0 || lowSafeStock!=null || highSafeStock!=null) {
-                            insertInitialStockByMaterialAndDepot(depotId, mId, parseBigDecimalEx(number), lowSafeStock, highSafeStock);
-                            insertCurrentStockByMaterialAndDepot(depotId, mId, parseBigDecimalEx(number));
+                            insertInitialStockByMaterialAndDepot(depotId, mId, parseBigDecimalEx(number), lowSafeStock, highSafeStock, null, null);
+                            insertCurrentStockByMaterialAndDepot(depotId, mId, parseBigDecimalEx(number), null, null);
                         }
                     }
                 }
@@ -202,12 +258,30 @@ public class MaterialService {
         }
     }
 
+    /** Generate a new SPU code and check it against all existing product codes. */
+    private String generateSpuCode(Long categoryId, String styleNumber) {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            String code = skuCodeGenerator.generateSpuCode(categoryId, styleNumber);
+            if (materialMapperEx.countMaterialByCode(code) == 0) {
+                return code;
+            }
+            // Repeated supplier style numbers are allowed; fall back to a generated style token.
+            styleNumber = null;
+        }
+        throw new IllegalStateException("生成SPU码失败，请重试");
+    }
+
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int updateMaterial(JSONObject obj, HttpServletRequest request) throws Exception{
         Material material = JSONObject.parseObject(obj.toJSONString(), Material.class);
-        //构造多属性数组字符串
-        material.setAttribute(parseAttributeBySku(obj));
         try{
+            // 历史商品无商品码时补生成，商品码一经生成不再变更
+            Material oldMaterial = materialMapper.selectByPrimaryKey(material.getId());
+            if (oldMaterial != null && !StringUtil.isNotEmpty(oldMaterial.getCode())) {
+                Long categoryId = material.getCategoryId() != null ? material.getCategoryId() : oldMaterial.getCategoryId();
+                String code = generateSpuCode(categoryId, oldMaterial.getModel());
+                materialMapperEx.updateMaterialCodeById(material.getId(), code);
+            }
             materialMapper.updateByPrimaryKeySelective(material);
             if(material.getUnitId() == null) {
                 materialMapperEx.setUnitIdToNull(material.getId());
@@ -215,9 +289,13 @@ public class MaterialService {
             if(material.getExpiryNum() == null) {
                 materialMapperEx.setExpiryNumToNull(material.getId());
             }
+            // 保存商品规格模板（先删后插）
+            JSONArray specModules = obj.getJSONArray("specModules");
+            materialSpecTemplateService.saveSpecTemplate(material.getId(), specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"),material.getId(), "update");
+            boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, material.getId(), true);
             BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(material.getId());
-            if(obj.get("stock")!=null) {
+            if(!hasSkuOpeningStock && obj.get("stock")!=null) {
                 JSONArray stockArr = obj.getJSONArray("stock");
                 for (int i = 0; i < stockArr.size(); i++) {
                     JSONObject jsonObj = stockArr.getJSONObject(i);
@@ -237,7 +315,7 @@ public class MaterialService {
                         example.createCriteria().andMaterialIdEqualTo(material.getId()).andDepotIdEqualTo(depotId);
                         materialInitialStockMapper.deleteByExample(example);
                         if (StringUtil.isNotEmpty(number) || lowSafeStock!=null || highSafeStock!=null) {
-                            insertInitialStockByMaterialAndDepot(depotId, material.getId(), parseBigDecimalEx(number), lowSafeStock, highSafeStock);
+                            insertInitialStockByMaterialAndDepot(depotId, material.getId(), parseBigDecimalEx(number), lowSafeStock, highSafeStock, null, null);
                         }
                         //更新当前库存
                         depotItemService.updateCurrentStockFun(material.getId(), depotId, currentUnitPrice);
@@ -250,6 +328,101 @@ public class MaterialService {
         }catch(Exception e){
             JshException.writeFail(logger, e);
             return 0;
+        }
+    }
+
+    /**
+     * 为 SKU 明细中的非零库存创建期初库存和当前库存记录。
+     * 更新商品时仅处理本次新增的 SKU，避免把已有库存再次初始化。
+     */
+    private boolean saveSkuOpeningStocks(JSONObject obj, Long materialId, boolean onlyNewSku) throws Exception {
+        JSONArray rows = obj.getJSONArray("meList");
+        if (rows == null || rows.isEmpty()) {
+            return false;
+        }
+        List<com.jsh.erp.datasource.vo.MaterialExtendVo4List> savedSkus = materialExtendService.getDetailList(materialId);
+        boolean savedAny = false;
+        for (int i = 0; i < rows.size(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            Long depotId = row.getLong("depotId");
+            BigDecimal quantity = row.getBigDecimal("stock");
+            if (quantity == null || quantity.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            if (quantity.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalStateException("SKU初始库存不能为负数");
+            }
+            BigDecimal normalizedQuantity = quantity.stripTrailingZeros();
+            if (normalizedQuantity.scale() > 0) {
+                throw new IllegalStateException("单件商品库存必须为整数，不能为小数");
+            }
+            if (depotId == null) {
+                throw new IllegalStateException("SKU库存不为零时，请先选择仓库");
+            }
+            String rowId = row.getString("id");
+            if (onlyNewSku && (rowId == null || rowId.length() <= 19)) {
+                continue;
+            }
+            String specValues = row.getString("specValues");
+            String sku = row.getString("sku");
+            com.jsh.erp.datasource.vo.MaterialExtendVo4List savedSku = null;
+            if (savedSkus != null) {
+                for (com.jsh.erp.datasource.vo.MaterialExtendVo4List candidate : savedSkus) {
+                    if (specValues != null && specValues.equals(candidate.getSpecValues())) {
+                        savedSku = candidate;
+                        break;
+                    }
+                    if (specValues == null && sku != null && sku.equals(candidate.getSku())) {
+                        savedSku = candidate;
+                        break;
+                    }
+                }
+            }
+            if (savedSku == null) {
+                throw new IllegalStateException("找不到对应的 SKU 规格记录，无法初始化库存");
+            }
+            if (!StringUtil.isNotEmpty(savedSku.getSkuCode())) {
+                throw new IllegalStateException("SKU编码为空，无法生成单件商品码");
+            }
+            insertInitialStockByMaterialAndDepot(depotId, materialId, quantity, null, null,
+                    savedSku.getId(), savedSku.getSkuCode());
+            insertCurrentStockByMaterialAndDepot(depotId, materialId, quantity,
+                    savedSku.getId(), savedSku.getSkuCode());
+            saveInitialMaterialInstances(materialId, savedSku, depotId, normalizedQuantity.intValueExact());
+            savedAny = true;
+        }
+        return savedAny;
+    }
+
+    /** 为期初库存的每件实物生成一条单件档案，库存与单件档案同事务提交。 */
+    private void saveInitialMaterialInstances(Long materialId,
+                                              com.jsh.erp.datasource.vo.MaterialExtendVo4List sku,
+                                              Long depotId,
+                                              int quantity) throws Exception {
+        User currentUser = userService.getCurrentUser();
+        for (int i = 0; i < quantity; i++) {
+            MaterialInstance instance = new MaterialInstance();
+            // 先以临时唯一值插入，使用数据库自增主键作为单件流水号，避免并发保存时重号。
+            instance.setUnitCode("TMP-" + UUID.randomUUID().toString().replace("-", ""));
+            instance.setMaterialId(materialId);
+            instance.setMaterialExtendId(sku.getId());
+            instance.setSkuCode(sku.getSkuCode());
+            instance.setInboundDepotId(depotId);
+            instance.setCurrentDepotId(depotId);
+            instance.setInboundType("INITIAL");
+            instance.setInboundTime(new Date());
+            instance.setStatus("IN_STOCK");
+            instance.setDeleteFlag(BusinessConstants.DELETE_FLAG_EXISTS);
+            if (currentUser != null) {
+                instance.setTenantId(currentUser.getTenantId());
+            }
+            if (materialInstanceMapper.insertSelective(instance) != 1 || instance.getId() == null) {
+                throw new IllegalStateException("保存单件商品档案失败");
+            }
+            instance.setUnitCode(skuCodeGenerator.generateUnitCode(sku.getSkuCode(), instance.getId()));
+            if (materialInstanceMapper.updateByPrimaryKeySelective(instance) != 1) {
+                throw new IllegalStateException("保存单件商品码失败");
+            }
         }
     }
 
@@ -287,9 +460,6 @@ public class MaterialService {
         List<Material> list = getMaterialListByIds(ids);
         for(Material material: list){
             sb.append("[").append(material.getName()).append("]");
-            if(StringUtil.isNotEmpty(material.getImgName())) {
-                pathList.add(material.getImgName());
-            }
         }
         logService.insertLog("商品", sb.toString(),
                 ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest());
@@ -322,9 +492,9 @@ public class MaterialService {
     }
 
     public int checkIsExist(Long id, String name, String model, String color, String standard, String mfrs,
-                            String otherField1, String otherField2, String otherField3, String unit, Long unitId)throws Exception {
+                            String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String unit, Long unitId)throws Exception {
         return materialMapperEx.checkIsExist(id, name, model, color, standard, mfrs, otherField1,
-                otherField2, otherField3, unit, unitId);
+                otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, unit, unitId);
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
@@ -431,7 +601,7 @@ public class MaterialService {
     }
 
     public List<MaterialVo4Unit> findBySelectWithBarCode(Long categoryId, String q, String standardOrModel, String color,
-                                                         String brand, String mfrs, String otherField1, String otherField2, String otherField3,
+                                                         String brand, String mfrs, String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7,
                                                          String enableSerialNumber, String enableBatchNumber, Integer offset, Integer rows) throws Exception{
         List<MaterialVo4Unit> list =null;
         try{
@@ -445,7 +615,7 @@ public class MaterialService {
                 q = q.trim();
             }
             list=  materialMapperEx.findBySelectWithBarCode(idList, q, standardOrModel, color, brand, mfrs,
-                    otherField1, otherField2, otherField3, enableSerialNumber, enableBatchNumber, offset, rows);
+                    otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, enableSerialNumber, enableBatchNumber, offset, rows);
         }catch(Exception e){
             JshException.readFail(logger, e);
         }
@@ -453,7 +623,8 @@ public class MaterialService {
     }
 
     public int findBySelectWithBarCodeCount(Long categoryId, String q, String standardOrModel, String color,
-                                            String brand, String mfrs, String otherField1, String otherField2, String otherField3,
+                                            String brand, String mfrs, String otherField1, String otherField2, String otherField3, String otherField4, String otherField5,
+                                            String otherField6, String otherField7,
                                             String enableSerialNumber, String enableBatchNumber) throws Exception{
         int result=0;
         try{
@@ -466,7 +637,7 @@ public class MaterialService {
                 q = q.replace("'", "");
             }
             result = materialMapperEx.findBySelectWithBarCodeCount(idList, q, standardOrModel, color, brand, mfrs,
-                    otherField1, otherField2, otherField3, enableSerialNumber, enableBatchNumber);
+                    otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, enableSerialNumber, enableBatchNumber);
         }catch(Exception e){
             logger.error("异常码[{}],异常提示[{}],异常[{}]",
                     ExceptionConstants.DATA_READ_FAIL_CODE,ExceptionConstants.DATA_READ_FAIL_MSG,e);
@@ -499,7 +670,7 @@ public class MaterialService {
             //遇到多个副条码的情况，只加第一个
             otherMaterialMap.putIfAbsent(me.getMaterialId(), me);
         }
-        String otherField = "扩展1,扩展2,扩展3";
+        String otherField = "扩展1,扩展2,扩展3,扩展4,扩展5";
         if(StringUtil.isNotEmpty(mpList)) {
             otherField = mpList;
         }
@@ -675,12 +846,16 @@ public class MaterialService {
                 String otherField1 = ExcelUtils.getContent(src, i, 23); //自定义1
                 String otherField2 = ExcelUtils.getContent(src, i, 24); //自定义2
                 String otherField3 = ExcelUtils.getContent(src, i, 25); //自定义3
-                String remark = ExcelUtils.getContent(src, i, 26); //备注
+                String otherField4 = ExcelUtils.getContent(src, i, 26); //自定义4
+                String otherField5 = ExcelUtils.getContent(src, i, 27); //自定义5
+                String remark = ExcelUtils.getContent(src, i, 28); //备注
                 m.setPosition(StringUtil.isNotEmpty(position)?position:null);
                 m.setMfrs(StringUtil.isNotEmpty(mfrs)?mfrs:null);
                 m.setOtherField1(StringUtil.isNotEmpty(otherField1)?otherField1:null);
                 m.setOtherField2(StringUtil.isNotEmpty(otherField2)?otherField2:null);
                 m.setOtherField3(StringUtil.isNotEmpty(otherField3)?otherField3:null);
+                m.setOtherField4(StringUtil.isNotEmpty(otherField4)?otherField4:null);
+                m.setOtherField5(StringUtil.isNotEmpty(otherField5)?otherField5:null);
                 m.setRemark(remark);
                 //状态格式错误
                 if(!"1".equals(enabled) && !"0".equals(enabled)) {
@@ -1109,12 +1284,18 @@ public class MaterialService {
      * @param depotId
      * @param mId
      * @param stock
+     * @param lowSafeStock
+     * @param highSafeStock
+     * @param materialExtendId SKU记录ID（SKU级库存关联）
+     * @param skuCode SKU编码（录入库存时动态生成）
      */
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public void insertInitialStockByMaterialAndDepot(Long depotId, Long mId, BigDecimal stock, BigDecimal lowSafeStock, BigDecimal highSafeStock){
+    public void insertInitialStockByMaterialAndDepot(Long depotId, Long mId, BigDecimal stock, BigDecimal lowSafeStock, BigDecimal highSafeStock, Long materialExtendId, String skuCode){
         MaterialInitialStock materialInitialStock = new MaterialInitialStock();
         materialInitialStock.setDepotId(depotId);
         materialInitialStock.setMaterialId(mId);
+        materialInitialStock.setMaterialExtendId(materialExtendId);
+        materialInitialStock.setSkuCode(skuCode);
         stock = stock == null? BigDecimal.ZERO: stock;
         materialInitialStock.setNumber(stock);
         if(lowSafeStock!=null) {
@@ -1131,14 +1312,18 @@ public class MaterialService {
      * @param depotId
      * @param mId
      * @param stock
+     * @param materialExtendId SKU记录ID（SKU级库存关联）
+     * @param skuCode SKU编码
      */
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public void insertCurrentStockByMaterialAndDepot(Long depotId, Long mId, BigDecimal stock){
+    public void insertCurrentStockByMaterialAndDepot(Long depotId, Long mId, BigDecimal stock, Long materialExtendId, String skuCode){
         MaterialCurrentStock materialCurrentStock = new MaterialCurrentStock();
         materialCurrentStock.setDepotId(depotId);
         materialCurrentStock.setMaterialId(mId);
+        materialCurrentStock.setMaterialExtendId(materialExtendId);
+        materialCurrentStock.setSkuCode(skuCode);
         materialCurrentStock.setCurrentNumber(stock);
-        materialCurrentStockMapper.insertSelective(materialCurrentStock); //存入初始库存
+        materialCurrentStockMapper.insertSelective(materialCurrentStock); //存入当前库存
     }
 
     /**
@@ -1354,6 +1539,11 @@ public class MaterialService {
         return materialMapperEx.getMaterialByBarCode(barCodeArray);
     }
 
+    public List<MaterialVo4Unit> getMaterialByMeIds(String meIds) {
+        String [] meIdArray=meIds.split(",");
+        return materialMapperEx.getMaterialByMeIds(meIdArray);
+    }
+
     public List<MaterialVo4Unit> getMaterialByBarCodeAndWithOutMId(String barCode, Long mId) {
         String [] barCodeArray=barCode.split(",");
         return materialMapperEx.getMaterialByBarCodeAndWithOutMId(barCodeArray, mId);
@@ -1390,8 +1580,68 @@ public class MaterialService {
         return dataList;
     }
 
+    public List<MaterialVo4Unit> getSkuListWithStock(String priceLimit, List<Long> depotList, List<Long> idList,
+                                                     String position, String materialParam, Boolean moveAvgPriceFlag,
+                                                     Integer zeroStock, String column, String order, Integer offset,
+                                                     Integer rows, HttpServletRequest request) throws Exception {
+        List<MaterialVo4Unit> dataList = materialMapperEx.getSkuListWithStock(depotList, idList, position,
+                materialParam, zeroStock, column, order, offset, rows);
+        for (MaterialVo4Unit item : dataList) {
+            if (moveAvgPriceFlag) {
+                item.setPurchaseDecimal(item.getCurrentUnitPrice());
+                item.setCurrentStockPrice(item.getCurrentStockMovePrice());
+            }
+            item.setPurchaseDecimal(roleService.parseStockPriceByLimit(item.getPurchaseDecimal(), priceLimit, request));
+            item.setCurrentStockPrice(roleService.parseStockPriceByLimit(item.getCurrentStockPrice(), priceLimit, request));
+            item.setUnitName(item.getUnitId() != null ? item.getUnitName() + "[多单位]" : item.getUnitName());
+            if (item.getCurrentStock() == null) item.setCurrentStock(BigDecimal.ZERO);
+            if (item.getInitialStock() == null) item.setInitialStock(BigDecimal.ZERO);
+            item.setBigUnitStock(getBigUnitStock(item.getCurrentStock(), item.getUnitId()));
+            item.setBigUnitInitialStock(getBigUnitStock(item.getInitialStock(), item.getUnitId()));
+            if (fileUploadType == 2) {
+                item.setImgSmall("small");
+                item.setImgLarge("large");
+            }
+        }
+        return dataList;
+    }
+
     public int getListWithStockCount(String priceLimit, List<Long> depotList, List<Long> idList, String position, String materialParam, Integer zeroStock) {
         return materialMapperEx.getListWithStockCount(depotList, idList, position, materialParam, zeroStock);
+    }
+
+    public int getSkuListWithStockCount(List<Long> depotList, List<Long> idList, String position,
+                                        String materialParam, Integer zeroStock) {
+        return materialMapperEx.getSkuListWithStockCount(depotList, idList, position, materialParam, zeroStock);
+    }
+
+    public List<MaterialVo4Unit> getUnitListWithStock(String priceLimit, List<Long> depotList, List<Long> idList, String position,
+                                                       String materialParam, String column, String order,
+                                                       Integer offset, Integer rows, HttpServletRequest request) throws Exception {
+        User currentUser = userService.getCurrentUser();
+        Long tenantId = currentUser == null ? null : currentUser.getTenantId();
+        List<MaterialVo4Unit> dataList = materialMapperEx.getUnitListWithStock(tenantId, depotList, idList, position, materialParam, column, order, offset, rows);
+        for (MaterialVo4Unit item : dataList) {
+            item.setPurchaseDecimal(roleService.parseStockPriceByLimit(item.getPurchaseDecimal(), priceLimit, request));
+            item.setCurrentStockPrice(roleService.parseStockPriceByLimit(item.getCurrentStockPrice(), priceLimit, request));
+        }
+        return dataList;
+    }
+
+    public int getUnitListWithStockCount(List<Long> depotList, List<Long> idList, String position, String materialParam) throws Exception {
+        User currentUser = userService.getCurrentUser();
+        return materialMapperEx.getUnitListWithStockCount(currentUser == null ? null : currentUser.getTenantId(), depotList, idList, position, materialParam);
+    }
+
+    public MaterialVo4Unit getUnitTotalStockAndPrice(String priceLimit, List<Long> depotList, List<Long> idList,
+                                                      String position, String materialParam, HttpServletRequest request) throws Exception {
+        User currentUser = userService.getCurrentUser();
+        MaterialVo4Unit total = materialMapperEx.getUnitTotalStockAndPrice(currentUser == null ? null : currentUser.getTenantId(), depotList, idList, position, materialParam);
+        if (total != null) {
+            total.setCurrentStockPrice(roleService.parseStockPriceByLimit(total.getCurrentStockPrice(), priceLimit, request));
+            total.setCurrentStockMovePrice(total.getCurrentStockPrice());
+        }
+        return total;
     }
 
     public MaterialVo4Unit getTotalStockAndPrice(String priceLimit, List<Long> depotList, List<Long> idList, String position, String materialParam, HttpServletRequest request) throws Exception {
@@ -1493,6 +1743,14 @@ public class MaterialService {
      */
     public String parseAttributeBySku(JSONObject obj) {
         if(obj!=null) {
+            // 新格式：specModules（规格模块系统）
+            JSONArray specModules = obj.getJSONArray("specModules");
+            if(specModules != null && !specModules.isEmpty()) {
+                JSONObject attributeObj = new JSONObject();
+                attributeObj.put("specModules", specModules);
+                return attributeObj.toJSONString();
+            }
+            // 旧格式：manySku/skuOne/skuTwo/skuThree（向后兼容）
             JSONObject attributeObj = new JSONObject();
             JSONArray manySku = obj.getJSONArray("manySku");
             JSONArray skuOne = obj.getJSONArray("skuOne");

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.MaterialAttrValueMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.MaterialAttrValue">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="attribute_id" jdbcType="BIGINT" property="attributeId" />
+    <result column="category_id" jdbcType="BIGINT" property="categoryId" />
+    <result column="value_text" jdbcType="VARCHAR" property="valueText" />
+    <result column="value_detail" jdbcType="VARCHAR" property="valueDetail" />
+    <result column="value_code" jdbcType="VARCHAR" property="valueCode" />
+    <result column="sort" jdbcType="INTEGER" property="sort" />
+    <result column="status" jdbcType="VARCHAR" property="status" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+    <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, attribute_id, category_id, value_text, value_detail, value_code, sort, status, tenant_id, delete_flag
+  </sql>
+
+  <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.MaterialAttrValue" useGeneratedKeys="true" keyProperty="id">
+    insert into jsh_material_attr_value
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="attributeId != null">attribute_id,</if>
+      <if test="categoryId != null">category_id,</if>
+      <if test="valueText != null">value_text,</if>
+      <if test="valueDetail != null">value_detail,</if>
+      <if test="valueCode != null">value_code,</if>
+      <if test="sort != null">sort,</if>
+      <if test="status != null">status,</if>
+      <if test="tenantId != null">tenant_id,</if>
+      <if test="deleteFlag != null">delete_flag,</if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
+      <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
+      <if test="valueText != null">#{valueText,jdbcType=VARCHAR},</if>
+      <if test="valueDetail != null">#{valueDetail,jdbcType=VARCHAR},</if>
+      <if test="valueCode != null">#{valueCode,jdbcType=VARCHAR},</if>
+      <if test="sort != null">#{sort,jdbcType=INTEGER},</if>
+      <if test="status != null">#{status,jdbcType=VARCHAR},</if>
+      <if test="tenantId != null">#{tenantId,jdbcType=BIGINT},</if>
+      <if test="deleteFlag != null">#{deleteFlag,jdbcType=VARCHAR},</if>
+    </trim>
+  </insert>
+
+  <update id="updateByPrimaryKeySelective" parameterType="com.jsh.erp.datasource.entities.MaterialAttrValue">
+    update jsh_material_attr_value
+    <set>
+      <if test="attributeId != null">attribute_id = #{attributeId,jdbcType=BIGINT},</if>
+      <if test="categoryId != null">category_id = #{categoryId,jdbcType=BIGINT},</if>
+      <if test="valueText != null">value_text = #{valueText,jdbcType=VARCHAR},</if>
+      <if test="valueDetail != null">value_detail = #{valueDetail,jdbcType=VARCHAR},</if>
+      <if test="valueCode != null">value_code = #{valueCode,jdbcType=VARCHAR},</if>
+      <if test="sort != null">sort = #{sort,jdbcType=INTEGER},</if>
+      <if test="status != null">status = #{status,jdbcType=VARCHAR},</if>
+      <if test="tenantId != null">tenant_id = #{tenantId,jdbcType=BIGINT},</if>
+      <if test="deleteFlag != null">delete_flag = #{deleteFlag,jdbcType=VARCHAR},</if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <select id="selectByPrimaryKey" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_material_attr_value
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+
+  <select id="selectByAttributeId" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_material_attr_value
+    where attribute_id = #{attributeId,jdbcType=BIGINT}
+      and delete_flag &lt;&gt; '1'
+      and status = '0'
+    order by sort asc, id asc
+  </select>
+
+  <select id="selectByAttributeIdAndCategoryId" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_material_attr_value
+    where attribute_id = #{attributeId,jdbcType=BIGINT}
+      and category_id = #{categoryId,jdbcType=BIGINT}
+      and delete_flag &lt;&gt; '1'
+      and status = '0'
+    order by id asc
+  </select>
+
+  <select id="selectByValueCode" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_material_attr_value
+    where value_code = #{valueCode,jdbcType=VARCHAR}
+      and delete_flag &lt;&gt; '1'
+    limit 1
+  </select>
+
+  <select id="selectAllEnabled" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_material_attr_value
+    where delete_flag &lt;&gt; '1'
+      and status = '0'
+    order by attribute_id asc, sort asc
+  </select>
+
+  <update id="updateDeleteFlagById">
+    update jsh_material_attr_value set delete_flag = '1' where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <select id="countByValueCode" resultType="java.lang.Integer">
+    select count(*) from jsh_material_attr_value
+    where value_code = #{valueCode,jdbcType=VARCHAR}
+      and delete_flag &lt;&gt; '1'
+      <if test="excludeId != null">and id &lt;&gt; #{excludeId,jdbcType=BIGINT}</if>
+  </select>
+</mapper>

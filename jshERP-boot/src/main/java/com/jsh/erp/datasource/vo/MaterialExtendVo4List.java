@@ -18,6 +18,10 @@ public class MaterialExtendVo4List extends MaterialExtend {
 
     private BigDecimal memberDecimal;
 
+    private BigDecimal currentStock;
+
+    private String attribute;
+
     public String getSupplier() {
         return supplier;
     }
@@ -64,5 +68,21 @@ public class MaterialExtendVo4List extends MaterialExtend {
 
     public void setMemberDecimal(BigDecimal memberDecimal) {
         this.memberDecimal = memberDecimal;
+    }
+
+    public BigDecimal getCurrentStock() {
+        return currentStock;
+    }
+
+    public void setCurrentStock(BigDecimal currentStock) {
+        this.currentStock = currentStock;
+    }
+
+    public String getAttribute() {
+        return attribute;
+    }
+
+    public void setAttribute(String attribute) {
+        this.attribute = attribute;
     }
 }

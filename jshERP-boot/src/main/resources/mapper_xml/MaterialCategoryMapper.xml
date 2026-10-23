@@ -8,7 +8,9 @@
     <result column="parent_id" jdbcType="BIGINT" property="parentId" />
     <result column="sort" jdbcType="VARCHAR" property="sort" />
     <result column="serial_no" jdbcType="VARCHAR" property="serialNo" />
+    <result column="code" jdbcType="VARCHAR" property="code" />
     <result column="remark" jdbcType="VARCHAR" property="remark" />
+    <result column="spec_config" jdbcType="VARCHAR" property="specConfig" />
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
     <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
     <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
@@ -73,7 +75,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, name, category_level, parent_id, sort, serial_no, remark, create_time, update_time, 
+    id, name, category_level, parent_id, sort, serial_no, code, remark, spec_config, create_time, update_time,
     tenant_id, delete_flag
   </sql>
   <select id="selectByExample" parameterType="com.jsh.erp.datasource.entities.MaterialCategoryExample" resultMap="BaseResultMap">
@@ -108,12 +110,12 @@
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.MaterialCategory">
     insert into jsh_material_category (id, name, category_level, 
-      parent_id, sort, serial_no, 
-      remark, create_time, update_time, 
+      parent_id, sort, serial_no, code,
+      remark, spec_config, create_time, update_time,
       tenant_id, delete_flag)
-    values (#{id,jdbcType=BIGINT}, #{name,jdbcType=VARCHAR}, #{categoryLevel,jdbcType=SMALLINT}, 
-      #{parentId,jdbcType=BIGINT}, #{sort,jdbcType=VARCHAR}, #{serialNo,jdbcType=VARCHAR}, 
-      #{remark,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{updateTime,jdbcType=TIMESTAMP}, 
+    values (#{id,jdbcType=BIGINT}, #{name,jdbcType=VARCHAR}, #{categoryLevel,jdbcType=SMALLINT},
+      #{parentId,jdbcType=BIGINT}, #{sort,jdbcType=VARCHAR}, #{serialNo,jdbcType=VARCHAR}, #{code,jdbcType=VARCHAR},
+      #{remark,jdbcType=VARCHAR}, #{specConfig,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{updateTime,jdbcType=TIMESTAMP},
       #{tenantId,jdbcType=BIGINT}, #{deleteFlag,jdbcType=VARCHAR})
   </insert>
   <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.MaterialCategory">
@@ -137,8 +139,14 @@
       <if test="serialNo != null">
         serial_no,
       </if>
+      <if test="code != null">
+        code,
+      </if>
       <if test="remark != null">
         remark,
+      </if>
+      <if test="specConfig != null">
+        spec_config,
       </if>
       <if test="createTime != null">
         create_time,
@@ -172,8 +180,14 @@
       <if test="serialNo != null">
         #{serialNo,jdbcType=VARCHAR},
       </if>
+      <if test="code != null">
+        #{code,jdbcType=VARCHAR},
+      </if>
       <if test="remark != null">
         #{remark,jdbcType=VARCHAR},
+      </if>
+      <if test="specConfig != null">
+        #{specConfig,jdbcType=VARCHAR},
       </if>
       <if test="createTime != null">
         #{createTime,jdbcType=TIMESTAMP},
@@ -216,8 +230,14 @@
       <if test="record.serialNo != null">
         serial_no = #{record.serialNo,jdbcType=VARCHAR},
       </if>
+      <if test="record.code != null">
+        code = #{record.code,jdbcType=VARCHAR},
+      </if>
       <if test="record.remark != null">
         remark = #{record.remark,jdbcType=VARCHAR},
+      </if>
+      <if test="record.specConfig != null">
+        spec_config = #{record.specConfig,jdbcType=VARCHAR},
       </if>
       <if test="record.createTime != null">
         create_time = #{record.createTime,jdbcType=TIMESTAMP},
@@ -244,7 +264,9 @@
       parent_id = #{record.parentId,jdbcType=BIGINT},
       sort = #{record.sort,jdbcType=VARCHAR},
       serial_no = #{record.serialNo,jdbcType=VARCHAR},
+      code = #{record.code,jdbcType=VARCHAR},
       remark = #{record.remark,jdbcType=VARCHAR},
+      spec_config = #{record.specConfig,jdbcType=VARCHAR},
       create_time = #{record.createTime,jdbcType=TIMESTAMP},
       update_time = #{record.updateTime,jdbcType=TIMESTAMP},
       tenant_id = #{record.tenantId,jdbcType=BIGINT},
@@ -271,8 +293,14 @@
       <if test="serialNo != null">
         serial_no = #{serialNo,jdbcType=VARCHAR},
       </if>
+      <if test="code != null">
+        code = #{code,jdbcType=VARCHAR},
+      </if>
       <if test="remark != null">
         remark = #{remark,jdbcType=VARCHAR},
+      </if>
+      <if test="specConfig != null">
+        spec_config = #{specConfig,jdbcType=VARCHAR},
       </if>
       <if test="createTime != null">
         create_time = #{createTime,jdbcType=TIMESTAMP},
@@ -296,7 +324,9 @@
       parent_id = #{parentId,jdbcType=BIGINT},
       sort = #{sort,jdbcType=VARCHAR},
       serial_no = #{serialNo,jdbcType=VARCHAR},
+      code = #{code,jdbcType=VARCHAR},
       remark = #{remark,jdbcType=VARCHAR},
+      spec_config = #{specConfig,jdbcType=VARCHAR},
       create_time = #{createTime,jdbcType=TIMESTAMP},
       update_time = #{updateTime,jdbcType=TIMESTAMP},
       tenant_id = #{tenantId,jdbcType=BIGINT},

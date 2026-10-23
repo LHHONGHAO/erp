@@ -28,6 +28,10 @@ public interface MaterialMapperEx {
             @Param("otherField1") String otherField1,
             @Param("otherField2") String otherField2,
             @Param("otherField3") String otherField3,
+            @Param("otherField4") String otherField4,
+            @Param("otherField5") String otherField5,
+            @Param("otherField6") String otherField6,
+            @Param("otherField7") String otherField7,
             @Param("weight") String weight,
             @Param("expiryNum") String expiryNum,
             @Param("enableSerialNumber") String enableSerialNumber,
@@ -37,6 +41,29 @@ public interface MaterialMapperEx {
             @Param("remark") String remark,
             @Param("idList") List<Long> idList,
             @Param("mpList") String mpList);
+
+    List<MaterialVo4Unit> selectSkuListByConditionMaterial(
+            @Param("materialParam") String materialParam,
+            @Param("standard") String standard,
+            @Param("model") String model,
+            @Param("color") String color,
+            @Param("brand") String brand,
+            @Param("mfrs") String mfrs,
+            @Param("otherField1") String otherField1,
+            @Param("otherField2") String otherField2,
+            @Param("otherField3") String otherField3,
+            @Param("otherField4") String otherField4,
+            @Param("otherField5") String otherField5,
+            @Param("otherField6") String otherField6,
+            @Param("otherField7") String otherField7,
+            @Param("weight") String weight,
+            @Param("expiryNum") String expiryNum,
+            @Param("enableSerialNumber") String enableSerialNumber,
+            @Param("enableBatchNumber") String enableBatchNumber,
+            @Param("position") String position,
+            @Param("enabled") String enabled,
+            @Param("remark") String remark,
+            @Param("idList") List<Long> idList);
 
     Long insertSelectiveEx(Material record);
 
@@ -57,6 +84,10 @@ public interface MaterialMapperEx {
                                                   @Param("otherField1") String otherField1,
                                                   @Param("otherField2") String otherField2,
                                                   @Param("otherField3") String otherField3,
+            @Param("otherField4") String otherField4,
+            @Param("otherField5") String otherField5,
+            @Param("otherField6") String otherField6,
+            @Param("otherField7") String otherField7,
                                                   @Param("enableSerialNumber") String enableSerialNumber,
                                                   @Param("enableBatchNumber") String enableBatchNumber,
                                                   @Param("offset") Integer offset,
@@ -71,6 +102,10 @@ public interface MaterialMapperEx {
                                      @Param("otherField1") String otherField1,
                                      @Param("otherField2") String otherField2,
                                      @Param("otherField3") String otherField3,
+            @Param("otherField4") String otherField4,
+            @Param("otherField5") String otherField5,
+            @Param("otherField6") String otherField6,
+            @Param("otherField7") String otherField7,
                                      @Param("enableSerialNumber") String enableSerialNumber,
                                      @Param("enableBatchNumber") String enableBatchNumber);
 
@@ -120,6 +155,8 @@ public interface MaterialMapperEx {
 
     List<MaterialVo4Unit> getMaterialByBarCode(@Param("barCodeArray") String [] barCodeArray);
 
+    List<MaterialVo4Unit> getMaterialByMeIds(@Param("meIdArray") String [] meIdArray);
+
     List<MaterialVo4Unit> getMaterialByBarCodeAndWithOutMId(
             @Param("barCodeArray") String [] barCodeArray,
             @Param("mId") Long mId);
@@ -137,6 +174,49 @@ public interface MaterialMapperEx {
             @Param("order") String order,
             @Param("offset") Integer offset,
             @Param("rows") Integer rows);
+
+    List<MaterialVo4Unit> getSkuListWithStock(
+            @Param("depotList") List<Long> depotList,
+            @Param("idList") List<Long> idList,
+            @Param("position") String position,
+            @Param("materialParam") String materialParam,
+            @Param("zeroStock") Integer zeroStock,
+            @Param("column") String column,
+            @Param("order") String order,
+            @Param("offset") Integer offset,
+            @Param("rows") Integer rows);
+
+    int getSkuListWithStockCount(
+            @Param("depotList") List<Long> depotList,
+            @Param("idList") List<Long> idList,
+            @Param("position") String position,
+            @Param("materialParam") String materialParam,
+            @Param("zeroStock") Integer zeroStock);
+
+    List<MaterialVo4Unit> getUnitListWithStock(
+            @Param("tenantId") Long tenantId,
+            @Param("depotList") List<Long> depotList,
+            @Param("idList") List<Long> idList,
+            @Param("position") String position,
+            @Param("materialParam") String materialParam,
+            @Param("column") String column,
+            @Param("order") String order,
+            @Param("offset") Integer offset,
+            @Param("rows") Integer rows);
+
+    int getUnitListWithStockCount(
+            @Param("tenantId") Long tenantId,
+            @Param("depotList") List<Long> depotList,
+            @Param("idList") List<Long> idList,
+            @Param("position") String position,
+            @Param("materialParam") String materialParam);
+
+    MaterialVo4Unit getUnitTotalStockAndPrice(
+            @Param("tenantId") Long tenantId,
+            @Param("depotList") List<Long> depotList,
+            @Param("idList") List<Long> idList,
+            @Param("position") String position,
+            @Param("materialParam") String materialParam);
 
     int getListWithStockCount(
             @Param("depotList") List<Long> depotList,
@@ -161,6 +241,10 @@ public interface MaterialMapperEx {
             @Param("otherField1") String otherField1,
             @Param("otherField2") String otherField2,
             @Param("otherField3") String otherField3,
+            @Param("otherField4") String otherField4,
+            @Param("otherField5") String otherField5,
+            @Param("otherField6") String otherField6,
+            @Param("otherField7") String otherField7,
             @Param("unit") String unit,
             @Param("unitId") Long unitId);
 
@@ -170,4 +254,10 @@ public interface MaterialMapperEx {
     List<MaterialDepotStock> getMaterialDepotStock(
             @Param("depotIdArray") Long[] depotIdArray,
             @Param("mId") Long mId);
+
+    int countByBarCode(@Param("barCode") String barCode);
+
+    int countMaterialByCode(@Param("code") String code);
+
+    int updateMaterialCodeById(@Param("id") Long id, @Param("code") String code);
 }

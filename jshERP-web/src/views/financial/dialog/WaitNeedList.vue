@@ -106,15 +106,15 @@
         },
         // 表头
         columns: [
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width:100,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           { title: '', dataIndex: 'supplier',width:400, ellipsis:true},
-          { title: '欠款金额', dataIndex: 'allNeed',width:150 }
+          { title: '欠款金额', dataIndex: 'allNeed',width:150},
         ],
         url: {
           list: "/depotHead/getStatementAccount"

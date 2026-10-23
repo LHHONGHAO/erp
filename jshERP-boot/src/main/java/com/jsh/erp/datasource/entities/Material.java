@@ -9,6 +9,10 @@ public class Material {
 
     private String name;
 
+    private String code;
+
+    private String barCode;
+
     private String mfrs;
 
     private String model;
@@ -25,8 +29,6 @@ public class Material {
 
     private String remark;
 
-    private String imgName;
-
     private Long unitId;
 
     private Integer expiryNum;
@@ -41,6 +43,14 @@ public class Material {
 
     private String otherField3;
 
+    private String otherField4;
+
+    private String otherField5;
+
+    private String otherField6;
+
+    private String otherField7;
+
     private String enableSerialNumber;
 
     private String enableBatchNumber;
@@ -48,6 +58,16 @@ public class Material {
     private String position;
 
     private String attribute;
+
+    private String fabric;
+
+    private String safetyCategory;
+
+    private String executiveStandard;
+
+    private String grade;
+
+    private String inspection;
 
     private Long tenantId;
 
@@ -75,6 +95,22 @@ public class Material {
 
     public void setName(String name) {
         this.name = name == null ? null : name.trim();
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code == null ? null : code.trim();
+    }
+
+    public String getBarCode() {
+        return barCode;
+    }
+
+    public void setBarCode(String barCode) {
+        this.barCode = barCode == null ? null : barCode.trim();
     }
 
     public String getMfrs() {
@@ -141,14 +177,6 @@ public class Material {
         this.remark = remark == null ? null : remark.trim();
     }
 
-    public String getImgName() {
-        return imgName;
-    }
-
-    public void setImgName(String imgName) {
-        this.imgName = imgName == null ? null : imgName.trim();
-    }
-
     public Long getUnitId() {
         return unitId;
     }
@@ -205,6 +233,38 @@ public class Material {
         this.otherField3 = otherField3 == null ? null : otherField3.trim();
     }
 
+    public String getOtherField4() {
+        return otherField4;
+    }
+
+    public void setOtherField4(String otherField4) {
+        this.otherField4 = otherField4 == null ? null : otherField4.trim();
+    }
+
+    public String getOtherField5() {
+        return otherField5;
+    }
+
+    public void setOtherField5(String otherField5) {
+        this.otherField5 = otherField5 == null ? null : otherField5.trim();
+    }
+
+    public String getOtherField6() {
+        return otherField6;
+    }
+
+    public void setOtherField6(String otherField6) {
+        this.otherField6 = otherField6 == null ? null : otherField6.trim();
+    }
+
+    public String getOtherField7() {
+        return otherField7;
+    }
+
+    public void setOtherField7(String otherField7) {
+        this.otherField7 = otherField7 == null ? null : otherField7.trim();
+    }
+
     public String getEnableSerialNumber() {
         return enableSerialNumber;
     }
@@ -251,5 +311,45 @@ public class Material {
 
     public void setDeleteFlag(String deleteFlag) {
         this.deleteFlag = deleteFlag == null ? null : deleteFlag.trim();
+    }
+
+    public String getFabric() {
+        return fabric;
+    }
+
+    public void setFabric(String fabric) {
+        this.fabric = fabric == null ? null : fabric.trim();
+    }
+
+    public String getSafetyCategory() {
+        return safetyCategory;
+    }
+
+    public void setSafetyCategory(String safetyCategory) {
+        this.safetyCategory = safetyCategory == null ? null : safetyCategory.trim();
+    }
+
+    public String getExecutiveStandard() {
+        return executiveStandard;
+    }
+
+    public void setExecutiveStandard(String executiveStandard) {
+        this.executiveStandard = executiveStandard == null ? null : executiveStandard.trim();
+    }
+
+    public String getGrade() {
+        return grade;
+    }
+
+    public void setGrade(String grade) {
+        this.grade = grade == null ? null : grade.trim();
+    }
+
+    public String getInspection() {
+        return inspection;
+    }
+
+    public void setInspection(String inspection) {
+        this.inspection = inspection == null ? null : inspection.trim();
     }
 }

@@ -18,8 +18,8 @@
                 </a-form-item>
               </a-col>
               <a-col :md="6" :sm="24">
-                <a-form-item label="手机号码" :labelCol="labelCol" :wrapperCol="wrapperCol">
-                  <a-input placeholder="请输入手机号码查询" v-model="queryParam.telephone"></a-input>
+                <a-form-item label="电话" :labelCol="labelCol" :wrapperCol="wrapperCol">
+                  <a-input placeholder="请输入电话查询" v-model="queryParam.telephone"></a-input>
                 </a-form-item>
               </a-col>
               <a-col :md="6" :sm="24">
@@ -36,8 +36,23 @@
             <template v-if="toggleSearchStatus">
               <a-row :gutter="24">
                 <a-col :md="6" :sm="24">
-                  <a-form-item label="联系电话" :labelCol="labelCol" :wrapperCol="wrapperCol">
-                    <a-input placeholder="请输入联系电话查询" v-model="queryParam.phonenum"></a-input>
+                  <a-form-item label="电子邮箱" :labelCol="labelCol" :wrapperCol="wrapperCol">
+                    <a-input placeholder="请输入电子邮箱查询" v-model="queryParam.email"></a-input>
+                  </a-form-item>
+                </a-col>
+                <a-col :md="6" :sm="24">
+                  <a-form-item label="微信账户" :labelCol="labelCol" :wrapperCol="wrapperCol">
+                    <a-input placeholder="请输入微信账户查询" v-model="queryParam.wechatAccount"></a-input>
+                  </a-form-item>
+                </a-col>
+                <a-col :md="6" :sm="24">
+                  <a-form-item label="抖音账户" :labelCol="labelCol" :wrapperCol="wrapperCol">
+                    <a-input placeholder="请输入抖音账户查询" v-model="queryParam.douyinAccount"></a-input>
+                  </a-form-item>
+                </a-col>
+                <a-col :md="6" :sm="24">
+                  <a-form-item label="支付宝账户" :labelCol="labelCol" :wrapperCol="wrapperCol">
+                    <a-input placeholder="请输入支付宝账户查询" v-model="queryParam.alipayAccount"></a-input>
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -68,6 +83,11 @@
             :loading="loading"
             :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
             @change="handleTableChange">
+            <!-- 状态渲染模板 -->
+            <template slot="customRenderFlag" slot-scope="enabled">
+              <a-tag v-if="enabled" color="green">启用</a-tag>
+              <a-tag v-if="!enabled" color="orange">禁用</a-tag>
+            </template>
             <span slot="action" slot-scope="text, record">
               <a @click="handleEdit(record)">编辑</a>
               <a-divider type="vertical" />
@@ -75,11 +95,6 @@
                 <a>删除</a>
               </a-popconfirm>
             </span>
-            <!-- 状态渲染模板 -->
-            <template slot="customRenderFlag" slot-scope="enabled">
-              <a-tag v-if="enabled" color="green">启用</a-tag>
-              <a-tag v-if="!enabled" color="orange">禁用</a-tag>
-            </template>
           </a-table>
         </div>
         <!-- table区域-end -->
@@ -120,13 +135,17 @@
           supplier:'',
           type:'会员',
           telephone:'',
-          phonenum:''
+          phonenum:'',
+          email:'',
+          wechatAccount:'',
+          douyinAccount:'',
+          alipayAccount:''
         },
         urlPath: '/system/member',
         ipagination:{
           pageSizeOptions: ['10', '20', '30', '100', '200']
         },
-        // 表头
+        // 表头 - 操作列固定在最后
         columns: [
           {
             title: '#',
@@ -138,22 +157,27 @@
               return parseInt(index)+1;
             }
           },
+          { title: '会员卡号',dataIndex: 'supplier',width:150,align:"left"},
+          { title: '联系人', dataIndex: 'contacts',width:70,align:"left"},
+          { title: '电话', dataIndex: 'telephone',width:120,align:"left"},
+          { title: '电子邮箱', dataIndex: 'email',width:150,align:"left"},
+          { title: '联系地址', dataIndex: 'address',width:200,align:"left"},
+          { title: '微信账户', dataIndex: 'wechatAccount',width:120,align:"left"},
+          { title: '抖音账户', dataIndex: 'douyinAccount',width:120,align:"left"},
+          { title: '支付宝账户', dataIndex: 'alipayAccount',width:120,align:"left"},
+          { title: '其它账户', dataIndex: 'otherAccount',width:120,align:"left"},
+          { title: '预付款',dataIndex: 'advanceIn',width:70,align:"left"},
+          { title: '排序', dataIndex: 'sort', width: 60,align:"left"},
+          { title: '状态',dataIndex: 'enabled',width:60,align:"center",
+            scopedSlots: { customRender: 'customRenderFlag' }
+          },
           {
             title: '操作',
             dataIndex: 'action',
             width: 130,
             align:"center",
+            fixed: 'right',
             scopedSlots: { customRender: 'action' },
-          },
-          { title: '会员卡号',dataIndex: 'supplier',width:150,align:"left"},
-          { title: '联系人', dataIndex: 'contacts',width:70,align:"left"},
-          { title: '手机号码', dataIndex: 'telephone',width:100,align:"left"},
-          { title: '联系电话', dataIndex: 'phoneNum',width:100,align:"left"},
-          { title: '电子邮箱', dataIndex: 'email',width:150,align:"left"},
-          { title: '预付款',dataIndex: 'advanceIn',width:70,align:"left"},
-          { title: '排序', dataIndex: 'sort', width: 60,align:"left"},
-          { title: '状态',dataIndex: 'enabled',width:60,align:"center",
-            scopedSlots: { customRender: 'customRenderFlag' }
           }
         ],
         url: {

@@ -15,6 +15,8 @@ export const FinancialListMixin = {
       billExcelUrl: '',
       prefixNo: '',
       waitTotal: 0,
+      // 主表汇总合计字段（由 DataTable 的 summary 处理）
+      summaryFields: 'changeAmount',
       supList: [],
       cusList: [],
       organList: [],
@@ -31,6 +33,11 @@ export const FinancialListMixin = {
     }
   },
   computed: {
+    // 是否显示主表汇总行（与原 tableAddTotalRow 触发条件一致：分页条数为 11/21/31 等）
+    summaryEnabled() {
+      const pageSize = this.ipagination && this.ipagination.pageSize
+      return this.dataSource && this.dataSource.length > 0 && pageSize % 10 === 1
+    },
     importExcelUrl: function(){
       return `${window._CONFIG['domianURL']}/${this.url.importExcelUrl}`;
     },
@@ -48,6 +55,9 @@ export const FinancialListMixin = {
     this.isShowExcel = Vue.ls.get('isShowExcel');
   },
   methods: {
+    // 主表汇总行改由 DataTable 的 summary 属性处理，覆盖 JeecgListMixin 的旧实现
+    tableAddTotalRow() {
+    },
     myHandleAdd() {
       this.$refs.modalForm.action = "add"
       this.$refs.modalForm.actionWithOrgan = false

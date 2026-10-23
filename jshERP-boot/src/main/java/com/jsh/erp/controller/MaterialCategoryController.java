@@ -159,6 +159,8 @@ public class MaterialCategoryController extends BaseController {
                     outer.put("sort", mc.getSort());
                     outer.put("serialNo", mc.getSerialNo());
                     outer.put("remark", mc.getRemark());
+                    outer.put("categoryLevel", mc.getCategoryLevel());
+                    outer.put("specConfig", mc.getSpecConfig());
                 }
             }
             res.code = 200;

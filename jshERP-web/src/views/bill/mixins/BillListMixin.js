@@ -20,6 +20,8 @@ export const BillListMixin = {
       materialPriceTaxFlag: false,
       setTimeFlag: null,
       waitTotal: 0,
+      // 主表汇总合计字段（由 DataTable 的 summary 处理）
+      summaryFields: 'materialCount,totalPrice',
       dateFormat: 'YYYY-MM-DD',
       billExcelUrl: '',
       defaultDepotId: '',
@@ -419,6 +421,11 @@ export const BillListMixin = {
     }
   },
   computed: {
+    // 是否显示主表汇总行（与原 tableAddTotalRow 的触发条件保持一致：分页条数为 11/21/31 等）
+    summaryEnabled() {
+      const pageSize = this.ipagination && this.ipagination.pageSize
+      return this.dataSource && this.dataSource.length > 0 && pageSize % 10 === 1
+    },
     importExcelUrl: function(){
       return `${window._CONFIG['domianURL']}/${this.url.importExcelUrl}`;
     },
@@ -457,6 +464,9 @@ export const BillListMixin = {
         this.loading = false
         this.onClearSelected()
       })
+    },
+    // 主表汇总行改由 DataTable 的 summary 属性处理，覆盖 JeecgListMixin 的旧实现
+    tableAddTotalRow() {
     },
     myHandleAdd() {
       this.$refs.modalForm.action = "add";

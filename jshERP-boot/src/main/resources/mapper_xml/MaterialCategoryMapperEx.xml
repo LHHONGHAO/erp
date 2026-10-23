@@ -39,6 +39,9 @@
         <result column="id" property="key"/>
         <result column="id" property="value"/>
         <result column="name" property="title"/>
+        <result column="spec_config" property="specConfig"/>
+        <result column="category_level" property="categoryLevel"/>
+        <result column="parent_id" property="parentId"/>
         <collection column="{currentId=currentId,id=id}" property="children" javaType="java.util.ArrayList"
                     ofType="com.jsh.erp.datasource.vo.TreeNode" select="getNextNodeTree"/>
     </resultMap>
@@ -48,6 +51,9 @@
         <result column="id" property="key"/>
         <result column="id" property="value"/>
         <result column="name" property="title"/>
+        <result column="spec_config" property="specConfig"/>
+        <result column="category_level" property="categoryLevel"/>
+        <result column="parent_id" property="parentId"/>
         <collection column="{currentId=currentId,id=id}" property="children" javaType="java.util.ArrayList"
                     ofType="com.jsh.erp.datasource.vo.TreeNode" select="getNextNodeTree"/>
     </resultMap>
@@ -57,7 +63,7 @@
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, name
+        id, name, spec_config, category_level, parent_id
     </sql>
 
     <select id="getNextNodeTree" resultMap="NextTreeResultMap">
@@ -106,7 +112,7 @@
        update jsh_material_category
        set update_time=#{updateTime},
         parent_id=#{parentId},sort=#{sort},serial_no=#{serialNo},
-        name=#{name},remark=#{remark}
+        name=#{name},remark=#{remark},spec_config=#{specConfig,jdbcType=VARCHAR}
        where id =#{id}
     </update>
     <select  id="getMaterialCategoryBySerialNo" resultMap="com.jsh.erp.datasource.mappers.MaterialCategoryMapper.BaseResultMap">

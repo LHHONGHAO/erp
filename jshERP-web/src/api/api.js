@@ -46,6 +46,7 @@ const findInOutItemByParam = (params)=>getAction("/inOutItem/findBySelect",param
 const addDepot = (params)=>postAction("/depot/add",params);
 const editDepot = (params)=>putAction("/depot/update",params);
 const checkDepot = (params)=>getAction("/depot/checkIsNameExist",params);
+const getDepotList = ()=>getAction("/depot/getAllList");
 //商品属性
 const addOrUpdateMaterialProperty = (params)=>postAction("/materialProperty/addOrUpdate",params);
 //商品类型
@@ -73,6 +74,8 @@ const editMaterialAttribute = (params)=>putAction("/materialAttribute/update",pa
 const checkMaterialAttribute = (params)=>getAction("/materialAttribute/checkIsNameExist",params);
 const getMaterialAttributeNameList = (params)=>getAction("/materialAttribute/getNameList",params);
 const getMaterialAttributeValueListById = (params)=>getAction("/materialAttribute/getValueListById",params);
+const getMaterialCategorySpecValues = (params)=>getAction("/materialAttrValue/getByCategoryAndAttribute",params);
+const deleteMaterialCategorySpecValue = (params)=>deleteAction("/materialAttrValue/hideSuggestion",params);
 //功能管理
 const addFunction = (params)=>postAction("/function/add",params);
 const editFunction = (params)=>putAction("/function/update",params);
@@ -161,6 +164,7 @@ export {
   addDepot,
   editDepot,
   checkDepot,
+  getDepotList,
   addOrUpdateMaterialProperty,
   queryMaterialCategoryTreeList,
   queryMaterialCategoryById,
@@ -183,6 +187,8 @@ export {
   checkMaterialAttribute,
   getMaterialAttributeNameList,
   getMaterialAttributeValueListById,
+  getMaterialCategorySpecValues,
+  deleteMaterialCategorySpecValue,
   addFunction,
   editFunction,
   checkFunction,

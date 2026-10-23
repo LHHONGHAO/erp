@@ -93,18 +93,38 @@ public class MaterialPropertyService {
         MaterialProperty mp1 = new MaterialProperty();
         MaterialProperty mp2 = new MaterialProperty();
         MaterialProperty mp3 = new MaterialProperty();
+        MaterialProperty mp4 = new MaterialProperty();
+        MaterialProperty mp5 = new MaterialProperty();
+        MaterialProperty mp6 = new MaterialProperty();
+        MaterialProperty mp7 = new MaterialProperty();
         mp1.setId(1L);
         mp1.setNativeName("扩展1");
-        mp1.setAnotherName("扩展1");
+        mp1.setAnotherName("面料");
         list.add(mp1);
         mp2.setId(2L);
         mp2.setNativeName("扩展2");
-        mp2.setAnotherName("扩展2");
+        mp2.setAnotherName("安全类别");
         list.add(mp2);
         mp3.setId(3L);
         mp3.setNativeName("扩展3");
-        mp3.setAnotherName("扩展3");
+        mp3.setAnotherName("执行标准");
         list.add(mp3);
+        mp4.setId(4L);
+        mp4.setNativeName("扩展4");
+        mp4.setAnotherName("扩展4");
+        list.add(mp4);
+        mp5.setId(5L);
+        mp5.setNativeName("扩展5");
+        mp5.setAnotherName("扩展5");
+        list.add(mp5);
+        mp6.setId(6L);
+        mp6.setNativeName("扩展6");
+        mp6.setAnotherName("等级");
+        list.add(mp6);
+        mp7.setId(7L);
+        mp7.setNativeName("扩展7");
+        mp7.setAnotherName("检验");
+        list.add(mp7);
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)

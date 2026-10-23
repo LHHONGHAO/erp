@@ -15,6 +15,14 @@ public class Supplier {
 
     private String description;
 
+    private String wechatAccount;
+
+    private String douyinAccount;
+
+    private String alipayAccount;
+
+    private String otherAccount;
+
     private Byte isystem;
 
     private String type;
@@ -99,6 +107,38 @@ public class Supplier {
 
     public void setDescription(String description) {
         this.description = description == null ? null : description.trim();
+    }
+
+    public String getWechatAccount() {
+        return wechatAccount;
+    }
+
+    public void setWechatAccount(String wechatAccount) {
+        this.wechatAccount = wechatAccount == null ? null : wechatAccount.trim();
+    }
+
+    public String getDouyinAccount() {
+        return douyinAccount;
+    }
+
+    public void setDouyinAccount(String douyinAccount) {
+        this.douyinAccount = douyinAccount == null ? null : douyinAccount.trim();
+    }
+
+    public String getAlipayAccount() {
+        return alipayAccount;
+    }
+
+    public void setAlipayAccount(String alipayAccount) {
+        this.alipayAccount = alipayAccount == null ? null : alipayAccount.trim();
+    }
+
+    public String getOtherAccount() {
+        return otherAccount;
+    }
+
+    public void setOtherAccount(String otherAccount) {
+        this.otherAccount = otherAccount == null ? null : otherAccount.trim();
     }
 
     public Byte getIsystem() {

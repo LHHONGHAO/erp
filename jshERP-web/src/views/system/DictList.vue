@@ -136,10 +136,10 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
-            scopedSlots: {customRender: 'action'},
+            fixed: 'right', scopedSlots: {customRender: 'action'},
             align: "center",
             width: 80
           },
@@ -152,7 +152,7 @@
             scopedSlots: { customRender: 'customRenderStatus' }
           },
           { title: '创建时间', dataIndex: 'createTime', width: 100},
-          { title: '更新时间', dataIndex: 'updateTime', width: 100}
+          { title: '更新时间', dataIndex: 'updateTime', width: 100},
         ],
         url: {
           list: "/dict/type/list",

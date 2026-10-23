@@ -15,7 +15,11 @@ public class MaterialCategory {
 
     private String serialNo;
 
+    private String code;
+
     private String remark;
+
+    private String specConfig;
 
     private Date createTime;
 
@@ -73,12 +77,28 @@ public class MaterialCategory {
         this.serialNo = serialNo == null ? null : serialNo.trim();
     }
 
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code == null ? null : code.trim();
+    }
+
     public String getRemark() {
         return remark;
     }
 
     public void setRemark(String remark) {
         this.remark = remark == null ? null : remark.trim();
+    }
+
+    public String getSpecConfig() {
+        return specConfig;
+    }
+
+    public void setSpecConfig(String specConfig) {
+        this.specConfig = specConfig == null ? null : specConfig.trim();
     }
 
     public Date getCreateTime() {

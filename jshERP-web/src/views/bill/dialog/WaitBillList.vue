@@ -58,6 +58,7 @@
         :columns="columns"
         :dataSource="dataSource"
         :components="handleDrag(columns)"
+        :scroll="{ x: scroll.x }"
         :pagination="ipagination"
         :loading="loading"
         :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange, type: getType}"
@@ -84,6 +85,7 @@
         :columns="columnsDetail"
         :dataSource="dataSourceDetail"
         :components="handleDrag(columnsDetail)"
+        :scroll="{ x: scroll.x }"
         :loading="loading"
         :rowSelection="{selectedRowKeys: selectedDetailRowKeys, onChange: onSelectDetailChange, type: 'checkbox'}"
         @change="handleTableChange">

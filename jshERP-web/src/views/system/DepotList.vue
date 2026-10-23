@@ -125,12 +125,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             align:"center",
             width: 200,
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {title: '仓库名称', dataIndex: 'name', width: 200},
           {title: '仓库地址', dataIndex: 'address', width: 200},
@@ -144,7 +144,7 @@
           },
           {title: '是否默认',dataIndex: 'isDefault',width:80,align:"center",
             scopedSlots: { customRender: 'customRenderFlag' }
-          }
+},
         ],
         url: {
           list: "/depot/list",

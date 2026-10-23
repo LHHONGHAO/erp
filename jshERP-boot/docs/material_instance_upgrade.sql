@@ -1,0 +1,33 @@
+-- 单件商品（实物）表：每件实物一条记录，保存该件商品的入库和出库信息及当前状态。
+-- 执行前请备份数据库；本脚本仅创建新表，不修改既有商品或库存数据。
+CREATE TABLE IF NOT EXISTS jsh_material_instance (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  unit_code VARCHAR(80) NOT NULL COMMENT '单件商品唯一码',
+  material_id BIGINT NOT NULL COMMENT 'SPU商品ID',
+  material_extend_id BIGINT NOT NULL COMMENT 'SKU规格记录ID',
+  sku_code VARCHAR(80) NOT NULL COMMENT 'SKU编码快照',
+  inbound_depot_id BIGINT NOT NULL COMMENT '入库仓库ID',
+  current_depot_id BIGINT DEFAULT NULL COMMENT '当前所在仓库ID，在库状态时必填',
+  inbound_type VARCHAR(20) NOT NULL DEFAULT 'INITIAL' COMMENT '入库来源：INITIAL期初、PURCHASE采购入库、OTHER其他入库',
+  inbound_head_id BIGINT DEFAULT NULL COMMENT '入库单据ID',
+  inbound_item_id BIGINT DEFAULT NULL COMMENT '入库单据明细ID',
+  inbound_time DATETIME DEFAULT NULL COMMENT '入库时间',
+  outbound_depot_id BIGINT DEFAULT NULL COMMENT '出库仓库ID',
+  outbound_type VARCHAR(20) DEFAULT NULL COMMENT '出库来源：SALE销售、TRANSFER调拨、OTHER其他出库',
+  outbound_head_id BIGINT DEFAULT NULL COMMENT '出库单据ID',
+  outbound_item_id BIGINT DEFAULT NULL COMMENT '出库单据明细ID',
+  outbound_time DATETIME DEFAULT NULL COMMENT '出库时间',
+  status VARCHAR(20) NOT NULL DEFAULT 'IN_STOCK' COMMENT '单件状态：IN_STOCK在库、OUTBOUND已出库、SOLD已售、SCRAPPED报损、LOST遗失',
+  tenant_id BIGINT DEFAULT NULL COMMENT '租户ID',
+  delete_flag VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '软删除标记',
+  remark VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_material_instance_code (unit_code),
+  KEY idx_material_instance_tenant_sku_status_depot (tenant_id, material_extend_id, status, current_depot_id, delete_flag),
+  KEY idx_material_instance_material (material_id),
+  KEY idx_material_instance_inbound_item (tenant_id, inbound_item_id, delete_flag),
+  KEY idx_material_instance_outbound_item (tenant_id, outbound_item_id, delete_flag),
+  KEY idx_material_instance_tenant_delete (tenant_id, delete_flag)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单件商品实物档案';

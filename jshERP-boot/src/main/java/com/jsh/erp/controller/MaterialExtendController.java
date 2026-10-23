@@ -1,5 +1,6 @@
 package com.jsh.erp.controller;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.MaterialExtend;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -96,6 +98,36 @@ public class MaterialExtendController {
             //存放数据json数组
             JSONArray dataArray = new JSONArray();
             if (null != dataList) {
+                // 预解析 attribute JSON，提取规格值图片映射
+                Map<String, String> specImageMap = new HashMap<>();
+                String attribute = null;
+                if (!dataList.isEmpty()) {
+                    attribute = dataList.get(0).getAttribute();
+                }
+                if (StringUtil.isNotEmpty(attribute)) {
+                    try {
+                        JSONObject attrObj = JSON.parseObject(attribute);
+                        JSONArray specModules = attrObj.getJSONArray("specModules");
+                        if (specModules != null) {
+                            for (int i = 0; i < specModules.size(); i++) {
+                                JSONObject module = specModules.getJSONObject(i);
+                                JSONArray values = module.getJSONArray("values");
+                                if (values != null) {
+                                    for (int j = 0; j < values.size(); j++) {
+                                        JSONObject val = values.getJSONObject(j);
+                                        String text = val.getString("text");
+                                        String image = val.getString("image");
+                                        if (StringUtil.isNotEmpty(text) && StringUtil.isNotEmpty(image)) {
+                                            specImageMap.put(text, image);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("解析attribute JSON失败: {}", e.getMessage());
+                    }
+                }
                 for (MaterialExtendVo4List md : dataList) {
                     JSONObject item = new JSONObject();
                     item.put("id", md.getId());
@@ -104,10 +136,40 @@ public class MaterialExtendController {
                     if(StringUtil.isNotEmpty(md.getSku())){
                         item.put("sku", md.getSku());
                     }
+                    if(StringUtil.isNotEmpty(md.getSkuCode())){
+                        item.put("skuCode", md.getSkuCode());
+                    }
+                    if(StringUtil.isNotEmpty(md.getSpecValues())){
+                        item.put("specValues", md.getSpecValues());
+                    }
+                    // 图片优先使用 img_url，为空则从 attribute 规格值中匹配
+                    String imgUrl = md.getImgUrl();
+                    if (StringUtil.isEmpty(imgUrl) && StringUtil.isNotEmpty(md.getSpecValues())) {
+                        try {
+                            JSONArray specVals = JSON.parseArray(md.getSpecValues());
+                            if (specVals != null) {
+                                for (int k = 0; k < specVals.size(); k++) {
+                                    String valueText = specVals.getJSONObject(k).getString("valueText");
+                                    if (StringUtil.isNotEmpty(valueText) && specImageMap.containsKey(valueText)) {
+                                        imgUrl = specImageMap.get(valueText);
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) { /* ignore */ }
+                    }
+                    // 如果 specValues 也为空（旧数据），使用 attribute 中第一个有图片的规格值
+                    if (StringUtil.isEmpty(imgUrl) && !specImageMap.isEmpty()) {
+                        imgUrl = specImageMap.values().iterator().next();
+                    }
+                    if (StringUtil.isNotEmpty(imgUrl)) {
+                        item.put("imgUrl", imgUrl);
+                    }
                     item.put("purchaseDecimal", md.getPurchaseDecimal());
                     item.put("commodityDecimal", md.getCommodityDecimal());
                     item.put("wholesaleDecimal", md.getWholesaleDecimal());
                     item.put("lowDecimal", md.getLowDecimal());
+                    item.put("currentStock", md.getCurrentStock()!=null? md.getCurrentStock(): BigDecimal.ZERO);
                     dataArray.add(item);
                 }
             }

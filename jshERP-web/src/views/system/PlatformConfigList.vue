@@ -61,12 +61,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             align:"center",
             width: 100,
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {
             title: '配置名称',
@@ -77,7 +77,7 @@
             title: '配置值',
             dataIndex: 'platformValue',
             width: 500
-          }
+},
         ],
         url: {
           list: "/platformConfig/list",

@@ -99,12 +99,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width:100,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           { title: '单位名称', align:"left", dataIndex: 'name', width:200 },
           { title: '基本单位', align:"left", dataIndex: 'basicUnit', width:80 },
@@ -135,7 +135,7 @@
           },
           { title: '状态',dataIndex: 'enabled',width:60,align:"center",
             scopedSlots: { customRender: 'customRenderFlag' }
-          }
+},
         ],
         url: {
           list: "/unit/list",

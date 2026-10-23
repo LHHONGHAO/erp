@@ -117,11 +117,95 @@ public class MaterialCategoryService {
         return list;
     }
 
+    private static final String BASE36_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    /** 将整数格式化为指定位数的36进制字符串 */
+    private String formatBase36(int num, int digits) {
+        if (num < 0) num = 0;
+        String result = "";
+        int n = num;
+        do {
+            result = BASE36_CHARS.charAt(n % 36) + result;
+            n /= 36;
+        } while (n > 0);
+        while (result.length() < digits) {
+            result = "0" + result;
+        }
+        return result;
+    }
+
+    /** 将36进制字符串解析为整数 */
+    private int parseBase36(String str) {
+        if (str == null || str.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(str.toUpperCase(), 36);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** 生成一级类目编号（2位36进制，按添加顺序递增） */
+    private String generateLevel1SerialNo() throws Exception {
+        MaterialCategoryExample example = new MaterialCategoryExample();
+        example.createCriteria().andParentIdIsNull().andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        List<MaterialCategory> list = materialCategoryMapper.selectByExample(example);
+        int maxNum = 0;
+        if (list != null) {
+            for (MaterialCategory mc : list) {
+                if (mc.getSerialNo() != null && mc.getSerialNo().length() == 2) {
+                    int num = parseBase36(mc.getSerialNo());
+                    if (num > maxNum) maxNum = num;
+                }
+            }
+        }
+        return formatBase36(maxNum + 1, 2);
+    }
+
+    /** 生成二级类目编号（父级编号 + 2位36进制） */
+    private String generateLevel2SerialNo(Long parentId, String parentSerialNo) throws Exception {
+        MaterialCategoryExample example = new MaterialCategoryExample();
+        example.createCriteria().andParentIdEqualTo(parentId).andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        List<MaterialCategory> list = materialCategoryMapper.selectByExample(example);
+        int maxNum = 0;
+        if (list != null) {
+            for (MaterialCategory mc : list) {
+                if (mc.getSerialNo() != null && mc.getSerialNo().length() >= 4) {
+                    String suffix = mc.getSerialNo().substring(mc.getSerialNo().length() - 2);
+                    int num = parseBase36(suffix);
+                    if (num > maxNum) maxNum = num;
+                }
+            }
+        }
+        return parentSerialNo + formatBase36(maxNum + 1, 2);
+    }
+
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int insertMaterialCategory(JSONObject obj, HttpServletRequest request)throws Exception {
         MaterialCategory materialCategory = JSONObject.parseObject(obj.toJSONString(), MaterialCategory.class);
         materialCategory.setCreateTime(new Date());
         materialCategory.setUpdateTime(new Date());
+        // 自动生成编号并设置层级
+        materialCategory.setDeleteFlag(BusinessConstants.DELETE_FLAG_EXISTS);
+        if (materialCategory.getParentId() == null) {
+            // 一级类目
+            materialCategory.setSerialNo(generateLevel1SerialNo());
+            materialCategory.setCategoryLevel((short) 1);
+        } else {
+            // 二级类目：校验父级是否为一级（最多2级）
+            MaterialCategory parent = materialCategoryMapper.selectByPrimaryKey(materialCategory.getParentId());
+            if (parent == null) {
+                throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_CATEGORY_ADD_FAILED_CODE, "所选上级目录不存在");
+            }
+            if (parent.getParentId() != null) {
+                throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_CATEGORY_ADD_FAILED_CODE, "类目层级最多为2级，不能在二级类目下添加子类目");
+            }
+            // 父级编号必须有效（兼容旧格式编号）
+            if (parent.getSerialNo() == null || parent.getSerialNo().isEmpty()) {
+                throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_CATEGORY_ADD_FAILED_CODE, "父级类目编号格式异常，无法生成子类目编号");
+            }
+            materialCategory.setSerialNo(generateLevel2SerialNo(materialCategory.getParentId(), parent.getSerialNo()));
+            materialCategory.setCategoryLevel((short) 2);
+        }
         int result=0;
         try{
             result=materialCategoryMapper.insertSelective(materialCategory);

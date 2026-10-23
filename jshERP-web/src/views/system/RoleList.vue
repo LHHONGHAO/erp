@@ -140,12 +140,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             align:"center",
             width: 200,
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {
             title: '角色名称', align:"left", dataIndex: 'name', width: 120
@@ -164,7 +164,7 @@
           { title: '排序', align:"left", dataIndex: 'sort', width: 50},
           { title: '状态',dataIndex: 'enabled',width:60,align:"center",
             scopedSlots: { customRender: 'customRenderFlag' }
-          }
+},
         ],
         url: {
           list: "/role/list",

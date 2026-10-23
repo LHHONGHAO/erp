@@ -25,6 +25,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 
@@ -723,5 +724,54 @@ public class SupplierService {
 
     public Supplier getInfoByName(String name, String type) {
         return supplierMapperEx.getInfoByName(name, type);
+    }
+
+    /**
+     * 生成会员卡号：YYMMDD + 三位序号（屏蔽3/4/7）
+     */
+    public String generateMemberId() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyMMdd");
+        String datePrefix = sdf.format(new Date());
+
+        // 获取当天最大序号
+        String maxSeq = supplierMapperEx.getMaxMemberSeqToday(datePrefix);
+        int currentSeq = 0;
+        if (maxSeq != null && maxSeq.length() >= 9) {
+            String seqStr = maxSeq.substring(6);
+            try {
+                currentSeq = Integer.parseInt(seqStr);
+            } catch (NumberFormatException e) {
+                currentSeq = 0;
+            }
+        }
+
+        // 找下一个不包含3/4/7的序号
+        int nextSeq = currentSeq + 1;
+        while (containsBlockedDigits(nextSeq)) {
+            nextSeq++;
+        }
+        // 确保不超过999
+        if (nextSeq > 999) {
+            nextSeq = 999;
+        }
+        return datePrefix + String.format("%03d", nextSeq);
+    }
+
+    private boolean containsBlockedDigits(int num) {
+        int temp = num;
+        while (temp > 0) {
+            int digit = temp % 10;
+            if (digit == 3 || digit == 4 || digit == 7) return true;
+            temp /= 10;
+        }
+        return false;
+    }
+
+    /**
+     * 按联系人或电话查找已存在的会员
+     */
+    public Supplier checkMemberDuplicate(String contacts, String telephone) {
+        List<Supplier> list = supplierMapperEx.findByContactsOrPhone(contacts, telephone, "会员");
+        return (list != null && !list.isEmpty()) ? list.get(0) : null;
     }
 }

@@ -4,9 +4,11 @@
   <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.MaterialExtend">
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="material_id" jdbcType="BIGINT" property="materialId" />
+    <result column="spec_values" jdbcType="LONGVARCHAR" property="specValues" />
     <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
     <result column="commodity_unit" jdbcType="VARCHAR" property="commodityUnit" />
     <result column="sku" jdbcType="VARCHAR" property="sku" />
+    <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
     <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
     <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
     <result column="wholesale_decimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
@@ -18,6 +20,8 @@
     <result column="update_time" jdbcType="BIGINT" property="updateTime" />
     <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
     <result column="delete_Flag" jdbcType="VARCHAR" property="deleteFlag" />
+    <result column="img_url" jdbcType="VARCHAR" property="imgUrl" />
+    <result column="store" jdbcType="VARCHAR" property="store" />
   </resultMap>
   <sql id="Example_Where_Clause">
     <where>
@@ -78,9 +82,9 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, material_id, bar_code, commodity_unit, sku, purchase_decimal, commodity_decimal, 
-    wholesale_decimal, low_decimal, default_flag, create_time, create_serial, update_serial, 
-    update_time, tenant_id, delete_Flag
+    id, material_id, spec_values, bar_code, commodity_unit, sku, sku_code, purchase_decimal,
+    commodity_decimal, wholesale_decimal, low_decimal, default_flag, create_time, create_serial,
+    update_serial, update_time, tenant_id, delete_Flag, img_url, store
   </sql>
   <select id="selectByExample" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="BaseResultMap">
     select
@@ -97,7 +101,7 @@
     </if>
   </select>
   <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
-    select 
+    select
     <include refid="Base_Column_List" />
     from jsh_material_extend
     where id = #{id,jdbcType=BIGINT}
@@ -113,18 +117,18 @@
     </if>
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.MaterialExtend">
-    insert into jsh_material_extend (id, material_id, bar_code, 
-      commodity_unit, sku, purchase_decimal, 
-      commodity_decimal, wholesale_decimal, low_decimal, 
-      default_flag, create_time, create_serial, 
-      update_serial, update_time, tenant_id, 
-      delete_Flag)
-    values (#{id,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, #{barCode,jdbcType=VARCHAR}, 
-      #{commodityUnit,jdbcType=VARCHAR}, #{sku,jdbcType=VARCHAR}, #{purchaseDecimal,jdbcType=DECIMAL}, 
-      #{commodityDecimal,jdbcType=DECIMAL}, #{wholesaleDecimal,jdbcType=DECIMAL}, #{lowDecimal,jdbcType=DECIMAL}, 
-      #{defaultFlag,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP}, #{createSerial,jdbcType=VARCHAR}, 
-      #{updateSerial,jdbcType=VARCHAR}, #{updateTime,jdbcType=BIGINT}, #{tenantId,jdbcType=BIGINT}, 
-      #{deleteFlag,jdbcType=VARCHAR})
+    insert into jsh_material_extend (id, material_id, spec_values,
+      bar_code, commodity_unit, sku, sku_code,
+      purchase_decimal, commodity_decimal, wholesale_decimal,
+      low_decimal, default_flag, create_time,
+      create_serial, update_serial, update_time,
+      tenant_id, delete_Flag, img_url, store)
+    values (#{id,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, #{specValues,jdbcType=LONGVARCHAR},
+      #{barCode,jdbcType=VARCHAR}, #{commodityUnit,jdbcType=VARCHAR}, #{sku,jdbcType=VARCHAR}, #{skuCode,jdbcType=VARCHAR},
+      #{purchaseDecimal,jdbcType=DECIMAL}, #{commodityDecimal,jdbcType=DECIMAL}, #{wholesaleDecimal,jdbcType=DECIMAL},
+      #{lowDecimal,jdbcType=DECIMAL}, #{defaultFlag,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
+      #{createSerial,jdbcType=VARCHAR}, #{updateSerial,jdbcType=VARCHAR}, #{updateTime,jdbcType=BIGINT},
+      #{tenantId,jdbcType=BIGINT}, #{deleteFlag,jdbcType=VARCHAR}, #{imgUrl,jdbcType=VARCHAR}, #{store,jdbcType=VARCHAR})
   </insert>
   <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.MaterialExtend">
     insert into jsh_material_extend
@@ -135,6 +139,9 @@
       <if test="materialId != null">
         material_id,
       </if>
+      <if test="specValues != null">
+        spec_values,
+      </if>
       <if test="barCode != null">
         bar_code,
       </if>
@@ -143,6 +150,9 @@
       </if>
       <if test="sku != null">
         sku,
+      </if>
+      <if test="skuCode != null">
+        sku_code,
       </if>
       <if test="purchaseDecimal != null">
         purchase_decimal,
@@ -177,6 +187,12 @@
       <if test="deleteFlag != null">
         delete_Flag,
       </if>
+      <if test="imgUrl != null">
+        img_url,
+      </if>
+      <if test="store != null">
+        store,
+      </if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
       <if test="id != null">
@@ -184,6 +200,9 @@
       </if>
       <if test="materialId != null">
         #{materialId,jdbcType=BIGINT},
+      </if>
+      <if test="specValues != null">
+        #{specValues,jdbcType=LONGVARCHAR},
       </if>
       <if test="barCode != null">
         #{barCode,jdbcType=VARCHAR},
@@ -193,6 +212,9 @@
       </if>
       <if test="sku != null">
         #{sku,jdbcType=VARCHAR},
+      </if>
+      <if test="skuCode != null">
+        #{skuCode,jdbcType=VARCHAR},
       </if>
       <if test="purchaseDecimal != null">
         #{purchaseDecimal,jdbcType=DECIMAL},
@@ -227,6 +249,12 @@
       <if test="deleteFlag != null">
         #{deleteFlag,jdbcType=VARCHAR},
       </if>
+      <if test="imgUrl != null">
+        #{imgUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="store != null">
+        #{store,jdbcType=VARCHAR},
+      </if>
     </trim>
   </insert>
   <select id="countByExample" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultType="java.lang.Long">
@@ -244,6 +272,9 @@
       <if test="record.materialId != null">
         material_id = #{record.materialId,jdbcType=BIGINT},
       </if>
+      <if test="record.specValues != null">
+        spec_values = #{record.specValues,jdbcType=LONGVARCHAR},
+      </if>
       <if test="record.barCode != null">
         bar_code = #{record.barCode,jdbcType=VARCHAR},
       </if>
@@ -252,6 +283,9 @@
       </if>
       <if test="record.sku != null">
         sku = #{record.sku,jdbcType=VARCHAR},
+      </if>
+      <if test="record.skuCode != null">
+        sku_code = #{record.skuCode,jdbcType=VARCHAR},
       </if>
       <if test="record.purchaseDecimal != null">
         purchase_decimal = #{record.purchaseDecimal,jdbcType=DECIMAL},
@@ -286,6 +320,12 @@
       <if test="record.deleteFlag != null">
         delete_Flag = #{record.deleteFlag,jdbcType=VARCHAR},
       </if>
+      <if test="record.imgUrl != null">
+        img_url = #{record.imgUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="record.store != null">
+        store = #{record.store,jdbcType=VARCHAR},
+      </if>
     </set>
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
@@ -295,9 +335,11 @@
     update jsh_material_extend
     set id = #{record.id,jdbcType=BIGINT},
       material_id = #{record.materialId,jdbcType=BIGINT},
+      spec_values = #{record.specValues,jdbcType=LONGVARCHAR},
       bar_code = #{record.barCode,jdbcType=VARCHAR},
       commodity_unit = #{record.commodityUnit,jdbcType=VARCHAR},
       sku = #{record.sku,jdbcType=VARCHAR},
+      sku_code = #{record.skuCode,jdbcType=VARCHAR},
       purchase_decimal = #{record.purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{record.commodityDecimal,jdbcType=DECIMAL},
       wholesale_decimal = #{record.wholesaleDecimal,jdbcType=DECIMAL},
@@ -308,7 +350,9 @@
       update_serial = #{record.updateSerial,jdbcType=VARCHAR},
       update_time = #{record.updateTime,jdbcType=BIGINT},
       tenant_id = #{record.tenantId,jdbcType=BIGINT},
-      delete_Flag = #{record.deleteFlag,jdbcType=VARCHAR}
+      delete_Flag = #{record.deleteFlag,jdbcType=VARCHAR},
+      img_url = #{record.imgUrl,jdbcType=VARCHAR},
+      store = #{record.store,jdbcType=VARCHAR}
     <if test="_parameter != null">
       <include refid="Update_By_Example_Where_Clause" />
     </if>
@@ -319,6 +363,9 @@
       <if test="materialId != null">
         material_id = #{materialId,jdbcType=BIGINT},
       </if>
+      <if test="specValues != null">
+        spec_values = #{specValues,jdbcType=LONGVARCHAR},
+      </if>
       <if test="barCode != null">
         bar_code = #{barCode,jdbcType=VARCHAR},
       </if>
@@ -327,6 +374,9 @@
       </if>
       <if test="sku != null">
         sku = #{sku,jdbcType=VARCHAR},
+      </if>
+      <if test="skuCode != null">
+        sku_code = #{skuCode,jdbcType=VARCHAR},
       </if>
       <if test="purchaseDecimal != null">
         purchase_decimal = #{purchaseDecimal,jdbcType=DECIMAL},
@@ -361,15 +411,23 @@
       <if test="deleteFlag != null">
         delete_Flag = #{deleteFlag,jdbcType=VARCHAR},
       </if>
+      <if test="imgUrl != null">
+        img_url = #{imgUrl,jdbcType=VARCHAR},
+      </if>
+      <if test="store != null">
+        store = #{store,jdbcType=VARCHAR},
+      </if>
     </set>
     where id = #{id,jdbcType=BIGINT}
   </update>
   <update id="updateByPrimaryKey" parameterType="com.jsh.erp.datasource.entities.MaterialExtend">
     update jsh_material_extend
     set material_id = #{materialId,jdbcType=BIGINT},
+      spec_values = #{specValues,jdbcType=LONGVARCHAR},
       bar_code = #{barCode,jdbcType=VARCHAR},
       commodity_unit = #{commodityUnit,jdbcType=VARCHAR},
       sku = #{sku,jdbcType=VARCHAR},
+      sku_code = #{skuCode,jdbcType=VARCHAR},
       purchase_decimal = #{purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{commodityDecimal,jdbcType=DECIMAL},
       wholesale_decimal = #{wholesaleDecimal,jdbcType=DECIMAL},
@@ -380,7 +438,9 @@
       update_serial = #{updateSerial,jdbcType=VARCHAR},
       update_time = #{updateTime,jdbcType=BIGINT},
       tenant_id = #{tenantId,jdbcType=BIGINT},
-      delete_Flag = #{deleteFlag,jdbcType=VARCHAR}
+      delete_Flag = #{deleteFlag,jdbcType=VARCHAR},
+      img_url = #{imgUrl,jdbcType=VARCHAR},
+      store = #{store,jdbcType=VARCHAR}
     where id = #{id,jdbcType=BIGINT}
   </update>
 </mapper>

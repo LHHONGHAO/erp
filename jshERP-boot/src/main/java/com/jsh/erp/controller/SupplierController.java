@@ -536,4 +536,39 @@ public class SupplierController extends BaseController {
         }
     }
 
+    /**
+     * 生成会员卡号：YYMMDD + 三位不包含3/4/7的序号
+     */
+    @PostMapping(value = "/generateMemberId")
+    @ApiOperation(value = "生成会员卡号")
+    public String generateMemberId(HttpServletRequest request) throws Exception {
+        Map<String, Object> objectMap = new HashMap<>();
+        String memberId = supplierService.generateMemberId();
+        objectMap.put("memberId", memberId);
+        return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+    }
+
+    /**
+     * 按联系人或电话查找已存在会员
+     */
+    @PostMapping(value = "/checkMemberDuplicate")
+    @ApiOperation(value = "检查会员是否重复")
+    public String checkMemberDuplicate(@RequestBody JSONObject jsonObject,
+                                       HttpServletRequest request) throws Exception {
+        String contacts = jsonObject.getString("contacts");
+        String telephone = jsonObject.getString("telephone");
+        Map<String, Object> objectMap = new HashMap<>();
+        Supplier supplier = supplierService.checkMemberDuplicate(contacts, telephone);
+        if (supplier != null) {
+            objectMap.put("exists", true);
+            objectMap.put("supplier", supplier.getSupplier());
+            objectMap.put("id", supplier.getId());
+            objectMap.put("contacts", supplier.getContacts());
+            objectMap.put("telephone", supplier.getTelephone());
+        } else {
+            objectMap.put("exists", false);
+        }
+        return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+    }
+
 }

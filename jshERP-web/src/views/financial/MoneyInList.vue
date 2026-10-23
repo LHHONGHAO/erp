@@ -117,18 +117,22 @@
         </div>
         <!-- table区域-begin -->
         <div>
-          <a-table
+          <data-table
             ref="table"
-            size="middle"
             bordered
-            rowKey="id"
-            :columns="columns"
-            :dataSource="dataSource"
-            :components="handleDrag(columns)"
+            draggable
+            row-key="id"
+            table-key="financial_money_in"
+            :extra-columns="columns"
+            :default-columns="defDataIndex"
+            storage-key="columns_SK"
+            :summary="summaryEnabled"
+            summary-fields="changeAmount"
+            :data-source="dataSource"
             :pagination="ipagination"
             :scroll="scroll"
             :loading="loading"
-            :rowSelection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
+            :row-selection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange}"
             @change="handleTableChange">
             <span slot="action" slot-scope="text, record">
               <a @click="myHandleDetail(record, '收款', prefixNo)">查看</a>
@@ -144,7 +148,7 @@
               <a-tag v-if="status == '1'" color="green">已审核</a-tag>
               <a-tag v-if="status == '9'" color="orange">审核中</a-tag>
             </template>
-          </a-table>
+          </data-table>
         </div>
         <!-- table区域-end -->
         <!-- 表单区域 -->
@@ -161,6 +165,7 @@
   import BillExcelIframe from '@/components/tools/BillExcelIframe'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { FinancialListMixin } from './mixins/FinancialListMixin'
+  import DataTable from '@/components/DataTable'
   import JDate from '@/components/jeecg/JDate'
   import { getFormatDate, getPrevMonthFormatDate } from '@/utils/util'
   import moment from 'moment'
@@ -173,6 +178,7 @@
       FinancialDetail,
       BillExcelIframe,
       JDate,
+      DataTable,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -202,14 +208,16 @@
         },
         prefixNo: 'SK',
         urlPath: '/financial/money_in',
+        // 默认显示列（以现有 columns 属性为基准）
+        defDataIndex: ['action','organName','billNo','billTimeStr','userName','handsPersonName','accountName','totalPrice','discountMoney','changeAmount','remark','status'],
         // 表头
         columns: [
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width:200,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           { title: '客户', dataIndex: 'organName',width:140, ellipsis:true},
           { title: '单据编号', dataIndex: 'billNo',width:160},
@@ -223,7 +231,7 @@
           { title: '备注', dataIndex: 'remark',width:200},
           { title: '状态', dataIndex: 'status', width: 80, align: "center",
             scopedSlots: { customRender: 'customRenderStatus' }
-          }
+},
         ],
         url: {
           list: "/accountHead/list",

@@ -101,12 +101,13 @@
                         </template>
                       </template>
                     </a-row>
-                    <a-row style="padding-top: 10px;">
-                      <a-col>
-                        恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
-                      </a-col>
-                    </a-row>
                   </a-checkbox-group>
+                  <a-row style="padding-top: 10px;">
+                    <a-col>
+                      <a-checkbox :checked="columnsAllChecked" @change="handleSelectAllColumns">全选</a-checkbox>
+                      恢复默认列配置：<a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
+                    </a-col>
+                  </a-row>
                 </template>
                 <a-icon type="setting" />
               </a-popover>
@@ -210,9 +211,6 @@
               return (t !== '合计') ? (parseInt(index) + 1) : t
             }
           },
-          {title: '库存详情', dataIndex: 'action', align:"center", width: 60,
-            scopedSlots: { customRender: 'action' }
-          },
           {title: '图片', dataIndex: 'pic', width: 45, scopedSlots: { customRender: 'customPic' }},
           {title: '条码', dataIndex: 'barCode', sorter: (a, b) => a.barCode - b.barCode, width: 100},
           {title: '名称', dataIndex: 'materialName', width: 120, ellipsis:true},
@@ -232,7 +230,10 @@
           {title: '本期结存数量', dataIndex: 'thisSum', sorter: (a, b) => a.thisSum - b.thisSum, width: 80,
             scopedSlots: { customRender: 'customRenderStock' }
           },
-          {title: '结存金额', dataIndex: 'thisAllPrice', sorter: (a, b) => a.thisAllPrice - b.thisAllPrice, width: 60}
+          {title: '结存金额', dataIndex: 'thisAllPrice', sorter: (a, b) => a.thisAllPrice - b.thisAllPrice, width: 60},
+          {title: '库存详情', dataIndex: 'action', align:"center", width: 60,
+            fixed: 'right', scopedSlots: { customRender: 'action' }
+          }
         ],
         url: {
           list: "/depotItem/getInOutStock",

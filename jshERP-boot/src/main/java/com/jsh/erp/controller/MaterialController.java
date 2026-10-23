@@ -92,6 +92,10 @@ public class MaterialController extends BaseController {
         String otherField1 = StringUtil.getInfo(search, "otherField1");
         String otherField2 = StringUtil.getInfo(search, "otherField2");
         String otherField3 = StringUtil.getInfo(search, "otherField3");
+        String otherField4 = StringUtil.getInfo(search, "otherField4");
+        String otherField5 = StringUtil.getInfo(search, "otherField5");
+        String otherField6 = StringUtil.getInfo(search, "otherField6");
+        String otherField7 = StringUtil.getInfo(search, "otherField7");
         String weight = StringUtil.getInfo(search, "weight");
         String expiryNum = StringUtil.getInfo(search, "expiryNum");
         String enableSerialNumber = StringUtil.getInfo(search, "enableSerialNumber");
@@ -101,7 +105,38 @@ public class MaterialController extends BaseController {
         String remark = StringUtil.getInfo(search, "remark");
         String mpList = StringUtil.getInfo(search, "mpList");
         List<MaterialVo4Unit> list = materialService.select(materialParam, standard, model, color, brand, mfrs, otherField1, otherField2,
-                otherField3, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, mpList);
+                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, mpList);
+        return getDataTable(list);
+    }
+
+    @GetMapping(value = "/listSku")
+    @ApiOperation(value = "获取SKU维度商品信息列表")
+    public TableDataInfo getSkuList(@RequestParam(value = Constants.SEARCH, required = false) String search,
+                                    HttpServletRequest request) throws Exception {
+        String categoryId = StringUtil.getInfo(search, "categoryId");
+        String materialParam = StringUtil.getInfo(search, "materialParam");
+        String standard = StringUtil.getInfo(search, "standard");
+        String model = StringUtil.getInfo(search, "model");
+        String color = StringUtil.getInfo(search, "color");
+        String brand = StringUtil.getInfo(search, "brand");
+        String mfrs = StringUtil.getInfo(search, "mfrs");
+        String otherField1 = StringUtil.getInfo(search, "otherField1");
+        String otherField2 = StringUtil.getInfo(search, "otherField2");
+        String otherField3 = StringUtil.getInfo(search, "otherField3");
+        String otherField4 = StringUtil.getInfo(search, "otherField4");
+        String otherField5 = StringUtil.getInfo(search, "otherField5");
+        String otherField6 = StringUtil.getInfo(search, "otherField6");
+        String otherField7 = StringUtil.getInfo(search, "otherField7");
+        String weight = StringUtil.getInfo(search, "weight");
+        String expiryNum = StringUtil.getInfo(search, "expiryNum");
+        String enableSerialNumber = StringUtil.getInfo(search, "enableSerialNumber");
+        String enableBatchNumber = StringUtil.getInfo(search, "enableBatchNumber");
+        String position = StringUtil.getInfo(search, "position");
+        String enabled = StringUtil.getInfo(search, "enabled");
+        String remark = StringUtil.getInfo(search, "remark");
+        String mpList = StringUtil.getInfo(search, "mpList");
+        List<MaterialVo4Unit> list = materialService.selectSkuList(materialParam, standard, model, color, brand, mfrs, otherField1, otherField2,
+                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, mpList);
         return getDataTable(list);
     }
 
@@ -174,12 +209,18 @@ public class MaterialController extends BaseController {
                                @RequestParam("model") String model, @RequestParam("color") String color,
                                @RequestParam("standard") String standard, @RequestParam("mfrs") String mfrs,
                                @RequestParam("otherField1") String otherField1, @RequestParam("otherField2") String otherField2,
-                               @RequestParam("otherField3") String otherField3, @RequestParam("unit") String unit,@RequestParam("unitId") Long unitId,
+                               @RequestParam("otherField3") String otherField3,
+                               @RequestParam(value = "otherField4", required = false, defaultValue = "") String otherField4,
+                               @RequestParam(value = "otherField5", required = false, defaultValue = "") String otherField5,
+                               @RequestParam(value = "otherField6", required = false, defaultValue = "") String otherField6,
+                               @RequestParam(value = "otherField7", required = false, defaultValue = "") String otherField7,
+                               @RequestParam("unit") String unit,@RequestParam(value = "unitId", required = false) Long unitId,
                                HttpServletRequest request)throws Exception {
         Map<String, Object> objectMap = new HashMap<String, Object>();
         int exist = materialService.checkIsExist(id, name, StringUtil.toNull(model), StringUtil.toNull(color),
                 StringUtil.toNull(standard), StringUtil.toNull(mfrs), StringUtil.toNull(otherField1),
-                StringUtil.toNull(otherField2), StringUtil.toNull(otherField3), StringUtil.toNull(unit), unitId);
+                StringUtil.toNull(otherField2), StringUtil.toNull(otherField3),
+                StringUtil.toNull(otherField4), StringUtil.toNull(otherField5), StringUtil.toNull(otherField6), StringUtil.toNull(otherField7), StringUtil.toNull(unit), unitId);
         if(exist > 0) {
             objectMap.put("status", true);
         } else {
@@ -304,6 +345,10 @@ public class MaterialController extends BaseController {
                                   @RequestParam(value = "otherField1", required = false) String otherField1,
                                   @RequestParam(value = "otherField2", required = false) String otherField2,
                                   @RequestParam(value = "otherField3", required = false) String otherField3,
+                                  @RequestParam(value = "otherField4", required = false) String otherField4,
+                                  @RequestParam(value = "otherField5", required = false) String otherField5,
+                                  @RequestParam(value = "otherField6", required = false) String otherField6,
+                                  @RequestParam(value = "otherField7", required = false) String otherField7,
                                   @RequestParam(value = "enableSerialNumber", required = false) String enableSerialNumber,
                                   @RequestParam(value = "enableBatchNumber", required = false) String enableBatchNumber,
                                   @RequestParam("page") Integer currentPage,
@@ -316,10 +361,12 @@ public class MaterialController extends BaseController {
                 mpArr= mpList.split(",");
             }
             List<MaterialVo4Unit> dataList = materialService.findBySelectWithBarCode(categoryId, q, StringUtil.toNull(standardOrModel),
-                    StringUtil.toNull(color), StringUtil.toNull(brand), StringUtil.toNull(mfrs), StringUtil.toNull(otherField1), StringUtil.toNull(otherField2), StringUtil.toNull(otherField3),
+                    StringUtil.toNull(color), StringUtil.toNull(brand), StringUtil.toNull(mfrs), StringUtil.toNull(otherField1), StringUtil.toNull(otherField2), StringUtil.toNull(otherField3), StringUtil.toNull(otherField4), StringUtil.toNull(otherField5),
+                    StringUtil.toNull(otherField6), StringUtil.toNull(otherField7),
                     enableSerialNumber, enableBatchNumber, (currentPage-1)*pageSize, pageSize);
             int total = materialService.findBySelectWithBarCodeCount(categoryId, q, StringUtil.toNull(standardOrModel),
-                    StringUtil.toNull(color), StringUtil.toNull(brand), StringUtil.toNull(mfrs), StringUtil.toNull(otherField1), StringUtil.toNull(otherField2), StringUtil.toNull(otherField3),
+                    StringUtil.toNull(color), StringUtil.toNull(brand), StringUtil.toNull(mfrs), StringUtil.toNull(otherField1), StringUtil.toNull(otherField2), StringUtil.toNull(otherField3), StringUtil.toNull(otherField4), StringUtil.toNull(otherField5),
+                    StringUtil.toNull(otherField6), StringUtil.toNull(otherField7),
                     enableSerialNumber, enableBatchNumber);
             object.put("total", total);
             JSONArray dataArray = new JSONArray();
@@ -352,8 +399,12 @@ public class MaterialController extends BaseController {
                         }
                     }
                     item.put("mBarCode", material.getmBarCode());
+                    item.put("barCode", material.getmBarCode());
+                    item.put("code", material.getCode());
+                    item.put("skuCode", material.getSkuCode());
                     item.put("name", material.getName());
                     item.put("mnemonic", material.getMnemonic());
+                    item.put("weight", material.getWeight());
                     item.put("categoryName", material.getCategoryName());
                     item.put("standard", material.getStandard());
                     item.put("model", material.getModel());
@@ -362,6 +413,7 @@ public class MaterialController extends BaseController {
                     item.put("mfrs", material.getMfrs());
                     item.put("unit", material.getCommodityUnit() + ratioStr);
                     item.put("sku", material.getSku());
+                    item.put("specValues", material.getSpecValues());
                     item.put("enableSerialNumber", material.getEnableSerialNumber());
                     item.put("enableBatchNumber", material.getEnableBatchNumber());
                     BigDecimal stock;
@@ -379,6 +431,10 @@ public class MaterialController extends BaseController {
                     item.put("otherField1", material.getOtherField1());
                     item.put("otherField2", material.getOtherField2());
                     item.put("otherField3", material.getOtherField3());
+                    item.put("otherField4", material.getOtherField4());
+                    item.put("otherField5", material.getOtherField5());
+                    item.put("otherField6", material.getOtherField6());
+                    item.put("otherField7", material.getOtherField7());
                     item.put("imgName", material.getImgName());
                     if(fileUploadType == 2) {
                         item.put("imgSmall", "small");
@@ -580,7 +636,8 @@ public class MaterialController extends BaseController {
      */
     @GetMapping(value = "/getMaterialByBarCode")
     @ApiOperation(value = "根据条码查询商品信息")
-    public BaseResponseInfo getMaterialByBarCode(@RequestParam("barCode") String barCode,
+    public BaseResponseInfo getMaterialByBarCode(@RequestParam(value = "barCode", required = false) String barCode,
+                                          @RequestParam(value = "meIds", required = false) String meIds,
                                           @RequestParam(value = "organId", required = false) Long organId,
                                           @RequestParam(value = "depotId", required = false) Long depotId,
                                           @RequestParam("mpList") String mpList,
@@ -591,14 +648,20 @@ public class MaterialController extends BaseController {
             Long userId = userService.getUserId(request);
             String priceLimit = userService.getRoleTypeByUserId(userId).getPriceLimit();
             String[] mpArr = mpList.split(",");
-            //支持序列号查询，先根据序列号查询条码，如果查不到就直接查条码
-            MaterialExtend materialExtend = materialService.getMaterialExtendBySerialNumber(barCode);
-            if(materialExtend!=null && StringUtil.isNotEmpty(materialExtend.getBarCode())) {
-                barCode = materialExtend.getBarCode();
+            List<MaterialVo4Unit> list;
+            if(StringUtil.isNotEmpty(meIds)) {
+                //商品选择弹窗按SKU主键精确取值
+                list = materialService.getMaterialByMeIds(meIds);
+            } else {
+                //支持序列号查询，先根据序列号查询条码，如果查不到就直接查条码
+                MaterialExtend materialExtend = materialService.getMaterialExtendBySerialNumber(barCode);
+                if(materialExtend!=null && StringUtil.isNotEmpty(materialExtend.getBarCode())) {
+                    barCode = materialExtend.getBarCode();
+                }
+                list = materialService.getMaterialByBarCode(barCode);
             }
             //查下供应商或者客户的信息
             Supplier supplier = organId!=null ? supplierService.getSupplier(organId) : null;
-            List<MaterialVo4Unit> list = materialService.getMaterialByBarCode(barCode);
             if(list!=null && list.size()>0) {
                 for(MaterialVo4Unit mvo: list) {
                     mvo.setMaterialOther(materialService.getMaterialOtherByParam(mpArr, mvo));
@@ -747,6 +810,7 @@ public class MaterialController extends BaseController {
                                              @RequestParam("zeroStock") Integer zeroStock,
                                              @RequestParam(value = "column", required = false, defaultValue = "createTime") String column,
                                              @RequestParam(value = "order", required = false, defaultValue = "desc") String order,
+                                             @RequestParam(value = "displayMode", required = false, defaultValue = "spu") String displayMode,
                                              HttpServletRequest request)throws Exception {
         BaseResponseInfo res = new BaseResponseInfo();
         Map<String, Object> map = new HashMap<>();
@@ -769,10 +833,33 @@ public class MaterialController extends BaseController {
             Long userId = userService.getUserId(request);
             String priceLimit = userService.getRoleTypeByUserId(userId).getPriceLimit();
             Boolean moveAvgPriceFlag = systemConfigService.getMoveAvgPriceFlag();
-            List<MaterialVo4Unit> dataList = materialService.getListWithStock(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam),
-                    moveAvgPriceFlag, zeroStock, StringUtil.safeSqlParse(column), StringUtil.safeSqlParse(order), (currentPage-1)*pageSize, pageSize, request);
-            int total = materialService.getListWithStockCount(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), zeroStock);
-            MaterialVo4Unit materialVo4Unit= materialService.getTotalStockAndPrice(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), request);
+            boolean skuMode = "sku".equalsIgnoreCase(displayMode);
+            boolean unitMode = "unit".equalsIgnoreCase(displayMode);
+            if (unitMode && depotList.isEmpty()) {
+                // 用户没有可查看仓库时，单件库存不返回跨仓库数据。
+                depotList.add(-1L);
+            }
+            List<MaterialVo4Unit> dataList;
+            int total;
+            MaterialVo4Unit materialVo4Unit;
+            if (unitMode) {
+                dataList = materialService.getUnitListWithStock(priceLimit, depotList, idList, StringUtil.toNull(position),
+                        StringUtil.toNull(materialParam), StringUtil.safeSqlParse(column), StringUtil.safeSqlParse(order),
+                        (currentPage-1)*pageSize, pageSize, request);
+                total = materialService.getUnitListWithStockCount(depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam));
+                materialVo4Unit = materialService.getUnitTotalStockAndPrice(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), request);
+                if (materialVo4Unit == null) materialVo4Unit = new MaterialVo4Unit();
+            } else {
+                dataList = skuMode
+                        ? materialService.getSkuListWithStock(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam),
+                        moveAvgPriceFlag, zeroStock, StringUtil.safeSqlParse(column), StringUtil.safeSqlParse(order), (currentPage-1)*pageSize, pageSize, request)
+                        : materialService.getListWithStock(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam),
+                        moveAvgPriceFlag, zeroStock, StringUtil.safeSqlParse(column), StringUtil.safeSqlParse(order), (currentPage-1)*pageSize, pageSize, request);
+                total = skuMode
+                        ? materialService.getSkuListWithStockCount(depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), zeroStock)
+                        : materialService.getListWithStockCount(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), zeroStock);
+                materialVo4Unit= materialService.getTotalStockAndPrice(priceLimit, depotList, idList, StringUtil.toNull(position), StringUtil.toNull(materialParam), request);
+            }
             map.put("total", total);
             map.put("currentStock", materialVo4Unit.getCurrentStock()!=null?materialVo4Unit.getCurrentStock():BigDecimal.ZERO);
             if(moveAvgPriceFlag) {

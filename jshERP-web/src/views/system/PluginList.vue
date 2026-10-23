@@ -118,12 +118,12 @@
               return parseInt(index)+1;
             }
           },
-          {
-            title: '操作',
+            {
+              title: '操作',
             dataIndex: 'action',
             width: 200,
             align:"center",
-            scopedSlots: { customRender: 'action' },
+            fixed: 'right', scopedSlots: { customRender: 'action' },
           },
           {title: '名称', dataIndex: '', width: 120,
             customRender:function (t,r,index) {
@@ -162,7 +162,7 @@
           },
           {title: '状态', dataIndex: 'pluginState', width: 60, align: "center",
             scopedSlots: { customRender: 'customRenderFlag' }
-          }
+},
         ],
         url: {
           list: "/plugin/list",

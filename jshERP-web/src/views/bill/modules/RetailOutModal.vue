@@ -66,21 +66,25 @@
         </a-row>
         <a-row class="form-row" :gutter="24">
           <a-col :lg="18" :md="12" :sm="24">
-            <j-editable-table id="billModal"
-              :ref="refKeys[0]"
+            <data-table
+              ref="materialDataTable"
               :loading="materialTable.loading"
-              :columns="materialTable.columns"
-              :dataSource="materialTable.dataSource"
-              :minWidth="minWidth"
-              :maxHeight="300"
-              :rowNumber="false"
-              :rowSelection="true"
-              :actionButton="true"
-              :dragSortAndNumber="true"
-              @valueChange="onValueChange"
-              @added="onAdded"
-              @deleted="onDeleted">
-              <template #buttonAfter>
+              :data-source="materialTable.dataSource"
+              :extra-columns="detailColumns"
+              table-key="bill_retail_out_detail"
+              :default-columns="defDataIndex"
+              :scroll="{ x: minWidth }"
+              :actions="detailActions"
+              :statistics-fields="detailStatisticsFields"
+              :summary="true"
+              :summary-fields="detailSummaryFields"
+              :detail="true"
+              :editable="true"
+              :preserve-column-setting="true"
+              @edit-change="onDetailEditChange">
+              <template slot="toolbar">
+                <a-button type="primary" icon="plus" @click="openSelectMaterial">新增商品</a-button>
+                <a-button @click="handleBatchSetDepot">批量设置仓库</a-button>
                 <a-row :gutter="24" style="float:left;" data-step="4" data-title="扫码录入" data-intro="此功能支持扫码枪扫描商品条码进行录入">
                   <a-col v-if="scanStatus" :md="6" :sm="24">
                     <a-button @click="scanEnter">扫码录入</a-button>
@@ -93,15 +97,23 @@
                   </a-col>
                 </a-row>
               </template>
-              <template #depotBatchSet>
-                <a-icon type="down" @click="handleBatchSetDepot" />
+              <template slot="barCode" slot-scope="text, record">
+                <j-select-list kind="material" :value="record.barCode" :rows="getPopupRows(record)" :multi="true" @change="v => onDetailPopupChange('barCode', v, record)" />
               </template>
-              <template #depotAdd>
-                <a-divider v-if="quickBtn.depot" style="margin: 4px 0;" />
-                <div v-if="quickBtn.depot" class="dropdown-btn" @click="addDepot"><a-icon type="plus" /> 新增</div>
-                <div class="dropdown-btn" @mousedown="e => e.preventDefault()" @click="initDepot"><a-icon type="reload" /> 刷新</div>
+              <template slot="imgName" slot-scope="text, record">
+                <img v-if="record.imgName" :src="getDetailImgUrl(record.imgName)" class="detail-sku-img" />
+                <span v-else class="detail-sku-img-placeholder">无图</span>
               </template>
-            </j-editable-table>
+              <template slot="specValues" slot-scope="text, record">
+                {{ parseSpecValues(record.specValues) }}
+              </template>
+              <template slot="snList" slot-scope="text, record">
+                <j-select-list kind="sn" :value="record.snList" :rows="getPopupRows(record)" @change="v => onDetailPopupChange('snList', v, record)" />
+              </template>
+              <template slot="batchNumber" slot-scope="text, record">
+                <j-select-list kind="batch" :value="record.batchNumber" :rows="getPopupRows(record)" @change="v => onDetailPopupChange('batchNumber', v, record)" />
+              </template>
+            </data-table>
             <a-row class="form-row" :gutter="24">
               <a-col :lg="24" :md="24" :sm="24">
                 <a-form-item :labelCol="labelCol" :wrapperCol="{xs: { span: 24 },sm: { span: 24 }}" label="">
@@ -170,6 +182,7 @@
     <depot-modal ref="depotModalForm" @ok="depotModalFormOk"></depot-modal>
     <account-modal ref="accountModalForm" @ok="accountModalFormOk"></account-modal>
     <batch-set-depot ref="batchSetDepotModalForm" @ok="batchSetDepotModalFormOk"></batch-set-depot>
+    <j-select-material-modal ref="selectMaterialModal" :multi="true" @ok="onSelectMaterialOk"></j-select-material-modal>
     <workflow-iframe ref="modalWorkflow" @ok="workflowModalFormOk"></workflow-iframe>
     <bill-print-iframe ref="modalPrint"></bill-print-iframe>
     <bill-print-pro-iframe ref="modalPrintPro"></bill-print-pro-iframe>
@@ -187,15 +200,19 @@
   import { FormTypes } from '@/utils/JEditableTableUtil'
   import { JEditableTableMixin } from '@/mixins/JEditableTableMixin'
   import { BillModalMixin } from '../mixins/BillModalMixin'
+  import { DataTableDetailMixin } from '../mixins/DataTableDetailMixin'
   import { getMpListShort,handleIntroJs } from "@/utils/util"
   import { getAccount } from '@/api/api'
   import { getAction } from '@/api/manage'
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
+  import DataTable from '@/components/DataTable'
+  import JSelectList from '@/components/jeecgbiz/JSelectList'
+  import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
   import Vue from 'vue'
   export default {
     name: "RetailOutModal",
-    mixins: [JEditableTableMixin, BillModalMixin],
+    mixins: [JEditableTableMixin, BillModalMixin, DataTableDetailMixin],
     components: {
       MemberModal,
       DepotModal,
@@ -206,6 +223,9 @@
       BillPrintProIframe,
       JUpload,
       JDate,
+      DataTable,
+      JSelectList,
+      JSelectMaterialModal,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -223,7 +243,7 @@
         prefixNo: 'LSCK',
         fileList:[],
         payTypeList: [],
-        minWidth: 1100,
+        minWidth: 2200,
         model: {},
         labelCol: {
           xs: { span: 24 },
@@ -235,38 +255,61 @@
         },
         refKeys: ['materialDataTable', ],
         activeKey: 'materialDataTable',
+        // 列设置：商品信息 + SKU信息 + 单据明细字段
+        defColumns: [
+          { title: '仓库名称', key: 'depotId', width: '8%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
+            allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
+          { title: '商品编码', key: 'code', width: '8%', type: FormTypes.normal },
+          { title: '图片', key: 'imgName', width: '5%', type: FormTypes.normal },
+          { title: 'SKU编码', key: 'skuCode', width: '9%', type: FormTypes.normal },
+          { title: '规格值', key: 'specValues', width: '12%', type: FormTypes.normal },
+          { title: '规格', key: 'standard', width: '8%', type: FormTypes.normal },
+          { title: '型号', key: 'model', width: '6%', type: FormTypes.normal },
+          { title: '颜色', key: 'color', width: '5%', type: FormTypes.normal },
+          { title: '单位', key: 'unit', width: '5%', type: FormTypes.normal },
+          { title: '品牌', key: 'brand', width: '5%', type: FormTypes.normal },
+          { title: '助记码', key: 'mnemonic', width: '6%', type: FormTypes.normal },
+          { title: '类别', key: 'categoryName', width: '6%', type: FormTypes.normal },
+          { title: '基础重量', key: 'weight', width: '6%', type: FormTypes.normal },
+          { title: '制造商', key: 'mfrs', width: '8%', type: FormTypes.normal },
+          { title: '面料', key: 'otherField1', width: '5%', type: FormTypes.normal },
+          { title: '安全类别', key: 'otherField2', width: '5%', type: FormTypes.normal },
+          { title: '执行标准', key: 'otherField3', width: '5%', type: FormTypes.normal },
+          { title: '商品ID', key: 'mId', width: '5%', type: FormTypes.normal },
+          { title: '扩展4', key: 'otherField4', width: '4%', type: FormTypes.normal },
+          { title: '扩展5', key: 'otherField5', width: '4%', type: FormTypes.normal },
+          { title: '扩展6', key: 'otherField6', width: '4%', type: FormTypes.normal },
+          { title: '扩展7', key: 'otherField7', width: '4%', type: FormTypes.normal },
+          { title: '库存', key: 'stock', width: '5%', type: FormTypes.normal },
+          { title: '采购价', key: 'purchaseDecimal', width: '5%', type: FormTypes.normal },
+          { title: '零售价', key: 'commodityDecimal', width: '5%', type: FormTypes.normal },
+          { title: '销售价', key: 'wholesaleDecimal', width: '5%', type: FormTypes.normal },
+          { title: '最低售价', key: 'lowDecimal', width: '5%', type: FormTypes.normal },
+          { title: 'SKU单位', key: 'commodityUnit', width: '5%', type: FormTypes.normal },
+          { title: 'SKU_ID', key: 'meId', width: '5%', type: FormTypes.normal },
+          { title: '序列号', key: 'snList', width: '12%', type: FormTypes.popupJsh, kind: 'sn', multi: true },
+          { title: '批号', key: 'batchNumber', width: '8%', type: FormTypes.popupJsh, kind: 'batch', multi: false },
+          { title: '有效期', key: 'expirationDate', width: '9%', type: FormTypes.input, readonly: true },
+          { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '单价', key: 'unitPrice', width: '6%', type: FormTypes.inputNumber },
+          { title: '金额', key: 'allPrice', width: '6%', type: FormTypes.inputNumber, statistics: true },
+          { title: '备注', key: 'remark', width: '7%', type: FormTypes.input }
+        ],
+        // 默认显示：商品信息 + SKU信息 + 数量金额
+        defDataIndex: ['depotId','barCode','name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
+          'otherField1','otherField2','otherField3','mId','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal',
+          'operNumber','unitPrice','allPrice','remark','snList','batchNumber','expirationDate'],
         materialTable: {
           loading: false,
           dataSource: [],
-          columns: [
-            { title: '仓库名称', key: 'depotId', width: '10%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
-              allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '条码', key: 'barCode', width: '16%', type: FormTypes.popupJsh, kind: 'material', multi: true,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '名称', key: 'name', width: '12%', type: FormTypes.normal },
-            { title: '规格', key: 'standard', width: '10%', type: FormTypes.normal },
-            { title: '型号', key: 'model', width: '10%', type: FormTypes.normal },
-            { title: '颜色', key: 'color', width: '5%', type: FormTypes.normal },
-            { title: '品牌', key: 'brand', width: '6%', type: FormTypes.normal },
-            { title: '制造商', key: 'mfrs', width: '6%', type: FormTypes.normal },
-            { title: '扩展1', key: 'otherField1', width: '4%', type: FormTypes.normal },
-            { title: '扩展2', key: 'otherField2', width: '4%', type: FormTypes.normal },
-            { title: '扩展3', key: 'otherField3', width: '4%', type: FormTypes.normal },
-            { title: '库存', key: 'stock', width: '5%', type: FormTypes.normal },
-            { title: '单位', key: 'unit', width: '5%', type: FormTypes.normal },
-            { title: '序列号', key: 'snList', width: '12%', type: FormTypes.popupJsh, kind: 'sn', multi: true },
-            { title: '批号', key: 'batchNumber', width: '8%', type: FormTypes.popupJsh, kind: 'batch', multi: false },
-            { title: '有效期', key: 'expirationDate',width: '9%', type: FormTypes.input, readonly: true },
-            { title: '多属性', key: 'sku', width: '9%', type: FormTypes.normal },
-            { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '单价', key: 'unitPrice', width: '6%', type: FormTypes.inputNumber},
-            { title: '金额', key: 'allPrice', width: '6%', type: FormTypes.inputNumber, statistics: true },
-            { title: '备注', key: 'remark', width: '7%', type: FormTypes.input }
-          ]
+          columns: []
         },
         confirmLoading: false,
         validatorRules:{
@@ -295,8 +338,9 @@
     },
     created () {
       this.initPayTypeList()
+      this.initColumns()
       let realScreenWidth = window.screen.width
-      this.minWidth = realScreenWidth<1500?800:1100
+      this.minWidth = realScreenWidth<1500?1800:2200
     },
     methods: {
       //调用完edit()方法之后会自动调用此方法
@@ -431,11 +475,47 @@
         this.$nextTick(() => {
           this.form.setFieldsValue({'backAmount':backAmount})
         });
+      },
+      // 明细行SKU图片地址
+      getDetailImgUrl(imgUrl) {
+        if (!imgUrl) return ''
+        if (imgUrl.indexOf('http') === 0) return imgUrl
+        const base = (window._CONFIG && window._CONFIG['domianURL']) ? window._CONFIG['domianURL'] : ''
+        if (imgUrl.indexOf('systemConfig/static/') === -1) {
+          return base + '/systemConfig/static/' + imgUrl
+        }
+        return base + '/' + imgUrl
+      },
+      // 规格值JSON转为“颜色:蓝色 / 规格:200*230”
+      parseSpecValues(specValues) {
+        if (!specValues) return ''
+        try {
+          const arr = JSON.parse(specValues)
+          if (!Array.isArray(arr)) return specValues
+          return arr.map(item => item.attributeName + ':' + item.valueText).join(' / ')
+        } catch (e) {
+          return specValues
+        }
+      },
+      // 初始化明细列：完整列定义交给 DataTable 组件，由列设置（tableKey + defaultColumns）控制显隐
+      initColumns() {
+        this.materialTable.columns = this.defColumns.map(c => Object.assign({}, c))
       }
     }
   }
 </script>
 <style scoped>
+  .detail-sku-img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+  .detail-sku-img-placeholder {
+    font-size: 12px;
+    color: #ccc;
+  }
   .sign .ant-input{
     font-size: 30px;
     font-weight:bolder;
@@ -443,5 +523,65 @@
     border-left-width:0px!important;
     border-top-width:0px!important;
     border-right-width:0px!important;
+  }
+
+  /* 可编辑表格样式完全对齐 a-table size="middle" */
+  #billModal /deep/ .input-table {
+    font-size: 14px;
+    border: 1px solid #e8e8e8;
+    border-radius: 0;
+  }
+  /* 表头 */
+  #billModal /deep/ .input-table .thead {
+    overflow: hidden !important;
+    border-bottom: 1px solid #e8e8e8;
+    background: #fafafa;
+  }
+  #billModal /deep/ .input-table .thead .td {
+    padding: 12px 8px !important;
+    background: #fafafa;
+    font-weight: 500;
+    font-size: 14px;
+    color: rgba(0,0,0,0.85);
+    border-color: #e8e8e8;
+    justify-content: flex-start !important;
+    white-space: nowrap;
+  }
+  /* 表体 */
+  #billModal /deep/ .input-table .tbody .tr {
+    border-bottom: 1px solid #e8e8e8;
+  }
+  #billModal /deep/ .input-table .tbody .tr:last-child {
+    border-bottom: none;
+  }
+  #billModal /deep/ .input-table .tbody .td {
+    padding: 12px 8px !important;
+    font-size: 14px;
+    color: rgba(0,0,0,0.65);
+    justify-content: flex-start !important;
+    transition: background 0.3s;
+  }
+  /* 悬停行 */
+  #billModal /deep/ .input-table .tbody .tr:hover {
+    background: #e6f7ff !important;
+  }
+  /* 选中行 */
+  #billModal /deep/ .input-table .tbody .tr.tr-checked {
+    background: #fafafa !important;
+  }
+  /* 单元格内的输入组件对齐 a-table 正文样式 */
+  #billModal /deep/ .input-table .tbody .td input,
+  #billModal /deep/ .input-table .tbody .td .ant-select-selection,
+  #billModal /deep/ .input-table .tbody .td .ant-input-number-input {
+    font-size: 14px;
+    color: rgba(0,0,0,0.65);
+  }
+  #billModal /deep/ .input-table .tbody .td .ant-input-number {
+    width: 100%;
+  }
+  /* 复选框列居中 */
+  #billModal /deep/ .input-table .thead .td.td-cb,
+  #billModal /deep/ .input-table .tbody .td.td-cb {
+    justify-content: center !important;
   }
 </style>

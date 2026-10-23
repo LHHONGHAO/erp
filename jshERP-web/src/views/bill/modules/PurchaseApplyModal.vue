@@ -41,21 +41,24 @@
           <a-col :lg="6" :md="12" :sm="24">
           </a-col>
         </a-row>
-        <j-editable-table id="billModal"
-          :ref="refKeys[0]"
+        <data-table
+          ref="materialDataTable"
           :loading="materialTable.loading"
-          :columns="materialTable.columns"
-          :dataSource="materialTable.dataSource"
-          :minWidth="minWidth"
-          :maxHeight="300"
-          :rowNumber="false"
-          :rowSelection="rowCanEdit"
-          :actionButton="rowCanEdit"
-          :dragSortAndNumber="rowCanEdit"
-          @valueChange="onValueChange"
-          @added="onAdded"
-          @deleted="onDeleted">
-          <template #buttonAfter>
+          :data-source="materialTable.dataSource"
+          :extra-columns="detailColumns"
+          table-key="bill_purchase_apply_detail"
+          :default-columns="defDataIndex"
+          :scroll="{ x: minWidth }"
+          :actions="detailActions"
+          :statistics-fields="detailStatisticsFields"
+          :summary="true"
+          :summary-fields="detailSummaryFields"
+          :detail="true"
+          :editable="true"
+          :preserve-column-setting="true"
+          @edit-change="onDetailEditChange">
+          <template slot="toolbar">
+            <a-button type="primary" icon="plus" @click="openSelectMaterial">新增商品</a-button>
             <a-row v-if="rowCanEdit" :gutter="24" style="float:left;padding-bottom: 5px;" data-step="4" data-title="扫码录入" data-intro="此功能支持扫码枪扫描商品条码进行录入">
               <a-col v-if="scanStatus" :md="6" :sm="24">
                 <a-button @click="scanEnter">扫码录入</a-button>
@@ -76,7 +79,10 @@
               <a-button icon="import" @click="onImport(prefixNo)">导入明细</a-button>
             </a-row>
           </template>
-        </j-editable-table>
+          <template slot="barCode" slot-scope="text, record">
+            <j-select-list kind="material" :value="record.barCode" :rows="getPopupRows(record)" :multi="true" @change="v => onDetailPopupChange('barCode', v, record)" />
+          </template>
+        </data-table>
         <a-row class="form-row" :gutter="24">
           <a-col :lg="24" :md="24" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="{xs: { span: 24 },sm: { span: 24 }}" label="">
@@ -98,6 +104,7 @@
     <workflow-iframe ref="modalWorkflow" @ok="workflowModalFormOk"></workflow-iframe>
     <bill-print-iframe ref="modalPrint"></bill-print-iframe>
     <bill-print-pro-iframe ref="modalPrintPro"></bill-print-pro-iframe>
+    <j-select-material-modal ref="selectMaterialModal" :multi="true" @ok="onSelectMaterialOk"></j-select-material-modal>
   </j-modal>
 </template>
 <script>
@@ -110,13 +117,17 @@
   import { FormTypes } from '@/utils/JEditableTableUtil'
   import { JEditableTableMixin } from '@/mixins/JEditableTableMixin'
   import { BillModalMixin } from '../mixins/BillModalMixin'
+  import { DataTableDetailMixin } from '../mixins/DataTableDetailMixin'
   import { getMpListShort, changeListFmtMinus,handleIntroJs } from "@/utils/util"
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
+  import DataTable from '@/components/DataTable'
+  import JSelectList from '@/components/jeecgbiz/JSelectList'
+  import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
   import Vue from 'vue'
   export default {
     name: "PurchaseApplyModal",
-    mixins: [JEditableTableMixin,BillModalMixin],
+    mixins: [JEditableTableMixin,BillModalMixin, DataTableDetailMixin],
     components: {
       ImportItemModal,
       HistoryBillList,
@@ -125,6 +136,9 @@
       BillPrintProIframe,
       JUpload,
       JDate,
+      DataTable,
+      JSelectList,
+      JSelectMaterialModal,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -158,30 +172,32 @@
         refKeys: ['materialDataTable', ],
         tableKeys:['materialDataTable', ],
         activeKey: 'materialDataTable',
+        defColumns: [
+          { title: '', key: 'hiddenKey', width: '1%', type: FormTypes.hidden },
+          { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
+          { title: '规格', key: 'standard', width: '9%', type: FormTypes.normal },
+          { title: '型号', key: 'model', width: '9%', type: FormTypes.normal },
+          { title: '颜色', key: 'color', width: '6%', type: FormTypes.normal },
+          { title: '品牌', key: 'brand', width: '6%', type: FormTypes.normal },
+          { title: '制造商', key: 'mfrs', width: '6%', type: FormTypes.normal },
+          { title: '扩展1', key: 'otherField1', width: '4%', type: FormTypes.normal },
+          { title: '扩展2', key: 'otherField2', width: '4%', type: FormTypes.normal },
+          { title: '扩展3', key: 'otherField3', width: '4%', type: FormTypes.normal },
+          { title: '单位', key: 'unit', width: '6%', type: FormTypes.normal },
+          { title: '多属性', key: 'sku', width: '10%', type: FormTypes.normal },
+          { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
+            validateRules: [{ required: true, message: '${title}不能为空' }]
+          },
+          { title: '备注', key: 'remark', width: '8%', type: FormTypes.input},
+        ],
+        defDataIndex: ['barCode','name','standard','model','color','brand','mfrs','otherField1','otherField2','otherField3','unit','sku','operNumber','remark'],
         materialTable: {
           loading: false,
           dataSource: [],
-          columns: [
-            { title: '', key: 'hiddenKey', width: '1%', type: FormTypes.hidden },
-            { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
-            { title: '规格', key: 'standard', width: '9%', type: FormTypes.normal },
-            { title: '型号', key: 'model', width: '9%', type: FormTypes.normal },
-            { title: '颜色', key: 'color', width: '6%', type: FormTypes.normal },
-            { title: '品牌', key: 'brand', width: '6%', type: FormTypes.normal },
-            { title: '制造商', key: 'mfrs', width: '6%', type: FormTypes.normal },
-            { title: '扩展1', key: 'otherField1', width: '4%', type: FormTypes.normal },
-            { title: '扩展2', key: 'otherField2', width: '4%', type: FormTypes.normal },
-            { title: '扩展3', key: 'otherField3', width: '4%', type: FormTypes.normal },
-            { title: '单位', key: 'unit', width: '6%', type: FormTypes.normal },
-            { title: '多属性', key: 'sku', width: '10%', type: FormTypes.normal },
-            { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
-              validateRules: [{ required: true, message: '${title}不能为空' }]
-            },
-            { title: '备注', key: 'remark', width: '8%', type: FormTypes.input},
-          ]
+          columns: []
         },
         confirmLoading: false,
         validatorRules:{
@@ -210,6 +226,7 @@
       }
     },
     created () {
+      this.initColumns()
     },
     methods: {
       //调用完edit()方法之后会自动调用此方法
@@ -288,6 +305,9 @@
         this.$refs.historyBillListModalForm.show('其它', '请购单', '', organId);
         this.$refs.historyBillListModalForm.disableSubmit = false;
       },
+      initColumns() {
+        this.materialTable.columns = this.defColumns.map(c => Object.assign({}, c))
+      }
     }
   }
 </script>

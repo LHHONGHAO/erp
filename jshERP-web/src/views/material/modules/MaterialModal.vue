@@ -31,21 +31,9 @@
                       <a-icon slot="addonAfter" type="scan" style="cursor:pointer;color:#1890ff;" @click="openOcrModal" title="图片识别" />
                     </a-input>
                   </a-form-item>
-                  <!-- 规格 -->
-                  <a-form-item v-else-if="prop.field==='standard'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'standard', validatorRules.standard ]"/>
-                  </a-form-item>
-                  <!-- 型号 -->
-                  <a-form-item v-else-if="prop.field==='model'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'model', validatorRules.model ]" />
-                  </a-form-item>
                   <!-- 单位 -->
                   <a-form-item v-else-if="prop.field==='unit'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'unit', validatorRules.unit ]" />
-                  </a-form-item>
-                  <!-- 颜色 -->
-                  <a-form-item v-else-if="prop.field==='color'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'color' ]" />
                   </a-form-item>
                   <!-- 品牌 -->
                   <a-form-item v-else-if="prop.field==='brand'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
@@ -66,10 +54,6 @@
                   <!-- 基础重量 -->
                   <a-form-item v-else-if="prop.field==='weight'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input-number style="width: 100%" :placeholder="'请输入'+prop.anotherName+'(kg)'" v-decorator.trim="[ 'weight' ]" />
-                  </a-form-item>
-                  <!-- 保质期 -->
-                  <a-form-item v-else-if="prop.field==='expiryNum'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-input-number style="width: 100%" :placeholder="'请输入'+prop.anotherName+'(天)'" v-decorator.trim="[ 'expiryNum' ]" />
                   </a-form-item>
                   <!-- 制造商 -->
                   <a-form-item v-else-if="prop.field==='mfrs'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
@@ -95,13 +79,37 @@
                   <a-form-item v-else-if="prop.field==='otherField5'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'otherField5' ]" />
                   </a-form-item>
-                  <!-- 等级 -->
+                  <!-- 扩展6 -->
                   <a-form-item v-else-if="prop.field==='otherField6'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'otherField6' ]" />
                   </a-form-item>
-                  <!-- 检验 -->
+                  <!-- 扩展7 -->
                   <a-form-item v-else-if="prop.field==='otherField7'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'otherField7' ]" />
+                  </a-form-item>
+                  <!-- 面料 -->
+                  <a-form-item v-else-if="prop.field==='fabric'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'fabric' ]" />
+                  </a-form-item>
+                  <!-- 安全类别 -->
+                  <a-form-item v-else-if="prop.field==='safetyCategory'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'safetyCategory' ]" />
+                  </a-form-item>
+                  <!-- 执行标准 -->
+                  <a-form-item v-else-if="prop.field==='executiveStandard'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'executiveStandard' ]" />
+                  </a-form-item>
+                  <!-- 等级 -->
+                  <a-form-item v-else-if="prop.field==='grade'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'grade' ]" />
+                  </a-form-item>
+                  <!-- 检验 -->
+                  <a-form-item v-else-if="prop.field==='inspection'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'inspection' ]" />
+                  </a-form-item>
+                  <!-- 填充物 -->
+                  <a-form-item v-else-if="prop.field==='filler'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
+                    <a-input :placeholder="'请输入'+prop.anotherName" v-decorator.trim="[ 'filler' ]" />
                   </a-form-item>
                   <!-- 序列号 -->
                   <a-form-item v-else-if="prop.field==='enableSerialNumber'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
@@ -123,34 +131,6 @@
                 </a-col>
               </a-row>
             </template>
-            <!-- 专属业务字段：固定显示，不依赖属性配置 -->
-            <a-row class="form-row" :gutter="24">
-              <a-col :md="formColSpan" :sm="24">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="面料">
-                  <a-input placeholder="请输入面料" v-decorator.trim="[ 'fabric' ]" />
-                </a-form-item>
-              </a-col>
-              <a-col :md="formColSpan" :sm="24">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="安全类别">
-                  <a-input placeholder="请输入安全类别" v-decorator.trim="[ 'safetyCategory' ]" />
-                </a-form-item>
-              </a-col>
-              <a-col :md="formColSpan" :sm="24">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="执行标准">
-                  <a-input placeholder="请输入执行标准" v-decorator.trim="[ 'executiveStandard' ]" />
-                </a-form-item>
-              </a-col>
-              <a-col :md="formColSpan" :sm="24">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="等级">
-                  <a-input placeholder="请输入等级" v-decorator.trim="[ 'grade' ]" />
-                </a-form-item>
-              </a-col>
-              <a-col :md="formColSpan" :sm="24">
-                <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="检验">
-                  <a-input placeholder="请输入检验" v-decorator.trim="[ 'inspection' ]" />
-                </a-form-item>
-              </a-col>
-            </a-row>
             <!-- 商品信息卡片：规格模块 -->
             <a-card :title="'商品信息' + (categorySelected ? '' : ' — 选择种类')" size="small" :bordered="true" style="margin-top: 12px;">
               <div v-if="!categorySelected" style="text-align: center; padding: 40px 0; color: #999;">
@@ -403,28 +383,10 @@
       <!-- 扩展字段别名配置（仅扩展字段可修改名称） -->
       <div style="border-top: 1px solid #f0f0f0; padding-top: 12px;">
         <div style="margin-bottom: 8px; color: #999; font-size: 12px;">扩展字段别名（仅扩展字段可修改名称）</div>
-        <a-row style="margin-bottom: 8px;">
+        <a-row v-for="(alias, aliasField) in propertyConfigAliasList" :key="aliasField" style="margin-bottom: 8px;">
           <a-col :span="24">
-            <span style="display:inline-block;width:60px;">扩展4：</span>
-            <a-input v-model="propertyConfigAlias.otherField4" placeholder="扩展4" style="width: calc(100% - 70px);" />
-          </a-col>
-        </a-row>
-        <a-row style="margin-bottom: 8px;">
-          <a-col :span="24">
-            <span style="display:inline-block;width:60px;">扩展5：</span>
-            <a-input v-model="propertyConfigAlias.otherField5" placeholder="扩展5" style="width: calc(100% - 70px);" />
-          </a-col>
-        </a-row>
-        <a-row style="margin-bottom: 8px;">
-          <a-col :span="24">
-            <span style="display:inline-block;width:60px;">扩展6：</span>
-            <a-input v-model="propertyConfigAlias.otherField6" placeholder="等级" style="width: calc(100% - 70px);" />
-          </a-col>
-        </a-row>
-        <a-row>
-          <a-col :span="24">
-            <span style="display:inline-block;width:60px;">扩展7：</span>
-            <a-input v-model="propertyConfigAlias.otherField7" placeholder="检验" style="width: calc(100% - 70px);" />
+            <span style="display:inline-block;width:60px;">{{ alias.label }}：</span>
+            <a-input v-model="propertyConfigAlias[aliasField]" :placeholder="alias.label" style="width: calc(100% - 70px);" />
           </a-col>
         </a-row>
       </div>
@@ -517,37 +479,50 @@
         },
         basePropertyList: [
           { nativeName: '名称', field: 'name', visible: true, sort: 0, anotherName: '名称', fixed: true },
-          { nativeName: '规格', field: 'standard', visible: false, sort: 1, anotherName: '规格', fixed: true },
-          { nativeName: '型号', field: 'model', visible: false, sort: 2, anotherName: '型号', fixed: true },
-          { nativeName: '单位', field: 'unit', visible: true, sort: 3, anotherName: '单位', fixed: true },
-          { nativeName: '颜色', field: 'color', visible: false, sort: 4, anotherName: '颜色', fixed: true },
-          { nativeName: '品牌', field: 'brand', visible: true, sort: 5, anotherName: '品牌', fixed: true },
-          { nativeName: '助记码', field: 'mnemonic', visible: true, sort: 6, anotherName: '助记码', fixed: true },
-          { nativeName: '类别', field: 'categoryId', visible: true, sort: 7, anotherName: '类别', fixed: true },
-          { nativeName: '基础重量', field: 'weight', visible: true, sort: 8, anotherName: '基础重量', fixed: true },
-          { nativeName: '保质期天数', field: 'expiryNum', visible: false, sort: 9, anotherName: '保质期天数', fixed: true },
-          { nativeName: '制造商', field: 'mfrs', visible: true, sort: 11, anotherName: '制造商', fixed: true },
-          { nativeName: '面料', field: 'otherField1', visible: true, sort: 12, anotherName: '面料', fixed: true },
-          { nativeName: '安全类别', field: 'otherField2', visible: true, sort: 13, anotherName: '安全类别', fixed: true },
-          { nativeName: '执行标准', field: 'otherField3', visible: true, sort: 14, anotherName: '执行标准', fixed: true },
-          { nativeName: '序列号', field: 'enableSerialNumber', visible: false, sort: 15, anotherName: '序列号', fixed: true },
-          { nativeName: '条码', field: 'barCode', visible: true, sort: 16, anotherName: '条码', fixed: true },
-          { nativeName: '商品ID', field: 'id', visible: false, sort: 17, anotherName: '商品ID', fixed: true },
-          { nativeName: '扩展4', field: 'otherField4', visible: true, sort: 18, anotherName: '填充物', fixed: false },
-          { nativeName: '扩展5', field: 'otherField5', visible: true, sort: 19, anotherName: '扩展5', fixed: false },
-          { nativeName: '等级', field: 'otherField6', visible: true, sort: 20, anotherName: '等级', fixed: false },
-          { nativeName: '检验', field: 'otherField7', visible: true, sort: 21, anotherName: '检验', fixed: false }
+          { nativeName: '单位', field: 'unit', visible: true, sort: 1, anotherName: '单位', fixed: true },
+          { nativeName: '品牌', field: 'brand', visible: true, sort: 2, anotherName: '品牌', fixed: true },
+          { nativeName: '助记码', field: 'mnemonic', visible: true, sort: 3, anotherName: '助记码', fixed: true },
+          { nativeName: '类别', field: 'categoryId', visible: true, sort: 4, anotherName: '类别', fixed: true },
+          { nativeName: '基础重量', field: 'weight', visible: true, sort: 5, anotherName: '基础重量', fixed: true },
+          { nativeName: '制造商', field: 'mfrs', visible: true, sort: 6, anotherName: '制造商', fixed: true },
+          { nativeName: '序列号', field: 'enableSerialNumber', visible: false, sort: 7, anotherName: '序列号', fixed: true },
+          { nativeName: '条码', field: 'barCode', visible: true, sort: 8, anotherName: '条码', fixed: true },
+          { nativeName: '商品ID', field: 'id', visible: false, sort: 9, anotherName: '商品ID', fixed: true },
+          { nativeName: '面料', field: 'fabric', visible: true, sort: 10, anotherName: '面料', fixed: true },
+          { nativeName: '安全类别', field: 'safetyCategory', visible: true, sort: 11, anotherName: '安全类别', fixed: true },
+          { nativeName: '执行标准', field: 'executiveStandard', visible: true, sort: 12, anotherName: '执行标准', fixed: true },
+          { nativeName: '等级', field: 'grade', visible: true, sort: 13, anotherName: '等级', fixed: true },
+          { nativeName: '检验', field: 'inspection', visible: true, sort: 14, anotherName: '检验', fixed: true },
+          { nativeName: '填充物', field: 'filler', visible: true, sort: 15, anotherName: '填充物', fixed: true },
+          { nativeName: '扩展1', field: 'otherField1', visible: true, sort: 16, anotherName: '扩展1', fixed: false },
+          { nativeName: '扩展2', field: 'otherField2', visible: true, sort: 17, anotherName: '扩展2', fixed: false },
+          { nativeName: '扩展3', field: 'otherField3', visible: true, sort: 18, anotherName: '扩展3', fixed: false },
+          { nativeName: '扩展4', field: 'otherField4', visible: true, sort: 19, anotherName: '扩展4', fixed: false },
+          { nativeName: '扩展5', field: 'otherField5', visible: true, sort: 20, anotherName: '扩展5', fixed: false },
+          { nativeName: '扩展6', field: 'otherField6', visible: true, sort: 21, anotherName: '扩展6', fixed: false },
+          { nativeName: '扩展7', field: 'otherField7', visible: true, sort: 22, anotherName: '扩展7', fixed: false }
         ],
         propertyConfigVisible: false,
         // 商品基础信息属性的 field 列表（用于属性设置弹窗，仅这些可勾选/排序）
-        basePropertyFields: ['name','unit','brand','mnemonic','categoryId','weight','mfrs',
-          'otherField1','otherField2','otherField3','barCode','id','otherField4','otherField5','otherField6','otherField7'],
+        basePropertyFields: ['name','unit','brand','mnemonic','categoryId','weight','mfrs','barCode','id',
+          'fabric','safetyCategory','executiveStandard','grade','inspection','filler',
+          'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7'],
         // 属性设置：每行列数（默认4列）
         propertyConfigCols: 4,
         // 属性设置：勾选的基础属性字段数组（按勾选顺序）
         propertyConfigSelected: [],
+        // 扩展字段别名配置项（按扩展1~7 顺序）
+        propertyConfigAliasList: {
+          otherField1: { label: '扩展1' },
+          otherField2: { label: '扩展2' },
+          otherField3: { label: '扩展3' },
+          otherField4: { label: '扩展4' },
+          otherField5: { label: '扩展5' },
+          otherField6: { label: '扩展6' },
+          otherField7: { label: '扩展7' }
+        },
         // 属性设置：扩展字段别名
-        propertyConfigAlias: { otherField4: '填充物', otherField5: '扩展5', otherField6: '等级', otherField7: '检验' },
+        propertyConfigAlias: { otherField1: '扩展1', otherField2: '扩展2', otherField3: '扩展3', otherField4: '扩展4', otherField5: '扩展5', otherField6: '扩展6', otherField7: '扩展7' },
         meTable: {
           loading: false,
           dataSource: [],
@@ -586,16 +561,6 @@
           name:{
             rules: [
               { required: true, message: '请输入名称!' },
-              { max: 100, message: '长度请小于100个字符', trigger: 'blur' }
-            ]
-          },
-          standard:{
-            rules: [
-              { max: 100, message: '长度请小于100个字符', trigger: 'blur' }
-            ]
-          },
-          model:{
-            rules: [
               { max: 100, message: '长度请小于100个字符', trigger: 'blur' }
             ]
           },
@@ -802,10 +767,10 @@
           }
         }
         this.$nextTick(() => {
-          this.form.setFieldsValue(pick(this.model, 'name', 'standard', 'unit', 'model', 'color', 'brand', 'mnemonic',
-            'categoryId','enableSerialNumber','barCode','expiryNum','weight','remark','mfrs',
+          this.form.setFieldsValue(pick(this.model, 'name', 'unit', 'brand', 'mnemonic',
+            'categoryId','enableSerialNumber','barCode','weight','remark','mfrs',
             'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7',
-            'fabric','safetyCategory','executiveStandard','grade','inspection'))
+            'fabric','safetyCategory','executiveStandard','grade','inspection','filler'))
           autoJumpNextInput('materialHeadModal')
           autoJumpNextInput('materialDetailModal')
           // 从列表页"添加规格"按钮触发：自动添加一个规格模块
@@ -1814,25 +1779,13 @@
             if (item) {
               item.visible = saved[i].visible !== false
               item.sort = saved[i].sort != null ? saved[i].sort : item.sort
-              // 只有非fixed字段（扩展4、扩展5）才恢复保存的别名
-              if (!item.fixed) {
-                item.anotherName = !saved[i].anotherName || (item.field === 'otherField4' && saved[i].anotherName === '扩展4')
-                  ? item.anotherName : saved[i].anotherName
-              }
-            }
-          }
-        }
-        // 从商品属性列表同步扩展字段名（面料/安全类别/执行标准因fixed=true已被跳过）
-        const mpList = Vue.ls.get('materialPropertyList')
-        if (mpList) {
-          for (let i = 0; i < mpList.length; i++) {
-            const fieldMap = { '扩展1': 'otherField1', '扩展2': 'otherField2', '扩展3': 'otherField3', '扩展4': 'otherField4', '扩展5': 'otherField5', '扩展6': 'otherField6', '扩展7': 'otherField7' }
-            const field = fieldMap[mpList[i].nativeName]
-            if (field) {
-              const item = this.basePropertyList.find(p => p.field === field)
-              if (item && !item.fixed) {
-                const mappedName = mpList[i].anotherName || item.nativeName
-                item.anotherName = item.field === 'otherField4' && mappedName === '扩展4' ? '填充物' : mappedName
+              // 只有可改名的扩展字段（扩展1~7）才恢复保存的别名
+              if (!item.fixed && ['otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7'].indexOf(item.field) > -1) {
+                // 旧版本曾把扩展字段别名映射成专属业务字段名，加载时统一清理为「扩展N」
+                const dupNames = ['面料','安全类别','执行标准','等级','检验','填充物']
+                const savedName = saved[i].anotherName
+                item.anotherName = savedName && dupNames.indexOf(savedName) === -1
+                  ? savedName : ('扩展' + item.field.replace('otherField', ''))
               }
             }
           }
@@ -1845,7 +1798,13 @@
         // 加载勾选顺序配置（按保存的顺序构建 propertyConfigSelected）
         const orderSaved = Vue.ls.get('material_base_property_order')
         if (orderSaved && orderSaved.length) {
-          this.propertyConfigSelected = orderSaved.filter(f => this.basePropertyFields.includes(f))
+          const ordered = orderSaved.filter(f => this.basePropertyFields.includes(f))
+          // 历史配置中不存在的新增字段（默认可见）追加到末尾，避免升级后字段消失
+          const missing = this.basePropertyList
+            .filter(p => p.visible && this.basePropertyFields.includes(p.field) && ordered.indexOf(p.field) === -1)
+            .sort((a, b) => a.sort - b.sort)
+            .map(p => p.field)
+          this.propertyConfigSelected = ordered.concat(missing)
         } else {
           // 兜底：按 basePropertyList 中可见的基础属性 + sort 顺序
           const visible = this.basePropertyList.filter(p => p.visible && this.basePropertyFields.includes(p.field))
@@ -1857,23 +1816,19 @@
         // 初始化弹窗数据（深拷贝，避免取消时影响原数据）
         this.propertyConfigCols = this.propertyConfigCols || 4
         this.propertyConfigSelected = (this.propertyConfigSelected || []).slice()
-        const mp4 = this.basePropertyList.find(p => p.field === 'otherField4')
-        const mp5 = this.basePropertyList.find(p => p.field === 'otherField5')
-        const mp6 = this.basePropertyList.find(p => p.field === 'otherField6')
-        const mp7 = this.basePropertyList.find(p => p.field === 'otherField7')
-        this.propertyConfigAlias = {
-          otherField4: mp4 ? mp4.anotherName : '填充物',
-          otherField5: mp5 ? mp5.anotherName : '扩展5',
-          otherField6: mp6 ? mp6.anotherName : '等级',
-          otherField7: mp7 ? mp7.anotherName : '检验'
+        const alias = {}
+        for (let i = 1; i <= 7; i++) {
+          const field = 'otherField' + i
+          const item = this.basePropertyList.find(p => p.field === field)
+          alias[field] = item ? item.anotherName : '扩展' + i
         }
+        this.propertyConfigAlias = alias
         this.propertyConfigVisible = true
       },
       savePropertyConfig() {
         const selected = this.propertyConfigSelected || []
         // 1. 更新 basePropertyList 的 visible 和 sort
-        // 非基础属性字段（规格/型号/颜色/保质期/序列号）：不在选项中，保持原 visible 状态（默认 false）
-        // 基础属性字段：根据勾选状态设置 visible，按勾选顺序设置 sort
+        // 属性设置中可勾选的字段：根据勾选状态设置 visible，按勾选顺序设置 sort
         this.basePropertyList.forEach(item => {
           if (this.basePropertyFields.includes(item.field)) {
             const idx = selected.indexOf(item.field)
@@ -1893,15 +1848,14 @@
             this.propertyConfigSelected.unshift('name')
           }
         }
-        // 2. 更新扩展4/5/6/7别名
-        const mp4Item = this.basePropertyList.find(p => p.field === 'otherField4')
-        const mp5Item = this.basePropertyList.find(p => p.field === 'otherField5')
-        const mp6Item = this.basePropertyList.find(p => p.field === 'otherField6')
-        const mp7Item = this.basePropertyList.find(p => p.field === 'otherField7')
-        if (mp4Item) mp4Item.anotherName = this.propertyConfigAlias.otherField4 || '填充物'
-        if (mp5Item) mp5Item.anotherName = this.propertyConfigAlias.otherField5 || '扩展5'
-        if (mp6Item) mp6Item.anotherName = this.propertyConfigAlias.otherField6 || '等级'
-        if (mp7Item) mp7Item.anotherName = this.propertyConfigAlias.otherField7 || '检验'
+        // 2. 更新扩展1~7别名
+        for (let i = 1; i <= 7; i++) {
+          const field = 'otherField' + i
+          const item = this.basePropertyList.find(p => p.field === field)
+          if (item) {
+            item.anotherName = this.propertyConfigAlias[field] || ('扩展' + i)
+          }
+        }
         // 3. 保存到本地存储
         Vue.ls.set('material_base_property_config', this.basePropertyList.map(p => ({
           field: p.field, visible: p.visible, sort: p.sort, anotherName: p.anotherName
@@ -1918,7 +1872,7 @@
         )
         defaultVisible.sort((a, b) => a.sort - b.sort)
         this.propertyConfigSelected = defaultVisible.map(p => p.field)
-        this.propertyConfigAlias = { otherField4: '填充物', otherField5: '扩展5', otherField6: '等级', otherField7: '检验' }
+        this.propertyConfigAlias = { otherField1: '扩展1', otherField2: '扩展2', otherField3: '扩展3', otherField4: '扩展4', otherField5: '扩展5', otherField6: '扩展6', otherField7: '扩展7' }
       },
       handleNameChange(e) {
         let that = this

@@ -7,18 +7,12 @@
     <result column="name" jdbcType="VARCHAR" property="name" />
     <result column="code" jdbcType="VARCHAR" property="code" />
     <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
-    <result column="mfrs" jdbcType="VARCHAR" property="mfrs" />
-    <result column="model" jdbcType="VARCHAR" property="model" />
-    <result column="standard" jdbcType="VARCHAR" property="standard" />
+    <result column="mfrs" jdbcType="VARCHAR" property="mfrs" />
     <result column="brand" jdbcType="VARCHAR" property="brand" />
-    <result column="mnemonic" jdbcType="VARCHAR" property="mnemonic" />
-    <result column="color" jdbcType="VARCHAR" property="color" />
+    <result column="mnemonic" jdbcType="VARCHAR" property="mnemonic" />
     <result column="unit" jdbcType="VARCHAR" property="unit" />
-    <result column="remark" jdbcType="VARCHAR" property="remark" />
-    <result column="unit_id" jdbcType="BIGINT" property="unitId" />
-    <result column="expiry_num" jdbcType="INTEGER" property="expiryNum" />
-    <result column="weight" jdbcType="DECIMAL" property="weight" />
-    <result column="enabled" jdbcType="BIT" property="enabled" />
+    <result column="remark" jdbcType="VARCHAR" property="remark" />
+    <result column="weight" jdbcType="DECIMAL" property="weight" />
     <result column="other_field1" jdbcType="VARCHAR" property="otherField1" />
     <result column="other_field2" jdbcType="VARCHAR" property="otherField2" />
     <result column="other_field3" jdbcType="VARCHAR" property="otherField3" />
@@ -28,13 +22,13 @@
     <result column="other_field7" jdbcType="VARCHAR" property="otherField7" />
     <result column="enable_serial_number" jdbcType="VARCHAR" property="enableSerialNumber" />
     <result column="enable_batch_number" jdbcType="VARCHAR" property="enableBatchNumber" />
-    <result column="position" jdbcType="VARCHAR" property="position" />
-    <result column="attribute" jdbcType="LONGVARCHAR" property="attribute" />
+    <result column="position" jdbcType="VARCHAR" property="position" />
     <result column="fabric" jdbcType="VARCHAR" property="fabric" />
     <result column="safety_category" jdbcType="VARCHAR" property="safetyCategory" />
     <result column="executive_standard" jdbcType="VARCHAR" property="executiveStandard" />
     <result column="grade" jdbcType="VARCHAR" property="grade" />
     <result column="inspection" jdbcType="VARCHAR" property="inspection" />
+    <result column="filler" jdbcType="VARCHAR" property="filler" />
     <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
     <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
   </resultMap>
@@ -97,10 +91,10 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, category_id, name, code, bar_code, mfrs, model, standard, brand, mnemonic, color, unit, remark,
-    unit_id, expiry_num, weight, enabled, other_field1, other_field2, other_field3,
-    other_field4, other_field5, other_field6, other_field7, enable_serial_number, enable_batch_number, position, attribute,
-    fabric, safety_category, executive_standard, grade, inspection, tenant_id, delete_flag
+    id, category_id, name, code, bar_code, mfrs, brand, mnemonic, unit, remark,
+ weight, other_field1, other_field2, other_field3,
+    other_field4, other_field5, other_field6, other_field7, enable_serial_number, enable_batch_number, position,
+    fabric, safety_category, executive_standard, grade, inspection, filler, tenant_id, delete_flag
   </sql>
   <select id="selectByExample" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="BaseResultMap">
     select
@@ -134,26 +128,25 @@
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Material">
     insert into jsh_material (id, category_id, name,
-      bar_code, mfrs, model,
-      standard, brand, mnemonic,
-      color, unit, remark,
-      unit_id, expiry_num,
-      weight, enabled, other_field1,
+      bar_code, mfrs,
+ brand, mnemonic,
+ unit, remark,
+      weight, other_field1,
       other_field2, other_field3, other_field4,
       other_field5, other_field6, other_field7, enable_serial_number,
-      enable_batch_number, position, attribute,
-      fabric, safety_category, executive_standard, grade, inspection,
+      enable_batch_number, position,
+      fabric, safety_category, executive_standard, grade, inspection, filler,
       tenant_id, delete_flag)
     values (#{id,jdbcType=BIGINT}, #{categoryId,jdbcType=BIGINT}, #{name,jdbcType=VARCHAR},
-      #{barCode,jdbcType=VARCHAR}, #{mfrs,jdbcType=VARCHAR}, #{model,jdbcType=VARCHAR},
-      #{standard,jdbcType=VARCHAR}, #{brand,jdbcType=VARCHAR}, #{mnemonic,jdbcType=VARCHAR},
-      #{color,jdbcType=VARCHAR}, #{unit,jdbcType=VARCHAR}, #{remark,jdbcType=VARCHAR},
-      #{unitId,jdbcType=BIGINT}, #{expiryNum,jdbcType=INTEGER},
-      #{weight,jdbcType=DECIMAL}, #{enabled,jdbcType=BIT}, #{otherField1,jdbcType=VARCHAR},
+      #{barCode,jdbcType=VARCHAR}, #{mfrs,jdbcType=VARCHAR},
+ #{brand,jdbcType=VARCHAR}, #{mnemonic,jdbcType=VARCHAR},
+ #{unit,jdbcType=VARCHAR}, #{remark,jdbcType=VARCHAR},
+      #{weight,jdbcType=DECIMAL}, #{otherField1,jdbcType=VARCHAR},
       #{otherField2,jdbcType=VARCHAR}, #{otherField3,jdbcType=VARCHAR}, #{otherField4,jdbcType=VARCHAR},
       #{otherField5,jdbcType=VARCHAR}, #{otherField6,jdbcType=VARCHAR}, #{otherField7,jdbcType=VARCHAR}, #{enableSerialNumber,jdbcType=VARCHAR},
-      #{enableBatchNumber,jdbcType=VARCHAR}, #{position,jdbcType=VARCHAR}, #{attribute,jdbcType=LONGVARCHAR},
+      #{enableBatchNumber,jdbcType=VARCHAR}, #{position,jdbcType=VARCHAR},
       #{fabric,jdbcType=VARCHAR}, #{safetyCategory,jdbcType=VARCHAR}, #{executiveStandard,jdbcType=VARCHAR}, #{grade,jdbcType=VARCHAR}, #{inspection,jdbcType=VARCHAR},
+      #{filler,jdbcType=VARCHAR},
       #{tenantId,jdbcType=BIGINT}, #{deleteFlag,jdbcType=VARCHAR})
   </insert>
   <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.Material">
@@ -177,20 +170,11 @@
       <if test="mfrs != null">
         mfrs,
       </if>
-      <if test="model != null">
-        model,
-      </if>
-      <if test="standard != null">
-        standard,
-      </if>
       <if test="brand != null">
         brand,
       </if>
       <if test="mnemonic != null">
         mnemonic,
-      </if>
-      <if test="color != null">
-        color,
       </if>
       <if test="unit != null">
         unit,
@@ -198,17 +182,8 @@
       <if test="remark != null">
         remark,
       </if>
-      <if test="unitId != null">
-        unit_id,
-      </if>
-      <if test="expiryNum != null">
-        expiry_num,
-      </if>
       <if test="weight != null">
         weight,
-      </if>
-      <if test="enabled != null">
-        enabled,
       </if>
       <if test="otherField1 != null">
         other_field1,
@@ -240,9 +215,6 @@
       <if test="position != null">
         position,
       </if>
-      <if test="attribute != null">
-        attribute,
-      </if>
       <if test="fabric != null">
         fabric,
       </if>
@@ -257,6 +229,9 @@
       </if>
       <if test="inspection != null">
         inspection,
+      </if>
+      <if test="filler != null">
+        filler,
       </if>
       <if test="tenantId != null">
         tenant_id,
@@ -284,20 +259,11 @@
       <if test="mfrs != null">
         #{mfrs,jdbcType=VARCHAR},
       </if>
-      <if test="model != null">
-        #{model,jdbcType=VARCHAR},
-      </if>
-      <if test="standard != null">
-        #{standard,jdbcType=VARCHAR},
-      </if>
       <if test="brand != null">
         #{brand,jdbcType=VARCHAR},
       </if>
       <if test="mnemonic != null">
         #{mnemonic,jdbcType=VARCHAR},
-      </if>
-      <if test="color != null">
-        #{color,jdbcType=VARCHAR},
       </if>
       <if test="unit != null">
         #{unit,jdbcType=VARCHAR},
@@ -305,17 +271,8 @@
       <if test="remark != null">
         #{remark,jdbcType=VARCHAR},
       </if>
-      <if test="unitId != null">
-        #{unitId,jdbcType=BIGINT},
-      </if>
-      <if test="expiryNum != null">
-        #{expiryNum,jdbcType=INTEGER},
-      </if>
       <if test="weight != null">
         #{weight,jdbcType=DECIMAL},
-      </if>
-      <if test="enabled != null">
-        #{enabled,jdbcType=BIT},
       </if>
       <if test="otherField1 != null">
         #{otherField1,jdbcType=VARCHAR},
@@ -347,9 +304,6 @@
       <if test="position != null">
         #{position,jdbcType=VARCHAR},
       </if>
-      <if test="attribute != null">
-        #{attribute,jdbcType=LONGVARCHAR},
-      </if>
       <if test="fabric != null">
         #{fabric,jdbcType=VARCHAR},
       </if>
@@ -364,6 +318,9 @@
       </if>
       <if test="inspection != null">
         #{inspection,jdbcType=VARCHAR},
+      </if>
+      <if test="filler != null">
+        #{filler,jdbcType=VARCHAR},
       </if>
       <if test="tenantId != null">
         #{tenantId,jdbcType=BIGINT},
@@ -400,20 +357,11 @@
       <if test="record.mfrs != null">
         mfrs = #{record.mfrs,jdbcType=VARCHAR},
       </if>
-      <if test="record.model != null">
-        model = #{record.model,jdbcType=VARCHAR},
-      </if>
-      <if test="record.standard != null">
-        standard = #{record.standard,jdbcType=VARCHAR},
-      </if>
       <if test="record.brand != null">
         brand = #{record.brand,jdbcType=VARCHAR},
       </if>
       <if test="record.mnemonic != null">
         mnemonic = #{record.mnemonic,jdbcType=VARCHAR},
-      </if>
-      <if test="record.color != null">
-        color = #{record.color,jdbcType=VARCHAR},
       </if>
       <if test="record.unit != null">
         unit = #{record.unit,jdbcType=VARCHAR},
@@ -421,17 +369,8 @@
       <if test="record.remark != null">
         remark = #{record.remark,jdbcType=VARCHAR},
       </if>
-      <if test="record.unitId != null">
-        unit_id = #{record.unitId,jdbcType=BIGINT},
-      </if>
-      <if test="record.expiryNum != null">
-        expiry_num = #{record.expiryNum,jdbcType=INTEGER},
-      </if>
       <if test="record.weight != null">
         weight = #{record.weight,jdbcType=DECIMAL},
-      </if>
-      <if test="record.enabled != null">
-        enabled = #{record.enabled,jdbcType=BIT},
       </if>
       <if test="record.otherField1 != null">
         other_field1 = #{record.otherField1,jdbcType=VARCHAR},
@@ -463,9 +402,6 @@
       <if test="record.position != null">
         position = #{record.position,jdbcType=VARCHAR},
       </if>
-      <if test="record.attribute != null">
-        attribute = #{record.attribute,jdbcType=LONGVARCHAR},
-      </if>
       <if test="record.fabric != null">
         fabric = #{record.fabric,jdbcType=VARCHAR},
       </if>
@@ -480,6 +416,9 @@
       </if>
       <if test="record.inspection != null">
         inspection = #{record.inspection,jdbcType=VARCHAR},
+      </if>
+      <if test="record.filler != null">
+        filler = #{record.filler,jdbcType=VARCHAR},
       </if>
       <if test="record.tenantId != null">
         tenant_id = #{record.tenantId,jdbcType=BIGINT},
@@ -500,17 +439,11 @@
       code = #{record.code,jdbcType=VARCHAR},
       bar_code = #{record.barCode,jdbcType=VARCHAR},
       mfrs = #{record.mfrs,jdbcType=VARCHAR},
-      model = #{record.model,jdbcType=VARCHAR},
-      standard = #{record.standard,jdbcType=VARCHAR},
       brand = #{record.brand,jdbcType=VARCHAR},
       mnemonic = #{record.mnemonic,jdbcType=VARCHAR},
-      color = #{record.color,jdbcType=VARCHAR},
       unit = #{record.unit,jdbcType=VARCHAR},
       remark = #{record.remark,jdbcType=VARCHAR},
-      unit_id = #{record.unitId,jdbcType=BIGINT},
-      expiry_num = #{record.expiryNum,jdbcType=INTEGER},
       weight = #{record.weight,jdbcType=DECIMAL},
-      enabled = #{record.enabled,jdbcType=BIT},
       other_field1 = #{record.otherField1,jdbcType=VARCHAR},
       other_field2 = #{record.otherField2,jdbcType=VARCHAR},
       other_field3 = #{record.otherField3,jdbcType=VARCHAR},
@@ -521,12 +454,12 @@
       enable_serial_number = #{record.enableSerialNumber,jdbcType=VARCHAR},
       enable_batch_number = #{record.enableBatchNumber,jdbcType=VARCHAR},
       position = #{record.position,jdbcType=VARCHAR},
-      attribute = #{record.attribute,jdbcType=LONGVARCHAR},
       fabric = #{record.fabric,jdbcType=VARCHAR},
       safety_category = #{record.safetyCategory,jdbcType=VARCHAR},
       executive_standard = #{record.executiveStandard,jdbcType=VARCHAR},
       grade = #{record.grade,jdbcType=VARCHAR},
       inspection = #{record.inspection,jdbcType=VARCHAR},
+      filler = #{record.filler,jdbcType=VARCHAR},
       tenant_id = #{record.tenantId,jdbcType=BIGINT},
       delete_flag = #{record.deleteFlag,jdbcType=VARCHAR}
     <if test="_parameter != null">
@@ -551,20 +484,11 @@
       <if test="mfrs != null">
         mfrs = #{mfrs,jdbcType=VARCHAR},
       </if>
-      <if test="model != null">
-        model = #{model,jdbcType=VARCHAR},
-      </if>
-      <if test="standard != null">
-        standard = #{standard,jdbcType=VARCHAR},
-      </if>
       <if test="brand != null">
         brand = #{brand,jdbcType=VARCHAR},
       </if>
       <if test="mnemonic != null">
         mnemonic = #{mnemonic,jdbcType=VARCHAR},
-      </if>
-      <if test="color != null">
-        color = #{color,jdbcType=VARCHAR},
       </if>
       <if test="unit != null">
         unit = #{unit,jdbcType=VARCHAR},
@@ -572,17 +496,8 @@
       <if test="remark != null">
         remark = #{remark,jdbcType=VARCHAR},
       </if>
-      <if test="unitId != null">
-        unit_id = #{unitId,jdbcType=BIGINT},
-      </if>
-      <if test="expiryNum != null">
-        expiry_num = #{expiryNum,jdbcType=INTEGER},
-      </if>
       <if test="weight != null">
         weight = #{weight,jdbcType=DECIMAL},
-      </if>
-      <if test="enabled != null">
-        enabled = #{enabled,jdbcType=BIT},
       </if>
       <if test="otherField1 != null">
         other_field1 = #{otherField1,jdbcType=VARCHAR},
@@ -614,9 +529,6 @@
       <if test="position != null">
         position = #{position,jdbcType=VARCHAR},
       </if>
-      <if test="attribute != null">
-        attribute = #{attribute,jdbcType=LONGVARCHAR},
-      </if>
       <if test="fabric != null">
         fabric = #{fabric,jdbcType=VARCHAR},
       </if>
@@ -631,6 +543,9 @@
       </if>
       <if test="inspection != null">
         inspection = #{inspection,jdbcType=VARCHAR},
+      </if>
+      <if test="filler != null">
+        filler = #{filler,jdbcType=VARCHAR},
       </if>
       <if test="tenantId != null">
         tenant_id = #{tenantId,jdbcType=BIGINT},
@@ -648,17 +563,11 @@
       code = #{code,jdbcType=VARCHAR},
       bar_code = #{barCode,jdbcType=VARCHAR},
       mfrs = #{mfrs,jdbcType=VARCHAR},
-      model = #{model,jdbcType=VARCHAR},
-      standard = #{standard,jdbcType=VARCHAR},
       brand = #{brand,jdbcType=VARCHAR},
       mnemonic = #{mnemonic,jdbcType=VARCHAR},
-      color = #{color,jdbcType=VARCHAR},
       unit = #{unit,jdbcType=VARCHAR},
       remark = #{remark,jdbcType=VARCHAR},
-      unit_id = #{unitId,jdbcType=BIGINT},
-      expiry_num = #{expiryNum,jdbcType=INTEGER},
       weight = #{weight,jdbcType=DECIMAL},
-      enabled = #{enabled,jdbcType=BIT},
       other_field1 = #{otherField1,jdbcType=VARCHAR},
       other_field2 = #{otherField2,jdbcType=VARCHAR},
       other_field3 = #{otherField3,jdbcType=VARCHAR},
@@ -669,12 +578,12 @@
       enable_serial_number = #{enableSerialNumber,jdbcType=VARCHAR},
       enable_batch_number = #{enableBatchNumber,jdbcType=VARCHAR},
       position = #{position,jdbcType=VARCHAR},
-      attribute = #{attribute,jdbcType=LONGVARCHAR},
       fabric = #{fabric,jdbcType=VARCHAR},
       safety_category = #{safetyCategory,jdbcType=VARCHAR},
       executive_standard = #{executiveStandard,jdbcType=VARCHAR},
       grade = #{grade,jdbcType=VARCHAR},
       inspection = #{inspection,jdbcType=VARCHAR},
+      filler = #{filler,jdbcType=VARCHAR},
       tenant_id = #{tenantId,jdbcType=BIGINT},
       delete_flag = #{deleteFlag,jdbcType=VARCHAR}
     where id = #{id,jdbcType=BIGINT}

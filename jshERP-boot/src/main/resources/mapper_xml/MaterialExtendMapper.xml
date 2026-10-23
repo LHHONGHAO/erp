@@ -4,10 +4,7 @@
   <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.MaterialExtend">
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="material_id" jdbcType="BIGINT" property="materialId" />
-    <result column="spec_values" jdbcType="LONGVARCHAR" property="specValues" />
-    <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
-    <result column="commodity_unit" jdbcType="VARCHAR" property="commodityUnit" />
-    <result column="sku" jdbcType="VARCHAR" property="sku" />
+    <result column="spec_values" jdbcType="LONGVARCHAR" property="specValues" />
     <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
     <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
     <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
@@ -82,7 +79,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, material_id, spec_values, bar_code, commodity_unit, sku, sku_code, purchase_decimal,
+    id, material_id, spec_values, sku_code, purchase_decimal,
     commodity_decimal, wholesale_decimal, low_decimal, default_flag, create_time, create_serial,
     update_serial, update_time, tenant_id, delete_Flag, img_url, store
   </sql>
@@ -118,13 +115,13 @@
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.MaterialExtend">
     insert into jsh_material_extend (id, material_id, spec_values,
-      bar_code, commodity_unit, sku, sku_code,
+ sku_code,
       purchase_decimal, commodity_decimal, wholesale_decimal,
       low_decimal, default_flag, create_time,
       create_serial, update_serial, update_time,
       tenant_id, delete_Flag, img_url, store)
     values (#{id,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, #{specValues,jdbcType=LONGVARCHAR},
-      #{barCode,jdbcType=VARCHAR}, #{commodityUnit,jdbcType=VARCHAR}, #{sku,jdbcType=VARCHAR}, #{skuCode,jdbcType=VARCHAR},
+ #{jdbcType=VARCHAR}, #{skuCode,jdbcType=VARCHAR},
       #{purchaseDecimal,jdbcType=DECIMAL}, #{commodityDecimal,jdbcType=DECIMAL}, #{wholesaleDecimal,jdbcType=DECIMAL},
       #{lowDecimal,jdbcType=DECIMAL}, #{defaultFlag,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
       #{createSerial,jdbcType=VARCHAR}, #{updateSerial,jdbcType=VARCHAR}, #{updateTime,jdbcType=BIGINT},
@@ -141,15 +138,6 @@
       </if>
       <if test="specValues != null">
         spec_values,
-      </if>
-      <if test="barCode != null">
-        bar_code,
-      </if>
-      <if test="commodityUnit != null">
-        commodity_unit,
-      </if>
-      <if test="sku != null">
-        sku,
       </if>
       <if test="skuCode != null">
         sku_code,
@@ -203,15 +191,6 @@
       </if>
       <if test="specValues != null">
         #{specValues,jdbcType=LONGVARCHAR},
-      </if>
-      <if test="barCode != null">
-        #{barCode,jdbcType=VARCHAR},
-      </if>
-      <if test="commodityUnit != null">
-        #{commodityUnit,jdbcType=VARCHAR},
-      </if>
-      <if test="sku != null">
-        #{sku,jdbcType=VARCHAR},
       </if>
       <if test="skuCode != null">
         #{skuCode,jdbcType=VARCHAR},
@@ -275,15 +254,6 @@
       <if test="record.specValues != null">
         spec_values = #{record.specValues,jdbcType=LONGVARCHAR},
       </if>
-      <if test="record.barCode != null">
-        bar_code = #{record.barCode,jdbcType=VARCHAR},
-      </if>
-      <if test="record.commodityUnit != null">
-        commodity_unit = #{record.commodityUnit,jdbcType=VARCHAR},
-      </if>
-      <if test="record.sku != null">
-        sku = #{record.sku,jdbcType=VARCHAR},
-      </if>
       <if test="record.skuCode != null">
         sku_code = #{record.skuCode,jdbcType=VARCHAR},
       </if>
@@ -336,9 +306,6 @@
     set id = #{record.id,jdbcType=BIGINT},
       material_id = #{record.materialId,jdbcType=BIGINT},
       spec_values = #{record.specValues,jdbcType=LONGVARCHAR},
-      bar_code = #{record.barCode,jdbcType=VARCHAR},
-      commodity_unit = #{record.commodityUnit,jdbcType=VARCHAR},
-      sku = #{record.sku,jdbcType=VARCHAR},
       sku_code = #{record.skuCode,jdbcType=VARCHAR},
       purchase_decimal = #{record.purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{record.commodityDecimal,jdbcType=DECIMAL},
@@ -365,15 +332,6 @@
       </if>
       <if test="specValues != null">
         spec_values = #{specValues,jdbcType=LONGVARCHAR},
-      </if>
-      <if test="barCode != null">
-        bar_code = #{barCode,jdbcType=VARCHAR},
-      </if>
-      <if test="commodityUnit != null">
-        commodity_unit = #{commodityUnit,jdbcType=VARCHAR},
-      </if>
-      <if test="sku != null">
-        sku = #{sku,jdbcType=VARCHAR},
       </if>
       <if test="skuCode != null">
         sku_code = #{skuCode,jdbcType=VARCHAR},
@@ -424,9 +382,6 @@
     update jsh_material_extend
     set material_id = #{materialId,jdbcType=BIGINT},
       spec_values = #{specValues,jdbcType=LONGVARCHAR},
-      bar_code = #{barCode,jdbcType=VARCHAR},
-      commodity_unit = #{commodityUnit,jdbcType=VARCHAR},
-      sku = #{sku,jdbcType=VARCHAR},
       sku_code = #{skuCode,jdbcType=VARCHAR},
       purchase_decimal = #{purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{commodityDecimal,jdbcType=DECIMAL},

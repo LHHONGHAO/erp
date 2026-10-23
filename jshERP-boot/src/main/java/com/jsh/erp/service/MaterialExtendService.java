@@ -372,17 +372,23 @@ public class MaterialExtendService {
     }
 
     public int checkIsBarCodeExist(Long id, String barCode)throws Exception {
-        MaterialExtendExample example = new MaterialExtendExample();
-        MaterialExtendExample.Criteria criteria = example.createCriteria();
-        criteria.andBarCodeEqualTo(barCode);
-        if (id > 0) {
-            criteria.andIdNotEqualTo(id).andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        } else {
-            criteria.andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        // bar_code 已移到 jsh_material 主表，改为查询主表
+        Long excludeMaterialId = null;
+        if (id != null && id > 0) {
+            MaterialExtend me = materialExtendMapper.selectByPrimaryKey(id);
+            if (me != null) {
+                excludeMaterialId = me.getMaterialId();
+            }
         }
-        List<MaterialExtend> list =null;
+        MaterialExample example = new MaterialExample();
+        MaterialExample.Criteria criteria = example.createCriteria();
+        criteria.andBarCodeEqualTo(barCode).andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        if (excludeMaterialId != null) {
+            criteria.andIdNotEqualTo(excludeMaterialId);
+        }
+        List<Material> list = null;
         try{
-            list = materialExtendMapper.selectByExample(example);
+            list = materialMapper.selectByExample(example);
         }catch(Exception e){
             JshException.readFail(logger, e);
         }
@@ -474,35 +480,34 @@ public class MaterialExtendService {
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public Long selectIdByMaterialIdAndBarCode(Long materialId, String barCode) {
-        Long id = 0L;
-        MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andMaterialIdEqualTo(materialId).andBarCodeEqualTo(barCode)
-                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
-        if(list!=null && list.size()>0) {
-            id = list.get(0).getId();
-        }
-        return id;
+        // bar_code 已移到 jsh_material 主表，此处按商品查询默认SKU
+        return selectIdByMaterialIdAndDefaultFlag(materialId, "1");
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public List<MaterialExtend> getListByMaterialIdAndDefaultFlagAndBarCode(Long materialId, String defaultFlag, String barCode) {
         MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andMaterialIdEqualTo(materialId).andDefaultFlagEqualTo(defaultFlag).andBarCodeNotEqualTo(barCode)
+        example.createCriteria().andMaterialIdEqualTo(materialId).andDefaultFlagEqualTo(defaultFlag)
                 .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
         return materialExtendMapper.selectByExample(example);
     }
 
     public MaterialExtend getInfoByBarCode(String barCode)throws Exception {
-        MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andBarCodeEqualTo(barCode)
+        // bar_code 已移到 jsh_material 主表，先按主表查商品，再取默认SKU
+        MaterialExample mExample = new MaterialExample();
+        mExample.createCriteria().andBarCodeEqualTo(barCode)
                 .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
-        if(list!=null && list.size()>0) {
-            return list.get(0);
-        } else {
-            return null;
+        List<Material> materials = materialMapper.selectByExample(mExample);
+        if(materials!=null && materials.size()>0) {
+            MaterialExtendExample example = new MaterialExtendExample();
+            example.createCriteria().andMaterialIdEqualTo(materials.get(0).getId())
+                    .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+            List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
+            if(list!=null && list.size()>0) {
+                return list.get(0);
+            }
         }
+        return null;
     }
 
     public MaterialExtend getInfoBySkuCode(String skuCode)throws Exception {

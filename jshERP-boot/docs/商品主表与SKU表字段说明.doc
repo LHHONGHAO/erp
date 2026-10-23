@@ -1,0 +1,255 @@
+﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>鍟嗗搧涓昏〃涓嶴KU琛ㄥ瓧娈佃鏄?/title>
+<style>
+body{font-family:"Microsoft YaHei",SimSun,sans-serif;font-size:10.5pt;line-height:1.6;color:#222;margin:24pt 28pt;}
+h1{font-size:20pt;color:#1a3b66;border-bottom:2pt solid #1a3b66;padding-bottom:6pt;margin:0 0 16pt 0;}
+h2{font-size:15pt;color:#1a3b66;margin:20pt 0 10pt 0;}
+h3{font-size:12.5pt;color:#2c5c99;margin:14pt 0 8pt 0;}
+table{border-collapse:collapse;width:100%;margin:8pt 0 12pt 0;font-size:9.5pt;}
+th{background:#e8eef7;border:0.75pt solid #8fa8c8;padding:5pt 6pt;text-align:left;vertical-align:top;}
+td{border:0.75pt solid #8fa8c8;padding:5pt 6pt;vertical-align:top;}
+code{font-family:Consolas,"Courier New",monospace;background:#f2f4f7;font-size:9.5pt;}
+pre{font-family:Consolas,"Courier New",monospace;background:#f5f6f8;border:0.75pt solid #d0d5dc;padding:8pt;font-size:9.5pt;}
+blockquote{border-left:3pt solid #8fa8c8;background:#f7f9fc;margin:8pt 0;padding:6pt 10pt;color:#444;}
+li{margin:3pt 0;}
+</style></head><body>
+<h1>商品主表（jsh_material）与 SKU 表（jsh_material_extend）字段说明</h1>
+
+<blockquote>本文档基于 <code>jsh_erp.sql</code> 建表脚本及系列升级脚本（<code>sku_upgrade.sql</code>、<code>sku_upgrade_v2.sql</code>、<code>product_sku_relation_upgrade.sql</code>、<code>other_field4_5_upgrade.sql</code>、<code>material_biz_fields_upgrade.sql</code>、<code>material_remove_fields_upgrade.sql</code>、<code>material_remove_fields_upgrade_v2.sql</code>）和 Java 实体类整理。</blockquote>
+
+<hr>
+
+<h2>一、表关系总览</h2>
+
+<pre>
+jsh_material（商品主表 / SPU）
+  │  id（主键）
+  │  code（SPU商品码，唯一）
+  │
+  ├── 1 : N ──▶ jsh_material_extend（SKU表 / 商品扩展）
+  │                material_id → jsh_material.id
+  │                sku_code（SKU规格组合编码，唯一）
+  │
+  ├── N : 1 ──▶ jsh_material_category（商品类别表）
+  │                category_id → jsh_material_category.id
+  │
+  └── N : 1 ──▶ jsh_unit（多单位表）
+                   （原 unit_id 字段已删除，单位由主表 jsh_material.unit 维护）
+</pre>
+
+<hr>
+
+<h2>二、商品主表 <code>jsh_material</code></h2>
+
+<p><b>表注释：</b> 产品表（SPU 表，一个商品款式一条记录，不区分颜色/尺码等规格）</p>
+
+<table>
+<tr><th>序号</th><th>字段名</th><th>类型</th><th>作用</th><th>数据来源</th></tr>
+<tr><td>1</td><td><code>id</code></td><td>bigint</td><td>主键，自增</td><td>数据库自增，系统自动生成</td></tr>
+<tr><td>2</td><td><code>category_id</code></td><td>bigint</td><td>产品类型 id，关联商品类别表 <code>jsh_material_category.id</code></td><td>商品资料录入界面「商品类别」下拉选择</td></tr>
+<tr><td>3</td><td><code>name</code></td><td>varchar(100)</td><td>商品名称</td><td>商品资料录入界面「名称」手填</td></tr>
+<tr><td>4</td><td><code>code</code></td><td>varchar(50)</td><td>SPU 商品码（稳定唯一编码）</td><td>新增时由系统按规则生成：<code>SP</code> + 2位类型码(类别code) + 系统短码（<code>model</code> 款号字段已删除，不再取款号）；历史空码由升级脚本 <code>product_sku_relation_upgrade.sql</code> 补齐为 <code>SP{类型码}-{id补零8位}</code>；有唯一索引 <code>uk_material_spu_code</code></td></tr>
+<tr><td>5</td><td><code>bar_code</code></td><td>varchar(50)</td><td>商品条码（主表统一管理，同一商品同一条码）</td><td>由升级脚本 <code>sku_upgrade_v2.sql</code> 从默认 SKU(<code>jsh_material_extend</code> 中 <code>default_flag=&#39;1&#39;</code>)的 <code>bar_code</code> 回填；新录入时可手填</td></tr>
+<tr><td>6</td><td><code>mfrs</code></td><td>varchar(50)</td><td>制造商</td><td>商品资料录入界面「制造商」手填</td></tr>
+<tr><td>7</td><td><code>brand</code></td><td>varchar(100)</td><td>品牌</td><td>商品资料录入界面「品牌」手填</td></tr>
+<tr><td>8</td><td><code>mnemonic</code></td><td>varchar(100)</td><td>助记码</td><td>商品资料录入界面「助记码」手填，一般由名称拼音首字母生成</td></tr>
+<tr><td>9</td><td><code>unit</code></td><td>varchar(50)</td><td>基础单位（单个）</td><td>商品资料录入界面「单位」手填</td></tr>
+<tr><td>10</td><td><code>remark</code></td><td>varchar(500)</td><td>备注</td><td>商品资料录入界面「备注」手填</td></tr>
+<tr><td>11</td><td><code>weight</code></td><td>decimal(24,6)</td><td>基础重量(kg)</td><td>商品资料录入界面「重量」手填</td></tr>
+<tr><td>12</td><td><code>other_field1</code></td><td>varchar(500)</td><td>自定义扩展字段1（原用于面料）</td><td>商品属性配置界面可改名；由 <code>material_biz_fields_upgrade.sql</code> 回填至 <code>fabric</code> 后可废弃</td></tr>
+<tr><td>13</td><td><code>other_field2</code></td><td>varchar(500)</td><td>自定义扩展字段2（原用于安全类别）</td><td>同上；回填至 <code>safety_category</code></td></tr>
+<tr><td>14</td><td><code>other_field3</code></td><td>varchar(500)</td><td>自定义扩展字段3（原用于执行标准）</td><td>同上；回填至 <code>executive_standard</code></td></tr>
+<tr><td>15</td><td><code>other_field4</code></td><td>varchar(200)</td><td>自定义扩展字段4</td><td>由 <code>other_field4_5_upgrade.sql</code> 新增；商品属性配置界面可改名</td></tr>
+<tr><td>16</td><td><code>other_field5</code></td><td>varchar(200)</td><td>自定义扩展字段5</td><td>同上</td></tr>
+<tr><td>17</td><td><code>other_field6</code></td><td>varchar(500)</td><td>自定义扩展字段6（原用于等级）</td><td>回填至 <code>grade</code></td></tr>
+<tr><td>18</td><td><code>other_field7</code></td><td>varchar(500)</td><td>自定义扩展字段7（原用于检验）</td><td>回填至 <code>inspection</code></td></tr>
+<tr><td>19</td><td><code>enable_serial_number</code></td><td>varchar(1)</td><td>是否开启序列号：0否，1是</td><td>商品资料录入界面「序列号」开关</td></tr>
+<tr><td>20</td><td><code>enable_batch_number</code></td><td>varchar(1)</td><td>是否开启批号：0否，1是</td><td>商品资料录入界面「批号」开关；<b>注意</b>：<code>material_remove_fields_upgrade.sql</code> 计划删除该列</td></tr>
+<tr><td>21</td><td><code>position</code></td><td>varchar(100)</td><td>仓位货架</td><td>商品资料录入界面「仓位」手填；<b>注意</b>：<code>material_remove_fields_upgrade.sql</code> 计划删除该列</td></tr>
+<tr><td>22</td><td><code>fabric</code></td><td>varchar(100)</td><td>面料</td><td>由 <code>material_biz_fields_upgrade.sql</code> 新增；从 <code>other_field1</code> 回填，新录入直接手填</td></tr>
+<tr><td>23</td><td><code>safety_category</code></td><td>varchar(100)</td><td>安全类别</td><td>同上；从 <code>other_field2</code> 回填</td></tr>
+<tr><td>24</td><td><code>executive_standard</code></td><td>varchar(100)</td><td>执行标准</td><td>同上；从 <code>other_field3</code> 回填</td></tr>
+<tr><td>25</td><td><code>grade</code></td><td>varchar(100)</td><td>等级</td><td>同上；从 <code>other_field6</code> 回填</td></tr>
+<tr><td>26</td><td><code>inspection</code></td><td>varchar(100)</td><td>检验</td><td>同上；从 <code>other_field7</code> 回填</td></tr>
+<tr><td>27</td><td><code>tenant_id</code></td><td>bigint</td><td>租户 id，关联 <code>jsh_tenant</code></td><td>系统根据当前登录用户所属租户自动写入</td></tr>
+<tr><td>28</td><td><code>delete_flag</code></td><td>varchar(1)</td><td>删除标记：0未删除，1删除（逻辑删除）</td><td>删除商品时由系统置为 &#39;1&#39;，不物理删除</td></tr>
+</table>
+
+<h3>索引</h3>
+<ul>
+<li><code>PRIMARY KEY (id)</code></li>
+<li><code>FK675951272AB6672C (category_id)</code> —— 关联类别表</li>
+<li><code>tenant_id</code> —— 租户过滤</li>
+<li><code>uk_material_spu_code (code)</code> —— SPU 码唯一约束（由 <code>product_sku_relation_upgrade.sql</code> 添加）</li>
+</ul>
+
+<blockquote>原 <code>UnitId (unit_id)</code> 索引随 <code>unit_id</code> 字段一并删除。</blockquote>
+
+<hr>
+
+<h2>三、SKU 表 <code>jsh_material_extend</code></h2>
+
+<p><b>表注释：</b> 产品价格扩展（SKU 表，一个商品下的一个规格/单位组合一条记录）</p>
+
+<table>
+<tr><th>序号</th><th>字段名</th><th>类型</th><th>作用</th><th>数据来源</th></tr>
+<tr><td>1</td><td><code>id</code></td><td>bigint</td><td>主键，自增</td><td>数据库自增，系统自动生成</td></tr>
+<tr><td>2</td><td><code>material_id</code></td><td>bigint</td><td>商品 id，关联 <code>jsh_material.id</code></td><td>新增 SKU 时由所属商品的 <code>id</code> 自动写入</td></tr>
+<tr><td>3</td><td><code>spec_values</code></td><td>text</td><td>规格值组合 JSON，存储该 SKU 的动态规格属性</td><td>由 <code>sku_upgrade_v2.sql</code> 新增；格式如 <code>[{&quot;attributeId&quot;:1,&quot;attributeName&quot;:&quot;颜色&quot;,&quot;valueText&quot;:&quot;红&quot;,&quot;valueCode&quot;:&quot;01&quot;}]</code>；商品资料录入界面选择规格后由系统生成</td></tr>
+<tr><td>4</td><td><code>sku_code</code></td><td>varchar(80)</td><td>SKU 规格组合编码（唯一）</td><td>由 <code>sku_upgrade.sql</code> 新增，<code>product_sku_relation_upgrade.sql</code> 扩为 80 位；规则：SPU码 + 各规格属性值编码拼接（如 <code>SP02-CNG2T2005-01-04-08</code>）；历史空码由升级脚本补齐为 <code>{SPU码}-V{id补零8位}</code>；有唯一索引 <code>uk_material_extend_sku_code</code></td></tr>
+<tr><td>5</td><td><code>purchase_decimal</code></td><td>decimal(24,6)</td><td>采购价格</td><td>商品资料录入界面「采购价」手填</td></tr>
+<tr><td>6</td><td><code>commodity_decimal</code></td><td>decimal(24,6)</td><td>零售价格</td><td>商品资料录入界面「零售价」手填</td></tr>
+<tr><td>7</td><td><code>wholesale_decimal</code></td><td>decimal(24,6)</td><td>销售（批发）价格</td><td>商品资料录入界面「销售价」手填</td></tr>
+<tr><td>8</td><td><code>low_decimal</code></td><td>decimal(24,6)</td><td>最低售价</td><td>商品资料录入界面「最低售价」手填</td></tr>
+<tr><td>9</td><td><code>default_flag</code></td><td>varchar(1)</td><td>是否为默认单位：1是，0否</td><td>商品资料录入界面设置；每个商品应至少有一条 <code>default_flag=&#39;1&#39;</code> 的记录</td></tr>
+<tr><td>10</td><td><code>create_time</code></td><td>datetime</td><td>创建日期</td><td>新增记录时由系统自动写入当前时间</td></tr>
+<tr><td>11</td><td><code>create_serial</code></td><td>varchar(50)</td><td>创建人编码</td><td>新增记录时由系统写入当前登录用户编码</td></tr>
+<tr><td>12</td><td><code>update_serial</code></td><td>varchar(50)</td><td>更新人编码</td><td>修改记录时由系统写入当前登录用户编码</td></tr>
+<tr><td>13</td><td><code>update_time</code></td><td>bigint</td><td>更新时间戳（毫秒）</td><td>修改记录时由系统自动写入当前时间戳</td></tr>
+<tr><td>14</td><td><code>tenant_id</code></td><td>bigint</td><td>租户 id，关联 <code>jsh_tenant</code></td><td>系统根据当前登录用户所属租户自动写入</td></tr>
+<tr><td>15</td><td><code>delete_Flag</code></td><td>varchar(1)</td><td>删除标记：0未删除，1删除（逻辑删除）</td><td>删除 SKU 时由系统置为 &#39;1&#39;，不物理删除</td></tr>
+</table>
+
+<h3>索引</h3>
+<ul>
+<li><code>PRIMARY KEY (id)</code></li>
+<li><code>material_id</code> —— 关联商品主表</li>
+<li><code>tenant_id</code> —— 租户过滤</li>
+<li><code>uk_material_extend_sku_code (sku_code)</code> —— SKU 码唯一约束</li>
+<li><code>idx_material_extend_material_status (material_id, delete_Flag)</code> —— 按商品+删除标记查询</li>
+</ul>
+
+<hr>
+
+<h2>四、关键字段生成规则</h2>
+
+<h3>1. SPU 商品码（<code>jsh_material.code</code>）</h3>
+<pre>
+SP + 2位类型码 + 系统短码
+示例：SP02-CNG2T2005
+</pre>
+<ul>
+<li>类型码取 <code>jsh_material_category.code</code>（类别类型码），不足两位前补 0</li>
+<li>原款号来源字段 <code>jsh_material.model</code> 已删除，新增商品时由系统生成短码作为第三段</li>
+<li>生成后保持稳定，不因名称、分类、规格调整而改写</li>
+</ul>
+
+<h3>2. SKU 码（<code>jsh_material_extend.sku_code</code>）</h3>
+<pre>
+SPU码 + 各规格属性值编码（按品类规格顺序拼接）
+示例：SP02-CNG2T2005-01-04-08
+</pre>
+<ul>
+<li>属性值编码取自 <code>jsh_material_attr_value.value_code</code>（纯数字序号，无前缀）</li>
+<li>一个规格组合对应一个稳定 SKU 码</li>
+<li>展示名称修改不改变已有 SKU 码</li>
+</ul>
+
+<hr>
+
+<h2>五、字段状态说明</h2>
+
+<h3>已删除字段（第一批：<code>material_remove_fields_upgrade.sql</code>）</h3>
+<p>升级脚本执行前备份至 <code>jsh_material_removed_cols_bak</code>：</p>
+<ul>
+<li><code>unit_id</code>（单位关联已移至主表 <code>jsh_material.unit</code>）</li>
+<li><code>color</code>（颜色已移至 SKU 的 <code>spec_values</code>）</li>
+<li><code>attribute</code>（多属性已移至 SKU 的 <code>spec_values</code>）</li>
+<li><code>enabled</code>（启用标记调整）</li>
+<li><code>enable_batch_number</code>（批号开关调整）</li>
+<li><code>position</code>（仓位货架调整）</li>
+</ul>
+
+<h3>已删除字段（第二批：<code>material_remove_fields_upgrade_v2.sql</code>）</h3>
+<p>本次删除 8 个字段，执行前备份至 <code>jsh_material_removed_cols_bak2</code>，脚本按列存在性判断，可重复执行：</p>
+
+<table>
+<tr><th>字段名</th><th>原类型</th><th>原作用</th><th>删除原因 / 数据去向</th></tr>
+<tr><td><code>model</code></td><td>varchar(100)</td><td>型号 / 款号</td><td>不再作为 SPU 码款号来源，SPU 码第三段改由系统短码生成</td></tr>
+<tr><td><code>standard</code></td><td>varchar(100)</td><td>规格描述</td><td>规格描述由 SKU 的 <code>spec_values</code> 表达，无替代字段</td></tr>
+<tr><td><code>color</code></td><td>varchar(50)</td><td>颜色</td><td>颜色已迁移至 SKU 的 <code>spec_values</code>（第一批遗留，本次兜底删除）</td></tr>
+<tr><td><code>img_name</code></td><td>varchar(1000)</td><td>商品图片名称</td><td>图片改由 SKU 表 <code>img_url</code> 维护</td></tr>
+<tr><td><code>unit_id</code></td><td>bigint</td><td>关联 <code>jsh_unit.id</code></td><td>单位改由 <code>jsh_material.unit</code> 维护（第一批遗留，本次兜底删除）</td></tr>
+<tr><td><code>expiry_num</code></td><td>int</td><td>保质期天数</td><td>与 SKU 体系无关联，业务不再使用，无替代字段</td></tr>
+<tr><td><code>enabled</code></td><td>bit(1)</td><td>启用状态</td><td>启用控制改由其它状态字段/逻辑维护（第一批遗留，本次兜底删除）</td></tr>
+<tr><td><code>attribute</code></td><td>varchar(1000)</td><td>多属性信息</td><td>已迁移至 SKU 的 <code>spec_values</code>（第一批遗留，本次兜底删除）</td></tr>
+</table>
+
+<blockquote>索引 <code>UnitId (unit_id)</code> 随 <code>unit_id</code> 列一并删除。</blockquote>
+
+<h3>已删除字段（第三批：<code>material_extend_remove_fields_upgrade.sql</code>）</h3>
+<p>本次删除 SKU 表 <code>jsh_material_extend</code> 的 3 个字段，执行前备份至 <code>jsh_material_extend_removed_cols_bak</code>，脚本按列存在性判断，可重复执行：</p>
+
+<table>
+<tr><th>字段名</th><th>原类型</th><th>原作用</th><th>删除原因 / 数据去向</th></tr>
+<tr><td><code>bar_code</code></td><td>varchar(50)</td><td>商品条码</td><td>条码由主表 <code>jsh_material.bar_code</code> 统一维护；索引 <code>bar_code</code> 随列一并删除</td></tr>
+<tr><td><code>commodity_unit</code></td><td>varchar(50)</td><td>商品单位</td><td>单位由主表 <code>jsh_material.unit</code> 统一维护</td></tr>
+<tr><td><code>sku</code></td><td>varchar(50)</td><td>多属性文本描述（如「橙色,M」）</td><td>规格描述由 <code>spec_values</code>（JSON）表达</td></tr>
+</table>
+
+<blockquote>删除前须先移除 <code>jsh_material_extend</code> 上的索引 <code>bar_code</code>，脚本已自动处理。</blockquote>
+<blockquote>注意：<code>commodity_unit</code> 为多单位 SKU 记录的单位来源，删除后单位信息仅保留在主表，历史多单位数据请从备份表查询。</blockquote>
+
+<h3>保留兼容字段</h3>
+<ul>
+<li><code>jsh_material.bar_code</code>：主表统一条码，保留使用</li>
+</ul>
+
+<hr>
+
+<h2>六、代码待同步清单</h2>
+
+<blockquote>当前状态：<b>仅提供数据库升级脚本，代码尚未同步</b>。在执行任何删字段脚本前，必须先完成本章改造，否则报 <code>Unknown column</code>。</blockquote>
+
+<h3>1. 字段替换规则</h3>
+
+<table>
+<tr><th>原引用</th><th>替换为</th><th>说明</th></tr>
+<tr><td><code>me.bar_code</code> / <code>jme.bar_code</code></td><td><code>m.bar_code</code> / <code>jm.bar_code</code></td><td>主表条码已由默认 SKU 回填，可直接替代</td></tr>
+<tr><td><code>me.commodity_unit</code> / <code>jme.commodity_unit</code></td><td><code>m.unit</code> / <code>jm.unit</code></td><td>统一取主表单位字符串，不依赖 <code>jsh_unit</code> 关联</td></tr>
+<tr><td><code>me.sku</code> / <code>jme.sku</code></td><td><code>me.spec_values</code>（展示可配合 <code>me.sku_code</code>）</td><td>规格描述改由 JSON 存储</td></tr>
+<tr><td><code>me.bar_code is null</code> 类判空</td><td>改为 <code>m.bar_code</code> 判空</td><td>语义保持一致</td></tr>
+<tr><td><code>ifnull(me.bar_code, m.bar_code)</code></td><td><code>m.bar_code</code></td><td>已无第二来源，简化</td></tr>
+<tr><td><code>group by me.bar_code, me.commodity_unit</code></td><td><code>group by m.bar_code, m.unit</code></td><td>多单位归并口径改为主表单位</td></tr>
+</table>
+
+<h3>2. 待改造文件</h3>
+
+<p><b>Mapper XML</b></p>
+
+<table>
+<tr><th>文件</th><th>涉及内容</th></tr>
+<tr><td>MaterialExtendMapper.xml</td><td><code>resultMap</code>、<code>Base_Column_List</code>、<code>insert</code>、<code>insertSelective</code>、<code>updateByExample*</code>、<code>updateByPrimaryKey*</code> 全部需去掉 3 列</td></tr>
+<tr><td>MaterialExtendMapperEx.xml</td><td><code>getDetailList</code> 查询列与 <code>ResultMapList</code> 映射</td></tr>
+<tr><td>MaterialMapperEx.xml</td><td>商品列表、SKU 列表、条码检索、库存列表等查询（<code>me.bar_code</code> / <code>me.commodity_unit</code> / <code>me.sku</code>）</td></tr>
+<tr><td>DepotItemMapperEx.xml</td><td>单据明细关联 SKU 的条码与单位字段</td></tr>
+</table>
+
+<p><b>Java</b></p>
+
+<table>
+<tr><th>文件</th><th>涉及内容</th></tr>
+<tr><td>MaterialExtend.java</td><td>删除 <code>barCode</code> / <code>commodityUnit</code> / <code>sku</code> 属性及 getter/setter</td></tr>
+<tr><td>MaterialExtendExample.java</td><td>MyBatis 生成器产物，需删除 3 列的 Criteria 条件与 Criterion</td></tr>
+<tr><td>MaterialExtendService.java</td><td>新增/编辑 SKU 时对 3 个字段的赋值、重复规格校验</td></tr>
+<tr><td>MaterialService.java</td><td>商品保存、条码校验、库存判断、导出列</td></tr>
+<tr><td>MaterialExtendController.java</td><td>接口返回的 <code>barCode</code> / <code>commodityUnit</code> / <code>sku</code> 字段</td></tr>
+<tr><td>DepotItemService.java</td><td>单据明细的条码、单位取值</td></tr>
+</table>
+
+<p><b>前端（<code>jshERP-web</code>）</b></p>
+
+<table>
+<tr><th>文件</th><th>涉及内容</th></tr>
+<tr><td><code>src/views/bill/modules/RetailOutModal.vue</code></td><td>零售出库 SKU 条码/单位展示</td></tr>
+<tr><td><code>src/views/bill/mixins/BillModalMixin.js</code></td><td>单据明细字段映射</td></tr>
+<tr><td><code>src/views/bill/mixins/DataTableDetailMixin.js</code></td><td>明细表格列</td></tr>
+<tr><td><code>src/config/tableSceneConfig.js</code></td><td>列配置中心字段定义</td></tr>
+</table>
+
+<h3>3. 注意事项</h3>
+
+<p>1. <b>多单位价格会失去 SKU 级归属</b>：<code>purchase_decimal</code> 等价格仍按 SKU 存储，但单位只保留在主表，历史多单位数据须从 <code>jsh_material_extend_removed_cols_bak</code> 查询。</p>
+<p>2. <b><code>jsh_depot_item.sku</code> 是单据快照字段，不属于本次删除范围</b>，<code>DepotItem.getSku()</code> 相关逻辑保持不变。</p>
+<p>3. <b>主表 8 个字段的引用仍未同步</b>（<code>MaterialMapperEx.xml</code> 等 3 个文件共 213 处），建议与本次改造合并成一次完整迁移，避免反复回归。</p>
+</body></html>

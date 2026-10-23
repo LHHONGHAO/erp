@@ -283,12 +283,6 @@ public class MaterialService {
                 materialMapperEx.updateMaterialCodeById(material.getId(), code);
             }
             materialMapper.updateByPrimaryKeySelective(material);
-            if(material.getUnitId() == null) {
-                materialMapperEx.setUnitIdToNull(material.getId());
-            }
-            if(material.getExpiryNum() == null) {
-                materialMapperEx.setExpiryNumToNull(material.getId());
-            }
             // 保存商品规格模板（先删后插）
             JSONArray specModules = obj.getJSONArray("specModules");
             materialSpecTemplateService.saveSpecTemplate(material.getId(), specModules);
@@ -898,13 +892,11 @@ public class MaterialService {
                                 String.format(ExceptionConstants.MATERIAL_RATIO_NOT_INTEGER_MSG, i+1));
                     }
                     Long unitId = unitService.getUnitIdByParam(unit, manyUnit, new BigDecimal(ratio.trim()));
-                    if(unitId != null) {
-                        m.setUnitId(unitId);
-                        m.setUnit("");
-                    } else {
+                    if(unitId == null) {
                         throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_UNIT_MATE_CODE,
                                 String.format(ExceptionConstants.MATERIAL_UNIT_MATE_MSG, manyBarCode));
                     }
+                    m.setUnit(unit);
                     JSONObject otherObj = new JSONObject();
                     otherObj.put("barCode", manyBarCode);
                     otherObj.put("commodityUnit", manyUnit);
@@ -915,7 +907,6 @@ public class MaterialService {
                     materialExObj.put("other", otherObj);
                 } else {
                     m.setUnit(unit);
-                    m.setUnitId(null);
                 }
                 m.setMaterialExObj(materialExObj);
                 m.setEnabled("1".equals(enabled));
@@ -957,14 +948,6 @@ public class MaterialService {
                     Material material = JSONObject.parseObject(materialJson, Material.class);
                     material.setId(mId);
                     materialMapper.updateByPrimaryKeySelective(material);
-                    //更新多单位
-                    if(material.getUnitId() == null) {
-                        materialMapperEx.setUnitIdToNull(material.getId());
-                    }
-                    //如果之前有保质期，则更新保质期
-                    if(materials.get(0).getExpiryNum()!=null && material.getExpiryNum() == null) {
-                        materialMapperEx.setExpiryNumToNull(material.getId());
-                    }
                 }
                 //给商品新增或更新条码与价格相关信息
                 JSONObject materialExObj = m.getMaterialExObj();
@@ -1250,20 +1233,8 @@ public class MaterialService {
         MaterialExample example = new MaterialExample();
         MaterialExample.Criteria criteria = example.createCriteria();
         criteria.andNameEqualTo(name);
-        if (StringUtil.isNotEmpty(model)) {
-            criteria.andModelEqualTo(model);
-        }
-        if (StringUtil.isNotEmpty(color)) {
-            criteria.andColorEqualTo(color);
-        }
-        if (StringUtil.isNotEmpty(standard)) {
-            criteria.andStandardEqualTo(standard);
-        }
         if (StringUtil.isNotEmpty(unit)) {
             criteria.andUnitEqualTo(unit);
-        }
-        if (unitId !=null) {
-            criteria.andUnitIdEqualTo(unitId);
         }
         criteria.andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
         list = materialMapper.selectByExample(example);

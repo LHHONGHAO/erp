@@ -2,15 +2,16 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.jsh.erp.datasource.mappers.MaterialExtendMapperEx" >
     <resultMap extends="com.jsh.erp.datasource.mappers.MaterialExtendMapper.BaseResultMap" id="ResultMapList" type="com.jsh.erp.datasource.vo.MaterialExtendVo4List">
-        <result column="attribute" jdbcType="LONGVARCHAR" property="attribute" />
+        <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
+        <result column="commodity_unit" jdbcType="VARCHAR" property="commodityUnit" />
+        <result column="sku" jdbcType="VARCHAR" property="sku" />
         <result column="current_stock" jdbcType="DECIMAL" property="currentStock" />
     </resultMap>
 
     <select id="getDetailList" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="ResultMapList">
-        select d.id,d.spec_values,d.bar_code,d.commodity_unit,d.sku,d.sku_code,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,
+        select d.id,d.spec_values,m.bar_code as bar_code,m.unit as commodity_unit,d.spec_values as sku,d.sku_code,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,
                d.low_decimal,d.default_flag,d.img_url,d.store,
-               IFNULL(s.current_stock,0) as current_stock,
-               m.attribute as attribute
+               IFNULL(s.current_stock,0) as current_stock
         from jsh_material_extend d
         left join jsh_material m on d.material_id = m.id
         left join (

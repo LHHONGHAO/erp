@@ -69,6 +69,8 @@ public class Material {
 
     private String inspection;
 
+    private String filler;
+
     private Long tenantId;
 
     private String deleteFlag;
@@ -351,5 +353,13 @@ public class Material {
 
     public void setInspection(String inspection) {
         this.inspection = inspection == null ? null : inspection.trim();
+    }
+
+    public String getFiller() {
+        return filler;
+    }
+
+    public void setFiller(String filler) {
+        this.filler = filler == null ? null : filler.trim();
     }
 }

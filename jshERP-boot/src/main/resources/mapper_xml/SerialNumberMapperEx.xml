@@ -180,7 +180,7 @@
             and ser.depot_id = #{depotId}
         </if>
         <if test="barCode != null">
-            and me.bar_code= #{barCode}
+            and m.bar_code= #{barCode}
         </if>
         and (ser.is_sell = '0'
         <if test="number != null">
@@ -216,7 +216,7 @@
             and ser.depot_id = #{depotId}
         </if>
         <if test="barCode != null">
-            and me.bar_code= #{barCode}
+            and m.bar_code= #{barCode}
         </if>
         and (ser.is_sell = '0'
         <if test="number != null">

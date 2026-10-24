@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.SkuSpecMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.SkuSpec">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="sku_id" jdbcType="BIGINT" property="skuId" />
+    <result column="spec_name" jdbcType="VARCHAR" property="specName" />
+    <result column="spec_value" jdbcType="VARCHAR" property="specValue" />
+    <result column="sort_no" jdbcType="INTEGER" property="sortNo" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, sku_id, spec_name, spec_value, sort_no, tenant_id
+  </sql>
+
+  <!-- 覆盖式保存：清除该 SKU 旧规格（sku_spec 为规格明细，随主记录整体重建） -->
+  <delete id="deleteBySkuId">
+    DELETE FROM `sku_spec` WHERE sku_id = #{skuId}
+  </delete>
+
+  <insert id="batchInsert">
+    INSERT INTO `sku_spec` (sku_id, spec_name, spec_value, sort_no, tenant_id)
+    VALUES
+    <foreach collection="list" item="item" separator=",">
+      (#{item.skuId}, #{item.specName}, #{item.specValue}, #{item.sortNo}, #{item.tenantId})
+    </foreach>
+  </insert>
+
+  <select id="selectBySkuId" resultMap="BaseResultMap">
+    SELECT <include refid="Base_Column_List" />
+    FROM `sku_spec`
+    WHERE sku_id = #{skuId}
+    ORDER BY sort_no, id
+  </select>
+
+  <select id="selectByNameValue" resultMap="BaseResultMap">
+    SELECT <include refid="Base_Column_List" />
+    FROM `sku_spec`
+    WHERE spec_name = #{specName} AND spec_value = #{specValue}
+    <if test="tenantId != null">
+      AND tenant_id = #{tenantId}
+    </if>
+  </select>
+</mapper>

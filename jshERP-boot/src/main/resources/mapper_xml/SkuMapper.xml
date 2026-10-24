@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.SkuMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.Sku">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="spu_id" jdbcType="BIGINT" property="spuId" />
+    <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
+    <result column="sku_name" jdbcType="VARCHAR" property="skuName" />
+    <result column="spec_json" jdbcType="VARCHAR" property="specJson" />
+    <result column="spec_summary" jdbcType="VARCHAR" property="specSummary" />
+    <result column="sale_price" jdbcType="DECIMAL" property="salePrice" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+    <result column="version" jdbcType="INTEGER" property="version" />
+    <result column="deleted_at" jdbcType="TIMESTAMP" property="deletedAt" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, spu_id, sku_code, sku_name, spec_json, spec_summary, sale_price, tenant_id, version, deleted_at
+  </sql>
+
+  <!-- 新增：spec_json / spec_summary / sku_name 先给占位，规格落库后再回填 -->
+  <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Sku" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO `sku` (spu_id, sku_code, sku_name, spec_json, spec_summary, sale_price, tenant_id, version, deleted_at)
+    VALUES (#{spuId}, #{skuCode},
+            IFNULL(#{skuName}, ''), IFNULL(#{specJson}, '[]'), IFNULL(#{specSummary}, ''),
+            IFNULL(#{salePrice}, 0), #{tenantId}, 0, NULL)
+  </insert>
+
+  <!-- 回填规格冗余字段：带 version 条件，实现乐观锁 -->
+  <update id="updateSpecFields" parameterType="com.jsh.erp.datasource.entities.Sku">
+    UPDATE `sku`
+    SET sku_name     = #{skuName},
+        spec_json    = #{specJson},
+        spec_summary = #{specSummary},
+        sale_price   = IFNULL(#{salePrice}, sale_price),
+        version      = version + 1
+    WHERE id = #{id}
+      AND version = #{version}
+      AND deleted_at IS NULL
+  </update>
+
+  <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">
+    SELECT <include refid="Base_Column_List" />
+    FROM `sku`
+    WHERE id = #{id} AND deleted_at IS NULL
+  </select>
+
+  <select id="selectBySpuId" resultMap="BaseResultMap">
+    SELECT <include refid="Base_Column_List" />
+    FROM `sku`
+    WHERE spu_id = #{spuId} AND deleted_at IS NULL
+    <if test="tenantId != null">
+      AND tenant_id = #{tenantId}
+    </if>
+    ORDER BY id
+  </select>
+
+  <!-- 组合搜索：spec_summary LIKE '%颜色:红%尺码:L%' -->
+  <select id="searchBySummary" resultMap="BaseResultMap">
+    SELECT <include refid="Base_Column_List" />
+    FROM `sku`
+    WHERE spu_id = #{spuId}
+      AND deleted_at IS NULL
+      AND spec_summary LIKE CONCAT('%', #{summary}, '%')
+    <if test="tenantId != null">
+      AND tenant_id = #{tenantId}
+    </if>
+    ORDER BY id
+  </select>
+
+  <!-- 软删除：禁止物理删除 -->
+  <update id="softDelete">
+    UPDATE `sku`
+    SET deleted_at = NOW(), version = version + 1
+    WHERE id = #{id} AND deleted_at IS NULL
+  </update>
+</mapper>

@@ -324,11 +324,10 @@
                       <a-icon type="down" />
                     </div>
                   </a-popover>
-                  <a-input v-model="batchWholesalePrice" addonBefore="价格" addonAfter="元" placeholder="请输入" class="price-setting-input" />
-                  <a-input v-model="batchCommodityPrice" addonBefore="划线价格" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchPurchasePrice" addonBefore="进货价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
-                  <a-input v-model="batchLowPrice" addonBefore="最低售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
-                  <a-input v-model="batchStock" addonBefore="库存" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchCommodityPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchWholesalePrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchStock" addonBefore="期初库存" placeholder="请输入" class="price-setting-input" />
                   <a-select v-model="batchDepotId" placeholder="请选择仓库" class="price-setting-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" />
                   <a-button type="primary" @click="batchSetColumn">批量设置</a-button>
                 </div>
@@ -460,7 +459,6 @@
         batchCommodityPrice: '',
         batchStock: '',
         batchWholesalePrice: '',
-        batchLowPrice: '',
         batchDepotId: undefined,
         priceTableFullscreen: false,
         depotList: [],
@@ -528,34 +526,32 @@
           dataSource: [],
           columns: [
             {
-              title: '图片', key: 'image', width: '60px', type: FormTypes.hidden, defaultValue: '', placeholder: '上传', responseName: 'data', action: window._CONFIG['domianURL'] + '/systemConfig/upload'
+              title: '进货价', key: 'purchaseDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '进货价', key: 'purchaseDecimal', width: '13%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+              title: '划线价', key: 'commodityDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '划线价格', key: 'commodityDecimal', width: '13%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+              title: '零售价', key: 'wholesaleDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '价格', key: 'wholesaleDecimal', width: '13%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+              title: '期初库存', key: 'stock', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '最低售价', key: 'lowDecimal', width: '14%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
-            },
-            {
-              title: '库存', key: 'stock', width: '8%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
-            },
-            {
-              title: '仓库', key: 'depotId', width: '14%', type: FormTypes.sel_search, defaultValue: '', placeholder: '请选择${title}',
+              title: '仓库', key: 'depotId', width: '20%', type: FormTypes.sel_search, defaultValue: '', placeholder: '请选择${title}',
               options: []
             },
             {
-              title: '门店', key: 'store', width: '14%', type: FormTypes.input, defaultValue: '', placeholder: '请输入${title}'
+              title: '门店', key: 'store', width: '20%', type: FormTypes.input, defaultValue: '', placeholder: '请输入${title}'
             }
           ]
         },
         confirmLoading: false,
         ocrVisible: false,
+        // SKU 规格列结构签名，用于避免输入规格值时反复重建列（null 表示需强制重建）
+        skuColumnSignature: null,
+        // 编辑回显规格时暂停规格变化监听
+        suppressSpecSync: false,
         form: this.$form.createForm(this),
         validatorRules:{
           name:{
@@ -674,6 +670,8 @@
       specModules: {
         deep: true,
         handler: function () {
+          // 编辑回显阶段由 restoreSpecModulesFromSkuRows 自行同步列，避免重复重建行
+          if (this.suppressSpecSync) return
           this.onSpecChange()
         }
       }
@@ -707,15 +705,17 @@
         ])
       },
       add () {
-        //隐藏多属性
-        this.meTable.columns[2].type = FormTypes.hidden
         // 默认新增一条数据
         this.getAllTable().then(editableTables => {
           editableTables[0].add()
         })
         this.edit({})
         this.categorySelected = false
+        this.suppressSpecSync = true
         this.specModules = []
+        // 新增时清空上一次编辑残留的规格列
+        this.updateSkuColumns()
+        this.suppressSpecSync = false
         this.$nextTick(() => {
           handleIntroJs('material', 11)
         })
@@ -794,7 +794,6 @@
           }
         } else {
           this.switchDisabled = false
-          this.meTable.columns[2].readonly = true
         }
       },
       /** 查询条码tab的数据 */
@@ -802,16 +801,20 @@
         tab.loading = true
         getAction(url, params).then(res => {
           for (let i = 0; i < res.data.rows.length; i++) {
-            if(res.data.rows[i].sku) {
-              // 拆分 sku 组合值到各规格列
-              var skuParts = res.data.rows[i].sku.split('/')
-              for (var k = 0; k < skuParts.length; k++) {
-                res.data.rows[i]['skuField' + (k + 1)] = skuParts[k]
-              }
+            let row = res.data.rows[i]
+            // 规格列与规格输入框绑定：从 specValues 还原“颜色/规格”组合文本与各规格列
+            let specArr = this.parseSpecValuesJson(row.specValues)
+            for (let k = 0; k < specArr.length; k++) {
+              row['skuField' + (k + 1)] = specArr[k].valueText || ''
             }
+            row.sku = specArr.length > 0 ? specArr.map(function(v) { return v.valueText }).join('/') : ''
           }
           tab.dataSource = res.data.rows || []
           this.meOldDataSource = res.data.rows || []
+          // 编辑时按已有 SKU 还原规格模块，保证规格卡片与 SKU 表格列一一对应
+          if (tab === this.meTable && this.specModules.length === 0) {
+            this.restoreSpecModulesFromSkuRows(res.data.rows)
+          }
           // 将后端 imgUrl 映射到前端 image 字段
           for (let i = 0; i < this.meOldDataSource.length; i++) {
             if (this.meOldDataSource[i].imgUrl && !this.meOldDataSource[i].image) {
@@ -855,10 +858,6 @@
           }
           if (this.batchWholesalePrice !== '') {
             rows[i].wholesaleDecimal = this.batchWholesalePrice
-            hasValue = true
-          }
-          if (this.batchLowPrice !== '') {
-            rows[i].lowDecimal = this.batchLowPrice
             hasValue = true
           }
           if (this.batchStock !== '') {
@@ -973,6 +972,7 @@
         this.visible = false
         this.modalStyle = ''
         this.specModules = []
+        this.skuColumnSignature = null
         this.specValueSuggestionCache = {}
         this.getAllTable().then(editableTables => {
           editableTables[0].initialize()
@@ -1026,15 +1026,20 @@
           materialMain.manySku = cleanSpecModules.map(function(m) { return m.name })
         }
         let meList = allValues.tablesValue[0].values || []
-        // 安全网：确保 specValues 和 sku 从 dataSource 合并到 meList
-        // autoSkuList 在 dataSource 每行设置了 specValues 和 sku，但 JEditableTable 可能未收集隐藏列
+        // 隐藏列已去掉，按规格列内容重建 specValues 与 sku 组合文本，确保提交的规格数据与表格一致
         for (let i = 0; i < meList.length; i++) {
+          let specArr = this.buildSpecValuesFromRow(meList[i])
+          if (specArr.length > 0) {
+            meList[i].specValues = JSON.stringify(specArr)
+            meList[i].sku = specArr.map(function(v) { return v.valueText }).join('/')
+          }
+          // 兜底：规格列缺失时从 dataSource 取
           let dsRow = this.meTable.dataSource[i]
           if (dsRow) {
-            if (dsRow.specValues && !meList[i].specValues) {
+            if (!meList[i].specValues && dsRow.specValues) {
               meList[i].specValues = dsRow.specValues
             }
-            if (dsRow.sku && !meList[i].sku) {
+            if (!meList[i].sku && dsRow.sku) {
               meList[i].sku = dsRow.sku
             }
             if (dsRow.image && !meList[i].image) {
@@ -1470,21 +1475,33 @@
         }
         this.meTable.dataSource = [...rows]
       },
-      // 根据规格模块动态添加/移除表格列
+      // 根据规格模块动态添加/移除表格列：列名与规格输入框的规格名称一一绑定
       updateSkuColumns() {
-        let cols = this.meTable.columns.filter(function(col) {
-          return col.key.indexOf('skuField') !== 0 && col.key !== 'specValues' && col.key !== 'sku'
-        })
-        // 以 image 列为锚点，SKU 规格列插入在图片之后、价格列之前
-        let anchorIdx = -1
-        for (let i = 0; i < cols.length; i++) {
-          if (cols[i].key === 'image') { anchorIdx = i; break }
+        // 固定列的宽度权重，用于按规格列数量等比例压缩
+        const fixedWeights = {
+          purchaseDecimal: 15, commodityDecimal: 15, wholesaleDecimal: 15,
+          stock: 15, depotId: 20, store: 20
         }
-        if (anchorIdx === -1) return
+        const specCount = this.specModules.length
+        // 每个规格列占 10%，剩余宽度按权重分给固定列（固定列至少保留 60%，超出则横向滚动）
+        const fixedTotal = Math.max(100 - 10 * specCount, 60)
+        let cols = this.meTable.columns.filter(function(col) {
+          return col.key.indexOf('skuField') !== 0
+        })
+        let weightSum = 0
+        cols.forEach(function(col) {
+          weightSum += (fixedWeights[col.key] || 0)
+        })
+        // 固定列宽度按权重重新分配，保证表头与数据列总宽度一致
+        cols = cols.map(function(col) {
+          let weight = fixedWeights[col.key]
+          if (!weight || !weightSum) return col
+          return Object.assign({}, col, { width: (fixedTotal * weight / weightSum).toFixed(2) + '%' })
+        })
         let newSkuCols = []
         for (let i = 0; i < this.specModules.length; i++) {
           let module = this.specModules[i]
-          if (!module.values.length) continue
+          // 只要存在规格输入框就生成对应列，列内容由规格值回填
           newSkuCols.push({
             title: module.name || ('规格' + (i + 1)),
             key: 'skuField' + (i + 1),
@@ -1495,17 +1512,36 @@
             readonly: true
           })
         }
-        // 添加 specValues 和 sku 隐藏列，确保 JEditableTable 收集并提交规格值JSON和SKU组合文本
-        // autoSkuList 在 dataSource 每行设置了 specValues 和 sku，但若未定义为列则提交时会丢失
-        newSkuCols.push({
-          title: '规格值JSON', key: 'specValues', width: '0px', type: FormTypes.hidden, defaultValue: ''
-        })
-        newSkuCols.push({
-          title: 'SKU组合', key: 'sku', width: '0px', type: FormTypes.hidden, defaultValue: ''
-        })
-        this.meTable.columns = cols.slice(0, anchorIdx + 1).concat(newSkuCols).concat(cols.slice(anchorIdx + 1))
+        // 仅在规格结构（数量/名称）或列宽变化时重建列，避免输入规格值过程中反复重置表格
+        let signature = newSkuCols.map(function(col) { return col.key + ':' + col.title }).join('|')
+          + '#' + cols.map(function(col) { return col.key + ':' + col.width }).join('|')
+        if (this.skuColumnSignature === signature) return
+        this.skuColumnSignature = signature
+        // 规格列在最前，其后为固定列，表头与数据列使用同一份列定义
+        this.meTable.columns = newSkuCols.concat(cols)
       },
-      // 生成 SKU 组合（笛卡尔积）
+      // 按表格中可见的规格列内容重建规格值数组（规格列 key 为 skuField1..N）
+      buildSpecValuesFromRow(row) {
+        let arr = []
+        for (let i = 0; i < this.specModules.length; i++) {
+          let module = this.specModules[i]
+          let text = row['skuField' + (i + 1)]
+          if (!text) continue
+          let matched = null
+          for (let j = 0; j < (module.values || []).length; j++) {
+            if (module.values[j].text === text) { matched = module.values[j]; break }
+          }
+          arr.push({
+            attributeName: module.name || ('规格' + (i + 1)),
+            valueText: text,
+            valueCode: (matched && matched.valueCode) || '',
+            childNames: (module.childNames || []).slice(),
+            subValues: matched && matched.subValues ? Object.assign({}, matched.subValues) : {}
+          })
+        }
+        return arr
+      },
+      // 生成 SKU 组合（笛卡尔积）：把规格输入框的内容回填到与规格同名的表格列
       autoSkuList() {
         let activeModules = []
         for (let i = 0; i < this.specModules.length; i++) {
@@ -1514,15 +1550,17 @@
             // 过滤掉空文本的规格值，只保留有内容的值
             let nonEmptyValues = m.values.filter(function(v) { return v.text && v.text.trim() })
             if (nonEmptyValues.length > 0) {
-              activeModules.push(Object.assign({}, m, { values: nonEmptyValues }))
+              // index 记录规格模块的原始顺序，保证列与规格输入框一一对应
+              activeModules.push({ index: i, module: m, values: nonEmptyValues })
             }
           }
         }
         if (activeModules.length === 0) {
-          this.meTable.dataSource = []
+          // 尚未填写规格值时保留一行空行，固定列仍可录入
+          this.resetSkuRowsToSingleBlank()
           return
         }
-        let combinations = this.cartesianProduct(activeModules.map(function(m) { return m.values }))
+        let combinations = this.cartesianProduct(activeModules.map(function(a) { return a.values }))
         let meTableData = []
         let that = this
         // 按 SKU 组合缓存当前表格已填写的值，重建表格时保留用户输入（价格、库存、仓库等）
@@ -1540,7 +1578,7 @@
           let combined = parts.join('/')
           let rowImage = ''
           for (let m = 0; m < activeModules.length; m++) {
-            if (activeModules[m].enableImage && combo[m].image) {
+            if (activeModules[m].module.enableImage && combo[m].image) {
               rowImage = combo[m].image
               break
             }
@@ -1549,10 +1587,10 @@
           let specValueArr = []
           for (let j = 0; j < activeModules.length; j++) {
             specValueArr.push({
-              attributeName: activeModules[j].name,
+              attributeName: activeModules[j].module.name,
               valueText: combo[j].text,
               valueCode: combo[j].valueCode || '',
-              childNames: (activeModules[j].childNames || []).slice(),
+              childNames: (activeModules[j].module.childNames || []).slice(),
               subValues: Object.assign({}, combo[j].subValues || {})
             })
           }
@@ -1592,13 +1630,12 @@
             purchaseDecimal: purchaseDecimal, commodityDecimal: commodityDecimal,
             wholesaleDecimal: wholesaleDecimal, lowDecimal: lowDecimal
           }
-          // 动态写入所有规格列（支持4个及以上规格），避免最末规格列始终为空
-          for (let j = 0; j < parts.length; j++) {
-            row['skuField' + (j + 1)] = parts[j] || ''
-          }
-          // 兼容历史列定义，补齐前三个规格字段
-          for (let j = parts.length; j < 3; j++) {
+          // 先清空所有规格列，再按规格模块的原始顺序回填，保证列与规格输入框一一对应
+          for (let j = 0; j < this.specModules.length; j++) {
             row['skuField' + (j + 1)] = ''
+          }
+          for (let j = 0; j < activeModules.length; j++) {
+            row['skuField' + (activeModules[j].index + 1)] = parts[j] || ''
           }
           // 保留库存、仓库、门店等用户已填写字段
           if (existRow) {
@@ -1618,6 +1655,87 @@
             table._pushByDataSource(meTableData)
             table.forceUpdateFormValues()
           }
+        })
+      },
+      // 安全解析 SKU 的规格值 JSON
+      parseSpecValuesJson(specValues) {
+        if (!specValues) return []
+        try {
+          let arr = JSON.parse(specValues)
+          return Array.isArray(arr) ? arr : []
+        } catch (e) {
+          return []
+        }
+      },
+      // 尚未填写规格值时保留一行空行，固定列仍可录入
+      resetSkuRowsToSingleBlank() {
+        let rows = this.meTable.dataSource || []
+        let keep = rows.length > 0 ? rows[0] : {}
+        let row = {
+          sku: '', specValues: '', image: keep.image || '',
+          purchaseDecimal: keep.purchaseDecimal !== undefined ? keep.purchaseDecimal : '',
+          commodityDecimal: keep.commodityDecimal !== undefined ? keep.commodityDecimal : '',
+          wholesaleDecimal: keep.wholesaleDecimal !== undefined ? keep.wholesaleDecimal : '',
+          lowDecimal: keep.lowDecimal !== undefined ? keep.lowDecimal : '',
+          stock: keep.stock !== undefined ? keep.stock : '',
+          depotId: keep.depotId !== undefined ? keep.depotId : '',
+          store: keep.store !== undefined ? keep.store : ''
+        }
+        for (let i = 0; i < this.specModules.length; i++) {
+          row['skuField' + (i + 1)] = ''
+        }
+        this.meTable.dataSource = [row]
+        this.$nextTick(() => {
+          const table = this.$refs.editableMeTable
+          if (table && table._pushByDataSource) {
+            table.initialize()
+            table._pushByDataSource([row])
+            table.forceUpdateFormValues()
+          }
+        })
+      },
+      // 编辑时按已有 SKU 的 specValues 还原规格模块（attribute 列已废弃，不再依赖它）
+      restoreSpecModulesFromSkuRows(rows) {
+        if (!rows || rows.length === 0) return
+        let modules = []
+        let moduleMap = {}
+        for (let i = 0; i < rows.length; i++) {
+          let specArr = this.parseSpecValuesJson(rows[i].specValues)
+          for (let j = 0; j < specArr.length; j++) {
+            let name = specArr[j].attributeName || ('规格' + (j + 1))
+            let text = specArr[j].valueText || ''
+            let module = moduleMap[name]
+            if (!module) {
+              module = {
+                name: name,
+                enableImage: false,
+                childNames: Array.isArray(specArr[j].childNames) ? specArr[j].childNames.slice() : [],
+                values: []
+              }
+              moduleMap[name] = module
+              modules.push(module)
+            }
+            if (text && !module.values.some(function(v) { return v.text === text })) {
+              module.values.push({ text: text, image: '', subValues: Object.assign({}, specArr[j].subValues || {}) })
+            }
+          }
+        }
+        if (modules.length === 0) return
+        // 每个规格至少保留一个空输入位，方便继续录入新规格值
+        for (let i = 0; i < modules.length; i++) {
+          if (modules[i].values.length === 0) {
+            modules[i].values.push({ text: '', image: '', subValues: {} })
+          }
+        }
+        this.suppressSpecSync = true
+        this.specModules = modules
+        this.categorySelected = true
+        this.specLocked = true
+        this.$nextTick(() => {
+          this.updateSkuColumns()
+          // 列已按规格还原，重新按规格值生成行并回填，保证列内容与规格输入框一致
+          this.autoSkuList()
+          this.suppressSpecSync = false
         })
       },
       // 旧格式 manySku 转 specModules（兼容编辑旧商品）
@@ -2168,7 +2286,8 @@
     flex-wrap: nowrap;
     gap: 6px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    /* 横向滚动容器会裁切溢出内容，上下留出空间避免边框被裁掉 */
+    padding: 2px 0;
   }
   .price-setting-batch-row:last-child {
     margin-bottom: 0;
@@ -2177,8 +2296,6 @@
     width: 190px;
     min-width: 190px;
     flex: 0 0 190px;
-    height: 28px;
-    box-sizing: border-box;
   }
   .spec-filter-trigger {
     display: inline-flex;
@@ -2186,9 +2303,9 @@
     justify-content: space-between;
     min-width: 180px;
     max-width: 360px;
-    height: 28px;
-    min-height: 28px;
-    padding: 1px 8px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 8px;
     box-sizing: border-box;
     border: 1px solid #d9d9d9;
     border-radius: 4px;
@@ -2289,37 +2406,44 @@
   .price-setting-wrapper ::v-deep .input-table .td > span {
     font-size: 12px;
   }
-  /* 批量设置输入框文字样式 */
-  .price-setting-batch-bar .ant-input,
-  .price-setting-batch-bar .ant-select {
+  /* 批量设置工具栏：强制所有控件（含输入组内各层容器）统一为 32px 高，
+     与「选择范围」框完全一致 */
+  .spec-filter-trigger,
+  .price-setting-batch-bar ::v-deep .ant-input-group-wrapper,
+  .price-setting-batch-bar ::v-deep .ant-input-group,
+  .price-setting-batch-bar ::v-deep .ant-input-group-addon,
+  .price-setting-batch-bar ::v-deep .ant-input,
+  .price-setting-batch-bar ::v-deep .ant-select,
+  .price-setting-batch-bar ::v-deep .ant-select-selection,
+  .price-setting-batch-row > .ant-btn {
+    height: 32px;
+    min-height: 32px;
+    box-sizing: border-box;
+  }
+  /* 文字类控件统一字号与行高，保证垂直居中一致 */
+  .price-setting-batch-bar ::v-deep .ant-input-group-addon,
+  .price-setting-batch-bar ::v-deep .ant-input,
+  .price-setting-batch-bar ::v-deep .ant-select-selection__rendered,
+  .price-setting-batch-bar ::v-deep .ant-select-selection-selected-value,
+  .price-setting-batch-row > .ant-btn {
     font-size: 12px;
+    line-height: 30px;
   }
-  .price-setting-batch-bar .ant-input,
-  .price-setting-batch-bar .ant-select-selection {
-    height: 28px;
+  /* 输入组合框标题（addon 文字）边框色与输入框保持一致 */
+  .price-setting-batch-bar ::v-deep .ant-input-group-addon {
+    padding: 0 8px;
+    border-color: #d9d9d9;
+    color: #333;
   }
-  .price-setting-batch-bar .ant-input-group-wrapper,
-  .price-setting-batch-bar .ant-select {
-    height: 28px;
-    align-self: center;
+  .price-setting-batch-bar ::v-deep .ant-input {
+    padding: 0 8px;
+    color: #333;
   }
-  .price-setting-batch-bar .ant-input {
-    padding-top: 3px;
-    padding-bottom: 3px;
-  }
-  .price-setting-batch-bar .ant-select-selection__rendered {
-    line-height: 26px;
+  .price-setting-batch-bar ::v-deep .ant-select-selection {
+    border-color: #d9d9d9;
   }
   .price-setting-batch-row > .ant-btn {
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
-  }
-  .price-setting-batch-bar .ant-input-group-addon {
-    font-size: 12px;
-    padding: 0 6px;
-    height: 28px;
-    line-height: 26px;
+    padding: 0 12px;
   }
   @media (max-width: 768px) {
     .price-setting-top-bar {

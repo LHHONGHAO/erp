@@ -73,7 +73,7 @@
               class="td"
               :key="col.key"
               :style="buildTdStyle(col)">
-              <span style="padding: 0 5px;">
+              <span style="padding: 0;">
                 {{ col.title }}
                 <slot name="depotBatchSet" v-if="col.key === 'depotId'" :target="getVM()"/>
               </span>
@@ -2890,6 +2890,9 @@
 
         padding-left: @spacing;
         flex-direction: column;
+        /* 表头与数据行统一按列定义宽度渲染，避免 padding 叠加导致列宽逐列偏移 */
+        box-sizing: border-box;
+        flex-shrink: 0;
 
         &.td-cb, &.td-num {
           min-width: 4%;
@@ -2938,8 +2941,9 @@
     }
 
     .thead {
-      overflow-y: scroll;
-      overflow-x: hidden;
+      /* 不能使用 overflow-y: scroll，否则表头会常驻滚动条占位，
+         导致表头列宽与数据列宽不一致（越靠右偏移越大） */
+      overflow: hidden;
       border-bottom: @border;
 
       /** 隐藏thead的滑块   */
@@ -2951,11 +2955,11 @@
 
       .tr {
         min-width: 100%;
-        overflow-y: scroll;
       }
 
       .td {
         /*flex: 1;*/
+        /* 左右内边距与数据行保持一致，保证标题与输入框起始位置对齐 */
         padding: 8px @spacing;
         justify-content: center;
       }
@@ -3006,9 +3010,22 @@
 
       .td {
         /*flex: 1;*/
-        padding: 6px @spacing 6px 0;
+        /* 左右内边距与表头保持一致，保证输入框与标题起始位置对齐 */
+        padding: 6px @spacing;
         justify-content: center;
         align-items: center;
+
+        /* 单元格内的控件容器撑满列宽，避免输入框按内容收缩造成与表头错位
+           （复选框列、序号列、拖动列除外，它们需要居中显示） */
+        &:not(.td-cb):not(.td-num):not(.td-ds) {
+
+          > label,
+          > span,
+          > div {
+            width: 100%;
+          }
+
+        }
 
         &:last-child {
           padding-right: @spacing;

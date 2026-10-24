@@ -20,8 +20,6 @@ public class Sku {
 
     private String specSummary;
 
-    private BigDecimal salePrice;
-
     private BigDecimal purchaseDecimal;
 
     private BigDecimal commodityDecimal;
@@ -89,14 +87,6 @@ public class Sku {
 
     public void setSpecSummary(String specSummary) {
         this.specSummary = specSummary == null ? null : specSummary.trim();
-    }
-
-    public BigDecimal getSalePrice() {
-        return salePrice;
-    }
-
-    public void setSalePrice(BigDecimal salePrice) {
-        this.salePrice = salePrice;
     }
 
     public BigDecimal getPurchaseDecimal() {

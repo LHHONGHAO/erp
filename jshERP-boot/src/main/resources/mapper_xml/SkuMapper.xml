@@ -8,7 +8,6 @@
     <result column="sku_name" jdbcType="VARCHAR" property="skuName" />
     <result column="spec_json" jdbcType="VARCHAR" property="specJson" />
     <result column="spec_summary" jdbcType="VARCHAR" property="specSummary" />
-    <result column="sale_price" jdbcType="DECIMAL" property="salePrice" />
     <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
     <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
     <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
@@ -22,19 +21,18 @@
   </resultMap>
 
   <sql id="Base_Column_List">
-    id, spu_id, sku_code, sku_name, spec_json, spec_summary, sale_price,
+    id, spu_id, sku_code, sku_name, spec_json, spec_summary,
     purchase_decimal, commodity_decimal, market_price,
     tenant_id, version, deleted_at, create_time, update_time, create_serial, update_serial
   </sql>
 
   <!-- 新增：spec_json / spec_summary / sku_name 先给占位，规格落库后再回填 -->
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Sku" useGeneratedKeys="true" keyProperty="id">
-    INSERT INTO `sku` (spu_id, sku_code, sku_name, spec_json, spec_summary, sale_price,
+    INSERT INTO `sku` (spu_id, sku_code, sku_name, spec_json, spec_summary,
                        purchase_decimal, commodity_decimal, market_price,
                        tenant_id, version, deleted_at, create_serial, update_serial)
     VALUES (#{spuId}, #{skuCode},
             IFNULL(#{skuName}, ''), IFNULL(#{specJson}, '[]'), IFNULL(#{specSummary}, ''),
-            IFNULL(#{salePrice}, 0),
             IFNULL(#{purchaseDecimal}, 0), IFNULL(#{commodityDecimal}, 0), IFNULL(#{marketPrice}, 0),
             #{tenantId}, 0, NULL, #{createSerial}, #{updateSerial})
   </insert>
@@ -45,7 +43,6 @@
     SET sku_name     = #{skuName},
         spec_json    = #{specJson},
         spec_summary = #{specSummary},
-        sale_price   = IFNULL(#{salePrice}, sale_price),
         purchase_decimal  = IFNULL(#{purchaseDecimal}, purchase_decimal),
         commodity_decimal = IFNULL(#{commodityDecimal}, commodity_decimal),
         market_price      = IFNULL(#{marketPrice}, market_price),

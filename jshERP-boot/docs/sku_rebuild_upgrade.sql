@@ -22,7 +22,6 @@ CREATE TABLE `sku` (
   `spec_json` json NOT NULL COMMENT '前端渲染用：[{"name":"颜色","value":"红"}]',
   `spec_summary` varchar(512) NOT NULL COMMENT '搜索用：颜色:红;尺码:L',
 
-  `sale_price` decimal(12,2) NOT NULL DEFAULT '0.00',
   `tenant_id` bigint DEFAULT NULL COMMENT '租户ID（项目多租户必需）',
   `version` int NOT NULL DEFAULT '0' COMMENT '乐观锁',
   `deleted_at` datetime DEFAULT NULL COMMENT '软删除，NULL=有效',
@@ -41,6 +40,7 @@ CREATE TABLE `sku_spec` (
   `sku_id` bigint unsigned NOT NULL,
   `spec_name` varchar(50) NOT NULL COMMENT '规格名：颜色',
   `spec_value` varchar(50) NOT NULL COMMENT '规格值：红',
+  `image_url` varchar(500) DEFAULT NULL COMMENT '规格值图片相对路径；同一SKU内最多一行有值',
   `sort_no` int NOT NULL DEFAULT '0' COMMENT '排序号，用于固定拼接顺序',
   `tenant_id` bigint DEFAULT NULL COMMENT '租户ID',
 
@@ -50,22 +50,19 @@ CREATE TABLE `sku_spec` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SKU规格表';
 
 -- ---------- 3. 历史数据迁移（从 jsh_material_extend.spec_values 反推） ----------
--- 价格映射：sale_price <- commodity_decimal（零售价）
 -- 拼接顺序：按 spec_values 数组的原始顺序（seq）
 -- 说明：JSON_ARRAYAGG 不保证顺序，故用 GROUP_CONCAT + ORDER BY 拼接后再转 JSON
-INSERT INTO `sku` (`spu_id`, `sku_code`, `sku_name`, `spec_json`, `spec_summary`, `sale_price`, `tenant_id`)
+INSERT INTO `sku` (`spu_id`, `sku_code`, `sku_name`, `spec_json`, `spec_summary`, `tenant_id`)
 SELECT
   t.material_id,
   t.sku_code,
   GROUP_CONCAT(t.valueText ORDER BY t.seq SEPARATOR ' '),
   CAST(CONCAT('[', GROUP_CONCAT(JSON_OBJECT('name', t.attributeName, 'value', t.valueText) ORDER BY t.seq SEPARATOR ','), ']') AS JSON),
   GROUP_CONCAT(CONCAT(t.attributeName, ':', t.valueText) ORDER BY t.seq SEPARATOR ';'),
-  t.sale_price,
   t.tenant_id
 FROM (
   SELECT e.material_id,
          e.sku_code,
-         e.commodity_decimal AS sale_price,
          e.tenant_id,
          jt.seq,
          jt.attributeName,
@@ -80,14 +77,15 @@ FROM (
     AND IFNULL(e.sku_code, '') <> ''
     AND IFNULL(e.spec_values, '') <> ''
 ) t
-GROUP BY t.material_id, t.sku_code, t.sale_price, t.tenant_id;
+GROUP BY t.material_id, t.sku_code, t.tenant_id;
 
 -- 规格明细拆行写入 sku_spec
-INSERT INTO `sku_spec` (`sku_id`, `spec_name`, `spec_value`, `sort_no`, `tenant_id`)
+INSERT INTO `sku_spec` (`sku_id`, `spec_name`, `spec_value`, `image_url`, `sort_no`, `tenant_id`)
 SELECT
   s.id,
   t.attributeName,
   t.valueText,
+  CASE WHEN IFNULL(t.imageUrl, '') = '' THEN NULL ELSE t.imageUrl END,
   t.seq,
   t.tenant_id
 FROM (
@@ -96,12 +94,14 @@ FROM (
          e.tenant_id,
          jt.seq,
          jt.attributeName,
-         jt.valueText
+         jt.valueText,
+         jt.imageUrl
   FROM jsh_material_extend e
   JOIN JSON_TABLE(e.spec_values, '$[*]' COLUMNS (
          seq           FOR ORDINALITY,
          attributeName VARCHAR(50)  PATH '$.attributeName',
-         valueText     VARCHAR(200) PATH '$.valueText'
+         valueText     VARCHAR(200) PATH '$.valueText',
+         imageUrl      VARCHAR(500) PATH '$.image'
        )) jt
   WHERE IFNULL(e.delete_Flag, '0') <> '1'
     AND IFNULL(e.sku_code, '') <> ''
@@ -113,5 +113,5 @@ JOIN `sku` s
  AND s.deleted_at IS NULL;
 
 -- ---------- 4. 校验 ----------
--- SELECT id, spu_id, sku_code, sku_name, spec_json, spec_summary, sale_price FROM sku;
+-- SELECT id, spu_id, sku_code, sku_name, spec_json, spec_summary FROM sku;
 -- SELECT * FROM sku_spec ORDER BY sku_id, sort_no;

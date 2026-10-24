@@ -6,7 +6,7 @@
 -- ============================================================
 
 ALTER TABLE `sku`
-  ADD COLUMN `purchase_decimal`  decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '进货价'        AFTER `sale_price`,
+  ADD COLUMN `purchase_decimal`  decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '进货价'        AFTER `spec_summary`,
   ADD COLUMN `commodity_decimal` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '零售价'        AFTER `purchase_decimal`,
   ADD COLUMN `market_price`      decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT '划线价'        AFTER `commodity_decimal`,
   ADD COLUMN `create_time`       datetime              DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间' AFTER `deleted_at`,

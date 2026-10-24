@@ -160,15 +160,12 @@
       resolvedWidthStorageKey() {
         return 'widths_' + this.resolvedStorageKey
       },
-      /** 列设置弹窗中展示的列：受控模式下只显示已勾选列；其次配置中心已勾选字段；未配置时展示全部列 */
+      /** 列设置弹窗中展示的列：受控模式只显示已勾选列；其余情况展示全部可选列（配置中心只决定默认显示列） */
       settingColumns() {
         const map = {}
         this.allColumns.forEach(c => { map[c.dataIndex] = c })
         if (this.selectedColumns !== undefined) {
           return this.selectedColumns.map(k => map[k]).filter(Boolean)
-        }
-        if (this.tableKey && this._configColumns && this._configColumns.length > 0) {
-          return this._configColumns.map(k => map[k]).filter(Boolean)
         }
         return this.allColumns
       },
@@ -418,12 +415,9 @@
           this.displayColumns = this.buildColumns(this.settingDataIndex)
         }
       },
-      /** 列设置弹窗中的展示文本：列标题（字段名），标题与字段名相同时只显示字段名 */
+      /** 列设置弹窗中的展示文本：仅显示字段业务含义，不附带字段名 */
       columnLabel(item) {
-        if (item.title && item.title !== item.dataIndex) {
-          return item.title + '（' + item.dataIndex + '）'
-        }
-        return item.dataIndex
+        return item.title || item.dataIndex
       },
       /** 从后端获取表字段元数据（支持逗号分隔多表名，主表优先去重） */
       _fetchTableMeta(tables) {

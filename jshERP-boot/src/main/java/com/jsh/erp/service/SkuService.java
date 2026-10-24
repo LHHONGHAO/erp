@@ -65,8 +65,10 @@ public class SkuService {
         }
 
         // 2. 规格落库（唯一事实来源）：覆盖式保存，sort_no 强制重编号，保证拼接顺序固定
+        //    规格图片只允许一个维度携带（同一 SKU 最多一行有图），其余维度一律置空
         skuSpecMapper.deleteBySkuId(sku.getId());
         List<SkuSpec> toSave = new ArrayList<>();
+        boolean imageAssigned = false;
         if (specs != null) {
             int sortNo = 1;
             for (SkuSpec spec : specs) {
@@ -77,6 +79,10 @@ public class SkuService {
                 item.setSkuId(sku.getId());
                 item.setSpecName(spec.getSpecName().trim());
                 item.setSpecValue(spec.getSpecValue().trim());
+                if (!imageAssigned && !isBlank(spec.getImageUrl())) {
+                    item.setImageUrl(spec.getImageUrl().trim());
+                    imageAssigned = true;
+                }
                 item.setSortNo(sortNo++);
                 item.setTenantId(tenantId);
                 toSave.add(item);
@@ -95,7 +101,6 @@ public class SkuService {
         update.setSkuName(SkuSpecUtils.buildSkuName(latest));
         update.setSpecJson(SkuSpecUtils.buildSpecJson(latest));
         update.setSpecSummary(SkuSpecUtils.buildSpecSummary(latest));
-        update.setSalePrice(sku.getSalePrice());
         update.setPurchaseDecimal(sku.getPurchaseDecimal());
         update.setCommodityDecimal(sku.getCommodityDecimal());
         update.setMarketPrice(sku.getMarketPrice());

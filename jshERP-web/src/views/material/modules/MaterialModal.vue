@@ -1321,11 +1321,15 @@
         this.loadSpecValueSuggestions(mIndex)
       },
       onToggleSpecImage(mIndex, checked) {
-        this.specModules[mIndex].enableImage = checked
-        if (!checked) {
-          this.specModules[mIndex].values.forEach(function(v) { v.image = '' })
-        }
-        this.onSpecChange()
+        // 一个商品只允许一个规格维度配图：开启时互斥关闭其它维度
+        let self = this
+        this.specModules.forEach(function(m, i) {
+          m.enableImage = !!checked && i === mIndex
+          if (!m.enableImage) {
+            m.values.forEach(function(v) { v.image = '' })
+          }
+        })
+        self.onSpecChange()
       },
       captureSpecImageFile(file) {
         this.specImageOcrFile = file
@@ -1535,6 +1539,8 @@
             attributeName: module.name || ('规格' + (i + 1)),
             valueText: text,
             valueCode: (matched && matched.valueCode) || '',
+            // 同一规格值在本商品内共用一张图：图片随规格值写入，不随 SKU 行变化
+            image: (module.enableImage && matched && matched.image) || '',
             childNames: (module.childNames || []).slice(),
             subValues: matched && matched.subValues ? Object.assign({}, matched.subValues) : {}
           })
@@ -1716,7 +1722,11 @@
               modules.push(module)
             }
             if (text && !module.values.some(function(v) { return v.text === text })) {
-              module.values.push({ text: text, image: '', subValues: Object.assign({}, specArr[j].subValues || {}) })
+              module.values.push({ text: text, image: specArr[j].image || '', subValues: Object.assign({}, specArr[j].subValues || {}) })
+            }
+            // 历史数据里该规格值带过图片，则本维度恢复为“允许配图”
+            if (specArr[j].image) {
+              module.enableImage = true
             }
           }
         }

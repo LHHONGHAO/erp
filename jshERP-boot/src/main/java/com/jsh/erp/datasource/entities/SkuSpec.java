@@ -13,6 +13,9 @@ public class SkuSpec {
 
     private String specValue;
 
+    /** 规格值图片相对路径，同一 SKU 内最多一行有值 */
+    private String imageUrl;
+
     private Integer sortNo;
 
     private Long tenantId;
@@ -47,6 +50,14 @@ public class SkuSpec {
 
     public void setSpecValue(String specValue) {
         this.specValue = specValue == null ? null : specValue.trim();
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl == null ? null : imageUrl.trim();
     }
 
     public Integer getSortNo() {

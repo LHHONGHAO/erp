@@ -80,6 +80,22 @@ public class MaterialVo4Unit extends Material{
 
     private BigDecimal taxLastMoney;
 
+    private String store;
+
+    private Boolean defaultFlag;
+
+    private String skuName;
+
+    private String specSummary;
+
+    private BigDecimal marketPrice;
+
+    private String specJson;
+
+    private String skuCreateTime;
+
+    private String skuUpdateTime;
+
     public String getUnitName() {
         return unitName;
     }
@@ -342,5 +358,69 @@ public class MaterialVo4Unit extends Material{
 
     public void setTaxMoney(BigDecimal taxMoney) {
         this.taxMoney = taxMoney;
+    }
+
+    public String getStore() {
+        return store;
+    }
+
+    public void setStore(String store) {
+        this.store = store;
+    }
+
+    public Boolean getDefaultFlag() {
+        return defaultFlag;
+    }
+
+    public void setDefaultFlag(Boolean defaultFlag) {
+        this.defaultFlag = defaultFlag;
+    }
+
+    public String getSkuName() {
+        return skuName;
+    }
+
+    public void setSkuName(String skuName) {
+        this.skuName = skuName;
+    }
+
+    public String getSpecSummary() {
+        return specSummary;
+    }
+
+    public void setSpecSummary(String specSummary) {
+        this.specSummary = specSummary;
+    }
+
+    public BigDecimal getMarketPrice() {
+        return marketPrice;
+    }
+
+    public void setMarketPrice(BigDecimal marketPrice) {
+        this.marketPrice = marketPrice;
+    }
+
+    public String getSpecJson() {
+        return specJson;
+    }
+
+    public void setSpecJson(String specJson) {
+        this.specJson = specJson;
+    }
+
+    public String getSkuCreateTime() {
+        return skuCreateTime;
+    }
+
+    public void setSkuCreateTime(String skuCreateTime) {
+        this.skuCreateTime = skuCreateTime;
+    }
+
+    public String getSkuUpdateTime() {
+        return skuUpdateTime;
+    }
+
+    public void setSkuUpdateTime(String skuUpdateTime) {
+        this.skuUpdateTime = skuUpdateTime;
     }
 }

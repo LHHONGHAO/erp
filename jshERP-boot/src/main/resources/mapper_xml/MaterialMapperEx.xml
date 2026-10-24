@@ -128,6 +128,14 @@
         <result column="initial_stock" jdbcType="DECIMAL" property="initialStock" />
         <result column="specValues" jdbcType="VARCHAR" property="specValues" />
         <result column="imgName" jdbcType="VARCHAR" property="imgName" />
+        <result column="store" jdbcType="VARCHAR" property="store" />
+        <result column="default_flag" jdbcType="BOOLEAN" property="defaultFlag" />
+        <result column="sku_name" jdbcType="VARCHAR" property="skuName" />
+        <result column="spec_summary" jdbcType="VARCHAR" property="specSummary" />
+        <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
+        <result column="spec_json" jdbcType="VARCHAR" property="specJson" />
+        <result column="sku_create_time" jdbcType="VARCHAR" property="skuCreateTime" />
+        <result column="sku_update_time" jdbcType="VARCHAR" property="skuUpdateTime" />
     </resultMap>
 
     <resultMap id="InitialStockWithMaterialMap" type="com.jsh.erp.datasource.entities.MaterialInitialStockWithMaterial">
@@ -224,7 +232,13 @@
     <select id="selectSkuListByConditionMaterial" resultMap="ResultAndUnitMap">
         select jm.*, u.name unit_name, mc.name categoryName, jme.id meId, jm.bar_code m_bar_code,
         jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal,
-        jme.spec_values sku, jme.sku_code, jme.spec_values specValues, jme.img_url imgName, jm.unit,
+        jme.spec_values sku, jme.sku_code, jme.spec_values specValues, jm.unit,
+        jme.store, jme.default_flag,
+        s.sku_name, s.spec_json, s.spec_summary, s.market_price,
+        date_format(s.create_time,'%Y-%m-%d %H:%i:%s') sku_create_time,
+        date_format(s.update_time,'%Y-%m-%d %H:%i:%s') sku_update_time,
+        coalesce((select ss.image_url from sku_spec ss
+                where ss.sku_id = s.id and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1), jme.img_url) as imgName,
         coalesce((select sum(mcs.current_number) from jsh_material_current_stock mcs
                 where mcs.material_id = jm.id
                   and (mcs.material_extend_id = jme.id or (mcs.material_extend_id is null and jme.default_flag = 1))
@@ -239,6 +253,7 @@
                   and ifnull(mis.delete_flag,'0') !='1'), 0) as initial_stock
         from jsh_material jm
         left join jsh_material_extend jme on jm.id = jme.material_id and ifnull(jme.delete_flag,'0') !='1'
+        left join sku s on s.spu_id = jm.id and s.sku_code = jme.sku_code and s.deleted_at is null
         left join jsh_unit u on u.name = jm.unit and ifnull(u.delete_flag,'0') !='1'
         left join jsh_material_category mc on jm.category_id = mc.id and ifnull(mc.delete_flag,'0') !='1'
         where 1=1

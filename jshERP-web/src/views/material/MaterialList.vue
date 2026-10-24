@@ -202,10 +202,6 @@
                 {{text}}
               </a-tooltip>
             </template>
-            <template slot="customRenderEnabled" slot-scope="enabled">
-              <a-tag v-if="enabled" color="green">启用</a-tag>
-              <a-tag v-if="!enabled" color="orange">禁用</a-tag>
-            </template>
           </data-table>
         </div>
         <!-- table区域-end -->
@@ -252,30 +248,28 @@
         // SKU数据独立存储，避免AntD 1.5.2 expandedRowRender 不响应record属性变化的坑
         skuMap: {},
         skuColumns: [
-          {title: '图片', dataIndex: 'imgUrl', width: 60, scopedSlots: { customRender: 'skuImage' }},
+          {title: '规格图片', dataIndex: 'imgUrl', width: 60, scopedSlots: { customRender: 'skuImage' }},
           {title: 'SKU编码', dataIndex: 'skuCode', width: 160},
           {title: '规格值', dataIndex: 'specValuesText', width: 200, ellipsis: true},
           {title: '库存', dataIndex: 'currentStock', width: 80, align: 'center'},
-          {title: '采购价', dataIndex: 'purchaseDecimal', width: 80},
+          {title: '进货价', dataIndex: 'purchaseDecimal', width: 80},
           {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
-          {title: '销售价', dataIndex: 'wholesaleDecimal', width: 80},
-          {title: '最低售价', dataIndex: 'lowDecimal', width: 80}
+          {title: '划线价', dataIndex: 'marketPrice', width: 80}
         ],
         skuColSettings: {
-          img: true, skuCode: true, spec: true, stock: true, purchase: true, retail: true, wholesale: true, low: true, action: true
+          img: true, skuCode: true, spec: true, stock: true, purchase: true, retail: true, market: true, action: true
         },
         // SKU列可见列的顺序（不含操作列，操作列固定末尾）
-        skuColOrder: ['img', 'skuCode', 'spec', 'stock', 'purchase', 'retail', 'wholesale', 'low'],
+        skuColOrder: ['img', 'skuCode', 'spec', 'stock', 'purchase', 'retail', 'market'],
         // SKU列定义（用于按顺序渲染）
         skuColDefs: {
-          img: { key: 'img', label: '图片', cls: 'sku-cell-img' },
+          img: { key: 'img', label: '规格图片', cls: 'sku-cell-img' },
           skuCode: { key: 'skuCode', label: 'SKU编码', cls: 'sku-cell-code' },
-          spec: { key: 'spec', label: '规格', cls: 'sku-cell-spec' },
+          spec: { key: 'spec', label: '规格值', cls: 'sku-cell-spec' },
           stock: { key: 'stock', label: '库存', cls: 'sku-cell-stock' },
-          purchase: { key: 'purchase', label: '采购价', cls: 'sku-cell-price' },
+          purchase: { key: 'purchase', label: '进货价', cls: 'sku-cell-price' },
           retail: { key: 'retail', label: '零售价', cls: 'sku-cell-price' },
-          wholesale: { key: 'wholesale', label: '销售价', cls: 'sku-cell-price' },
-          low: { key: 'low', label: '最低售价', cls: 'sku-cell-price' },
+          market: { key: 'market', label: '划线价', cls: 'sku-cell-price' },
           action: { key: 'action', label: '操作', cls: 'sku-cell-action' }
         },
         skuColWidths: {},  // SKU列宽：{img:80, spec:150, ...}
@@ -292,13 +286,13 @@
           offset: 1
         },
         queryTitle: {
-          mp1: '面料',
-          mp2: '安全类别',
-          mp3: '执行标准',
-          mp4: '扩展4',
-          mp5: '扩展5',
-          mp6: '等级',
-          mp7: '检验'
+          mp1: '自定义1',
+          mp2: '自定义2',
+          mp3: '自定义3',
+          mp4: '自定义4',
+          mp5: '自定义5',
+          mp6: '自定义6',
+          mp7: '自定义7'
         },
         // 查询条件
         queryParam: {
@@ -335,55 +329,44 @@
         settingDataIndex:[],
         // 实际列
         columns:[],
-        // 商品信息+SKU信息属性的 dataIndex 列表（用于列设置）
-        baseDataIndex:['name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
-          'otherField1','otherField2','otherField3','id','mBarCode','otherField4','otherField5','otherField6','otherField7',
-          'fabric','safetyCategory','executiveStandard','grade','inspection',
-          'initialStock','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal','remark','enabled'],
-        // 默认显示：商品信息 + SKU信息
-        defDataIndex:['name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
-          'fabric','safetyCategory','executiveStandard','mBarCode','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal'],
-        // 默认列（列名固定不可改，除扩展字段用 anotherName 可配置别名）
+        // 列设置可选项：严格按指定字段清单（商品主表 jsh_material + SKU主表 sku）
+        baseDataIndex:['categoryName','name','code','mBarCode','mfrs','brand','mnemonic','unit','remark','weight',
+          'fabric','safetyCategory','executiveStandard','grade','inspection','filler','position',
+          'skuCode','skuName','specJson','purchaseDecimal','commodityDecimal','marketPrice',
+          'skuCreateTime','skuUpdateTime'],
+        // 默认显示列
+        defDataIndex:['name','code','skuCode','categoryName','unit','brand','mnemonic','weight','mfrs',
+          'fabric','safetyCategory','executiveStandard','grade','inspection','filler','mBarCode',
+          'purchaseDecimal','commodityDecimal','marketPrice'],
+        // 默认列（标题与字段功能名一致，不含字段名）
         defColumns: [
-          {title: '名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
-          {title: '商品编码', dataIndex: 'code', width: 130},
-          {title: '图片', dataIndex: 'imgName', width: 70, align: 'center', scopedSlots: { customRender: 'customSkuImg' }},
-          {title: 'SKU编码', dataIndex: 'skuCode', width: 160},
-          {title: '规格值', dataIndex: 'specValues', width: 180, scopedSlots: { customRender: 'customSpecValues' }},
-          {title: '单位', dataIndex: 'unit', width: 100, ellipsis:true},
+          // ---- 商品主表 jsh_material ----
+          {title: '产品类型', dataIndex: 'categoryName', width: 100, ellipsis:true},
+          {title: '商品名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
+          {title: 'SPU商品码', dataIndex: 'code', width: 150},
+          {title: '商品条码', dataIndex: 'mBarCode', width: 120, scopedSlots: { customRender: 'customBarCode' }},
+          {title: '制造商', dataIndex: 'mfrs', width: 120, ellipsis:true},
           {title: '品牌', dataIndex: 'brand', width: 100, ellipsis:true},
           {title: '助记码', dataIndex: 'mnemonic', width: 80, ellipsis:true},
-          {title: '类别', dataIndex: 'categoryName', width: 100, ellipsis:true},
-          {title: '基础重量', dataIndex: 'weight', width: 80},
-          {title: '制造商', dataIndex: 'mfrs', width: 120, ellipsis:true},
-          {title: '面料', dataIndex: 'otherField1', width: 100, ellipsis:true},
-          {title: '安全类别', dataIndex: 'otherField2', width: 100, ellipsis:true},
-          {title: '执行标准', dataIndex: 'otherField3', width: 100, ellipsis:true},
-          {title: '扩展4', dataIndex: 'otherField4', width: 100, ellipsis:true},
-          {title: '扩展5', dataIndex: 'otherField5', width: 100, ellipsis:true},
-          {title: '等级', dataIndex: 'otherField6', width: 100, ellipsis:true},
-          {title: '检验', dataIndex: 'otherField7', width: 100, ellipsis:true},
+          {title: '单位-单个', dataIndex: 'unit', width: 100, ellipsis:true},
+          {title: '备注', dataIndex: 'remark', width: 120, ellipsis:true},
+          {title: '基础重量(kg)', dataIndex: 'weight', width: 100},
           {title: '面料', dataIndex: 'fabric', width: 100, ellipsis:true},
           {title: '安全类别', dataIndex: 'safetyCategory', width: 100, ellipsis:true},
           {title: '执行标准', dataIndex: 'executiveStandard', width: 100, ellipsis:true},
           {title: '等级', dataIndex: 'grade', width: 100, ellipsis:true},
           {title: '检验', dataIndex: 'inspection', width: 100, ellipsis:true},
-          {title: '商品ID', dataIndex: 'id', width: 80},
-          {title: '条码', dataIndex: 'mBarCode', width: 120, scopedSlots: { customRender: 'customBarCode' }},
-          {title: '初始库存', dataIndex: 'initialStock', width: 80,
-            scopedSlots: { customRender: 'customRenderInitialStock' }
-          },
-          {title: '库存', dataIndex: 'stock', width: 80,
-            scopedSlots: { customRender: 'customRenderStock' }
-          },
-          {title: '采购价', dataIndex: 'purchaseDecimal', width: 80},
+          {title: '填充物', dataIndex: 'filler', width: 100, ellipsis:true},
+          {title: '仓位货架', dataIndex: 'position', width: 100, ellipsis:true},
+          // ---- SKU主表 sku ----
+          {title: 'SKU编码', dataIndex: 'skuCode', width: 170},
+          {title: '展示名', dataIndex: 'skuName', width: 180, ellipsis:true},
+          {title: '规格JSON', dataIndex: 'specJson', width: 220, ellipsis:true},
+          {title: '进货价', dataIndex: 'purchaseDecimal', width: 80},
           {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
-          {title: '销售价', dataIndex: 'wholesaleDecimal', width: 80},
-          {title: '最低售价', dataIndex: 'lowDecimal', width: 80},
-          {title: '备注', dataIndex: 'remark', width: 120, ellipsis:true},
-          {title: '状态', dataIndex: 'enabled', align: "center", width: 60,
-            scopedSlots: { customRender: 'customRenderEnabled' }
-          },
+          {title: '划线价', dataIndex: 'marketPrice', width: 80},
+          {title: '创建时间', dataIndex: 'skuCreateTime', width: 150},
+          {title: '更新时间', dataIndex: 'skuUpdateTime', width: 150},
           {
             title: '操作',
             dataIndex: 'action',
@@ -543,6 +526,12 @@
             let nameIdx = parsed.indexOf('name')
             parsed.splice(nameIdx === -1 ? 0 : nameIdx + 1, 0, 'code')
           }
+          // 兼容旧配置：价格列改为「零售价 + 划线价」，旧配置自动补入划线价
+          if (parsed.length > 0 && parsed.indexOf('marketPrice') === -1) {
+            let retailIdx = parsed.indexOf('commodityDecimal')
+            parsed.splice(retailIdx === -1 ? parsed.length : retailIdx + 1, 0, 'marketPrice')
+            Vue.ls.set('materialColumns', parsed.join())
+          }
           this.settingDataIndex = parsed.length > 0 ? parsed : this.defDataIndex
         } else {
           this.settingDataIndex = this.defDataIndex
@@ -552,13 +541,19 @@
         // 加载SKU列设置（从localStorage恢复到reactive数据，确保action始终可见）
         var savedSkuSettings = Vue.ls.get('skuColSettings')
         if (savedSkuSettings) {
-          this.skuColSettings = Object.assign({}, this.skuColSettings, savedSkuSettings)
-          this.skuColSettings.action = true
+          var validSettings = {}
+          var self = this
+          Object.keys(this.skuColDefs).forEach(function(k) {
+            validSettings[k] = savedSkuSettings[k] !== false
+          })
+          validSettings.action = true
+          this.skuColSettings = validSettings
         }
         // 加载SKU列顺序
         var savedOrder = Vue.ls.get('skuColOrder')
         if (savedOrder && savedOrder.length) {
-          // 兼容旧配置：补充新增的SKU编码列
+          var self2 = this
+          savedOrder = savedOrder.filter(function(k) { return !!self2.skuColDefs[k] })
           if (savedOrder.indexOf('skuCode') === -1) {
             var imgIdx = savedOrder.indexOf('img')
             savedOrder.splice(imgIdx === -1 ? 0 : imgIdx + 1, 0, 'skuCode')
@@ -586,70 +581,20 @@
         const actionCol = this.defColumns.find(item => item.dataIndex === 'action')
         return [...selectedColumns, actionCol].filter(Boolean)
       },
-      // 动态替换扩展字段：覆盖 mixin 的 handleChangeOtherField
-      // 规则：mp1=面料、mp2=安全类别、mp3=执行标准（固定，不可通过属性配置改名称）
-      //       mp4=扩展4、mp5=扩展5（可改名称，从 materialPropertyList 获取）
+      // 扩展字段标题固定为「自定义1~7」（jsh_material.other_field1~7）
+      // 面料/安全类别/执行标准/等级/检验/填充物 已是独立字段，不再映射到扩展字段
       handleChangeOtherField(showQuery) {
-        // 1. 先固定前三个（面料/安全类别/执行标准）
-        if (showQuery) {
-          this.queryTitle.mp1 = '面料'
-          this.queryTitle.mp2 = '安全类别'
-          this.queryTitle.mp3 = '执行标准'
-        }
-        for (let i = 0; i < this.defColumns.length; i++) {
-          if (this.defColumns[i].dataIndex === 'otherField1') {
-            this.defColumns[i].title = '面料'
+        for (let i = 1; i <= 7; i++) {
+          const name = '自定义' + i
+          if (showQuery) {
+            this.queryTitle['mp' + i] = name
           }
-          if (this.defColumns[i].dataIndex === 'otherField2') {
-            this.defColumns[i].title = '安全类别'
-          }
-          if (this.defColumns[i].dataIndex === 'otherField3') {
-            this.defColumns[i].title = '执行标准'
+          const col = this.defColumns.find(c => c.dataIndex === 'otherField' + i)
+          if (col) {
+            col.title = name
           }
         }
-        // 2. 再从 materialPropertyList 应用 mp4/mp5/mp6/mp7 动态别名（如果有）
-        const mpList = Vue.ls.get('materialPropertyList')
-        let mp4Name = '扩展4'
-        let mp5Name = '扩展5'
-        let mp6Name = '等级'
-        let mp7Name = '检验'
-        if (mpList && Array.isArray(mpList)) {
-          for (let i = 0; i < mpList.length; i++) {
-            if (mpList[i].nativeName === '扩展4' || mpList[i].id === 4) {
-              mp4Name = mpList[i].anotherName || '扩展4'
-            }
-            if (mpList[i].nativeName === '扩展5' || mpList[i].id === 5) {
-              mp5Name = mpList[i].anotherName || '扩展5'
-            }
-            if (mpList[i].nativeName === '扩展6' || mpList[i].id === 6) {
-              mp6Name = mpList[i].anotherName || '等级'
-            }
-            if (mpList[i].nativeName === '扩展7' || mpList[i].id === 7) {
-              mp7Name = mpList[i].anotherName || '检验'
-            }
-          }
-        }
-        if (showQuery) {
-          this.queryTitle.mp4 = mp4Name
-          this.queryTitle.mp5 = mp5Name
-          this.queryTitle.mp6 = mp6Name
-          this.queryTitle.mp7 = mp7Name
-        }
-        for (let i = 0; i < this.defColumns.length; i++) {
-          if (this.defColumns[i].dataIndex === 'otherField4') {
-            this.defColumns[i].title = mp4Name
-          }
-          if (this.defColumns[i].dataIndex === 'otherField5') {
-            this.defColumns[i].title = mp5Name
-          }
-          if (this.defColumns[i].dataIndex === 'otherField6') {
-            this.defColumns[i].title = mp6Name
-          }
-          if (this.defColumns[i].dataIndex === 'otherField7') {
-            this.defColumns[i].title = mp7Name
-          }
-        }
-        // 3. 刷新实际列（让表头标题重新渲染，并保持 settingDataIndex 顺序）
+        // 刷新实际列（让表头标题重新渲染，并保持 settingDataIndex 顺序）
         this.columns = this.buildColumns(this.settingDataIndex)
       },
       loadTreeData(){
@@ -967,7 +912,7 @@
       },
       // SKU列宽默认值
       getDefaultSkuWidth(key) {
-        var map = { img: 80, skuCode: 170, spec: 150, stock: 90, purchase: 90, retail: 90, wholesale: 90, low: 90, action: 180 }
+        var map = { img: 80, skuCode: 170, spec: 150, stock: 90, purchase: 90, retail: 90, market: 90, action: 180 }
         return map[key] || 80
       },
       // 加载SKU列宽配置

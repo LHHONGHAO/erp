@@ -22,11 +22,26 @@ public class Sku {
 
     private BigDecimal salePrice;
 
+    private BigDecimal purchaseDecimal;
+
+    private BigDecimal commodityDecimal;
+
+    /** 划线价 */
+    private BigDecimal marketPrice;
+
     private Long tenantId;
 
     private Integer version;
 
     private Date deletedAt;
+
+    private Date createTime;
+
+    private Date updateTime;
+
+    private String createSerial;
+
+    private String updateSerial;
 
     public Long getId() {
         return id;
@@ -84,6 +99,30 @@ public class Sku {
         this.salePrice = salePrice;
     }
 
+    public BigDecimal getPurchaseDecimal() {
+        return purchaseDecimal;
+    }
+
+    public void setPurchaseDecimal(BigDecimal purchaseDecimal) {
+        this.purchaseDecimal = purchaseDecimal;
+    }
+
+    public BigDecimal getCommodityDecimal() {
+        return commodityDecimal;
+    }
+
+    public void setCommodityDecimal(BigDecimal commodityDecimal) {
+        this.commodityDecimal = commodityDecimal;
+    }
+
+    public BigDecimal getMarketPrice() {
+        return marketPrice;
+    }
+
+    public void setMarketPrice(BigDecimal marketPrice) {
+        this.marketPrice = marketPrice;
+    }
+
     public Long getTenantId() {
         return tenantId;
     }
@@ -106,5 +145,37 @@ public class Sku {
 
     public void setDeletedAt(Date deletedAt) {
         this.deletedAt = deletedAt;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public String getCreateSerial() {
+        return createSerial;
+    }
+
+    public void setCreateSerial(String createSerial) {
+        this.createSerial = createSerial;
+    }
+
+    public String getUpdateSerial() {
+        return updateSerial;
+    }
+
+    public void setUpdateSerial(String updateSerial) {
+        this.updateSerial = updateSerial;
     }
 }

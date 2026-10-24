@@ -96,6 +96,10 @@ public class SkuService {
         update.setSpecJson(SkuSpecUtils.buildSpecJson(latest));
         update.setSpecSummary(SkuSpecUtils.buildSpecSummary(latest));
         update.setSalePrice(sku.getSalePrice());
+        update.setPurchaseDecimal(sku.getPurchaseDecimal());
+        update.setCommodityDecimal(sku.getCommodityDecimal());
+        update.setMarketPrice(sku.getMarketPrice());
+        update.setUpdateSerial(sku.getUpdateSerial());
 
         // 5. 乐观锁更新主表
         Sku current = skuMapper.selectByPrimaryKey(sku.getId());

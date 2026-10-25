@@ -8,6 +8,7 @@
     <result column="material_extend_id" jdbcType="BIGINT" property="materialExtendId" />
     <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
     <result column="inbound_depot_id" jdbcType="BIGINT" property="inboundDepotId" />
+    <result column="store" jdbcType="VARCHAR" property="store" />
     <result column="current_depot_id" jdbcType="BIGINT" property="currentDepotId" />
     <result column="inbound_type" jdbcType="VARCHAR" property="inboundType" />
     <result column="inbound_head_id" jdbcType="BIGINT" property="inboundHeadId" />
@@ -27,7 +28,7 @@
   </resultMap>
 
   <sql id="Base_Column_List">
-    id, unit_code, material_id, material_extend_id, sku_code, inbound_depot_id, current_depot_id, inbound_type,
+    id, unit_code, material_id, material_extend_id, sku_code, inbound_depot_id, store, current_depot_id, inbound_type,
     inbound_head_id, inbound_item_id, inbound_time, outbound_depot_id, outbound_type, outbound_head_id,
     outbound_item_id, outbound_time, status, tenant_id, delete_flag, remark, create_time, update_time
   </sql>
@@ -62,6 +63,7 @@
       <if test="materialExtendId != null">material_extend_id,</if>
       <if test="skuCode != null">sku_code,</if>
       <if test="inboundDepotId != null">inbound_depot_id,</if>
+      <if test="store != null">store,</if>
       <if test="currentDepotId != null">current_depot_id,</if>
       <if test="inboundType != null">inbound_type,</if>
       <if test="inboundHeadId != null">inbound_head_id,</if>
@@ -82,6 +84,7 @@
       <if test="materialExtendId != null">#{materialExtendId},</if>
       <if test="skuCode != null">#{skuCode},</if>
       <if test="inboundDepotId != null">#{inboundDepotId},</if>
+      <if test="store != null">#{store},</if>
       <if test="currentDepotId != null">#{currentDepotId},</if>
       <if test="inboundType != null">#{inboundType},</if>
       <if test="inboundHeadId != null">#{inboundHeadId},</if>
@@ -106,6 +109,7 @@
       <if test="materialExtendId != null">material_extend_id = #{materialExtendId},</if>
       <if test="skuCode != null">sku_code = #{skuCode},</if>
       <if test="inboundDepotId != null">inbound_depot_id = #{inboundDepotId},</if>
+      <if test="store != null">store = #{store},</if>
       <if test="currentDepotId != null">current_depot_id = #{currentDepotId},</if>
       <if test="inboundType != null">inbound_type = #{inboundType},</if>
       <if test="inboundHeadId != null">inbound_head_id = #{inboundHeadId},</if>

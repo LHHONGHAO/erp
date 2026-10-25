@@ -12,7 +12,7 @@ public interface SkuSpecMapper {
      */
     int deleteBySkuId(@Param("skuId") Long skuId);
 
-    int batchInsert(@Param("list") List<SkuSpec> list);
+    int insert(SkuSpec record);
 
     List<SkuSpec> selectBySkuId(@Param("skuId") Long skuId);
 

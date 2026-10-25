@@ -12,6 +12,7 @@
         <result column="wholesale_decimal" jdbcType="VARCHAR" property="wholesaleDecimal" />
         <result column="low_decimal" jdbcType="VARCHAR" property="lowDecimal" />
         <result column="sku" jdbcType="VARCHAR" property="sku" />
+        <result column="imgName" jdbcType="VARCHAR" property="imgName" />
     </resultMap>
 
     <resultMap extends="com.jsh.erp.datasource.mappers.MaterialMapper.BaseResultMap" id="ResultMapListWithStock" type="com.jsh.erp.datasource.entities.MaterialVo4Unit">
@@ -128,7 +129,6 @@
         <result column="initial_stock" jdbcType="DECIMAL" property="initialStock" />
         <result column="specValues" jdbcType="VARCHAR" property="specValues" />
         <result column="imgName" jdbcType="VARCHAR" property="imgName" />
-        <result column="store" jdbcType="VARCHAR" property="store" />
         <result column="default_flag" jdbcType="BOOLEAN" property="defaultFlag" />
         <result column="sku_name" jdbcType="VARCHAR" property="skuName" />
         <result column="spec_summary" jdbcType="VARCHAR" property="specSummary" />
@@ -145,7 +145,15 @@
 
     <select id="selectByConditionMaterial" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultMapList">
         select jm.*, u.name unitName, mc.name categoryName, jm.bar_code,
-        jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal, jme.spec_values sku
+        jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal, jme.spec_values sku,
+        coalesce((select ss.image_url from sku_spec ss
+                join sku s on s.id = ss.sku_id
+                where s.spu_id = jm.id and s.deleted_at is null
+                  and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1),
+                 (select me2.img_url from jsh_material_extend me2
+                where me2.material_id = jm.id and ifnull(me2.delete_Flag,'0') !='1'
+                  and me2.img_url is not null and me2.img_url &lt;&gt; ''
+                order by me2.default_flag desc, me2.id limit 1)) as imgName
         from (select m.id, min(me.id) meId
         from jsh_material m
         left join jsh_material_extend me on m.id = me.material_id and ifnull(me.delete_Flag,'0') !='1'
@@ -233,7 +241,7 @@
         select jm.*, u.name unit_name, mc.name categoryName, jme.id meId, jm.bar_code m_bar_code,
         jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal,
         jme.spec_values sku, jme.sku_code, jme.spec_values specValues, jm.unit,
-        jme.store, jme.default_flag,
+        jme.default_flag,
         s.sku_name, s.spec_json, s.spec_summary, s.market_price,
         date_format(s.create_time,'%Y-%m-%d %H:%i:%s') sku_create_time,
         date_format(s.update_time,'%Y-%m-%d %H:%i:%s') sku_update_time,

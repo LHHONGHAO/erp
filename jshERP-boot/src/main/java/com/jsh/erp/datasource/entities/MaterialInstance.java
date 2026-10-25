@@ -13,6 +13,8 @@ public class MaterialInstance {
     private Long materialExtendId;
     private String skuCode;
     private Long inboundDepotId;
+    /** 门店（期初入库时选择，随单件档案保存） */
+    private String store;
     private Long currentDepotId;
     /** INITIAL、PURCHASE、OTHER */
     private String inboundType;

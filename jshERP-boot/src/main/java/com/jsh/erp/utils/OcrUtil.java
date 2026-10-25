@@ -171,6 +171,16 @@ public class OcrUtil {
         return result;
     }
 
+    /**
+     * 从粘贴/编辑后的文本中解析商品信息
+     */
+    public static Map<String, String> parseProductText(String text) {
+        Map<String, String> result = new HashMap<>();
+        result.put("rawText", text);
+        parseProductInfo(text, result);
+        return result;
+    }
+
     private static String postForm(String urlStr, String params) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -233,9 +243,13 @@ public class OcrUtil {
         keyMapping.put("厂家", "mfrs");
         keyMapping.put("生产商", "mfrs");
         keyMapping.put("生产厂商", "mfrs");
-        keyMapping.put("保质期", "expiryNum");
-        keyMapping.put("仓位", "position");
-        keyMapping.put("货架", "position");
+        keyMapping.put("面料", "fabric");
+        keyMapping.put("材质", "fabric");
+        keyMapping.put("安全类别", "safetyCategory");
+        keyMapping.put("执行标准", "executiveStandard");
+        keyMapping.put("等级", "grade");
+        keyMapping.put("检验", "inspection");
+        keyMapping.put("填充物", "filler");
 
         // 记录上一行通用兜底的 key，用于多行值合并
         // 只有通用兜底（未匹配到标准字段）的 key 才允许后续行追加值

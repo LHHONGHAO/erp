@@ -184,6 +184,9 @@
             <template slot="customSpecValues" slot-scope="text, record">
               {{ getSpecValueMerged(record) }}
             </template>
+            <template slot="customSpecDisplay" slot-scope="text, record">
+              <div class="spec-display-cell">{{ getSpecDisplay(record) }}</div>
+            </template>
             <template slot="customBarCode" slot-scope="text, record">
               {{record.mBarCode}}
             </template>
@@ -330,9 +333,9 @@
         // 实际列
         columns:[],
         // 列设置可选项：严格按指定字段清单（商品主表 jsh_material + SKU主表 sku）
-        baseDataIndex:['categoryName','name','code','mBarCode','mfrs','brand','mnemonic','unit','remark','weight',
+        baseDataIndex:['imgName','categoryName','name','code','mBarCode','mfrs','brand','mnemonic','unit','remark','weight',
           'fabric','safetyCategory','executiveStandard','grade','inspection','filler','position',
-          'skuCode','skuName','specJson','purchaseDecimal','commodityDecimal','marketPrice',
+          'skuCode','skuName','specDisplay','purchaseDecimal','commodityDecimal','marketPrice',
           'skuCreateTime','skuUpdateTime'],
         // 默认显示列
         defDataIndex:['name','code','skuCode','categoryName','unit','brand','mnemonic','weight','mfrs',
@@ -340,6 +343,8 @@
           'purchaseDecimal','commodityDecimal','marketPrice'],
         // 默认列（标题与字段功能名一致，不含字段名）
         defColumns: [
+          // ---- 图片（sku_spec.image_url / jsh_material_extend.img_url） ----
+          {title: '图片', dataIndex: 'imgName', width: 60, align: 'center', scopedSlots: { customRender: 'customSkuImg' }},
           // ---- 商品主表 jsh_material ----
           {title: '产品类型', dataIndex: 'categoryName', width: 100, ellipsis:true},
           {title: '商品名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
@@ -361,7 +366,7 @@
           // ---- SKU主表 sku ----
           {title: 'SKU编码', dataIndex: 'skuCode', width: 170},
           {title: '展示名', dataIndex: 'skuName', width: 180, ellipsis:true},
-          {title: '规格JSON', dataIndex: 'specJson', width: 220, ellipsis:true},
+          {title: '规格显示', dataIndex: 'specDisplay', width: 220, scopedSlots: { customRender: 'customSpecDisplay' }},
           {title: '进货价', dataIndex: 'purchaseDecimal', width: 80},
           {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
           {title: '划线价', dataIndex: 'marketPrice', width: 80},
@@ -400,14 +405,14 @@
       // DataTable 默认显示列：基础信息属性 + 固定末尾的操作列
       defaultColumnsForTable() {
         const base = this.displayMode === 'spu'
-          ? this.defDataIndex.filter(k => k !== 'skuCode' && k !== 'specValues')
+          ? this.defDataIndex.filter(k => k !== 'skuCode' && k !== 'specValues' && k !== 'specDisplay')
           : this.defDataIndex
         return [...base, 'action']
       },
       // DataTable 实际列：单类显示时隐藏 SKU 编码/规格值列（SPU 接口不返回这些字段）
       extraColumnsForTable() {
         if (this.displayMode === 'spu') {
-          return this.defColumns.filter(c => c.dataIndex !== 'skuCode' && c.dataIndex !== 'specValues')
+          return this.defColumns.filter(c => c.dataIndex !== 'skuCode' && c.dataIndex !== 'specValues' && c.dataIndex !== 'specDisplay')
         }
         return this.defColumns
       },
@@ -419,7 +424,7 @@
           })
         })
       },
-      // 列设置弹窗中可选的列：仅商品基础信息属性（图片/操作列固定显示，不在选项中）
+      // 列设置弹窗中可选的列：商品基础信息属性（图片列可通过 baseDataIndex 勾选，操作列固定固定末尾）
       baseColumnsForSetting() {
         return this.defColumns.filter(item => this.baseDataIndex.includes(item.dataIndex))
       },
@@ -519,6 +524,13 @@
       initColumnsSetting(){
         let columnsStr = Vue.ls.get('materialColumns')
         if(columnsStr && columnsStr.indexOf(',')>-1) {
+          // 兼容旧版本：原「规格JSON」列已改为「规格显示」列，本地存储同步替换
+          let rawList = columnsStr.split(',')
+          if (rawList.indexOf('specJson') > -1 && rawList.indexOf('specDisplay') === -1) {
+            rawList = rawList.map(idx => idx === 'specJson' ? 'specDisplay' : idx)
+            columnsStr = rawList.join()
+            Vue.ls.set('materialColumns', columnsStr)
+          }
           // 过滤掉非基础属性的 dataIndex（兼容旧版本本地存储）
           let parsed = columnsStr.split(',').filter(idx => this.baseDataIndex.includes(idx))
           // 兼容旧版本：自动补入新增的"商品编码"列
@@ -537,6 +549,14 @@
           this.settingDataIndex = this.defDataIndex
         }
         this.columns = this.buildColumns(this.settingDataIndex)
+        // 兼容旧版本：DataTable 自身保存的列勾选里若有旧的「规格JSON」，替换为「规格显示」
+        let dtSaved = Vue.ls.get('columns_material')
+        if (dtSaved) {
+          let dtList = typeof dtSaved === 'string' ? dtSaved.split(',').filter(k => !!k) : dtSaved
+          if (Array.isArray(dtList) && dtList.indexOf('specJson') > -1) {
+            Vue.ls.set('columns_material', dtList.map(k => k === 'specJson' ? 'specDisplay' : k))
+          }
+        }
         this.loadSkuColWidths()
         // 加载SKU列设置（从localStorage恢复到reactive数据，确保action始终可见）
         var savedSkuSettings = Vue.ls.get('skuColSettings')
@@ -868,6 +888,47 @@
           return ''
         }
       },
+      // 规格显示：读取商品规格名与规格值，每个规格一行，如 "颜色：蘑菇" 换行 "规格：220*230cm"
+      getSpecDisplay(record) {
+        if (!record) return ''
+        // 优先取 SKU 表的 spec_json：[{"name":"颜色","value":"红"}]
+        if (record.specJson) {
+          try {
+            var arr = JSON.parse(record.specJson)
+            if (Array.isArray(arr) && arr.length > 0) {
+              return arr.map(function(item) {
+                var name = item.name || item.attributeName || ''
+                var value = item.value || item.valueText || ''
+                return name ? (name + '：' + value) : value
+              }).filter(function(t) { return t !== '' }).join('\n')
+            }
+          } catch (e) {
+            // 解析失败继续走兜底
+          }
+        }
+        // 兜底1：spec_summary 格式 "颜色:红;尺码:L"
+        if (record.specSummary) {
+          return record.specSummary.split(';').map(function(part) {
+            return part.replace(':', '：')
+          }).filter(function(t) { return t !== '' }).join('\n')
+        }
+        // 兜底2：规格值 JSON（旧数据结构 attributeName/valueText）
+        if (record.specValues) {
+          try {
+            var arr2 = JSON.parse(record.specValues)
+            if (Array.isArray(arr2) && arr2.length > 0) {
+              return arr2.map(function(item) {
+                var name = item.attributeName || item.name || ''
+                var value = item.valueText || item.value || ''
+                return name ? (name + '：' + value) : value
+              }).filter(function(t) { return t !== '' }).join('\n')
+            }
+          } catch (e) {
+            return record.specValues
+          }
+        }
+        return ''
+      },
       // SKU规格值合并为一列，用 / 分割，如 "蓝色/200*230/250*230"
       getSpecValueMerged(sku) {
         if (!sku || !sku.specValues) return ''
@@ -982,6 +1043,12 @@
   .row-sku-img-placeholder {
     font-size: 12px;
     color: #ccc;
+  }
+  /* 规格显示：每个规格单独一行，与上一行并列显示 */
+  .spec-display-cell {
+    white-space: pre-line;
+    line-height: 18px;
+    word-break: break-all;
   }
 
   /* ============================================================

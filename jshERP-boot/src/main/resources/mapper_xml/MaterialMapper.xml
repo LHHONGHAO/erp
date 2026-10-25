@@ -7,12 +7,18 @@
     <result column="name" jdbcType="VARCHAR" property="name" />
     <result column="code" jdbcType="VARCHAR" property="code" />
     <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
-    <result column="mfrs" jdbcType="VARCHAR" property="mfrs" />
+    <result column="mfrs" jdbcType="VARCHAR" property="mfrs" />
+
+
     <result column="brand" jdbcType="VARCHAR" property="brand" />
-    <result column="mnemonic" jdbcType="VARCHAR" property="mnemonic" />
+    <result column="mnemonic" jdbcType="VARCHAR" property="mnemonic" />
+
     <result column="unit" jdbcType="VARCHAR" property="unit" />
-    <result column="remark" jdbcType="VARCHAR" property="remark" />
-    <result column="weight" jdbcType="DECIMAL" property="weight" />
+    <result column="remark" jdbcType="VARCHAR" property="remark" />
+
+
+    <result column="weight" jdbcType="DECIMAL" property="weight" />
+
     <result column="other_field1" jdbcType="VARCHAR" property="otherField1" />
     <result column="other_field2" jdbcType="VARCHAR" property="otherField2" />
     <result column="other_field3" jdbcType="VARCHAR" property="otherField3" />
@@ -22,7 +28,8 @@
     <result column="other_field7" jdbcType="VARCHAR" property="otherField7" />
     <result column="enable_serial_number" jdbcType="VARCHAR" property="enableSerialNumber" />
     <result column="enable_batch_number" jdbcType="VARCHAR" property="enableBatchNumber" />
-    <result column="position" jdbcType="VARCHAR" property="position" />
+    <result column="position" jdbcType="VARCHAR" property="position" />
+
     <result column="fabric" jdbcType="VARCHAR" property="fabric" />
     <result column="safety_category" jdbcType="VARCHAR" property="safetyCategory" />
     <result column="executive_standard" jdbcType="VARCHAR" property="executiveStandard" />

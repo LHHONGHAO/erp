@@ -74,6 +74,8 @@ public class MaterialService {
     @Resource
     private MaterialExtendService materialExtendService;
     @Resource
+    private SkuService skuService;
+    @Resource
     private SystemConfigService systemConfigService;
     @Resource
     private RoleService roleService;
@@ -222,6 +224,8 @@ public class MaterialService {
             JSONArray specModules = obj.getJSONArray("specModules");
             materialSpecTemplateService.saveSpecTemplate(mId, specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"), mId, "insert");
+            // 同步 sku / sku_spec 新模型（生成展示名、规格JSON，写入创建时间）
+            skuService.syncFromMaterialExtend(mId);
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, mId, false);
             if(!hasSkuOpeningStock && obj.get("stock")!=null) {
                 JSONArray stockArr = obj.getJSONArray("stock");
@@ -287,6 +291,8 @@ public class MaterialService {
             JSONArray specModules = obj.getJSONArray("specModules");
             materialSpecTemplateService.saveSpecTemplate(material.getId(), specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"),material.getId(), "update");
+            // 同步 sku / sku_spec 新模型（刷新展示名、规格JSON，更新时间为本次保存时间）
+            skuService.syncFromMaterialExtend(material.getId());
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, material.getId(), true);
             BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(material.getId());
             if(!hasSkuOpeningStock && obj.get("stock")!=null) {
@@ -382,7 +388,8 @@ public class MaterialService {
                     savedSku.getId(), savedSku.getSkuCode());
             insertCurrentStockByMaterialAndDepot(depotId, materialId, quantity,
                     savedSku.getId(), savedSku.getSkuCode());
-            saveInitialMaterialInstances(materialId, savedSku, depotId, normalizedQuantity.intValueExact());
+            saveInitialMaterialInstances(materialId, savedSku, depotId, row.getString("store"),
+                    normalizedQuantity.intValueExact());
             savedAny = true;
         }
         return savedAny;
@@ -392,6 +399,7 @@ public class MaterialService {
     private void saveInitialMaterialInstances(Long materialId,
                                               com.jsh.erp.datasource.vo.MaterialExtendVo4List sku,
                                               Long depotId,
+                                              String store,
                                               int quantity) throws Exception {
         User currentUser = userService.getCurrentUser();
         for (int i = 0; i < quantity; i++) {
@@ -402,6 +410,8 @@ public class MaterialService {
             instance.setMaterialExtendId(sku.getId());
             instance.setSkuCode(sku.getSkuCode());
             instance.setInboundDepotId(depotId);
+            // 门店随单品档案保存，SKU 维度不再保留该信息
+            instance.setStore(StringUtil.isNotEmpty(store) ? store.trim() : null);
             instance.setCurrentDepotId(depotId);
             instance.setInboundType("INITIAL");
             instance.setInboundTime(new Date());

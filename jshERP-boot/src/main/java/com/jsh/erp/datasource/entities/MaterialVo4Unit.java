@@ -80,8 +80,6 @@ public class MaterialVo4Unit extends Material{
 
     private BigDecimal taxLastMoney;
 
-    private String store;
-
     private Boolean defaultFlag;
 
     private String skuName;
@@ -358,14 +356,6 @@ public class MaterialVo4Unit extends Material{
 
     public void setTaxMoney(BigDecimal taxMoney) {
         this.taxMoney = taxMoney;
-    }
-
-    public String getStore() {
-        return store;
-    }
-
-    public void setStore(String store) {
-        this.store = store;
     }
 
     public Boolean getDefaultFlag() {

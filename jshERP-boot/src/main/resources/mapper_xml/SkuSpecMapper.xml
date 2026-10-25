@@ -20,12 +20,11 @@
     DELETE FROM `sku_spec` WHERE sku_id = #{skuId}
   </delete>
 
-  <insert id="batchInsert">
-    INSERT INTO `sku_spec` (sku_id, spec_name, spec_value, image_url, sort_no, tenant_id)
-    VALUES
-    <foreach collection="list" item="item" separator=",">
-      (#{item.skuId}, #{item.specName}, #{item.specValue}, #{item.imageUrl}, #{item.sortNo}, #{item.tenantId})
-    </foreach>
+  <!-- tenant_id 由多租户拦截器自动注入，SQL 中不能再显式写，否则会重复 -->
+  <!-- 采用单行插入：多租户拦截器只能正确处理单行 VALUES -->
+  <insert id="insert" parameterType="com.jsh.erp.datasource.entities.SkuSpec">
+    INSERT INTO `sku_spec` (sku_id, spec_name, spec_value, image_url, sort_no)
+    VALUES (#{skuId}, #{specName}, #{specValue}, #{imageUrl}, #{sortNo})
   </insert>
 
   <select id="selectBySkuId" resultMap="BaseResultMap">

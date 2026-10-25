@@ -179,24 +179,14 @@
                   <div class="spec-main-label">规格值</div>
                   <div class="spec-values-list">
                     <div v-for="(val, vIndex) in module.values" :key="vIndex" class="spec-value-row">
-                      <!-- 图片上传方块（仅第一个模块且开启图片时显示） -->
-                      <div v-if="module.enableImage" class="spec-value-img-upload">
-                        <a-upload
-                          name="file"
-                          :action="uploadUrl"
-                          :headers="uploadHeaders"
-                          :data="{'biz':'material'}"
-                          :showUploadList="false"
-                          accept="image/*"
-                          :before-upload="captureSpecImageFile"
-                          @change="(info) => onSpecValueImageChange(mIndex, vIndex, info)">
-                          <div v-if="val.image" class="spec-value-img-preview">
-                            <img :src="getFileAccessHttpUrl(val.image)" />
-                          </div>
-                          <div v-else class="spec-value-img-trigger">
-                            <a-icon type="plus" style="font-size: 16px; color: #999;" />
-                          </div>
-                        </a-upload>
+                      <!-- 图片方块（仅第一个模块且开启图片时显示）：点击先打开图片文字提取框 -->
+                      <div v-if="module.enableImage" class="spec-value-img-upload" @click="openSpecImageExtract(mIndex, vIndex)">
+                        <div v-if="val.image" class="spec-value-img-preview">
+                          <img :src="getFileAccessHttpUrl(val.image)" />
+                        </div>
+                        <div v-else class="spec-value-img-trigger">
+                          <a-icon type="plus" style="font-size: 16px; color: #999;" />
+                        </div>
                       </div>
                       <!-- 普通规格值输入框 -->
                       <a-input v-if="!module.childNames || module.childNames.length === 0"
@@ -328,7 +318,8 @@
                   <a-input v-model="batchCommodityPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchWholesalePrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchStock" addonBefore="期初库存" placeholder="请输入" class="price-setting-input" />
-                  <a-select v-model="batchDepotId" placeholder="请选择仓库" class="price-setting-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" />
+                  <a-select v-model="batchDepotId" placeholder="请选择仓库" class="price-setting-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
+                  <a-select v-model="batchStore" placeholder="请选择门店" class="price-setting-input" :options="storeOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
                   <a-button type="primary" @click="batchSetColumn">批量设置</a-button>
                 </div>
                 </div>
@@ -460,6 +451,9 @@
         batchStock: '',
         batchWholesalePrice: '',
         batchDepotId: undefined,
+        batchStore: undefined,
+        // 门店下拉选项：门店主数据暂未接入，先保留空选项（允许为空）
+        storeOptions: [],
         priceTableFullscreen: false,
         depotList: [],
         selectedSpecFilter: -1,
@@ -619,12 +613,6 @@
         // JEditableTable 的行高约为54px，按SKU数量展开表格。
         return Math.max((this.meTable.dataSource || []).length * 54, 54)
       },
-      uploadUrl() {
-        return window._CONFIG['domianURL'] + '/systemConfig/upload'
-      },
-      uploadHeaders() {
-        return { 'X-Access-Token': Vue.ls.get('Access-Token') }
-      },
       priceFillProgress() {
         let rows = this.meTable.dataSource
         if (!rows || rows.length === 0) return 0
@@ -662,6 +650,12 @@
           opts.push({ value: String(d.id), label: d.name })
         }
         return opts
+      },
+      // 批量设置行：期初库存大于 0 时，仓库/门店才可选择
+      batchStockPositive() {
+        if (this.batchStock === '' || this.batchStock === null || this.batchStock === undefined) return false
+        let num = Number(this.batchStock)
+        return !isNaN(num) && num > 0
       }
     },
     watch: {
@@ -866,6 +860,10 @@
           }
           if (this.batchDepotId !== undefined && this.batchDepotId !== null && this.batchDepotId !== '') {
             rows[i].depotId = this.batchDepotId
+            hasValue = true
+          }
+          if (this.batchStore !== undefined && this.batchStore !== null && this.batchStore !== '') {
+            rows[i].store = this.batchStore
             hasValue = true
           }
         }
@@ -1331,31 +1329,20 @@
         })
         self.onSpecChange()
       },
-      captureSpecImageFile(file) {
-        this.specImageOcrFile = file
-        return true
+      openSpecImageExtract(mIndex, vIndex) {
+        // 先打开图片文字提取框，再在提取框内加载图片
+        this.pendingSpecImage = { mIndex: mIndex, vIndex: vIndex, path: '' }
+        this.specImageOcrFile = null
+        this.specImageOcrVisible = true
       },
-      onSpecValueImageChange(mIndex, vIndex, info) {
-        if (info.file.status === 'done') {
-          let resp = info.file.response
-          let code = (resp && resp.code) || 0
-          if (code === 200) {
-            let path = (resp && resp.data) || ''
-            this.pendingSpecImage = { mIndex: mIndex, vIndex: vIndex, path: path }
-            this.specImageOcrFile = this.specImageOcrFile || info.file.originFileObj || null
-            this.specImageOcrVisible = true
-          } else {
-            this.$message.error((resp && resp.data) || '图片上传失败')
-          }
-        }
-      },
-      handleSpecImageOcrClose() {
+      handleSpecImageOcrClose(imagePath) {
         this.specImageOcrVisible = false
         if (this.pendingSpecImage) {
           let pending = this.pendingSpecImage
+          let path = imagePath || pending.path
           let module = this.specModules[pending.mIndex]
-          if (module && module.values && module.values[pending.vIndex]) {
-            this.$set(module.values[pending.vIndex], 'image', pending.path)
+          if (path && module && module.values && module.values[pending.vIndex]) {
+            this.$set(module.values[pending.vIndex], 'image', path)
             this.updateRowImagesBySpec()
           }
         }
@@ -1847,7 +1834,7 @@
       },
       handleOcrResult(result) {
         // 表单字段映射：所有属性填充到基础信息表单（含条码）
-        var formFields = ['name', 'unit', 'brand', 'mnemonic', 'weight', 'mfrs', 'otherField1', 'otherField2', 'otherField3', 'barCode', 'otherField4', 'otherField5', 'otherField6', 'otherField7']
+        var formFields = ['name', 'unit', 'brand', 'mnemonic', 'weight', 'mfrs', 'otherField1', 'otherField2', 'otherField3', 'barCode', 'otherField4', 'otherField5', 'otherField6', 'otherField7', 'fabric', 'safetyCategory', 'executiveStandard', 'grade', 'inspection', 'filler']
         var formValues = {}
         for (var i = 0; i < formFields.length; i++) {
           var field = formFields[i]
@@ -2130,6 +2117,7 @@
   /* 图片上传方块 */
   .spec-value-img-upload {
     margin-right: 8px;
+    cursor: pointer;
   }
   .spec-value-img-trigger {
     width: 40px;

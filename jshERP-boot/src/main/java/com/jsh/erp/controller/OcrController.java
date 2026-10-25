@@ -132,6 +132,24 @@ public class OcrController {
         }
     }
 
+    @PostMapping(value = "/parseProductText")
+    @ApiOperation(value = "解析商品文本中的商品信息")
+    public String parseProductText(@RequestBody JSONObject params, HttpServletRequest request) throws Exception {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            String text = params.getString("text");
+            if (text == null || text.trim().isEmpty()) {
+                return returnJson(objectMap, "请输入文本内容", ErpInfo.ERROR.code);
+            }
+            Map<String, String> result = OcrUtil.parseProductText(text);
+            objectMap.putAll(result);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("解析商品文本失败", e);
+            return returnJson(objectMap, "解析失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
     @PostMapping(value = "/saveConfig")
     @ApiOperation(value = "保存OCR配置")
     public String saveConfig(@RequestBody JSONObject params, HttpServletRequest request) throws Exception {

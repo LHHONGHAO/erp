@@ -42,8 +42,6 @@ public class MaterialExtend {
 
     private String imgUrl;
 
-    private String store;
-
     public Long getId() {
         return id;
     }
@@ -194,13 +192,5 @@ public class MaterialExtend {
 
     public void setImgUrl(String imgUrl) {
         this.imgUrl = imgUrl == null ? null : imgUrl.trim();
-    }
-
-    public String getStore() {
-        return store;
-    }
-
-    public void setStore(String store) {
-        this.store = store == null ? null : store.trim();
     }
 }

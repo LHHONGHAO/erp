@@ -27,14 +27,15 @@
   </sql>
 
   <!-- 新增：spec_json / spec_summary / sku_name 先给占位，规格落库后再回填 -->
+  <!-- tenant_id 由多租户拦截器自动注入，SQL 中不能再显式写，否则会重复 -->
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Sku" useGeneratedKeys="true" keyProperty="id">
     INSERT INTO `sku` (spu_id, sku_code, sku_name, spec_json, spec_summary,
                        purchase_decimal, commodity_decimal, market_price,
-                       tenant_id, version, deleted_at, create_serial, update_serial)
+                       version, deleted_at, create_serial, update_serial)
     VALUES (#{spuId}, #{skuCode},
             IFNULL(#{skuName}, ''), IFNULL(#{specJson}, '[]'), IFNULL(#{specSummary}, ''),
             IFNULL(#{purchaseDecimal}, 0), IFNULL(#{commodityDecimal}, 0), IFNULL(#{marketPrice}, 0),
-            #{tenantId}, 0, NULL, #{createSerial}, #{updateSerial})
+            0, NULL, #{createSerial}, #{updateSerial})
   </insert>
 
   <!-- 回填规格冗余字段：带 version 条件，实现乐观锁 -->

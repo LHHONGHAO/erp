@@ -183,6 +183,29 @@ export const DataTableDetailMixin = {
             mObj.commodityDecimal = mInfo.commodityDecimal
             mObj.wholesaleDecimal = mInfo.wholesaleDecimal
             mObj.lowDecimal = mInfo.lowDecimal
+            mObj.marketPrice = mInfo.marketPrice
+            mObj.fabric = mInfo.fabric
+            mObj.filler = mInfo.filler
+            mObj.specJson = mInfo.specJson
+            mObj.specSummary = mInfo.specSummary
+            mObj.skuName = mInfo.skuName
+            //已存在相同SKU（或条码）时只累加数量，不再新增明细行
+            if (this.mergeSameSkuOnSelect) {
+              const existRow = newDetailArr.find(r => {
+                if (mInfo.skuCode) {
+                  return r.skuCode === mInfo.skuCode
+                }
+                return r.barCode && r.barCode === mInfo.barCode
+              })
+              if (existRow) {
+                const addNumber = Number(mInfo.operNumber || 1)
+                existRow.operNumber = Number(existRow.operNumber || 0) + addNumber
+                const unitPrice = Number(existRow.unitPrice || 0)
+                existRow.allPrice = Number((existRow.operNumber * unitPrice).toFixed(2))
+                existRow.taxLastMoney = existRow.allPrice
+                continue
+              }
+            }
             newDetailArr.push(mObj)
           }
           // 组装/拆卸等单据：首行标记为组合件，其余为普通子件（与原 JEditableTable 流程一致）

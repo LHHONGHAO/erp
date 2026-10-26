@@ -1520,6 +1520,11 @@ public class MaterialService {
         return materialMapperEx.getMaterialByBarCode(barCodeArray);
     }
 
+    public List<MaterialVo4Unit> getMaterialBySkuCode(String skuCode) {
+        String [] skuCodeArray=skuCode.split(",");
+        return materialMapperEx.getMaterialBySkuCode(skuCodeArray);
+    }
+
     public List<MaterialVo4Unit> getMaterialByMeIds(String meIds) {
         String [] meIdArray=meIds.split(",");
         return materialMapperEx.getMaterialByMeIds(meIdArray);

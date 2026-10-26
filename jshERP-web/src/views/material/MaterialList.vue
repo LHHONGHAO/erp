@@ -153,59 +153,22 @@
         </div>
         <!-- table区域-begin -->
         <div>
-          <data-table
+          <material-table
             ref="table"
             bordered
             draggable
             row-key="skuRowKey"
             table-key="material_list"
-            :extra-columns="extraColumnsForTable"
-            :default-columns="defaultColumnsForTable"
             storage-key="columns_material"
+            :dimension="displayMode"
+            :actions="rowActions"
             :data-source="tableRows"
             :pagination="ipagination"
             :scroll="scroll"
             :loading="loading"
             :row-selection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange, columnWidth:'40px'}"
             @change="handleTableChange">
-            <span slot="action" slot-scope="text, record">
-              <a @click="handleEdit(record)">编辑</a>
-              <a-divider v-if="btnEnableList.indexOf(1)>-1" type="vertical" />
-              <a v-if="btnEnableList.indexOf(1)>-1" @click="handleCopyAdd(record)">复制</a>
-              <a-divider type="vertical" />
-              <a @click="handleAddSpec(record)">添加规格</a>
-              <a-divider type="vertical" />
-              <a @click="handlePrintSkuLabel(record)">打印标签</a>
-            </span>
-            <template slot="customSkuImg" slot-scope="text, record">
-              <img v-if="getRowImgUrl(record)" :src="getRowImgUrl(record)" class="row-sku-img" />
-              <span v-else class="row-sku-img-placeholder">无图</span>
-            </template>
-            <template slot="customSpecValues" slot-scope="text, record">
-              {{ getSpecValueMerged(record) }}
-            </template>
-            <template slot="customSpecDisplay" slot-scope="text, record">
-              <div class="spec-display-cell">{{ getSpecDisplay(record) }}</div>
-            </template>
-            <template slot="customBarCode" slot-scope="text, record">
-              {{record.mBarCode}}
-            </template>
-            <template slot="customName" slot-scope="text, record">
-              {{record.name}}
-              <a-tag v-if="record.enableSerialNumber==1" color="orange">序</a-tag>
-              <a-tag v-if="record.enableBatchNumber==1" color="orange">批</a-tag>
-            </template>
-            <template slot="customRenderInitialStock" slot-scope="text, record">
-              <a-tooltip :title="record.bigUnitInitialStock">
-                {{text}}
-              </a-tooltip>
-            </template>
-            <template slot="customRenderStock" slot-scope="text, record">
-              <a-tooltip :title="record.bigUnitStock">
-                {{text}}
-              </a-tooltip>
-            </template>
-          </data-table>
+          </material-table>
         </div>
         <!-- table区域-end -->
         <!-- 表单区域 -->
@@ -223,12 +186,11 @@
   import BatchSetInfoModal from './modules/BatchSetInfoModal'
   import LabelEditModal from './modules/LabelEditModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
-  import { postAction, getAction, getFileAccessHttpUrl } from '@/api/manage'
+  import { postAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
-  import DataTable from '@/components/DataTable'
-  import JEllipsis from '@/components/jeecg/JEllipsis'
-  import JDate from '@/components/jeecg/JDate'
+  import MaterialTable from '@/components/material/MaterialTable'
+  import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
   import Vue from 'vue'
 
   export default {
@@ -239,44 +201,12 @@
       ImportFileModal,
       BatchSetInfoModal,
       LabelEditModal,
-      JEllipsis,
-      JDate,
-      DataTable
+      MaterialTable
     },
     data () {
       return {
         categoryTree:[],
         mPropertyListShort: '',
-        expandedRowKeys: [],
-        // SKU数据独立存储，避免AntD 1.5.2 expandedRowRender 不响应record属性变化的坑
-        skuMap: {},
-        skuColumns: [
-          {title: '规格图片', dataIndex: 'imgUrl', width: 60, scopedSlots: { customRender: 'skuImage' }},
-          {title: 'SKU编码', dataIndex: 'skuCode', width: 160},
-          {title: '规格值', dataIndex: 'specValuesText', width: 200, ellipsis: true},
-          {title: '库存', dataIndex: 'currentStock', width: 80, align: 'center'},
-          {title: '进货价', dataIndex: 'purchaseDecimal', width: 80},
-          {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
-          {title: '划线价', dataIndex: 'marketPrice', width: 80}
-        ],
-        skuColSettings: {
-          img: true, skuCode: true, spec: true, stock: true, purchase: true, retail: true, market: true, action: true
-        },
-        // SKU列可见列的顺序（不含操作列，操作列固定末尾）
-        skuColOrder: ['img', 'skuCode', 'spec', 'stock', 'purchase', 'retail', 'market'],
-        // SKU列定义（用于按顺序渲染）
-        skuColDefs: {
-          img: { key: 'img', label: '规格图片', cls: 'sku-cell-img' },
-          skuCode: { key: 'skuCode', label: 'SKU编码', cls: 'sku-cell-code' },
-          spec: { key: 'spec', label: '规格值', cls: 'sku-cell-spec' },
-          stock: { key: 'stock', label: '库存', cls: 'sku-cell-stock' },
-          purchase: { key: 'purchase', label: '进货价', cls: 'sku-cell-price' },
-          retail: { key: 'retail', label: '零售价', cls: 'sku-cell-price' },
-          market: { key: 'market', label: '划线价', cls: 'sku-cell-price' },
-          action: { key: 'action', label: '操作', cls: 'sku-cell-action' }
-        },
-        skuColWidths: {},  // SKU列宽：{img:80, spec:150, ...}
-        skuResizing: null, // 当前拖拽中的列key
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
         // 显示方式：spu=单类显示（每个商品一行），sku=单品显示（每个SKU一行）
         displayMode: 'sku',
@@ -328,58 +258,6 @@
         ipagination:{
           pageSizeOptions: ['10', '20', '30', '50', '100', '200']
         },
-        // 实际索引
-        settingDataIndex:[],
-        // 实际列
-        columns:[],
-        // 列设置可选项：严格按指定字段清单（商品主表 jsh_material + SKU主表 sku）
-        baseDataIndex:['imgName','categoryName','name','code','mBarCode','mfrs','brand','mnemonic','unit','remark','weight',
-          'fabric','safetyCategory','executiveStandard','grade','inspection','filler','position',
-          'skuCode','skuName','specDisplay','purchaseDecimal','commodityDecimal','marketPrice',
-          'skuCreateTime','skuUpdateTime'],
-        // 默认显示列
-        defDataIndex:['name','code','skuCode','categoryName','unit','brand','mnemonic','weight','mfrs',
-          'fabric','safetyCategory','executiveStandard','grade','inspection','filler','mBarCode',
-          'purchaseDecimal','commodityDecimal','marketPrice'],
-        // 默认列（标题与字段功能名一致，不含字段名）
-        defColumns: [
-          // ---- 图片（sku_spec.image_url / jsh_material_extend.img_url） ----
-          {title: '图片', dataIndex: 'imgName', width: 60, align: 'center', scopedSlots: { customRender: 'customSkuImg' }},
-          // ---- 商品主表 jsh_material ----
-          {title: '产品类型', dataIndex: 'categoryName', width: 100, ellipsis:true},
-          {title: '商品名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
-          {title: 'SPU商品码', dataIndex: 'code', width: 150},
-          {title: '商品条码', dataIndex: 'mBarCode', width: 120, scopedSlots: { customRender: 'customBarCode' }},
-          {title: '制造商', dataIndex: 'mfrs', width: 120, ellipsis:true},
-          {title: '品牌', dataIndex: 'brand', width: 100, ellipsis:true},
-          {title: '助记码', dataIndex: 'mnemonic', width: 80, ellipsis:true},
-          {title: '单位-单个', dataIndex: 'unit', width: 100, ellipsis:true},
-          {title: '备注', dataIndex: 'remark', width: 120, ellipsis:true},
-          {title: '基础重量(kg)', dataIndex: 'weight', width: 100},
-          {title: '面料', dataIndex: 'fabric', width: 100, ellipsis:true},
-          {title: '安全类别', dataIndex: 'safetyCategory', width: 100, ellipsis:true},
-          {title: '执行标准', dataIndex: 'executiveStandard', width: 100, ellipsis:true},
-          {title: '等级', dataIndex: 'grade', width: 100, ellipsis:true},
-          {title: '检验', dataIndex: 'inspection', width: 100, ellipsis:true},
-          {title: '填充物', dataIndex: 'filler', width: 100, ellipsis:true},
-          {title: '仓位货架', dataIndex: 'position', width: 100, ellipsis:true},
-          // ---- SKU主表 sku ----
-          {title: 'SKU编码', dataIndex: 'skuCode', width: 170},
-          {title: '展示名', dataIndex: 'skuName', width: 180, ellipsis:true},
-          {title: '规格显示', dataIndex: 'specDisplay', width: 220, scopedSlots: { customRender: 'customSpecDisplay' }},
-          {title: '进货价', dataIndex: 'purchaseDecimal', width: 80},
-          {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
-          {title: '划线价', dataIndex: 'marketPrice', width: 80},
-          {title: '创建时间', dataIndex: 'skuCreateTime', width: 150},
-          {title: '更新时间', dataIndex: 'skuUpdateTime', width: 150},
-          {
-            title: '操作',
-            dataIndex: 'action',
-            align: "center",
-            width: 180,
-            scopedSlots: { customRender: 'action' },
-          }
-        ],
         url: {
           list: "/material/listSku",
           delete: "/material/delete",
@@ -394,27 +272,21 @@
     },
     created() {
       this.model = Object.assign({}, {});
-      this.initColumnsSetting()
       this.loadTreeData()
-      this.handleChangeOtherField(1)
     },
     computed: {
       importExcelUrl: function () {
         return `${window._CONFIG['domianURL']}${this.url.importExcelUrl}`;
       },
-      // DataTable 默认显示列：基础信息属性 + 固定末尾的操作列
-      defaultColumnsForTable() {
-        const base = this.displayMode === 'spu'
-          ? this.defDataIndex.filter(k => k !== 'skuCode' && k !== 'specValues' && k !== 'specDisplay')
-          : this.defDataIndex
-        return [...base, 'action']
-      },
-      // DataTable 实际列：单类显示时隐藏 SKU 编码/规格值列（SPU 接口不返回这些字段）
-      extraColumnsForTable() {
-        if (this.displayMode === 'spu') {
-          return this.defColumns.filter(c => c.dataIndex !== 'skuCode' && c.dataIndex !== 'specValues' && c.dataIndex !== 'specDisplay')
-        }
-        return this.defColumns
+      // 操作列按钮（是否显示由按钮权限控制）
+      rowActions() {
+        const canEdit = this.btnEnableList.indexOf(1) > -1
+        return [
+          { title: '编辑', click: record => this.handleEdit(record) },
+          { title: '复制', click: record => this.handleCopyAdd(record), show: () => canEdit },
+          { title: '添加规格', click: record => this.handleAddSpec(record) },
+          { title: '打印标签', click: record => this.handlePrintSkuLabel(record) }
+        ]
       },
       // SKU维度行数据：为每个SKU行生成唯一key
       tableRows() {
@@ -423,31 +295,7 @@
             skuRowKey: row.id + '_' + (row.meId != null ? row.meId : 0)
           })
         })
-      },
-      // 列设置弹窗中可选的列：商品基础信息属性（图片列可通过 baseDataIndex 勾选，操作列固定固定末尾）
-      baseColumnsForSetting() {
-        return this.defColumns.filter(item => this.baseDataIndex.includes(item.dataIndex))
-      },
-      // SKU列设置：当前可见的列key数组
-      visibleSkuCols() {
-        var result = []
-        var nonActionKeys = Object.keys(this.skuColDefs).filter(function(k) { return k !== 'action' })
-        for (var i = 0; i < nonActionKeys.length; i++) {
-          if (this.isSkuColVisible(nonActionKeys[i])) {
-            result.push(nonActionKeys[i])
-          }
-        }
-        return result
-      },
-      // SKU列设置：所有可选列key（不含action，action固定在末尾显示）
-      allSkuColKeys() {
-        return Object.keys(this.skuColDefs).filter(function(k) { return k !== 'action' })
-      },
-      // SKU列按顺序排列的可见列key（不含action）
-      orderedVisibleSkuCols() {
-        var that = this
-        return this.skuColOrder.filter(function(k) { return that.isSkuColVisible(k) })
-      },
+      }
     },
     methods: {
       // 选中行：转为商品ID（同一商品多个SKU行时去重）
@@ -483,30 +331,8 @@
       batchSetStatus(status) {
         this.runBatchWithMaterialIds('batchSetStatus', status)
       },
-      // 行内SKU图片：优先 extend.img_url，为空时从规格图映射中匹配
-      getRowImgUrl(record) {
-        if (!record) return ''
-        if (record.imgName) return this.getSkuImgUrl(record.imgName)
-        if (record.attribute && record.specValues) {
-          try {
-            var attrObj = JSON.parse(record.attribute)
-            var modules = attrObj.specModules || []
-            var specVals = JSON.parse(record.specValues)
-            for (var i = 0; i < specVals.length; i++) {
-              var text = specVals[i].valueText
-              for (var j = 0; j < modules.length; j++) {
-                var values = modules[j].values || []
-                for (var k = 0; k < values.length; k++) {
-                  if (values[k].text === text && values[k].image) {
-                    return this.getSkuImgUrl(values[k].image)
-                  }
-                }
-              }
-            }
-          } catch (e) { /* ignore */ }
-        }
-        return ''
-      },
+      // 规格值合并（打印标签用），统一取自公共展示工具
+      getSpecValueMerged,
       // 打印当前SKU行标签
       handlePrintSkuLabel(record) {
         var sku = {
@@ -519,103 +345,6 @@
           currentStock: record.stock
         }
         this.handlePrintLabel(record, sku)
-      },
-      //加载初始化列
-      initColumnsSetting(){
-        let columnsStr = Vue.ls.get('materialColumns')
-        if(columnsStr && columnsStr.indexOf(',')>-1) {
-          // 兼容旧版本：原「规格JSON」列已改为「规格显示」列，本地存储同步替换
-          let rawList = columnsStr.split(',')
-          if (rawList.indexOf('specJson') > -1 && rawList.indexOf('specDisplay') === -1) {
-            rawList = rawList.map(idx => idx === 'specJson' ? 'specDisplay' : idx)
-            columnsStr = rawList.join()
-            Vue.ls.set('materialColumns', columnsStr)
-          }
-          // 过滤掉非基础属性的 dataIndex（兼容旧版本本地存储）
-          let parsed = columnsStr.split(',').filter(idx => this.baseDataIndex.includes(idx))
-          // 兼容旧版本：自动补入新增的"商品编码"列
-          if (parsed.length > 0 && parsed.indexOf('code') === -1) {
-            let nameIdx = parsed.indexOf('name')
-            parsed.splice(nameIdx === -1 ? 0 : nameIdx + 1, 0, 'code')
-          }
-          // 兼容旧配置：价格列改为「零售价 + 划线价」，旧配置自动补入划线价
-          if (parsed.length > 0 && parsed.indexOf('marketPrice') === -1) {
-            let retailIdx = parsed.indexOf('commodityDecimal')
-            parsed.splice(retailIdx === -1 ? parsed.length : retailIdx + 1, 0, 'marketPrice')
-            Vue.ls.set('materialColumns', parsed.join())
-          }
-          this.settingDataIndex = parsed.length > 0 ? parsed : this.defDataIndex
-        } else {
-          this.settingDataIndex = this.defDataIndex
-        }
-        this.columns = this.buildColumns(this.settingDataIndex)
-        // 兼容旧版本：DataTable 自身保存的列勾选里若有旧的「规格JSON」，替换为「规格显示」
-        let dtSaved = Vue.ls.get('columns_material')
-        if (dtSaved) {
-          let dtList = typeof dtSaved === 'string' ? dtSaved.split(',').filter(k => !!k) : dtSaved
-          if (Array.isArray(dtList) && dtList.indexOf('specJson') > -1) {
-            Vue.ls.set('columns_material', dtList.map(k => k === 'specJson' ? 'specDisplay' : k))
-          }
-        }
-        this.loadSkuColWidths()
-        // 加载SKU列设置（从localStorage恢复到reactive数据，确保action始终可见）
-        var savedSkuSettings = Vue.ls.get('skuColSettings')
-        if (savedSkuSettings) {
-          var validSettings = {}
-          var self = this
-          Object.keys(this.skuColDefs).forEach(function(k) {
-            validSettings[k] = savedSkuSettings[k] !== false
-          })
-          validSettings.action = true
-          this.skuColSettings = validSettings
-        }
-        // 加载SKU列顺序
-        var savedOrder = Vue.ls.get('skuColOrder')
-        if (savedOrder && savedOrder.length) {
-          var self2 = this
-          savedOrder = savedOrder.filter(function(k) { return !!self2.skuColDefs[k] })
-          if (savedOrder.indexOf('skuCode') === -1) {
-            var imgIdx = savedOrder.indexOf('img')
-            savedOrder.splice(imgIdx === -1 ? 0 : imgIdx + 1, 0, 'skuCode')
-          }
-          this.skuColOrder = savedOrder
-        }
-      },
-      //列设置更改事件：按勾选顺序构建列（checkedValues 已按用户勾选顺序排列）
-      onColChange (checkedValues) {
-        this.settingDataIndex = checkedValues
-        this.columns = this.buildColumns(checkedValues)
-        let columnsStr = checkedValues.join()
-        Vue.ls.set('materialColumns', columnsStr)
-      },
-      //恢复默认
-      handleRestDefault() {
-        Vue.ls.remove('materialColumns')
-        this.initColumnsSetting()
-      },
-      // 根据 settingDataIndex 顺序构建实际列（操作列固定在尾）
-      buildColumns(selectedDataIndex) {
-        const selectedColumns = selectedDataIndex.map(idx =>
-          this.defColumns.find(item => item.dataIndex === idx)
-        ).filter(Boolean)
-        const actionCol = this.defColumns.find(item => item.dataIndex === 'action')
-        return [...selectedColumns, actionCol].filter(Boolean)
-      },
-      // 扩展字段标题固定为「自定义1~7」（jsh_material.other_field1~7）
-      // 面料/安全类别/执行标准/等级/检验/填充物 已是独立字段，不再映射到扩展字段
-      handleChangeOtherField(showQuery) {
-        for (let i = 1; i <= 7; i++) {
-          const name = '自定义' + i
-          if (showQuery) {
-            this.queryTitle['mp' + i] = name
-          }
-          const col = this.defColumns.find(c => c.dataIndex === 'otherField' + i)
-          if (col) {
-            col.title = name
-          }
-        }
-        // 刷新实际列（让表头标题重新渲染，并保持 settingDataIndex 顺序）
-        this.columns = this.buildColumns(this.settingDataIndex)
       },
       loadTreeData(){
         let that = this;
@@ -744,14 +473,6 @@
         }
         this.$refs.labelEditModal.open(record, sku, this.categoryTree)
       },
-      getImgUrl(imgName, type) {
-        if(imgName && imgName.split(',')) {
-          type = type? type + '/':''
-          return getFileAccessHttpUrl('systemConfig/static/' + type + imgName.split(',')[0])
-        } else {
-          return ''
-        }
-      },
       handleImportXls() {
         let importExcelUrl = this.url.importExcelUrl
         let templateUrl = '/doc/goods_template.xls'
@@ -769,248 +490,6 @@
           mpList: getMpListShort(Vue.ls.get('materialPropertyList'))  //扩展属性
         }
         this.loadData(1);
-      },
-      // 获取SKU加载状态（独立响应式存储，规避AntD 1.5.2 expandedRowRender不响应record属性变化的坑）
-      getSkuLoading(materialId) {
-        const item = this.skuMap[materialId]
-        return item ? item.skuLoading : false
-      },
-      // 获取SKU列表
-      getSkuList(materialId) {
-        const item = this.skuMap[materialId]
-        return item && item.skuList ? item.skuList : []
-      },
-      // 获取SKU图片完整URL（不使用getFileAccessHttpUrl，因其过滤了含'['的路径）
-      getSkuImgUrl(imgUrl) {
-        if (!imgUrl) return ''
-        if (imgUrl.startsWith('http')) return imgUrl
-        const base = (window._CONFIG && window._CONFIG['domianURL']) ? window._CONFIG['domianURL'] : ''
-        // 后端图片预览接口为 /systemConfig/static/**，imgUrl存储的是相对路径
-        if (imgUrl.indexOf('systemConfig/static/') === -1) {
-          return base + '/systemConfig/static/' + imgUrl
-        }
-        return base + '/' + imgUrl
-      },
-      // 展开/折叠 SKU 子表
-      onExpand(expanded, record) {
-        const self = this
-        if (expanded) {
-          this.expandedRowKeys = [...new Set([...this.expandedRowKeys, record.id])]
-          // 已加载过：无需再处理（操作列不再 fixed:right，无需同步 fixed-right 展开行）
-          if (this.skuMap[record.id] && this.skuMap[record.id].skuList && this.skuMap[record.id].skuList.length > 0) {
-            return
-          }
-          // 初始化：用$set确保响应式，同时存储record供打印标签使用
-          this.$set(this.skuMap, record.id, { skuList: [], skuLoading: true, record: record })
-          getAction('/materialsExtend/getDetailList', { materialId: record.id }).then(function(res) {
-            let rows = []
-            // 兼容各种返回结构
-            if (res && typeof res === 'object') {
-              if (Array.isArray(res)) {
-                rows = res
-              } else if (res.code === 200) {
-                if (res.data && Array.isArray(res.data.rows)) {
-                  rows = res.data.rows
-                } else if (res.result && Array.isArray(res.result.rows)) {
-                  rows = res.result.rows
-                } else if (Array.isArray(res.rows)) {
-                  rows = res.rows
-                } else if (res.data && Array.isArray(res.data)) {
-                  rows = res.data
-                }
-              } else if (Array.isArray(res.rows)) {
-                rows = res.rows
-              }
-            }
-            for (let i = 0; i < rows.length; i++) {
-              rows[i].specValuesText = self.parseSkuSpecValues(rows[i].specValues)
-            }
-            self.$set(self.skuMap, record.id, { skuList: rows, skuLoading: false, record: record })
-            // AntD 1.5.2 expandedRowRender 缓存渲染结果不响应数据变化
-            // 通过先收起再展开强制 expandedRowRender 重新渲染
-            self.expandedRowKeys = self.expandedRowKeys.filter(function(key) { return key !== record.id })
-            self.$nextTick(function() {
-              self.expandedRowKeys = [...new Set([...self.expandedRowKeys, record.id])]
-            })
-          }).catch(function(err) {
-            console.error('[onExpand] 请求SKU失败', err)
-            self.$set(self.skuMap, record.id, { skuList: [], skuLoading: false, record: record })
-            self.expandedRowKeys = self.expandedRowKeys.filter(function(key) { return key !== record.id })
-            self.$nextTick(function() {
-              self.expandedRowKeys = [...new Set([...self.expandedRowKeys, record.id])]
-            })
-          })
-        } else {
-          this.expandedRowKeys = this.expandedRowKeys.filter(function(key) { return key !== record.id })
-        }
-      },
-      // 将 specValues JSON 解析为 "颜色:蓝色 / 规格:200*230" 格式
-      parseSkuSpecValues(specValues) {
-        if (!specValues) return ''
-        try {
-          let arr = JSON.parse(specValues)
-          if (!Array.isArray(arr)) return ''
-          return arr.map(function(item) {
-            return item.attributeName + ':' + item.valueText
-          }).join(' / ')
-        } catch (e) {
-          return specValues
-        }
-      },
-      // 从 SKU 列表中解析规格大项名列表（如 ['颜色','尺寸']）
-      getSpecKeys(recordId) {
-        var skuData = this.skuMap[recordId]
-        if (!skuData || !skuData.skuList || skuData.skuList.length === 0) return []
-        var firstSku = skuData.skuList[0]
-        if (!firstSku || !firstSku.specValues) return []
-        try {
-          var arr = JSON.parse(firstSku.specValues)
-          if (!Array.isArray(arr)) return []
-          return arr.map(function(item) { return item.attributeName || '' }).filter(function(n) { return n })
-        } catch (e) {
-          return []
-        }
-      },
-      // 获取规格名称合并文本，如 "颜色/被套/床单"
-      getSpecKeysText(recordId) {
-        var keys = this.getSpecKeys(recordId)
-        return keys.length > 0 ? keys.join('/') : '规格'
-      },
-      // 从 SKU 中获取指定规格大项的值
-      getSpecValueText(sku, key) {
-        if (!sku || !sku.specValues) return ''
-        try {
-          var arr = JSON.parse(sku.specValues)
-          if (!Array.isArray(arr)) return ''
-          var item = arr.find(function(i) { return i.attributeName === key })
-          return item ? (item.valueText || '') : ''
-        } catch (e) {
-          return ''
-        }
-      },
-      // 规格显示：读取商品规格名与规格值，每个规格一行，如 "颜色：蘑菇" 换行 "规格：220*230cm"
-      getSpecDisplay(record) {
-        if (!record) return ''
-        // 优先取 SKU 表的 spec_json：[{"name":"颜色","value":"红"}]
-        if (record.specJson) {
-          try {
-            var arr = JSON.parse(record.specJson)
-            if (Array.isArray(arr) && arr.length > 0) {
-              return arr.map(function(item) {
-                var name = item.name || item.attributeName || ''
-                var value = item.value || item.valueText || ''
-                return name ? (name + '：' + value) : value
-              }).filter(function(t) { return t !== '' }).join('\n')
-            }
-          } catch (e) {
-            // 解析失败继续走兜底
-          }
-        }
-        // 兜底1：spec_summary 格式 "颜色:红;尺码:L"
-        if (record.specSummary) {
-          return record.specSummary.split(';').map(function(part) {
-            return part.replace(':', '：')
-          }).filter(function(t) { return t !== '' }).join('\n')
-        }
-        // 兜底2：规格值 JSON（旧数据结构 attributeName/valueText）
-        if (record.specValues) {
-          try {
-            var arr2 = JSON.parse(record.specValues)
-            if (Array.isArray(arr2) && arr2.length > 0) {
-              return arr2.map(function(item) {
-                var name = item.attributeName || item.name || ''
-                var value = item.valueText || item.value || ''
-                return name ? (name + '：' + value) : value
-              }).filter(function(t) { return t !== '' }).join('\n')
-            }
-          } catch (e) {
-            return record.specValues
-          }
-        }
-        return ''
-      },
-      // SKU规格值合并为一列，用 / 分割，如 "蓝色/200*230/250*230"
-      getSpecValueMerged(sku) {
-        if (!sku || !sku.specValues) return ''
-        try {
-          var arr = JSON.parse(sku.specValues)
-          if (!Array.isArray(arr)) return sku.specValues || ''
-          return arr.map(function(item) { return item.valueText || '' }).filter(function(v) { return v !== '' }).join('/')
-        } catch (e) {
-          return sku.specValues || ''
-        }
-      },
-      // SKU列设置：是否可见（读reactive数据，保持响应式）
-      isSkuColVisible(key) {
-        return this.skuColSettings[key] !== false
-      },
-      // SKU列设置：切换可见性
-      toggleSkuCol(key, checked) {
-        var saved = Vue.ls.get('skuColSettings')
-        if (!saved) {
-          saved = Object.assign({}, this.skuColSettings)
-        }
-        saved[key] = checked
-        Vue.ls.set('skuColSettings', saved, 365 * 24 * 60 * 60 * 1000)
-        // 强制刷新展开状态触发重渲染
-        this.expandedRowKeys = [...this.expandedRowKeys]
-      },
-      // SKU列设置：按勾选顺序更新列顺序
-      onSkuColOrderChange(checkedValues) {
-        // checkedValues 按用户勾选顺序排列
-        var allKeys = this.allSkuColKeys
-        // 更新reactive数据（先更新，触发computed重算）
-        for (var i = 0; i < allKeys.length; i++) {
-          this.skuColSettings[allKeys[i]] = checkedValues.indexOf(allKeys[i]) > -1
-        }
-        // 同步到localStorage（始终保留action:true）
-        var toSave = Object.assign({}, this.skuColSettings)
-        toSave.action = true
-        Vue.ls.set('skuColSettings', toSave, 365 * 24 * 60 * 60 * 1000)
-        // 更新列顺序
-        this.skuColOrder = checkedValues.slice()
-        Vue.ls.set('skuColOrder', this.skuColOrder, 365 * 24 * 60 * 60 * 1000)
-      },
-      // SKU列宽默认值
-      getDefaultSkuWidth(key) {
-        var map = { img: 80, skuCode: 170, spec: 150, stock: 90, purchase: 90, retail: 90, market: 90, action: 180 }
-        return map[key] || 80
-      },
-      // 加载SKU列宽配置
-      loadSkuColWidths() {
-        var saved = Vue.ls.get('skuColWidths')
-        if (saved) {
-          this.skuColWidths = saved
-        }
-      },
-      // 保存SKU列宽配置
-      saveSkuColWidths() {
-        Vue.ls.set('skuColWidths', Object.assign({}, this.skuColWidths), 365 * 24 * 60 * 60 * 1000)
-      },
-      // 获取SKU列宽内联样式
-      skuColWidthStyle(key) {
-        var w = this.skuColWidths[key] || this.getDefaultSkuWidth(key)
-        return { width: w + 'px', flex: key === 'spec' ? 'none' : undefined, flexShrink: '0' }
-      },
-      // 开始拖拽SKU列宽
-      startSkuResize(e, key) {
-        this.skuResizing = key
-        var startX = e.clientX
-        var startW = this.skuColWidths[key] || this.getDefaultSkuWidth(key)
-        var that = this
-        var onMove = function(ev) {
-          var delta = ev.clientX - startX
-          var newW = Math.max(30, startW + delta)
-          that.$set(that.skuColWidths, key, newW)
-        }
-        var onUp = function() {
-          document.removeEventListener('mousemove', onMove)
-          document.removeEventListener('mouseup', onUp)
-          that.skuResizing = null
-          that.saveSkuColWidths()
-        }
-        document.addEventListener('mousemove', onMove)
-        document.addEventListener('mouseup', onUp)
       },
     }
   }
@@ -1034,10 +513,10 @@
     object-fit: cover;
   }
   .row-sku-img {
-    width: 38px;
-    height: 38px;
+    width: 100px;
+    height: 80px;
     object-fit: cover;
-    border-radius: 4px;
+    border-radius: 12px;
     vertical-align: middle;
   }
   .row-sku-img-placeholder {

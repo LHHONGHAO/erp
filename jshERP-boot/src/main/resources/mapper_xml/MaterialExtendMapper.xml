@@ -12,6 +12,7 @@
     <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
     <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
     <result column="wholesale_decimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
+    <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
     <result column="low_decimal" jdbcType="DECIMAL" property="lowDecimal" />
     <result column="default_flag" jdbcType="VARCHAR" property="defaultFlag" />
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
@@ -82,7 +83,7 @@
   </sql>
   <sql id="Base_Column_List">
     id, material_id, spec_values, sku_code, purchase_decimal,
-    commodity_decimal, wholesale_decimal, low_decimal, default_flag, create_time, create_serial,
+    commodity_decimal, wholesale_decimal, market_price, low_decimal, default_flag, create_time, create_serial,
     update_serial, update_time, tenant_id, delete_Flag, img_url
   </sql>
   <select id="selectByExample" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="BaseResultMap">
@@ -119,13 +120,13 @@
     insert into jsh_material_extend (id, material_id, spec_values,
  sku_code,
       purchase_decimal, commodity_decimal, wholesale_decimal,
-      low_decimal, default_flag, create_time,
+      market_price, low_decimal, default_flag, create_time,
       create_serial, update_serial, update_time,
       tenant_id, delete_Flag, img_url)
     values (#{id,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, #{specValues,jdbcType=LONGVARCHAR},
  #{jdbcType=VARCHAR}, #{skuCode,jdbcType=VARCHAR},
       #{purchaseDecimal,jdbcType=DECIMAL}, #{commodityDecimal,jdbcType=DECIMAL}, #{wholesaleDecimal,jdbcType=DECIMAL},
-      #{lowDecimal,jdbcType=DECIMAL}, #{defaultFlag,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
+      #{marketPrice,jdbcType=DECIMAL}, #{lowDecimal,jdbcType=DECIMAL}, #{defaultFlag,jdbcType=VARCHAR}, #{createTime,jdbcType=TIMESTAMP},
       #{createSerial,jdbcType=VARCHAR}, #{updateSerial,jdbcType=VARCHAR}, #{updateTime,jdbcType=BIGINT},
       #{tenantId,jdbcType=BIGINT}, #{deleteFlag,jdbcType=VARCHAR}, #{imgUrl,jdbcType=VARCHAR})
   </insert>
@@ -152,6 +153,9 @@
       </if>
       <if test="wholesaleDecimal != null">
         wholesale_decimal,
+      </if>
+      <if test="marketPrice != null">
+        market_price,
       </if>
       <if test="lowDecimal != null">
         low_decimal,
@@ -202,6 +206,9 @@
       </if>
       <if test="wholesaleDecimal != null">
         #{wholesaleDecimal,jdbcType=DECIMAL},
+      </if>
+      <if test="marketPrice != null">
+        #{marketPrice,jdbcType=DECIMAL},
       </if>
       <if test="lowDecimal != null">
         #{lowDecimal,jdbcType=DECIMAL},
@@ -262,6 +269,9 @@
       <if test="record.wholesaleDecimal != null">
         wholesale_decimal = #{record.wholesaleDecimal,jdbcType=DECIMAL},
       </if>
+      <if test="record.marketPrice != null">
+        market_price = #{record.marketPrice,jdbcType=DECIMAL},
+      </if>
       <if test="record.lowDecimal != null">
         low_decimal = #{record.lowDecimal,jdbcType=DECIMAL},
       </if>
@@ -303,6 +313,7 @@
       purchase_decimal = #{record.purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{record.commodityDecimal,jdbcType=DECIMAL},
       wholesale_decimal = #{record.wholesaleDecimal,jdbcType=DECIMAL},
+      market_price = #{record.marketPrice,jdbcType=DECIMAL},
       low_decimal = #{record.lowDecimal,jdbcType=DECIMAL},
       default_flag = #{record.defaultFlag,jdbcType=VARCHAR},
       create_time = #{record.createTime,jdbcType=TIMESTAMP},
@@ -336,6 +347,9 @@
       </if>
       <if test="wholesaleDecimal != null">
         wholesale_decimal = #{wholesaleDecimal,jdbcType=DECIMAL},
+      </if>
+      <if test="marketPrice != null">
+        market_price = #{marketPrice,jdbcType=DECIMAL},
       </if>
       <if test="lowDecimal != null">
         low_decimal = #{lowDecimal,jdbcType=DECIMAL},
@@ -375,6 +389,7 @@
       purchase_decimal = #{purchaseDecimal,jdbcType=DECIMAL},
       commodity_decimal = #{commodityDecimal,jdbcType=DECIMAL},
       wholesale_decimal = #{wholesaleDecimal,jdbcType=DECIMAL},
+      market_price = #{marketPrice,jdbcType=DECIMAL},
       low_decimal = #{lowDecimal,jdbcType=DECIMAL},
       default_flag = #{defaultFlag,jdbcType=VARCHAR},
       create_time = #{createTime,jdbcType=TIMESTAMP},

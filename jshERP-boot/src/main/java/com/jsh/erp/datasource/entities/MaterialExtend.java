@@ -24,6 +24,8 @@ public class MaterialExtend {
 
     private BigDecimal wholesaleDecimal;
 
+    private BigDecimal marketPrice;
+
     private BigDecimal lowDecimal;
 
     private String defaultFlag;
@@ -120,6 +122,14 @@ public class MaterialExtend {
 
     public void setWholesaleDecimal(BigDecimal wholesaleDecimal) {
         this.wholesaleDecimal = wholesaleDecimal;
+    }
+
+    public BigDecimal getMarketPrice() {
+        return marketPrice;
+    }
+
+    public void setMarketPrice(BigDecimal marketPrice) {
+        this.marketPrice = marketPrice;
     }
 
     public BigDecimal getLowDecimal() {

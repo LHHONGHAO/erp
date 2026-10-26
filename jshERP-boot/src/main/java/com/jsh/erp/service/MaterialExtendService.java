@@ -180,6 +180,9 @@ public class MaterialExtendService {
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("wholesaleDecimal"))) {
                     materialExtend.setWholesaleDecimal(tempInsertedJson.getBigDecimal("wholesaleDecimal"));
                 }
+                if (StringUtils.isNotEmpty(tempInsertedJson.getString("marketPrice"))) {
+                    materialExtend.setMarketPrice(tempInsertedJson.getBigDecimal("marketPrice"));
+                }
                 if (StringUtils.isNotEmpty(tempInsertedJson.getString("lowDecimal"))) {
                     materialExtend.setLowDecimal(tempInsertedJson.getBigDecimal("lowDecimal"));
                 }
@@ -229,6 +232,9 @@ public class MaterialExtendService {
                 }
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("wholesaleDecimal"))) {
                     materialExtend.setWholesaleDecimal(tempUpdatedJson.getBigDecimal("wholesaleDecimal"));
+                }
+                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("marketPrice"))) {
+                    materialExtend.setMarketPrice(tempUpdatedJson.getBigDecimal("marketPrice"));
                 }
                 if (StringUtils.isNotEmpty(tempUpdatedJson.getString("lowDecimal"))) {
                     materialExtend.setLowDecimal(tempUpdatedJson.getBigDecimal("lowDecimal"));

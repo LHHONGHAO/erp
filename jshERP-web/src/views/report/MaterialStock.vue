@@ -29,6 +29,7 @@
               <a-col :md="6" :sm="24" >
                 <span style="float: left;overflow: hidden;" class="table-page-search-submitButtons">
                   <a-button type="primary" @click="searchQuery">查询</a-button>
+                  <a-button type="primary" style="margin-left: 8px" icon="plus" @click="addInitialStock">添加期初库存</a-button>
                   <a-button style="margin-left: 8px" v-print="'#reportPrint'" icon="printer">打印</a-button>
                   <a-button style="margin-left: 8px" @click="exportExcel" icon="download">导出</a-button>
                   <a @click="handleToggleSearch" style="margin-left: 8px">
@@ -191,6 +192,8 @@
         <!-- table区域-end -->
         <material-in-out-list ref="materialInOutList" @ok="modalFormOk"></material-in-out-list>
         <material-depot-stock-list ref="materialDepotStockList" @ok="modalFormOk"></material-depot-stock-list>
+        <!-- 添加期初库存：打开新增（其它）入库弹层 -->
+        <other-in-modal ref="otherInModal" @ok="modalFormOk" @close="modalFormClose"></other-in-modal>
       </a-card>
     </a-col>
   </a-row>
@@ -198,6 +201,7 @@
 <script>
   import MaterialInOutList from './modules/MaterialInOutList'
   import MaterialDepotStockList from './modules/MaterialDepotStockList'
+  import OtherInModal from '../bill/modules/OtherInModal'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { getAction, getFileAccessHttpUrl } from '@/api/manage'
   import {queryMaterialCategoryTreeList} from '@/api/api'
@@ -211,6 +215,7 @@
     components: {
       MaterialInOutList,
       MaterialDepotStockList,
+      OtherInModal,
       JEllipsis
     },
     data () {
@@ -369,6 +374,14 @@
       },
       searchQuery() {
         this.loadData(1);
+      },
+      // 添加期初库存：直接打开新增（其它）入库弹层，保存后生成入库单并更新库存
+      addInitialStock() {
+        let modal = this.$refs.otherInModal
+        modal.action = 'add'
+        modal.isCanCheck = true
+        modal.title = '新增入库'
+        modal.add()
       },
       onDisplayModeChange() {
         this.updateMaterialCodeTitle()

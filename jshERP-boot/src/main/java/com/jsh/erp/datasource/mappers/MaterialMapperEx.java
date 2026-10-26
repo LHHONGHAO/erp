@@ -151,6 +151,9 @@ public interface MaterialMapperEx {
 
     List<MaterialVo4Unit> getMaterialByBarCode(@Param("barCodeArray") String [] barCodeArray);
 
+    //按SKU编码查询商品（入库扫码用）
+    List<MaterialVo4Unit> getMaterialBySkuCode(@Param("skuCodeArray") String [] skuCodeArray);
+
     List<MaterialVo4Unit> getMaterialByMeIds(@Param("meIdArray") String [] meIdArray);
 
     List<MaterialVo4Unit> getMaterialByBarCodeAndWithOutMId(

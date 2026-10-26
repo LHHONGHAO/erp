@@ -637,6 +637,7 @@ public class MaterialController extends BaseController {
     @GetMapping(value = "/getMaterialByBarCode")
     @ApiOperation(value = "根据条码查询商品信息")
     public BaseResponseInfo getMaterialByBarCode(@RequestParam(value = "barCode", required = false) String barCode,
+                                          @RequestParam(value = "skuCode", required = false) String skuCode,
                                           @RequestParam(value = "meIds", required = false) String meIds,
                                           @RequestParam(value = "organId", required = false) Long organId,
                                           @RequestParam(value = "depotId", required = false) Long depotId,
@@ -652,6 +653,9 @@ public class MaterialController extends BaseController {
             if(StringUtil.isNotEmpty(meIds)) {
                 //商品选择弹窗按SKU主键精确取值
                 list = materialService.getMaterialByMeIds(meIds);
+            } else if(StringUtil.isNotEmpty(skuCode)) {
+                //按SKU编码精确查询（入库扫码录入用）
+                list = materialService.getMaterialBySkuCode(skuCode);
             } else {
                 //支持序列号查询，先根据序列号查询条码，如果查不到就直接查条码
                 MaterialExtend materialExtend = materialService.getMaterialExtendBySerialNumber(barCode);

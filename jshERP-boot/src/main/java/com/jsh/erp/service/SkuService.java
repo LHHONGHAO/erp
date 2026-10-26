@@ -187,6 +187,7 @@ public class SkuService {
                 payload.setTenantId(tenantId);
                 payload.setPurchaseDecimal(extend.getPurchaseDecimal());
                 payload.setCommodityDecimal(extend.getCommodityDecimal());
+                payload.setMarketPrice(extend.getMarketPrice());
                 saveSku(payload, buildSpecsFromSpecValues(extend.getSpecValues()));
             }
         }

@@ -315,8 +315,8 @@
                     </div>
                   </a-popover>
                   <a-input v-model="batchPurchasePrice" addonBefore="进货价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
-                  <a-input v-model="batchCommodityPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
-                  <a-input v-model="batchWholesalePrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchCommodityPrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchMarketPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchStock" addonBefore="期初库存" placeholder="请输入" class="price-setting-input" />
                   <a-select v-model="batchDepotId" placeholder="请选择仓库" class="price-setting-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
                   <a-select v-model="batchStore" placeholder="请选择门店" class="price-setting-input" :options="storeOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
@@ -449,7 +449,7 @@
         batchPurchasePrice: '',
         batchCommodityPrice: '',
         batchStock: '',
-        batchWholesalePrice: '',
+        batchMarketPrice: '',
         batchDepotId: undefined,
         batchStore: undefined,
         // 门店下拉选项：门店主数据暂未接入，先保留空选项（允许为空）
@@ -523,10 +523,10 @@
               title: '进货价', key: 'purchaseDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '划线价', key: 'commodityDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+              title: '零售价', key: 'commodityDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
-              title: '零售价', key: 'wholesaleDecimal', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+              title: '划线价', key: 'marketPrice', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
             },
             {
               title: '期初库存', key: 'stock', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
@@ -850,8 +850,8 @@
             rows[i].commodityDecimal = this.batchCommodityPrice
             hasValue = true
           }
-          if (this.batchWholesalePrice !== '') {
-            rows[i].wholesaleDecimal = this.batchWholesalePrice
+          if (this.batchMarketPrice !== '') {
+            rows[i].marketPrice = this.batchMarketPrice
             hasValue = true
           }
           if (this.batchStock !== '') {
@@ -1470,7 +1470,7 @@
       updateSkuColumns() {
         // 固定列的宽度权重，用于按规格列数量等比例压缩
         const fixedWeights = {
-          purchaseDecimal: 15, commodityDecimal: 15, wholesaleDecimal: 15,
+          purchaseDecimal: 15, commodityDecimal: 15, marketPrice: 15,
           stock: 15, depotId: 20, store: 20
         }
         const specCount = this.specModules.length
@@ -1594,6 +1594,7 @@
           let commodityDecimal = ''
           let wholesaleDecimal = ''
           let lowDecimal = ''
+          let marketPrice = ''
           let currentImage = rowImage
           for (let j = 0; j < that.meOldDataSource.length; j++) {
             if (combined === that.meOldDataSource[j].sku) {
@@ -1602,6 +1603,7 @@
               commodityDecimal = that.meOldDataSource[j].commodityDecimal
               wholesaleDecimal = that.meOldDataSource[j].wholesaleDecimal
               lowDecimal = that.meOldDataSource[j].lowDecimal
+              marketPrice = that.meOldDataSource[j].marketPrice
               if (!currentImage && that.meOldDataSource[j].image) {
                 currentImage = that.meOldDataSource[j].image
               }
@@ -1616,12 +1618,13 @@
             if (existRow.commodityDecimal !== undefined && existRow.commodityDecimal !== '') commodityDecimal = existRow.commodityDecimal
             if (existRow.wholesaleDecimal !== undefined && existRow.wholesaleDecimal !== '') wholesaleDecimal = existRow.wholesaleDecimal
             if (existRow.lowDecimal !== undefined && existRow.lowDecimal !== '') lowDecimal = existRow.lowDecimal
+            if (existRow.marketPrice !== undefined && existRow.marketPrice !== '') marketPrice = existRow.marketPrice
             if (!currentImage && existRow.image) currentImage = existRow.image
           }
           let row = {
             sku: combined, image: currentImage, specValues: specValues,
             purchaseDecimal: purchaseDecimal, commodityDecimal: commodityDecimal,
-            wholesaleDecimal: wholesaleDecimal, lowDecimal: lowDecimal
+            wholesaleDecimal: wholesaleDecimal, lowDecimal: lowDecimal, marketPrice: marketPrice
           }
           // 先清空所有规格列，再按规格模块的原始顺序回填，保证列与规格输入框一一对应
           for (let j = 0; j < this.specModules.length; j++) {
@@ -1802,6 +1805,7 @@
               image: arr[i].image || '',
               specValues: arr[i].specValues || '',
               purchaseDecimal: arr[i].purchaseDecimal, commodityDecimal: arr[i].commodityDecimal,
+              marketPrice: arr[i].marketPrice,
               wholesaleDecimal: arr[i].wholesaleDecimal, lowDecimal: arr[i].lowDecimal}
             // 保留所有规格列（skuField1、skuField2...），避免批量设置后规格值丢失
             for (let key in arr[i]) {
@@ -2458,3 +2462,4 @@
     }
   }
 </style>
+iang

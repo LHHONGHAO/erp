@@ -46,11 +46,42 @@ export function getRowImgUrl(record) {
 }
 
 /**
- * 规格显示：每个规格一行，如 "颜色：蘑菇" 换行 "规格：220*230cm"
- * 取值优先级：sku.spec_json > sku.spec_summary > 旧 spec_values
+ * 规格显示：每个子规格一行，格式「子规格名：子规格值」，多行左对齐
+ * 例：颜色：蘑菇
+ *     被套：220*230cm
+ * 取值优先级：spec_values（含子规格明细）> sku.spec_json > sku.spec_summary
  */
 export function getSpecDisplay(record) {
   if (!record) return ''
+  // 1. spec_values 里保存了每个规格大类的子规格名与子规格值，可精确还原
+  if (record.specValues) {
+    try {
+      const arr = JSON.parse(record.specValues)
+      if (Array.isArray(arr) && arr.length > 0) {
+        const lines = []
+        arr.forEach(function(item) {
+          const name = item.attributeName || item.name || ''
+          const childNames = item.childNames || []
+          const subValues = item.subValues || {}
+          if (childNames.length > 0) {
+            // 组合规格：每个子规格单独一行
+            childNames.forEach(function(childName) {
+              const value = subValues[childName]
+              if (value != null && String(value).trim() !== '') {
+                lines.push(childName + '：' + String(value).trim())
+              }
+            })
+          } else {
+            const value = item.valueText || item.value || ''
+            if (value !== '') {
+              lines.push(name ? (name + '：' + value) : value)
+            }
+          }
+        })
+        if (lines.length > 0) return lines.join('\n')
+      }
+    } catch (e) { /* 解析失败继续走兜底 */ }
+  }
   if (record.specJson) {
     try {
       const arr = JSON.parse(record.specJson)
@@ -67,20 +98,6 @@ export function getSpecDisplay(record) {
     return record.specSummary.split(';').map(function(part) {
       return part.replace(':', '：')
     }).filter(function(t) { return t !== '' }).join('\n')
-  }
-  if (record.specValues) {
-    try {
-      const arr = JSON.parse(record.specValues)
-      if (Array.isArray(arr) && arr.length > 0) {
-        return arr.map(function(item) {
-          const name = item.attributeName || item.name || ''
-          const value = item.valueText || item.value || ''
-          return name ? (name + '：' + value) : value
-        }).filter(function(t) { return t !== '' }).join('\n')
-      }
-    } catch (e) {
-      return record.specValues
-    }
   }
   return ''
 }

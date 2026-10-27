@@ -216,6 +216,7 @@
     white-space: pre-line;
     line-height: 18px;
     word-break: break-all;
+    text-align: left;
   }
   .mt-action-cell {
     white-space: nowrap;

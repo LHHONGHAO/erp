@@ -93,7 +93,7 @@ export const MATERIAL_COLUMNS = [
   // ---- SKU 主表 sku ----
   { field: 'skuCode', title: 'SKU编码', width: 170, dimensions: SKU, defaultVisible: true },
   { field: 'skuName', title: '展示名', width: 180, ellipsis: true, dimensions: SKU },
-  { field: 'specDisplay', title: '规格显示', width: 220, render: 'spec', dimensions: SKU, defaultVisible: true },
+  { field: 'specDisplay', title: '规格', width: 220, render: 'spec', dimensions: SKU, defaultVisible: true },
   { field: 'purchaseDecimal', title: '进货价', width: 80, dimensions: SKU, defaultVisible: true },
   { field: 'commodityDecimal', title: '零售价', width: 80, dimensions: SKU, defaultVisible: true },
   { field: 'marketPrice', title: '划线价', width: 80, dimensions: SKU, defaultVisible: true },

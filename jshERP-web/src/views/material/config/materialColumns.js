@@ -22,6 +22,35 @@ export const RENDER_SLOTS = {
   action: 'mtAction'
 }
 
+/**
+ * 操作列宽度约定：列宽 = 列内按钮总宽 + 20px
+ *  按钮宽 = 标题字数 × 14px（不足 unitMin 按 unitMin）
+ *  相邻按钮之间有竖向分割线（1px + 左右各 8px 外边距）
+ *  操作列单元格内边距在样式里置 0，保证多出来的正好是 20px
+ */
+export const ACTION_WIDTH = {
+  char: 14,     // 14px 字号下一个汉字约占 14px
+  unitMin: 28,  // 单个按钮最小宽度（两个字的链接）
+  divider: 17,  // a-divider 竖向分割线（1px + 左右各 8px 外边距）
+  padding: 20   // 约定：列宽比按钮总宽多 20px
+}
+
+/**
+ * 按操作按钮计算操作列宽度
+ * @param {Array} actions [{ title, click, show }]
+ */
+export function actionColumnWidth(actions) {
+  const list = actions || []
+  if (list.length === 0) return ACTION_WIDTH.padding
+  let total = 0
+  list.forEach(function(act) {
+    const text = (act && act.title) || ''
+    total += Math.max(ACTION_WIDTH.unitMin, text.length * ACTION_WIDTH.char)
+  })
+  total += (list.length - 1) * ACTION_WIDTH.divider
+  return total + ACTION_WIDTH.padding
+}
+
 const ALL = ['spu', 'sku', 'skuDepot']
 const SKU = ['sku', 'skuDepot']
 const STOCK = ['skuDepot']
@@ -60,8 +89,8 @@ export const MATERIAL_COLUMNS = [
   { field: 'depotName', title: '仓库', width: 100, dimensions: STOCK },
   { field: 'currentStock', title: '当前库存', width: 90, align: 'center', dimensions: STOCK },
   { field: 'currentUnitPrice', title: '当前单价', width: 90, dimensions: STOCK },
-  // ---- 操作列 ----
-  { field: 'action', title: '操作', width: 180, align: 'center', render: 'action', dimensions: ALL, defaultVisible: true, alwaysVisible: true, fixed: 'right' }
+  // ---- 操作列（宽度由 actionColumnWidth 按按钮数量计算，此处为兜底值） ----
+  { field: 'action', title: '操作', width: 180, align: 'center', className: 'mt-action-col', render: 'action', dimensions: ALL, defaultVisible: true, alwaysVisible: true, fixed: 'right' }
 ]
 
 /** 默认显示顺序（商品信息页）：保持与原有默认列顺序一致 */
@@ -90,6 +119,9 @@ export function buildTableColumns(dimension, columns) {
       if (col.align) tableCol.align = col.align
       if (col.ellipsis) tableCol.ellipsis = true
       if (col.fixed) tableCol.fixed = col.fixed
+      if (col.className) tableCol.className = col.className
+      // 操作列宽度由 actionColumnWidth 计算，禁止被配置中心/拖拽保存的宽度覆盖
+      if (col.render === 'action') tableCol.__lockWidth = true
       if (col.render && RENDER_SLOTS[col.render]) {
         tableCol.scopedSlots = { customRender: RENDER_SLOTS[col.render] }
       }

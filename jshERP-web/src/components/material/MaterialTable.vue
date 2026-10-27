@@ -30,7 +30,7 @@
 
     <!-- 内置：操作列 -->
     <template slot="mtAction" slot-scope="text, record">
-      <span v-if="visibleActions(record).length > 0">
+      <span v-if="visibleActions(record).length > 0" class="mt-action-cell">
         <template v-for="(act, index) in visibleActions(record)">
           <a :key="'act-' + index" @click="onAction(act, record)">{{ act.title }}</a>
           <a-divider v-if="index < visibleActions(record).length - 1" :key="'div-' + index" type="vertical" />
@@ -43,7 +43,7 @@
 <script>
   import Vue from 'vue'
   import DataTable from '@/components/DataTable'
-  import { MATERIAL_COLUMNS, buildTableColumns, defaultColumnKeys } from '@/views/material/config/materialColumns'
+  import { MATERIAL_COLUMNS, buildTableColumns, defaultColumnKeys, actionColumnWidth } from '@/views/material/config/materialColumns'
   import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
 
   /** 内置插槽名：父组件透传时跳过，避免同名插槽冲突 */
@@ -63,17 +63,26 @@
       actions: { type: Array, default: () => [] }
     },
     computed: {
-      /** 按粒度过滤并转换为 a-table 列 */
+      /** 按粒度过滤并转换为 a-table 列；操作列宽度按按钮数量重新计算 */
       tableColumns() {
-        return buildTableColumns(this.dimension, this.columns)
+        let cols = buildTableColumns(this.dimension, this.columns)
+        // 未配置操作按钮的场景（如选商品弹窗）不显示操作列
+        if (this.actions.length === 0) {
+          return cols.filter(col => col.dataIndex !== 'action')
+        }
+        const width = actionColumnWidth(this.actions)
+        cols.forEach(col => {
+          if (col.dataIndex === 'action') col.width = width
+        })
+        return cols
       },
       /** 默认显示列 */
       resolvedDefaultColumns() {
-        if (this.defaultColumns && this.defaultColumns.length > 0) {
-          const allKeys = this.tableColumns.map(c => c.dataIndex)
-          return this.defaultColumns.filter(k => allKeys.indexOf(k) > -1)
-        }
-        return defaultColumnKeys(this.dimension, this.columns)
+        const allKeys = this.tableColumns.map(c => c.dataIndex)
+        const defaults = (this.defaultColumns && this.defaultColumns.length > 0)
+          ? this.defaultColumns
+          : defaultColumnKeys(this.dimension, this.columns)
+        return defaults.filter(k => allKeys.indexOf(k) > -1)
       },
       /** 需要透传给 DataTable 的父组件插槽名 */
       forwardSlotNames() {
@@ -128,5 +137,19 @@
     white-space: pre-line;
     line-height: 18px;
     word-break: break-all;
+  }
+  .mt-action-cell {
+    white-space: nowrap;
+  }
+</style>
+
+<!-- 操作列：宽度已按「按钮总宽 + 20px」计算，取消单元格内边距，保证多出来的正好 20px -->
+<style>
+  /* 表头另有一条 .ant-table-header > table > .ant-table-thead > tr > th 的 !important 内边距，这里用同等结构提高优先级 */
+  .ant-table-header > table > .ant-table-thead > tr > th.mt-action-col,
+  .ant-table-thead > tr > th.mt-action-col.mt-action-col,
+  .ant-table-tbody > tr > td.mt-action-col.mt-action-col {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 </style>

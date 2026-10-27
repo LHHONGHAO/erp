@@ -88,45 +88,18 @@
               </a-row>
             </template>
           </a-form>
-          <data-table
+          <material-table
             ref="dataTable"
             row-key="skuRowKey"
-            table-key="material_select"
-            :extra-columns="extraColumns"
-            :default-columns="defaultColumns"
+            table-key="material_select_v2"
+            dimension="sku"
             :data-source="tableRows"
             :loading="loading"
             :pagination="ipagination"
             :row-selection="{selectedRowKeys: selectedRowKeys, onChange: onSelectChange,type: getType}"
-            :scroll="scrollTrigger"
             :custom-row="rowAction"
             @change="handleTableChange"
-          >
-            <template slot="customBarCode" slot-scope="text, record">
-              {{record.mBarCode || record.barCode}}
-            </template>
-            <template slot="customName" slot-scope="text, record">
-              {{record.name}}
-              <a-tag v-if="record.enableSerialNumber==1" color="orange">序</a-tag>
-              <a-tag v-if="record.enableBatchNumber==1" color="orange">批</a-tag>
-            </template>
-            <template slot="customSkuImg" slot-scope="text, record">
-              <div v-if="record.imgName" style="text-align:center">
-                <img :src="getImgUrl(record.imgName)" style="width:50px;height:50px;object-fit:cover;border:1px solid #eee;border-radius:3px;" />
-              </div>
-              <div v-else style="text-align:center;color:#ccc;font-size:24px;">
-                <a-icon type="picture" />
-              </div>
-            </template>
-            <template slot="customSpecValues" slot-scope="text, record">
-              {{ parseSpecValues(record.specValues) }}
-            </template>
-            <template slot="customRenderStock" slot-scope="text, record">
-              <a-tooltip :title="record.bigUnitStock">
-                {{text}}
-              </a-tooltip>
-            </template>
-          </data-table>
+          ></material-table>
         </div>
       </a-col>
     </a-row>
@@ -135,12 +108,12 @@
 </template>
 
 <script>
-  import { getAction, getFileAccessHttpUrl } from '@/api/manage'
+  import { getAction } from '@/api/manage'
   import {filterObj, getMpListShort} from '@/utils/util'
   import {queryMaterialCategoryTreeList} from '@/api/api'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import {mixinDevice} from '@/utils/mixin'
-  import DataTable from '@/components/DataTable'
+  import MaterialTable from '@/components/material/MaterialTable'
   import Vue from 'vue'
 
   export default {
@@ -148,7 +121,7 @@
     mixins:[JeecgListMixin, mixinDevice],
     components: {
       MaterialModal: () => import('@/views/material/modules/MaterialModal'),
-      DataTable
+      MaterialTable
     },
     props: ['rows', 'multi', 'barCode'],
     data() {
@@ -179,40 +152,6 @@
           sm: { span: 16 },
         },
         categoryTree:[],
-        // 商品信息 + SKU信息（一行一个SKU）
-        extraColumns: [
-          {title: '名称', dataIndex: 'name', width: 160, scopedSlots: { customRender: 'customName' }},
-          {title: '商品编码', dataIndex: 'code', width: 130},
-          {title: '图片', dataIndex: 'imgName', width: 70, align: 'center', scopedSlots: { customRender: 'customSkuImg' }},
-          {title: 'SKU编码', dataIndex: 'skuCode', width: 160},
-          {title: '规格值', dataIndex: 'specValues', width: 180, scopedSlots: { customRender: 'customSpecValues' }},
-          {title: '单位', dataIndex: 'unit', width: 100, ellipsis:true},
-          {title: '品牌', dataIndex: 'brand', width: 100, ellipsis:true},
-          {title: '助记码', dataIndex: 'mnemonic', width: 80, ellipsis:true},
-          {title: '类别', dataIndex: 'categoryName', width: 100, ellipsis:true},
-          {title: '基础重量', dataIndex: 'weight', width: 80},
-          {title: '制造商', dataIndex: 'mfrs', width: 120, ellipsis:true},
-          {title: '面料', dataIndex: 'otherField1', width: 100, ellipsis:true},
-          {title: '安全类别', dataIndex: 'otherField2', width: 100, ellipsis:true},
-          {title: '执行标准', dataIndex: 'otherField3', width: 100, ellipsis:true},
-          {title: '扩展4', dataIndex: 'otherField4', width: 100, ellipsis:true},
-          {title: '扩展5', dataIndex: 'otherField5', width: 100, ellipsis:true},
-          {title: '扩展6', dataIndex: 'otherField6', width: 100, ellipsis:true},
-          {title: '扩展7', dataIndex: 'otherField7', width: 100, ellipsis:true},
-          {title: '商品ID', dataIndex: 'id', width: 80},
-          {title: '条码', dataIndex: 'mBarCode', width: 120, scopedSlots: { customRender: 'customBarCode' }},
-          {title: '初始库存', dataIndex: 'initialStock', width: 80},
-          {title: '库存', dataIndex: 'stock', width: 80, scopedSlots: { customRender: 'customRenderStock' }},
-          {title: '采购价', dataIndex: 'purchaseDecimal', width: 80},
-          {title: '零售价', dataIndex: 'commodityDecimal', width: 80},
-          {title: '销售价', dataIndex: 'wholesaleDecimal', width: 80},
-          {title: '最低售价', dataIndex: 'lowDecimal', width: 80},
-          {title: '备注', dataIndex: 'remark', width: 120, ellipsis:true}
-        ],
-        // 默认显示的列（商品信息 + SKU信息）
-        defaultColumns: ['name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
-          'otherField1','otherField2','otherField3','mBarCode','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal'],
-        scrollTrigger: {x: 1800},
         dataSource: [],
         selectedRowKeys: [],
         selectMaterialRows: [],
@@ -319,18 +258,13 @@
           }
         })
       },
-      // 触发屏幕自适应
+      // 触发屏幕自适应（弹窗宽度按内容区宽度计算，避免超出浏览器窗口）
       resetScreenSize() {
-        let realScreenWidth = window.screen.width
-        this.modalWidth = realScreenWidth<1600?'1300px':'1550px'
-        let screenWidth = document.body.clientWidth;
-        if (screenWidth < 500) {
-          this.scrollTrigger = {x: 1800};
-        } else {
-          this.scrollTrigger = {x: 1800};
-        }
+        const avail = document.body.clientWidth || window.innerWidth
+        const target = avail >= 1600 ? 1550 : avail - 20
+        this.modalWidth = Math.max(Math.min(target, 1550), 900) + 'px'
       },
-      //动态替换扩展字段
+      //动态替换扩展字段（仅查询条件标题，列标题由统一列配置提供）
       handleChangeOtherField() {
         let mpStr = getMpListShort(Vue.ls.get('materialPropertyList'))
         if(mpStr) {
@@ -339,14 +273,6 @@
             this.queryTitle.mp1 = mpArr[0]
             this.queryTitle.mp2 = mpArr[1]
             this.queryTitle.mp3 = mpArr[2]
-            this.$nextTick(() => {
-              const dt = this.$refs.dataTable
-              if (dt) {
-                dt.updateColumnTitle('otherField1', mpArr[0])
-                dt.updateColumnTitle('otherField2', mpArr[1])
-                dt.updateColumnTitle('otherField3', mpArr[2])
-              }
-            })
           }
         }
       },
@@ -402,14 +328,6 @@
         this.$refs.materialModalForm.add()
         this.$refs.materialModalForm.title = '新增商品'
       },
-      getImgUrl(imgName, type) {
-        if(imgName && imgName.split(',')) {
-          type = type? type + '/':''
-          return getFileAccessHttpUrl('systemConfig/static/' + type + imgName.split(',')[0])
-        } else {
-          return ''
-        }
-      },
       close() {
         this.searchReset(0);
         this.visible = false;
@@ -431,17 +349,6 @@
           that.close();
         } else {
           that.$message.warning('请选择商品！')
-        }
-      },
-      /** 规格值JSON转为“颜色:蓝色 / 规格:200*230” */
-      parseSpecValues(specValues) {
-        if (!specValues) return ''
-        try {
-          const arr = JSON.parse(specValues)
-          if (!Array.isArray(arr)) return specValues
-          return arr.map(item => item.attributeName + ':' + item.valueText).join(' / ')
-        } catch (e) {
-          return specValues
         }
       },
       //获取选择信息

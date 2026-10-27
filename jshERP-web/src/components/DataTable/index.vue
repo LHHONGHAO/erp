@@ -35,7 +35,7 @@
       ref="innerTable"
       :size="size"
       :bordered="bordered"
-      :columns="displayColumns"
+      :columns="renderColumns"
       :dataSource="displayDataSource"
       :loading="loading"
       :pagination="resolvedPagination"
@@ -144,6 +144,8 @@
         settingDataIndex: [],
         /** 用于 a-table 的列定义 */
         displayColumns: [],
+        /** 表格可视区域宽度（用于计算末尾空白填充列宽度） */
+        containerWidth: 0,
         /** 汇总后的数据源（summary 开启时，实时计算合计行） */
         summaryDataSource: [],
         /** 明细模式：统计列合计对象（兼容 JEditableTable.statisticsColumns） */
@@ -216,23 +218,55 @@
         for (let i = 0; i < cols.length; i++) {
           const col = cols[i]
           const key = col.dataIndex || col.key
-          const width = this.parseColumnWidth(this.columnWidths[key]) || this.parseColumnWidth(col.width)
+          const saved = col.__lockWidth ? 0 : this.parseColumnWidth(this.columnWidths[key])
+          const width = saved || this.parseColumnWidth(col.width)
           if (!width) return 0
           total += width
         }
         return total + (this.extraHeaderWidth || 0)
       },
       /**
-       * 表格滚动配置：列宽已知时把表格宽度固定为列宽之和，
-       * 拖拽某一列后其它列不会被自动拉伸（类 Excel 行为）；
-       * 列宽总和小于容器宽度时右侧留空，不做拉伸。
+       * 末尾空白填充列宽度：容器比列宽总和宽时，用一列空白列补齐，
+       * 避免浏览器把多出来的空间摊到最后一列（或固定列）上导致错位。
+       */
+      fillerWidth() {
+        const total = this.fixedTableWidth
+        if (!total || !this.containerWidth) return 0
+        const diff = this.containerWidth - total
+        return diff > 2 ? diff : 0
+      },
+      /**
+       * 实际传给 a-table 的列：数据列 + 末尾空白填充列。
+       * 填充列插在固定右侧列（如操作列）之前，保证固定列仍在最右。
+       */
+      renderColumns() {
+        const cols = this.displayColumns || []
+        const width = this.fillerWidth
+        if (!width) return cols
+        const filler = {
+          dataIndex: '__filler',
+          key: '__filler',
+          title: '',
+          width: width,
+          className: 'dt-filler-col',
+          __filler: true
+        }
+        const fixedRightIndex = cols.findIndex(col => col.fixed === 'right')
+        if (fixedRightIndex === -1) return cols.concat([filler])
+        const result = cols.slice()
+        result.splice(fixedRightIndex, 0, filler)
+        return result
+      },
+      /**
+       * 表格滚动配置：列宽已知时把表格宽度固定为列宽之和（含空白填充列），
+       * 拖拽某一列后其它列不会被自动拉伸（类 Excel 行为）。
        */
       resolvedScroll() {
         const base = this.scroll
         const total = this.fixedTableWidth
         if (!total) return base
         const baseObj = (base && typeof base === 'object') ? base : {}
-        return Object.assign({}, baseObj, { x: total })
+        return Object.assign({}, baseObj, { x: total + this.fillerWidth })
       },
       tableAttrs() {
         const exclude = ['tableName', 'extraColumns', 'columnOverrides', 'defaultColumns',
@@ -276,6 +310,11 @@
           header: {
             cell: (h, props, children) => {
               const { key, ...restProps } = props
+              const thClass = restProps.class ? restProps.class + ' resize-table-th' : 'resize-table-th'
+              // 锁定宽度的列（如操作列）不提供拖拽手柄
+              if (self._isLockedColumn(key)) {
+                return h('th', { ...restProps, class: thClass }, children)
+              }
               const drag = h('span', {
                 key: 'resize-handle',
                 class: 'table-draggable-handle',
@@ -286,7 +325,6 @@
                   click: (e) => e.stopPropagation()
                 }
               })
-              const thClass = restProps.class ? restProps.class + ' resize-table-th' : 'resize-table-th'
               return h('th', { ...restProps, class: thClass }, [children, drag])
             }
           }
@@ -313,8 +351,11 @@
       },
       displayColumns() {
         this._recalcSummary()
-        // 列变化后（列设置调整、列定义就绪）补齐缺失列宽，使表格宽度固定
-        this.$nextTick(() => this._captureColumnWidths())
+        // 列变化后（列设置调整、列定义就绪）补齐缺失列宽，使表格宽度固定；同时重新测量容器宽度
+        this.$nextTick(() => {
+          this._captureColumnWidths()
+          this._measureContainerWidth()
+        })
       },
       summary() {
         this._recalcSummary()
@@ -361,10 +402,39 @@
       }
     },
     mounted() {
-      // 首次渲染完成后固化列宽，使表格宽度固定（拖拽只影响当前列）
-      this.$nextTick(() => this._captureColumnWidths())
+      // 首次渲染完成后固化列宽，使表格宽度固定（拖拽只影响当前列），并测量容器宽度以生成空白填充列
+      this.$nextTick(() => {
+        this._captureColumnWidths()
+        this._measureContainerWidth()
+      })
+      this._resizeHandler = () => this._measureContainerWidth()
+      window.addEventListener('resize', this._resizeHandler)
+      if (typeof ResizeObserver !== 'undefined') {
+        this._resizeObserver = new ResizeObserver(() => this._measureContainerWidth())
+        this._resizeObserver.observe(this.$el)
+      }
+    },
+    beforeDestroy() {
+      if (this._resizeHandler) {
+        window.removeEventListener('resize', this._resizeHandler)
+        this._resizeHandler = null
+      }
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect()
+        this._resizeObserver = null
+      }
     },
     methods: {
+      /** 测量表格可视区域宽度（不含纵向滚动条），用于计算末尾空白填充列 */
+      _measureContainerWidth() {
+        const root = this.$el
+        if (!root || !root.querySelector) return
+        const el = root.querySelector('.ant-table-body') || root.querySelector('.ant-table-content') || root
+        const width = Math.floor(el.clientWidth || 0)
+        if (width > 0 && Math.abs(width - this.containerWidth) > 2) {
+          this.containerWidth = width
+        }
+      },
       /** 解析列宽：仅接受数字或像素字符串，其余返回 0 */
       parseColumnWidth(width) {
         if (typeof width === 'number') {
@@ -378,6 +448,11 @@
         }
         return 0
       },
+      /** 是否为锁定宽度的列（宽度由列配置计算，不允许拖拽或保存值覆盖） */
+      _isLockedColumn(key) {
+        if (key == null) return false
+        return (this.displayColumns || []).some(col => (col.dataIndex || col.key) === key && col.__lockWidth)
+      },
       /**
        * 首次渲染后把当前实际列宽固化下来（不写入配置，只作为运行期固定宽度）。
        * 这样表格宽度一开始就等于内容宽度，拖拽时其它列不会被浏览器重新分摊。
@@ -386,7 +461,7 @@
       _captureColumnWidths() {
         const table = this.$refs.innerTable
         const root = table && table.$el
-        const cols = this.displayColumns || []
+        const cols = this.renderColumns || []
         if (!root || cols.length === 0) return
         const head = root.querySelector('.ant-table-thead')
         const ths = head ? Array.prototype.slice.call(head.querySelectorAll('tr:first-child > th')) : []
@@ -403,7 +478,10 @@
         let changed = false
         cols.forEach((col, i) => {
           const key = col.dataIndex || col.key
-          if (key == null || this.parseColumnWidth(this.columnWidths[key])) return
+          if (key == null || col.__lockWidth || col.__filler) return
+          // 列定义已指定像素宽度的列不再测量：浏览器可能已把剩余空间摊给它，测出来的是被拉伸后的宽度
+          if (this.parseColumnWidth(col.width)) return
+          if (this.parseColumnWidth(this.columnWidths[key])) return
           const width = Math.round(ths[i + offset].getBoundingClientRect().width)
           if (width > 0) {
             this.$set(this.columnWidths, key, width)
@@ -558,8 +636,8 @@
 
           const col = Object.assign({}, found)
 
-          // 应用已保存的列宽（配置中心 / localStorage）
-          const savedWidth = this.columnWidths[col.dataIndex]
+          // 应用已保存的列宽（配置中心 / localStorage）；锁定宽度的列（如操作列）忽略保存值
+          const savedWidth = col.__lockWidth ? 0 : this.columnWidths[col.dataIndex]
           if (savedWidth) {
             col.width = savedWidth
           }
@@ -640,9 +718,14 @@
           })
         }
 
+        // 固定右侧的列强制排到最后：列设置里把其它列拖到操作列之后时，避免数据列被固定列浮层遮挡
+        const fixedRightCols = cols.filter(col => col.fixed === 'right')
+        if (fixedRightCols.length > 0) {
+          return cols.filter(col => col.fixed !== 'right').concat(fixedRightCols)
+        }
+
         return cols
       },
-
       /** 可编辑单元格渲染：根据列 editType 返回对应编辑控件 */
       _renderEditableCell(col, record) {
         const h = this.$createElement
@@ -930,6 +1013,7 @@
        */
       _onResizeStart(e, fallbackKey) {
         if (e.button !== undefined && e.button !== 0) return
+        if (this._isLockedColumn(fallbackKey)) return
         e.preventDefault()
         e.stopPropagation()
         const handle = e.currentTarget || e.target

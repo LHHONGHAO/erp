@@ -88,41 +88,56 @@
               标签预览（{{ labelWidthMm }}mm × {{ labelHeightMm }}mm）
               <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px">点击属性编辑样式，拖拽移动位置，拖拽右下角调节尺寸，双击自定义标签编辑内容</span>
             </div>
-            <div
-              class="label-preview"
-              :style="{ width: labelWidth + 'px', height: labelHeight + 'px' }"
-              ref="labelPreview"
-              @mousemove="onPreviewMouseMove"
-              @mouseup="onPreviewMouseUp"
-              @mouseleave="onPreviewMouseUp"
-            >
-              <div v-if="selectedAttrList.length === 0" class="label-preview-empty">请先勾选属性</div>
+            <!-- 缩放工具栏 -->
+            <div class="label-zoom-bar">
+              <a-button size="small" icon="zoom-out" title="缩小" @click="changeZoom(-0.1)"></a-button>
+              <span class="label-zoom-value">{{ Math.round(zoom * 100) }}%</span>
+              <a-button size="small" icon="zoom-in" title="放大" @click="changeZoom(0.1)"></a-button>
+              <a-button size="small" @click="resetZoom">100%</a-button>
+              <a-button size="small" @click="zoomToFit">适应窗口</a-button>
+            </div>
+            <div class="label-preview-scroll" ref="previewScroll">
               <div
-                v-for="attr in selectedAttrList"
-                :key="attr.key"
-                class="label-preview-item"
-                :class="{ active: currentAttrKey === attr.key }"
-                :style="getItemStyle(attr.key)"
-                @mousedown="onItemMouseDown($event, attr.key)"
-                @dblclick="onItemDoubleClick($event, attr)"
+                class="label-preview-wrap"
+                :style="{ width: (labelWidth * zoom) + 'px', height: (labelHeight * zoom) + 'px' }"
               >
-                <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>
-                <input
-                  v-if="editingKey === attr.key"
-                  :value="attr.value"
-                  @input="updateCustomValue(attr.key, $event.target.value)"
-                  @blur="editingKey = null"
-                  @keyup.enter="editingKey = null"
-                  @mousedown.stop
-                  class="label-edit-input"
-                />
-                <template v-else>{{ attr.value }}</template>
-                <!-- resize 手柄 -->
                 <div
-                  v-if="currentAttrKey === attr.key && editingKey !== attr.key"
-                  class="resize-handle"
-                  @mousedown.stop.prevent="onResizeMouseDown($event, attr.key)"
-                ></div>
+                  class="label-preview"
+                  :style="{ width: labelWidth + 'px', height: labelHeight + 'px', transform: 'scale(' + zoom + ')' }"
+                  ref="labelPreview"
+                >
+                  <div v-if="selectedAttrList.length === 0" class="label-preview-empty">请先勾选属性</div>
+                  <div
+                    v-for="attr in selectedAttrList"
+                    :key="attr.key"
+                    class="label-preview-item"
+                    :class="{ active: currentAttrKey === attr.key }"
+                    :style="getItemStyle(attr.key)"
+                    @mousedown="onItemMouseDown($event, attr.key)"
+                    @dblclick="onItemDoubleClick($event, attr)"
+                  >
+                    <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>
+                    <input
+                      v-if="editingKey === attr.key"
+                      :value="attr.value"
+                      @input="updateCustomValue(attr.key, $event.target.value)"
+                      @blur="editingKey = null"
+                      @keyup.enter="editingKey = null"
+                      @mousedown.stop
+                      class="label-edit-input"
+                    />
+                    <template v-else>{{ attr.value }}</template>
+                    <!-- resize 手柄 -->
+                    <div
+                      v-if="currentAttrKey === attr.key && editingKey !== attr.key"
+                      class="resize-handle"
+                      @mousedown.stop.prevent="onResizeMouseDown($event, attr.key)"
+                    ></div>
+                  </div>
+                  <!-- 拖拽对齐参考线 -->
+                  <div v-for="(gx, gi) in guideLines.v" :key="'gv' + gi" class="snap-guide snap-guide-v" :style="{ left: gx + 'px' }"></div>
+                  <div v-for="(gy, gj) in guideLines.h" :key="'gh' + gj" class="snap-guide snap-guide-h" :style="{ top: gy + 'px' }"></div>
+                </div>
               </div>
             </div>
             <div style="margin-top:12px">
@@ -255,6 +270,9 @@
         templateCategoryId: null,
         labelWidth: 320,
         labelHeight: 240,
+        // 预览缩放比例与对齐参考线
+        zoom: 1,
+        guideLines: { v: [], h: [] },
         // 拖拽移动
         dragKey: null,
         dragStartX: 0,
@@ -329,6 +347,8 @@
         this.customCounter = 0
         this.labelWidth = 320
         this.labelHeight = 240
+        this.zoom = 1
+        this.guideLines = { v: [], h: [] }
         this.visible = true
         this.loadCategoryDefaultTemplate()
       },
@@ -338,41 +358,38 @@
       buildAttrList() {
         var record = this.record
         var sku = this.sku
-        var list = [
-          { key: 'name', label: '商品名称', value: record.name || '', isCustom: false },
-          { key: 'standard', label: '规格型号', value: record.standard || '', isCustom: false },
-          { key: 'model', label: '型号', value: record.model || '', isCustom: false },
-          { key: 'color', label: '颜色', value: record.color || '', isCustom: false },
-          { key: 'brand', label: '品牌', value: record.brand || '', isCustom: false },
-          { key: 'mnemonic', label: '助记码', value: record.mnemonic || '', isCustom: false },
-          { key: 'weight', label: '重量', value: record.weight != null ? String(record.weight) : '', isCustom: false },
-          { key: 'position', label: '仓位货架', value: record.position || '', isCustom: false },
-          { key: 'mfrs', label: '制造商', value: record.mfrs || '', isCustom: false },
-          { key: 'mBarCode', label: '条码', value: record.mBarCode || '', isCustom: false },
-          { key: 'commodityUnit', label: '单位', value: record.commodityUnit || '', isCustom: false },
-          { key: 'otherField1', label: '扩展1', value: record.otherField1 || '', isCustom: false },
-          { key: 'otherField2', label: '扩展2', value: record.otherField2 || '', isCustom: false },
-          { key: 'otherField3', label: '扩展3', value: record.otherField3 || '', isCustom: false },
-          { key: 'specValues', label: '规格值', value: sku.specValuesText || '', isCustom: false },
-          { key: 'specDisplay', label: '规格显示', value: getSpecDisplay(Object.assign({}, record, sku)), isCustom: false },
-          { key: 'skuCode', label: 'SKU码', value: sku.skuCode || '', isCustom: false },
-          { key: 'purchaseDecimal', label: '采购价', value: sku.purchaseDecimal || '', isCustom: false },
-          { key: 'commodityDecimal', label: '零售价', value: sku.commodityDecimal || '', isCustom: false },
-          { key: 'wholesaleDecimal', label: '销售价', value: sku.wholesaleDecimal || '', isCustom: false },
-          { key: 'lowDecimal', label: '最低售价', value: sku.lowDecimal || '', isCustom: false },
-          { key: 'currentStock', label: '库存', value: sku.currentStock != null ? String(sku.currentStock) : '', isCustom: false }
-        ]
-        // 其余商品列：直接取商品信息表格的列定义（标题一致），值从当前 SKU / 商品行取
-        var exists = {}
-        list.forEach(function(attr) { exists[attr.key] = true })
         var self = this
+        var list = []
+        var exists = {}
+        // 1. 商品信息表格的所有列（商品基础信息列 + SKU 信息列 + 库存列），标题与表格一致
+        //    值取当前 SKU / 商品行，暂时为空也保留，保证选择属性里有完整的商品信息列
         MATERIAL_COLUMNS.forEach(function(col) {
           if (!col.field || col.field === 'action' || col.field === 'imgName' || exists[col.field]) return
-          var value = self.resolveFieldValue(col.field)
-          if (value == null || value === '') return
-          list.push({ key: col.field, label: col.title, value: String(value), isCustom: false })
+          var value = col.field === 'specDisplay'
+            ? getSpecDisplay(Object.assign({}, record, sku))
+            : self.resolveFieldValue(col.field)
+          exists[col.field] = true
+          list.push({ key: col.field, label: col.title, value: value == null ? '' : String(value), isCustom: false })
         })
-        return list.filter(function(attr) { return attr.value !== '' && attr.value != null })
+        // 2. 表格里没有对应列、但旧标签模板可能已保存过的属性键，保留以兼容历史模板
+        var legacy = [
+          { key: 'standard', label: '规格型号', value: record.standard },
+          { key: 'model', label: '型号', value: record.model },
+          { key: 'color', label: '颜色', value: record.color },
+          { key: 'commodityUnit', label: '单位', value: record.commodityUnit },
+          { key: 'otherField1', label: '扩展1', value: record.otherField1 },
+          { key: 'otherField2', label: '扩展2', value: record.otherField2 },
+          { key: 'otherField3', label: '扩展3', value: record.otherField3 },
+          { key: 'specValues', label: '规格值', value: sku.specValuesText },
+          { key: 'wholesaleDecimal', label: '销售价', value: sku.wholesaleDecimal },
+          { key: 'lowDecimal', label: '最低售价', value: sku.lowDecimal }
+        ]
+        legacy.forEach(function(attr) {
+          if (exists[attr.key]) return
+          exists[attr.key] = true
+          list.push({ key: attr.key, label: attr.label, value: attr.value == null ? '' : String(attr.value), isCustom: false })
+        })
+        return list
       },
       // SKU 字段优先，其次商品字段
       resolveFieldValue(field) {
@@ -472,6 +489,23 @@
         }
         this.presetLabelSelect = undefined
       },
+      // 缩放
+      changeZoom(delta) {
+        var next = Math.round((this.zoom + delta) * 10) / 10
+        this.zoom = Math.min(3, Math.max(0.3, next))
+      },
+      resetZoom() {
+        this.zoom = 1
+      },
+      zoomToFit() {
+        var el = this.$refs.previewScroll
+        if (!el) return
+        var sw = el.clientWidth - 24
+        var sh = el.clientHeight - 24
+        if (sw <= 0 || sh <= 0) return
+        var fit = Math.min(sw / this.labelWidth, sh / this.labelHeight)
+        this.zoom = Math.max(0.3, Math.min(3, Math.round(fit * 10) / 10))
+      },
       // 拖拽移动
       onItemMouseDown(e, key) {
         if (this.editingKey === key) return
@@ -483,6 +517,7 @@
         this.dragOrigX = this.attrStyles[key] ? this.attrStyles[key].x : 0
         this.dragOrigY = this.attrStyles[key] ? this.attrStyles[key].y : 0
         this.currentAttrKey = key
+        this.bindDragEvents()
       },
       // 拖拽resize
       onResizeMouseDown(e, key) {
@@ -491,23 +526,38 @@
         this.resizeStartY = e.clientY
         this.resizeOrigW = (this.attrStyles[key] && this.attrStyles[key].width) || 120
         this.resizeOrigH = (this.attrStyles[key] && this.attrStyles[key].height) || 24
+        this.bindDragEvents()
+      },
+      // 拖拽过程绑定到 document，缩放后移出预览区也能继续拖拽
+      bindDragEvents() {
+        document.addEventListener('mousemove', this.onPreviewMouseMove)
+        document.addEventListener('mouseup', this.onPreviewMouseUp)
+      },
+      unbindDragEvents() {
+        document.removeEventListener('mousemove', this.onPreviewMouseMove)
+        document.removeEventListener('mouseup', this.onPreviewMouseUp)
       },
       onPreviewMouseMove(e) {
-        // 拖拽移动
+        // 拖拽移动（鼠标位移按缩放比例换算为标签坐标）
         if (this.dragKey) {
-          var dx = e.clientX - this.dragStartX
-          var dy = e.clientY - this.dragStartY
-          var newX = Math.max(0, Math.min(this.labelWidth - 10, this.dragOrigX + dx))
-          var newY = Math.max(0, Math.min(this.labelHeight - 10, this.dragOrigY + dy))
-          if (this.attrStyles[this.dragKey]) {
-            this.$set(this.attrStyles[this.dragKey], 'x', Math.round(newX))
-            this.$set(this.attrStyles[this.dragKey], 'y', Math.round(newY))
+          var dx = (e.clientX - this.dragStartX) / this.zoom
+          var dy = (e.clientY - this.dragStartY) / this.zoom
+          var style = this.attrStyles[this.dragKey]
+          if (style) {
+            var w = style.width || 120
+            var h = style.height || 24
+            var rawX = Math.max(0, Math.min(this.labelWidth - 10, this.dragOrigX + dx))
+            var rawY = Math.max(0, Math.min(this.labelHeight - 10, this.dragOrigY + dy))
+            var snap = this.computeSnap(rawX, rawY, w, h, this.dragKey)
+            this.$set(style, 'x', Math.round(Math.max(0, Math.min(this.labelWidth - 10, snap.x))))
+            this.$set(style, 'y', Math.round(Math.max(0, Math.min(this.labelHeight - 10, snap.y))))
+            this.guideLines = snap.guides
           }
         }
         // 拖拽resize
         if (this.resizeKey) {
-          var rdx = e.clientX - this.resizeStartX
-          var rdy = e.clientY - this.resizeStartY
+          var rdx = (e.clientX - this.resizeStartX) / this.zoom
+          var rdy = (e.clientY - this.resizeStartY) / this.zoom
           var newW = Math.max(30, this.resizeOrigW + rdx)
           var newH = Math.max(12, this.resizeOrigH + rdy)
           if (this.attrStyles[this.resizeKey]) {
@@ -521,6 +571,48 @@
       onPreviewMouseUp() {
         this.dragKey = null
         this.resizeKey = null
+        this.guideLines = { v: [], h: [] }
+        this.unbindDragEvents()
+      },
+      /**
+       * 对齐吸附：把当前属性的左/中/右、上/中/下与其他属性及标签边界比较，
+       * 距离小于阈值（按缩放换算，屏幕上约 6px）时吸附，并返回参考线位置
+       */
+      computeSnap(rawX, rawY, width, height, selfKey) {
+        var threshold = 6 / this.zoom
+        var targetsX = [0, this.labelWidth / 2, this.labelWidth]
+        var targetsY = [0, this.labelHeight / 2, this.labelHeight]
+        var list = this.selectedAttrList
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].key === selfKey) continue
+          var s = this.attrStyles[list[i].key]
+          if (!s) continue
+          var ow = s.width || 120
+          var oh = s.height || 24
+          targetsX.push(s.x, s.x + ow / 2, s.x + ow)
+          targetsY.push(s.y, s.y + oh / 2, s.y + oh)
+        }
+        var snapX = this.findSnap([rawX, rawX + width / 2, rawX + width], targetsX, threshold)
+        var snapY = this.findSnap([rawY, rawY + height / 2, rawY + height], targetsY, threshold)
+        return {
+          x: rawX + (snapX ? snapX.delta : 0),
+          y: rawY + (snapY ? snapY.delta : 0),
+          guides: { v: snapX ? [snapX.line] : [], h: snapY ? [snapY.line] : [] }
+        }
+      },
+      // 在候选锚点中找距离最近且在阈值内的吸附目标
+      findSnap(mine, targets, threshold) {
+        var best = null
+        for (var i = 0; i < mine.length; i++) {
+          for (var j = 0; j < targets.length; j++) {
+            var delta = targets[j] - mine[i]
+            if (Math.abs(delta) > threshold) continue
+            if (!best || Math.abs(delta) < Math.abs(best.delta)) {
+              best = { delta: delta, line: targets[j] }
+            }
+          }
+        }
+        return best
       },
       // 双击编辑（仅自定义标签）
       onItemDoubleClick(e, attr) {
@@ -703,6 +795,9 @@
           printWin.close()
         }, 300)
       }
+    },
+    beforeDestroy() {
+      this.unbindDragEvents()
     }
   }
 </script>
@@ -743,13 +838,62 @@
     color: #666;
     margin-right: 4px;
   }
-  .label-preview {
+  .label-zoom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+  .label-zoom-value {
+    display: inline-block;
+    min-width: 48px;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    margin: 0 6px;
+  }
+  .label-preview-scroll {
+    height: 460px;
+    overflow: auto;
+    padding: 12px;
+    background: #f0f2f5;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .label-preview-wrap {
     position: relative;
-    border: 2px dashed #d9d9d9;
+    flex: none;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  }
+  .label-preview {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
     background: #fff;
-    margin: 0 auto;
     overflow: hidden;
     user-select: none;
+  }
+  /* 拖拽对齐参考线 */
+  .snap-guide {
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+  }
+  .snap-guide-v {
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed #ff4d4f;
+  }
+  .snap-guide-h {
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 1px dashed #ff4d4f;
   }
   .label-preview-empty {
     color: #ccc;

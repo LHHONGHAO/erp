@@ -176,43 +176,61 @@
                 <div class="spec-divide"></div>
                 <!-- 主内容区：规格值列表 -->
                 <div class="spec-main">
-                  <div class="spec-main-label">规格值</div>
                   <div class="spec-values-list">
                     <div v-for="(val, vIndex) in module.values" :key="vIndex" class="spec-value-row">
-                      <!-- 图片方块（仅第一个模块且开启图片时显示）：点击先打开图片文字提取框 -->
-                      <div v-if="module.enableImage" class="spec-value-img-upload" @click="openSpecImageExtract(mIndex, vIndex)">
-                        <div v-if="val.image" class="spec-value-img-preview">
-                          <img :src="getFileAccessHttpUrl(val.image)" />
+                      <!-- 普通规格值：输入框 → 图片方块 → 删除 -->
+                      <template v-if="!module.childNames || module.childNames.length === 0">
+                        <a-input
+                          v-model="val.text"
+                          placeholder="请输入"
+                          style="width: 220px;"
+                          @blur="onSpecChange()" />
+                        <!-- 图片方块（开启图片时显示）：点击先打开图片文字提取框 -->
+                        <div v-if="module.enableImage" class="spec-value-img-upload" @click="openSpecImageExtract(mIndex, vIndex)">
+                          <div v-if="val.image" class="spec-value-img-preview">
+                            <img :src="getFileAccessHttpUrl(val.image)" />
+                          </div>
+                          <div v-else class="spec-value-img-trigger">
+                            <a-icon type="plus" style="font-size: 16px; color: #999;" />
+                          </div>
                         </div>
-                        <div v-else class="spec-value-img-trigger">
-                          <a-icon type="plus" style="font-size: 16px; color: #999;" />
-                        </div>
-                      </div>
-                      <!-- 普通规格值输入框 -->
-                      <a-input v-if="!module.childNames || module.childNames.length === 0"
-                        v-model="val.text"
-                        placeholder="请输入"
-                        style="width: 220px;"
-                        @blur="onSpecChange()" />
+                        <a-button
+                          type="link"
+                          size="small"
+                          @click="removeSpecValue(mIndex, vIndex)"
+                          class="spec-value-delete-btn">
+                          <a-icon type="delete" style="color: #1890ff;" />
+                        </a-button>
+                      </template>
                       <!-- 组合规格值：多个子项合并成一个SKU规格维度 -->
                       <div v-else class="spec-composite-value">
-                        <div v-for="childName in module.childNames" :key="childName" class="spec-composite-field">
+                        <div v-for="(childName, childIndex) in module.childNames" :key="childName" class="spec-composite-field">
                           <span>{{ childName }}</span>
                           <a-input
                             :value="val.subValues && val.subValues[childName]"
                             :placeholder="'请输入' + childName"
                             @input="onSubSpecChange(mIndex, vIndex, childName, $event.target.value)" />
+                          <!-- 图片方块：紧跟在第一行子规格输入框右侧 -->
+                          <div v-if="childIndex === 0 && module.enableImage" class="spec-value-img-upload" @click="openSpecImageExtract(mIndex, vIndex)">
+                            <div v-if="val.image" class="spec-value-img-preview">
+                              <img :src="getFileAccessHttpUrl(val.image)" />
+                            </div>
+                            <div v-else class="spec-value-img-trigger">
+                              <a-icon type="plus" style="font-size: 16px; color: #999;" />
+                            </div>
+                          </div>
+                          <!-- 删除按钮：仅在第一行子规格输入框右侧显示，紧邻输入框 -->
+                          <a-button
+                            v-if="childIndex === 0"
+                            type="link"
+                            size="small"
+                            @click="removeSpecValue(mIndex, vIndex)"
+                            class="spec-value-delete-btn">
+                            <a-icon type="delete" style="color: #1890ff;" />
+                          </a-button>
                         </div>
                         <span class="spec-composite-preview" v-if="val.text">组合值：{{ val.text }}</span>
                       </div>
-                      <!-- 删除按钮 -->
-                      <a-button
-                        type="link"
-                        size="small"
-                        @click="removeSpecValue(mIndex, vIndex)"
-                        class="spec-value-delete-btn">
-                        <a-icon type="delete" style="color: #1890ff;" />
-                      </a-button>
                     </div>
                   </div>
                 </div>
@@ -2120,8 +2138,9 @@
   }
   /* 图片上传方块 */
   .spec-value-img-upload {
-    margin-right: 8px;
+    margin-left: 8px;
     cursor: pointer;
+    flex: 0 0 auto;
   }
   .spec-value-img-trigger {
     width: 40px;
@@ -2160,7 +2179,7 @@
   /* 底部 */
   .spec-bottom {
     margin-top: 4px;
-    padding-left: 63px;
+    padding-left: 0;
   }
   .spec-value-suggestions {
     display: inline-flex;

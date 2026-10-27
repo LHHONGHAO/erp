@@ -83,18 +83,17 @@
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="类别规格设置" v-if="hasSelectedCategory">
             <div v-for="(module, mIndex) in specModules" :key="mIndex" style="border:1px solid #eee;border-radius:4px;padding:10px;margin-top:10px;">
               <div style="display:flex;align-items:center;gap:8px;">
-                <a-input v-model="module.name" style="width:220px" placeholder="请输入规格名称" />
+                <a-input v-model="module.name" style="width:220px" placeholder="请输入规格大类（即商品规格卡片标题）" />
                 <a-switch size="small" v-model="module.enableImage" />
                 <span>可添加规格图片</span>
                 <a-button type="link" size="small" @click="removeSpecModule(mIndex)"><a-icon type="delete" /></a-button>
               </div>
-              <div style="margin:10px 0 0 4px;">
-                <div style="font-size:12px;color:#888;margin-bottom:6px;">组合子规格（可选，例如：被套、床单、枕套）</div>
+              <div style="margin:8px 0 0 4px;">
                 <div v-for="(child, childIndex) in module.childNames" :key="childIndex" style="display:flex;align-items:center;margin-bottom:6px;">
                   <a-input v-model="module.childNames[childIndex]" style="width:220px" placeholder="请输入子规格名称" />
-                  <a-button type="link" size="small" @click="removeChildSpec(mIndex, childIndex)"><a-icon type="delete" /></a-button>
+                  <a-button type="link" class="child-spec-delete" @click="removeChildSpec(mIndex, childIndex)"><a-icon type="delete" /></a-button>
                 </div>
-                <a-button type="link" size="small" icon="plus" @click="addChildSpec(mIndex)">添加子规格</a-button>
+                <a-button type="dashed" class="add-child-spec-btn" icon="plus" @click="addChildSpec(mIndex)">添加子规格</a-button>
               </div>
             </div>
             <div style="margin-top:8px;">
@@ -389,6 +388,12 @@ export default {
             this.$message.warning('规格名称不能重复')
             return
           }
+          // 每个规格大类（商品规格卡片标题）下至少需要一个子规格
+          const emptyChildModule = configuredModules.find(item => item.childNames.length === 0)
+          if (emptyChildModule) {
+            this.$message.warning('规格大类「' + emptyChildModule.name + '」至少需要一个子规格')
+            return
+          }
           for (let i = 0; i < configuredModules.length; i++) {
             const childNames = configuredModules[i].childNames
             if (new Set(childNames.map(name => name.toLowerCase())).size !== childNames.length) {
@@ -588,5 +593,22 @@ export default {
   left: 0;
   background: #fff;
   border-radius: 0 0 2px 2px;
+}
+
+/* 添加子规格：小号按钮，不占满行高 */
+.add-child-spec-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 22px;
+  margin-top: 2px;
+}
+
+/* 子规格行删除图标：贴紧输入框 */
+.child-spec-delete {
+  padding: 0 4px;
+  height: 24px;
+  line-height: 24px;
+  margin-left: 2px;
 }
 </style>

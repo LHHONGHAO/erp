@@ -37,6 +37,7 @@ export const DataTableDetailMixin = {
         type: 'link',
         icon: 'delete',
         confirm: '确定删除该行吗？',
+        fixed: 'right',
         click: (record) => this.onDetailDelete(record)
       }]
     }
@@ -50,6 +51,13 @@ export const DataTableDetailMixin = {
         key: col.key,
         statistics: !!col.statistics,
         validateRules: col.validateRules
+      }
+      // 列宽跟随列定义（px / 数字），保证空数据列也有固定宽度
+      if (col.width != null) {
+        c.width = col.width
+      }
+      if (col.fixed) {
+        c.fixed = col.fixed
       }
       switch (col.type) {
         case FormTypes.inputNumber:

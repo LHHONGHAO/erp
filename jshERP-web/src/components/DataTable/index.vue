@@ -48,6 +48,24 @@
       v-bind="tableAttrs"
     >
     </a-table>
+    <!-- 常显横向滚动条：固定在表格下方，纵向滚动时不会消失 -->
+    <div class="dt-hscroll" ref="hscroll" v-show="hscrollVisible">
+      <div class="dt-hscroll-inner" :style="{ width: hscrollContentWidth + 'px' }"></div>
+    </div>
+    <!-- 合计行模式下：合计行追加在本页数据末尾，必须关闭内置分页，用外部翻页器避免合计行被分页截断 -->
+    <div class="dt-summary-pager" v-if="summaryPager">
+      <a-pagination
+        size="small"
+        show-size-changer
+        :showQuickJumper="true"
+        :current="pagination.current"
+        :page-size="pagination.pageSize"
+        :page-size-options="pagination.pageSizeOptions"
+        :total="pagination.total"
+        :show-total="pagination.showTotal"
+        @change="onSummaryPageChange"
+        @showSizeChange="onSummaryPageChange" />
+    </div>
   </div>
 </template>
 
@@ -138,6 +156,9 @@
         configTableNames: '',
         /** 列宽配置 { dataIndex: px } */
         columnWidths: {},
+        /** 常显横向滚动条：是否显示 + 内容宽度 */
+        hscrollVisible: false,
+        hscrollContentWidth: 0,
         /** 选择列/展开列等非数据列占用宽度：表格总宽 = 数据列宽之和 + 该值 */
         extraHeaderWidth: 0,
         /** 当前选中的列 dataIndex 列表 */
@@ -188,11 +209,17 @@
       /** 分页配置：默认开启每页条数（行数）选择，父组件传入的 pagination 可覆盖 */
       resolvedPagination() {
         if (this.pagination === false) return false
+        // 合计行模式改为外部翻页器，内置分页会把追加的合计行当成第 N+1 行截掉
+        if (this.summaryPager) return false
         const base = { showSizeChanger: true, pageSizeOptions: ['10', '20', '30', '50', '100'] }
         if (this.pagination && typeof this.pagination === 'object') {
           return Object.assign({}, base, this.pagination)
         }
         return Object.assign({}, base)
+      },
+      /** 是否使用外部翻页器（合计行 + 服务端分页） */
+      summaryPager() {
+        return !!this.summary && this.pagination && typeof this.pagination === 'object'
       },
       /** 展开行渲染函数：无展开行时返回 undefined，避免出现展开按钮列 */
       expandedRowRenderFn() {
@@ -355,6 +382,7 @@
         this.$nextTick(() => {
           this._captureColumnWidths()
           this._measureContainerWidth()
+          this.syncHScroll()
         })
       },
       summary() {
@@ -406,15 +434,23 @@
       this.$nextTick(() => {
         this._captureColumnWidths()
         this._measureContainerWidth()
+        this.syncHScroll()
       })
-      this._resizeHandler = () => this._measureContainerWidth()
+      this._resizeHandler = () => {
+        this._measureContainerWidth()
+        this.syncHScroll()
+      }
       window.addEventListener('resize', this._resizeHandler)
       if (typeof ResizeObserver !== 'undefined') {
-        this._resizeObserver = new ResizeObserver(() => this._measureContainerWidth())
+        this._resizeObserver = new ResizeObserver(() => {
+          this._measureContainerWidth()
+          this.syncHScroll()
+        })
         this._resizeObserver.observe(this.$el)
       }
     },
     beforeDestroy() {
+      this.unbindHScroll()
       if (this._resizeHandler) {
         window.removeEventListener('resize', this._resizeHandler)
         this._resizeHandler = null
@@ -654,8 +690,8 @@
 
           if (slotName) {
             col.customRender = function(text, record, index, column) {
-              // 汇总行不渲染操作/状态等自定义插槽
-              if (record && record._dataTableSummary) {
+              // 汇总行默认不渲染自定义插槽；列上声明 summaryRender 的列（如需显示合计值）照常渲染
+              if (record && record._dataTableSummary && !col.summaryRender) {
                 return ''
               }
               const slotFn = self.$scopedSlots[slotName]
@@ -691,7 +727,9 @@
           cols.push({
             title: '操作',
             key: 'action',
-            width: self.columnWidths.action || (self.actions.length * 58 + 24),
+            fixed: 'right',
+            __lockWidth: true,
+            width: self.actions.length * 58 + 24,
             customRender(text, record, index) {
               // 汇总行不渲染操作按钮
               if (record && record._dataTableSummary) {
@@ -806,6 +844,104 @@
         }
       },
 
+      /** 表格纵向滚动容器（a-table 的 body） */
+      _tableBodyEl() {
+        return this.$el ? this.$el.querySelector('.ant-table-body') : null
+      },
+      /** 绑定常显横向滚动条与表格 body 的滚动同步 */
+      bindHScroll() {
+        const body = this._tableBodyEl()
+        if (body && !body.__dtHScrollBound) {
+          body.addEventListener('scroll', this.onTableBodyScroll, { passive: true })
+          body.__dtHScrollBound = true
+        }
+        const bar = this.$refs.hscroll
+        if (bar && !bar.__dtHScrollBound) {
+          bar.addEventListener('scroll', this.onHScrollBarScroll, { passive: true })
+          bar.__dtHScrollBound = true
+        }
+      },
+      unbindHScroll() {
+        const body = this._tableBodyEl()
+        if (body && body.__dtHScrollBound) {
+          body.removeEventListener('scroll', this.onTableBodyScroll)
+          body.__dtHScrollBound = false
+        }
+        const bar = this.$refs.hscroll
+        if (bar && bar.__dtHScrollBound) {
+          bar.removeEventListener('scroll', this.onHScrollBarScroll)
+          bar.__dtHScrollBound = false
+        }
+      },
+      onTableBodyScroll() {
+        const body = this._tableBodyEl()
+        const bar = this.$refs.hscroll
+        if (body && bar && Math.abs(bar.scrollLeft - body.scrollLeft) > 1) {
+          bar.scrollLeft = body.scrollLeft
+        }
+      },
+      onHScrollBarScroll() {
+        const body = this._tableBodyEl()
+        const bar = this.$refs.hscroll
+        if (body && bar && Math.abs(body.scrollLeft - bar.scrollLeft) > 1) {
+          body.scrollLeft = bar.scrollLeft
+        }
+      },
+      /** 计算内容宽度、决定常显横向滚动条是否出现，并锁死固定右列宽度 */
+      syncHScroll() {
+        const body = this._tableBodyEl()
+        if (!body) {
+          this.hscrollVisible = false
+          return
+        }
+        const contentWidth = body.scrollWidth
+        const visible = contentWidth - body.clientWidth > 2
+        this.hscrollContentWidth = contentWidth
+        this.hscrollVisible = visible
+        this.bindHScroll()
+        this.$nextTick(() => {
+          const bar = this.$refs.hscroll
+          if (bar && this.hscrollVisible) bar.scrollLeft = body.scrollLeft
+        })
+        this._lockFixedRightWidth()
+      },
+      /** 固定右列（操作列）宽度：拖动其它列时不被浏览器分摊拉伸 */
+      _lockFixedRightWidth() {
+        const fixedCols = (this.displayColumns || []).filter(c => c.fixed === 'right')
+        if (!fixedCols.length || !this.$el) return
+        let total = 0
+        const widths = fixedCols.map(c => {
+          const w = this.parseColumnWidth(c.width) || 0
+          total += w
+          return w
+        })
+        if (!total) return
+        Array.prototype.forEach.call(this.$el.querySelectorAll('.ant-table-fixed-right table'), table => {
+          table.style.tableLayout = 'fixed'
+          table.style.width = total + 'px'
+          const colEls = table.querySelectorAll('colgroup > col')
+          Array.prototype.forEach.call(colEls, (el, i) => {
+            const w = widths[i]
+            if (w) {
+              el.style.width = w + 'px'
+              el.style.minWidth = w + 'px'
+            }
+          })
+        })
+      },
+
+      /** 外部翻页器：翻页/改每页条数时通知父组件重新取数 */
+      onSummaryPageChange(page, pageSize) {
+        const size = pageSize || this.pagination.pageSize
+        // 页码与条数都没变时不重复请求
+        if (page === this.pagination.current && size === this.pagination.pageSize) return
+        const pagination = Object.assign({}, this.pagination, {
+          current: page,
+          pageSize: size
+        })
+        this.$emit('change', pagination, {}, {})
+      },
+
       /** 实时计算汇总行数据源 */
       _recalcSummary() {
         if (!this.summary || !this.dataSource || this.dataSource.length === 0) {
@@ -814,11 +950,13 @@
         }
         const fields = (this.summaryFields || '').split(',').filter(Boolean)
         const totalRow = { _dataTableSummary: true }
-        // 合计标签放在第一个非操作列（跳过 action 与 fixed 列）
-        const labelCol = this.displayColumns.find(c => {
+        // 合计标签优先放在码列，其次放在第一个非操作、非固定、非插槽列（插槽列汇总行可能不渲染）
+        const isLabelCandidate = c => {
           const key = c.dataIndex || c.key
-          return key !== 'action' && !c.fixed
-        })
+          return key && key !== 'action' && !c.fixed
+        }
+        const labelCol = this.displayColumns.find(c => isLabelCandidate(c) && (c.dataIndex || c.key) === 'materialCode')
+          || this.displayColumns.find(c => isLabelCandidate(c) && (!c.customRender || c.summaryRender))
         const labelKey = labelCol ? (labelCol.dataIndex || labelCol.key) : null
         if (labelKey) {
           totalRow[labelKey] = '合计'
@@ -1109,6 +1247,8 @@
             tableStates.forEach(({ cols }) => {
               cols.forEach(colEl => { colEl.style.minWidth = '' })
             })
+            // 重新计算填充列/横向滚动条，并把固定右列宽度锁回约定值
+            this.syncHScroll()
           })
         }
         document.body.style.cursor = 'col-resize'
@@ -1124,6 +1264,8 @@
         startWidths.forEach((width, i) => {
           const col = cols[i - offset]
           if (!col) return
+          // 锁定宽度的列（如操作列）不参与列宽持久化，避免被拖动其它列时的实际宽度覆盖
+          if (col.__lockWidth) return
           const key = col.dataIndex || col.key
           if (key == null) return
           changed[key] = i === dragIndex ? dragWidth : width
@@ -1283,18 +1425,47 @@
   .data-table-wrapper {
     /* 整体容器 */
   }
+  .dt-summary-pager {
+    margin-top: 8px;
+    text-align: right;
+  }
+  /* 常显横向滚动条：吸附在表格可视区域底部（不随页面/弹窗滚动而跑到下方） */
+  .dt-hscroll {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    height: 14px;
+    margin-top: -14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 2px;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.06);
+  }
+  .dt-hscroll-inner {
+    height: 1px;
+  }
+  .data-table-wrapper ::v-deep .ant-table-body::-webkit-scrollbar {
+    width: 8px;
+    height: 0;
+  }
   .data-table-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-bottom: 8px;
     min-height: 28px;
   }
   .data-table-toolbar-left {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+    min-width: 0;
   }
   .data-table-toolbar-right {
     flex-shrink: 0;

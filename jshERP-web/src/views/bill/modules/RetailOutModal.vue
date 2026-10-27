@@ -71,7 +71,7 @@
               :loading="materialTable.loading"
               :data-source="materialTable.dataSource"
               :extra-columns="detailColumns"
-              table-key="bill_retail_out_detail"
+              table-key="bill_retail_out_detail_v2"
               :default-columns="defDataIndex"
               :scroll="{ x: minWidth }"
               :actions="detailActions"
@@ -83,29 +83,25 @@
               :preserve-column-setting="true"
               @edit-change="onDetailEditChange">
               <template slot="toolbar">
-                <a-button type="primary" icon="plus" @click="openSelectMaterial">新增商品</a-button>
-                <a-button @click="handleBatchSetDepot">批量设置仓库</a-button>
-                <a-row :gutter="24" style="float:left;" data-step="4" data-title="扫码录入" data-intro="此功能支持扫码枪扫描商品条码进行录入">
-                  <a-col v-if="scanStatus" :md="6" :sm="24">
-                    <a-button @click="scanEnter">扫码录入</a-button>
-                  </a-col>
-                  <a-col v-if="!scanStatus" :md="16" :sm="24" style="padding: 0 6px 0 12px">
-                    <a-input placeholder="请扫条码或序列号并回车" v-model="scanBarCode" @pressEnter="scanPressEnter" ref="scanBarCode"/>
-                  </a-col>
-                  <a-col v-if="!scanStatus" :md="6" :sm="24" style="padding: 0px 18px 0 0">
-                    <a-button @click="stopScan">收起扫码</a-button>
-                  </a-col>
-                </a-row>
+                <a-input v-if="rowCanEdit" :placeholder="scanPlaceholder" v-model="scanBarCode" @pressEnter="scanPressEnter" ref="scanBarCode" style="width:260px;flex-shrink:0;"/>
+                <a-radio-group v-if="rowCanEdit" v-model="scanType" data-step="4" data-title="扫码录入" data-intro="支持按SKU码、商品码、二维码录入商品" style="flex-shrink:0;">
+                  <a-radio-button value="sku">SKU码</a-radio-button>
+                  <a-radio-button value="barCode">商品码</a-radio-button>
+                  <a-radio-button value="qrCode">二维码</a-radio-button>
+                </a-radio-group>
+                <a-button type="primary" icon="plus" @click="openSelectMaterial" style="flex-shrink:0;">新增商品</a-button>
+                <a-button @click="handleBatchSetDepot" style="flex-shrink:0;">批量设置仓库</a-button>
+                <a-button icon="import" @click="onImport(prefixNo)" style="flex-shrink:0;">导入明细</a-button>
               </template>
               <template slot="barCode" slot-scope="text, record">
                 <j-select-list kind="material" :value="record.barCode" :rows="getPopupRows(record)" :multi="true" @change="v => onDetailPopupChange('barCode', v, record)" />
               </template>
               <template slot="imgName" slot-scope="text, record">
-                <img v-if="record.imgName" :src="getDetailImgUrl(record.imgName)" class="detail-sku-img" />
-                <span v-else class="detail-sku-img-placeholder">无图</span>
+                <img v-if="getRowImgUrl(record)" :src="getRowImgUrl(record)" class="detail-sku-img" />
+                <span v-else class="detail-sku-img-empty">无图</span>
               </template>
-              <template slot="specValues" slot-scope="text, record">
-                {{ parseSpecValues(record.specValues) }}
+              <template slot="specDisplay" slot-scope="text, record">
+                <div class="detail-spec-display">{{ getSpecDisplay(record) }}</div>
               </template>
               <template slot="snList" slot-scope="text, record">
                 <j-select-list kind="sn" :value="record.snList" :rows="getPopupRows(record)" @change="v => onDetailPopupChange('snList', v, record)" />
@@ -182,6 +178,7 @@
     <depot-modal ref="depotModalForm" @ok="depotModalFormOk"></depot-modal>
     <account-modal ref="accountModalForm" @ok="accountModalFormOk"></account-modal>
     <batch-set-depot ref="batchSetDepotModalForm" @ok="batchSetDepotModalFormOk"></batch-set-depot>
+    <import-item-modal ref="importItemModalForm" @ok="importItemModalFormOk"></import-item-modal>
     <j-select-material-modal ref="selectMaterialModal" :multi="true" @ok="onSelectMaterialOk"></j-select-material-modal>
     <workflow-iframe ref="modalWorkflow" @ok="workflowModalFormOk"></workflow-iframe>
     <bill-print-iframe ref="modalPrint"></bill-print-iframe>
@@ -194,6 +191,7 @@
   import DepotModal from '../../system/modules/DepotModal'
   import AccountModal from '../../system/modules/AccountModal'
   import BatchSetDepot from '../dialog/BatchSetDepot'
+  import ImportItemModal from '../dialog/ImportItemModal'
   import WorkflowIframe from '@/components/tools/WorkflowIframe'
   import BillPrintIframe from '../dialog/BillPrintIframe'
   import BillPrintProIframe from '../dialog/BillPrintProIframe'
@@ -209,6 +207,9 @@
   import DataTable from '@/components/DataTable'
   import JSelectList from '@/components/jeecgbiz/JSelectList'
   import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
+  import { buildRetailOutColumns, RETAIL_OUT_DEFAULT_COLUMNS } from '../config/detailColumns'
+  import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
+  import { getMaterialByBarCode } from '@/api/api'
   import Vue from 'vue'
   export default {
     name: "RetailOutModal",
@@ -218,6 +219,7 @@
       DepotModal,
       AccountModal,
       BatchSetDepot,
+      ImportItemModal,
       WorkflowIframe,
       BillPrintIframe,
       BillPrintProIframe,
@@ -255,57 +257,13 @@
         },
         refKeys: ['materialDataTable', ],
         activeKey: 'materialDataTable',
-        // 列设置：商品信息 + SKU信息 + 单据明细字段
-        defColumns: [
-          { title: '仓库名称', key: 'depotId', width: '8%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
-            allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
-          },
-          { title: '条码', key: 'barCode', width: '12%', type: FormTypes.popupJsh, kind: 'material', multi: true,
-            validateRules: [{ required: true, message: '${title}不能为空' }]
-          },
-          { title: '名称', key: 'name', width: '10%', type: FormTypes.normal },
-          { title: '商品编码', key: 'code', width: '8%', type: FormTypes.normal },
-          { title: '图片', key: 'imgName', width: '5%', type: FormTypes.normal },
-          { title: 'SKU编码', key: 'skuCode', width: '9%', type: FormTypes.normal },
-          { title: '规格值', key: 'specValues', width: '12%', type: FormTypes.normal },
-          { title: '规格', key: 'standard', width: '8%', type: FormTypes.normal },
-          { title: '型号', key: 'model', width: '6%', type: FormTypes.normal },
-          { title: '颜色', key: 'color', width: '5%', type: FormTypes.normal },
-          { title: '单位', key: 'unit', width: '5%', type: FormTypes.normal },
-          { title: '品牌', key: 'brand', width: '5%', type: FormTypes.normal },
-          { title: '助记码', key: 'mnemonic', width: '6%', type: FormTypes.normal },
-          { title: '类别', key: 'categoryName', width: '6%', type: FormTypes.normal },
-          { title: '基础重量', key: 'weight', width: '6%', type: FormTypes.normal },
-          { title: '制造商', key: 'mfrs', width: '8%', type: FormTypes.normal },
-          { title: '面料', key: 'otherField1', width: '5%', type: FormTypes.normal },
-          { title: '安全类别', key: 'otherField2', width: '5%', type: FormTypes.normal },
-          { title: '执行标准', key: 'otherField3', width: '5%', type: FormTypes.normal },
-          { title: '商品ID', key: 'mId', width: '5%', type: FormTypes.normal },
-          { title: '扩展4', key: 'otherField4', width: '4%', type: FormTypes.normal },
-          { title: '扩展5', key: 'otherField5', width: '4%', type: FormTypes.normal },
-          { title: '扩展6', key: 'otherField6', width: '4%', type: FormTypes.normal },
-          { title: '扩展7', key: 'otherField7', width: '4%', type: FormTypes.normal },
-          { title: '库存', key: 'stock', width: '5%', type: FormTypes.normal },
-          { title: '采购价', key: 'purchaseDecimal', width: '5%', type: FormTypes.normal },
-          { title: '零售价', key: 'commodityDecimal', width: '5%', type: FormTypes.normal },
-          { title: '销售价', key: 'wholesaleDecimal', width: '5%', type: FormTypes.normal },
-          { title: '最低售价', key: 'lowDecimal', width: '5%', type: FormTypes.normal },
-          { title: 'SKU单位', key: 'commodityUnit', width: '5%', type: FormTypes.normal },
-          { title: 'SKU_ID', key: 'meId', width: '5%', type: FormTypes.normal },
-          { title: '序列号', key: 'snList', width: '12%', type: FormTypes.popupJsh, kind: 'sn', multi: true },
-          { title: '批号', key: 'batchNumber', width: '8%', type: FormTypes.popupJsh, kind: 'batch', multi: false },
-          { title: '有效期', key: 'expirationDate', width: '9%', type: FormTypes.input, readonly: true },
-          { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
-            validateRules: [{ required: true, message: '${title}不能为空' }]
-          },
-          { title: '单价', key: 'unitPrice', width: '6%', type: FormTypes.inputNumber },
-          { title: '金额', key: 'allPrice', width: '6%', type: FormTypes.inputNumber, statistics: true },
-          { title: '备注', key: 'remark', width: '7%', type: FormTypes.input }
-        ],
-        // 默认显示：商品信息 + SKU信息 + 数量金额
-        defDataIndex: ['depotId','barCode','name','code','imgName','skuCode','specValues','unit','brand','mnemonic','categoryName','weight','mfrs',
-          'otherField1','otherField2','otherField3','mId','stock','purchaseDecimal','commodityDecimal','wholesaleDecimal','lowDecimal',
-          'operNumber','unitPrice','allPrice','remark','snList','batchNumber','expirationDate'],
+        // 明细列定义统一来自 '@/views/bill/config/detailColumns'，与入库类明细同一套字段
+        defColumns: buildRetailOutColumns(),
+        defDataIndex: RETAIL_OUT_DEFAULT_COLUMNS,
+        //扫码录入方式：sku（直接加行）/ barCode / qrCode（弹出商品选择）
+        scanType: 'sku',
+        scanBarCode: '',
+        rowCanEdit: true,
         materialTable: {
           loading: false,
           dataSource: [],
@@ -342,15 +300,102 @@
       let realScreenWidth = window.screen.width
       this.minWidth = realScreenWidth<1500?1800:2200
     },
+    computed: {
+      //扫码输入框提示语，跟随所选录入方式变化
+      scanPlaceholder() {
+        if (this.scanType === 'sku') {
+          return '请输入或扫描SKU码后回车，直接加入明细（重复输入数量+1）'
+        }
+        if (this.scanType === 'barCode') {
+          return '请输入或扫描商品码后回车，弹出该码对应的商品供选择'
+        }
+        return '请输入或扫描二维码后回车，弹出该码对应的商品供选择'
+      }
+    },
     methods: {
+      //扫码/输入回车：SKU码直接加入明细，商品码/二维码弹出商品选择窗
+      scanPressEnter() {
+        const code = (this.scanBarCode || '').trim()
+        if (!code) return
+        if (this.scanType !== 'sku') {
+          this.clearScanAndFocus()
+          this.$refs.selectMaterialModal.showModal(code)
+          return
+        }
+        this.addSkuCodeToDetail(code)
+      },
+      //按SKU码查询商品并加入明细；同一SKU重复录入则数量+1
+      addSkuCodeToDetail(skuCode) {
+        const param = {
+          skuCode: skuCode,
+          organId: this.form.getFieldValue('organId'),
+          mpList: getMpListShort(Vue.ls.get('materialPropertyList')),
+          prefixNo: this.prefixNo
+        }
+        getMaterialByBarCode(param).then((res) => {
+          if (!(res && res.code === 200 && res.data && res.data.length > 0)) {
+            this.$message.warning('未找到SKU码为「' + skuCode + '」的商品')
+            this.clearScanAndFocus()
+            return
+          }
+          const mInfo = res.data[0]
+          const detailArr = this.materialTable.dataSource.slice()
+          const exist = detailArr.find(r => mInfo.meId != null && String(r.meId) === String(mInfo.meId))
+          if (exist) {
+            exist.operNumber = (exist.operNumber - 0) + 1
+            const unitPrice = exist.unitPrice - 0
+            exist.allPrice = (unitPrice * exist.operNumber).toFixed(2) - 0
+          } else {
+            this.changeColumnShow(mInfo)
+            const mObj = this.parseInfoToObj(mInfo)
+            mObj.id = this._genDetailId()
+            mObj.depotId = mInfo.depotId == null ? mInfo.depotId : String(mInfo.depotId)
+            mObj.stock = mInfo.stock
+            mObj.meId = mInfo.meId
+            mObj.mId = mInfo.id
+            mObj.code = mInfo.code
+            mObj.skuCode = mInfo.skuCode
+            mObj.specValues = mInfo.specValues
+            mObj.categoryName = mInfo.categoryName
+            mObj.imgName = mInfo.imgName
+            mObj.purchaseDecimal = mInfo.purchaseDecimal
+            mObj.commodityDecimal = mInfo.commodityDecimal
+            mObj.marketPrice = mInfo.marketPrice
+            mObj.fabric = mInfo.fabric
+            mObj.filler = mInfo.filler
+            mObj.specJson = mInfo.specJson
+            mObj.specSummary = mInfo.specSummary
+            mObj.skuName = mInfo.skuName
+            detailArr.push(mObj)
+          }
+          this.materialTable.dataSource = detailArr
+          this.$nextTick(() => {
+            const target = this.$refs[this.refKeys[0]]
+            if (target && typeof target.recalcAllStatisticsColumns === 'function') {
+              target.recalcAllStatisticsColumns()
+            }
+            if (typeof this.autoChangePrice === 'function') {
+              this.autoChangePrice(target)
+            }
+          })
+          this.clearScanAndFocus()
+        })
+      },
+      //清空扫码输入框并重新聚焦，方便连续录入
+      clearScanAndFocus() {
+        this.scanBarCode = ''
+        this.$nextTick(() => {
+          if (this.$refs.scanBarCode) this.$refs.scanBarCode.focus()
+        })
+      },
+      // 图片地址 / 规格显示统一使用 '@/views/material/utils/materialDisplay' 中的实现
+      getRowImgUrl,
+      getSpecDisplay,
       //调用完edit()方法之后会自动调用此方法
       editAfter() {
         this.billStatus = '0'
         this.currentSelectDepotId = ''
         this.changeColumnHide()
-        this.changeFormTypes(this.materialTable.columns, 'snList', 0)
-        this.changeFormTypes(this.materialTable.columns, 'batchNumber', 0)
-        this.changeFormTypes(this.materialTable.columns, 'expirationDate', 0)
         if (this.action === 'add') {
           this.addInit(this.prefixNo)
           this.fileList = []
@@ -475,27 +520,6 @@
         this.$nextTick(() => {
           this.form.setFieldsValue({'backAmount':backAmount})
         });
-      },
-      // 明细行SKU图片地址
-      getDetailImgUrl(imgUrl) {
-        if (!imgUrl) return ''
-        if (imgUrl.indexOf('http') === 0) return imgUrl
-        const base = (window._CONFIG && window._CONFIG['domianURL']) ? window._CONFIG['domianURL'] : ''
-        if (imgUrl.indexOf('systemConfig/static/') === -1) {
-          return base + '/systemConfig/static/' + imgUrl
-        }
-        return base + '/' + imgUrl
-      },
-      // 规格值JSON转为“颜色:蓝色 / 规格:200*230”
-      parseSpecValues(specValues) {
-        if (!specValues) return ''
-        try {
-          const arr = JSON.parse(specValues)
-          if (!Array.isArray(arr)) return specValues
-          return arr.map(item => item.attributeName + ':' + item.valueText).join(' / ')
-        } catch (e) {
-          return specValues
-        }
       },
       // 初始化明细列：完整列定义交给 DataTable 组件，由列设置（tableKey + defaultColumns）控制显隐
       initColumns() {

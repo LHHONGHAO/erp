@@ -19,20 +19,34 @@ export const RENDER_SLOTS = {
   image: 'mtImage',
   spec: 'mtSpec',
   name: 'mtName',
+  stock: 'mtStock',
+  code: 'mtCode',
   action: 'mtAction'
 }
 
 /**
- * 操作列宽度约定：列宽 = 列内按钮总宽 + 20px
+ * 码列三合一：库存页按显示方式只保留一列，标题与取值随显示方式变化
+ *  spu  单类显示 → 商品码，取 jsh_material.code
+ *  sku  单品显示 → SKU码，取 sku.sku_code
+ *  unit 单件显示 → SN码，取 jsh_material_instance.unit_code
+ */
+export const CODE_MODES = {
+  spu: { title: '商品码', field: 'code' },
+  sku: { title: 'SKU码', field: 'skuCode' },
+  unit: { title: 'SN码', field: 'unitCode' }
+}
+
+/**
+ * 操作列宽度约定：列宽 = 列内按钮总宽 + 40px（左右各 20px 留白）
  *  按钮宽 = 标题字数 × 14px（不足 unitMin 按 unitMin）
  *  相邻按钮之间有竖向分割线（1px + 左右各 8px 外边距）
- *  操作列单元格内边距在样式里置 0，保证多出来的正好是 20px
+ *  操作列单元格内边距在样式里置 0，保证多出来的正好是 40px
  */
 export const ACTION_WIDTH = {
   char: 14,     // 14px 字号下一个汉字约占 14px
   unitMin: 28,  // 单个按钮最小宽度（两个字的链接）
   divider: 17,  // a-divider 竖向分割线（1px + 左右各 8px 外边距）
-  padding: 20   // 约定：列宽比按钮总宽多 20px
+  padding: 40   // 约定：列宽比按钮总宽多 40px
 }
 
 /**
@@ -85,10 +99,16 @@ export const MATERIAL_COLUMNS = [
   { field: 'marketPrice', title: '划线价', width: 80, dimensions: SKU, defaultVisible: true },
   { field: 'skuCreateTime', title: '创建时间', width: 150, dimensions: SKU },
   { field: 'skuUpdateTime', title: '更新时间', width: 150, dimensions: SKU },
-  // ---- 库存（jsh_material_current_stock） ----
+  // ---- 库存（jsh_material_current_stock / jsh_material_initial_stock） ----
   { field: 'depotName', title: '仓库', width: 100, dimensions: STOCK },
-  { field: 'currentStock', title: '当前库存', width: 90, align: 'center', dimensions: STOCK },
+  { field: 'initialStock', title: '初始库存', width: 90, align: 'center', dimensions: STOCK },
+  { field: 'currentStock', title: '当前库存', width: 90, align: 'center', render: 'stock', dimensions: STOCK },
+  { field: 'currentStockPrice', title: '库存金额', width: 90, dimensions: STOCK },
+  { field: 'currentWeight', title: '重量', width: 80, dimensions: STOCK },
   { field: 'currentUnitPrice', title: '当前单价', width: 90, dimensions: STOCK },
+  // ---- 单件（jsh_material_instance），非单件显示时无数据，保持空白 ----
+  { field: 'unitStatus', title: '单件状态', width: 90, align: 'center', dimensions: STOCK },
+  { field: 'inboundTime', title: '单件入库时间', width: 150, dimensions: STOCK },
   // ---- 操作列（宽度由 actionColumnWidth 按按钮数量计算，此处为兜底值） ----
   { field: 'action', title: '操作', width: 180, align: 'center', className: 'mt-action-col', render: 'action', dimensions: ALL, defaultVisible: true, alwaysVisible: true, fixed: 'right' }
 ]
@@ -97,7 +117,18 @@ export const MATERIAL_COLUMNS = [
 const DEFAULT_ORDER = [
   'name', 'code', 'skuCode', 'categoryName', 'unit', 'brand', 'mnemonic', 'weight', 'mfrs',
   'fabric', 'safetyCategory', 'executiveStandard', 'grade', 'inspection', 'filler', 'mBarCode',
-  'purchaseDecimal', 'commodityDecimal', 'marketPrice', 'depotName', 'currentStock', 'action'
+  'purchaseDecimal', 'commodityDecimal', 'marketPrice',
+  'initialStock', 'currentStock', 'currentStockPrice', 'currentWeight', 'depotName', 'currentUnitPrice',
+  'action'
+]
+
+/**
+ * 库存页默认显示列（单类/单品/单件三种显示方式共用一套，切换显示方式不增减列）
+ * materialCode 为码列三合一后的虚拟列，取值随显示方式变化
+ */
+export const STOCK_DEFAULT_COLUMNS = [
+  'materialCode', 'name', 'specDisplay', 'categoryName', 'position', 'unit',
+  'purchaseDecimal', 'initialStock', 'currentStock', 'currentStockPrice', 'currentWeight', 'action'
 ]
 
 /**
@@ -122,6 +153,8 @@ export function buildTableColumns(dimension, columns) {
       if (col.className) tableCol.className = col.className
       // 操作列宽度由 actionColumnWidth 计算，禁止被配置中心/拖拽保存的宽度覆盖
       if (col.render === 'action') tableCol.__lockWidth = true
+      // 库存列需要参与合计行显示，汇总行也走插槽渲染
+      if (col.render === 'stock') tableCol.summaryRender = true
       if (col.render && RENDER_SLOTS[col.render]) {
         tableCol.scopedSlots = { customRender: RENDER_SLOTS[col.render] }
       }

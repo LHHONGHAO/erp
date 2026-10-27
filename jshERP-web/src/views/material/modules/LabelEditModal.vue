@@ -227,6 +227,10 @@
 </template>
 
 <script>
+  // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
+  import { MATERIAL_COLUMNS } from '@/views/material/config/materialColumns'
+  import { getSpecDisplay } from '@/views/material/utils/materialDisplay'
+
   // 像素与毫米转换常量（96dpi: 1mm ≈ 3.779528px）
   var PX_PER_MM = 3.779528
 
@@ -334,7 +338,7 @@
       buildAttrList() {
         var record = this.record
         var sku = this.sku
-        return [
+        var list = [
           { key: 'name', label: '商品名称', value: record.name || '', isCustom: false },
           { key: 'standard', label: '规格型号', value: record.standard || '', isCustom: false },
           { key: 'model', label: '型号', value: record.model || '', isCustom: false },
@@ -350,13 +354,32 @@
           { key: 'otherField2', label: '扩展2', value: record.otherField2 || '', isCustom: false },
           { key: 'otherField3', label: '扩展3', value: record.otherField3 || '', isCustom: false },
           { key: 'specValues', label: '规格值', value: sku.specValuesText || '', isCustom: false },
+          { key: 'specDisplay', label: '规格显示', value: getSpecDisplay(Object.assign({}, record, sku)), isCustom: false },
           { key: 'skuCode', label: 'SKU码', value: sku.skuCode || '', isCustom: false },
           { key: 'purchaseDecimal', label: '采购价', value: sku.purchaseDecimal || '', isCustom: false },
           { key: 'commodityDecimal', label: '零售价', value: sku.commodityDecimal || '', isCustom: false },
           { key: 'wholesaleDecimal', label: '销售价', value: sku.wholesaleDecimal || '', isCustom: false },
           { key: 'lowDecimal', label: '最低售价', value: sku.lowDecimal || '', isCustom: false },
           { key: 'currentStock', label: '库存', value: sku.currentStock != null ? String(sku.currentStock) : '', isCustom: false }
-        ].filter(function(attr) { return attr.value })
+        ]
+        // 其余商品列：直接取商品信息表格的列定义（标题一致），值从当前 SKU / 商品行取
+        var exists = {}
+        list.forEach(function(attr) { exists[attr.key] = true })
+        var self = this
+        MATERIAL_COLUMNS.forEach(function(col) {
+          if (!col.field || col.field === 'action' || col.field === 'imgName' || exists[col.field]) return
+          var value = self.resolveFieldValue(col.field)
+          if (value == null || value === '') return
+          list.push({ key: col.field, label: col.title, value: String(value), isCustom: false })
+        })
+        return list.filter(function(attr) { return attr.value !== '' && attr.value != null })
+      },
+      // SKU 字段优先，其次商品字段
+      resolveFieldValue(field) {
+        var skuVal = this.sku ? this.sku[field] : undefined
+        if (skuVal != null && skuVal !== '') return skuVal
+        var recordVal = this.record ? this.record[field] : undefined
+        return recordVal
       },
       flattenCategoryTree(tree) {
         var result = []

@@ -175,6 +175,7 @@
         <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
         <label-edit-modal ref="labelEditModal"></label-edit-modal>
+        <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
         <batch-set-info-modal ref="batchSetInfoModalForm" @ok="modalFormOk"></batch-set-info-modal>
       </a-card>
     </a-col>
@@ -185,6 +186,7 @@
   import ImportFileModal from '@/components/tools/ImportFileModal'
   import BatchSetInfoModal from './modules/BatchSetInfoModal'
   import LabelEditModal from './modules/LabelEditModal'
+  import LabelPrintModal from './modules/LabelPrintModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { postAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
@@ -201,6 +203,7 @@
       ImportFileModal,
       BatchSetInfoModal,
       LabelEditModal,
+      LabelPrintModal,
       MaterialTable
     },
     data () {
@@ -465,13 +468,17 @@
           this.$refs.modalForm.showOkFlag = false
         }
       },
-      // 打印SKU标签：打开标签编辑Modal，加载SKU属性和商品基础信息
+      // 打印SKU标签：先按模板实际尺寸预览，预览内可选择「打印」或「编辑」
       handlePrintLabel(record, sku) {
         if (!sku) {
           this.$message.warning('SKU信息缺失，无法打印')
           return
         }
-        this.$refs.labelEditModal.open(record, sku, this.categoryTree)
+        this.$refs.labelPrintModal.open(record, sku, this.categoryTree)
+      },
+      // 预览弹层点「编辑」：打开标签编辑弹层
+      handleEditLabel({ record, sku, categoryTree }) {
+        this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree)
       },
       handleImportXls() {
         let importExcelUrl = this.url.importExcelUrl

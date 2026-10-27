@@ -142,6 +142,8 @@
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
   import DataTable from '@/components/DataTable'
+  import { buildDetailColumns, DETAIL_DEFAULT_COLUMNS } from '../config/detailColumns'
+  import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
   import JSelectList from '@/components/jeecgbiz/JSelectList'
   import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
   import Vue from 'vue'
@@ -197,29 +199,9 @@
         },
         refKeys: ['materialDataTable', ],
         activeKey: 'materialDataTable',
-        defColumns: [
-          { title: '图片', key: 'imgName', width: '6%', type: FormTypes.normal },
-          { title: '商品名称', key: 'name', width: '14%', type: FormTypes.normal },
-          { title: 'SKU商品码', key: 'skuCode', width: '12%', type: FormTypes.normal },
-          { title: '产品类型', key: 'categoryName', width: '9%', type: FormTypes.normal },
-          { title: '单位', key: 'unit', width: '5%', type: FormTypes.normal },
-          { title: '面料', key: 'fabric', width: '7%', type: FormTypes.normal },
-          { title: '规格显示', key: 'specDisplay', width: '16%', type: FormTypes.normal },
-          { title: '填充物', key: 'filler', width: '7%', type: FormTypes.normal },
-          { title: '进货价', key: 'purchaseDecimal', width: '6%', type: FormTypes.normal },
-          { title: '零售价', key: 'commodityDecimal', width: '6%', type: FormTypes.normal },
-          { title: '划线价', key: 'marketPrice', width: '6%', type: FormTypes.normal },
-          { title: '数量', key: 'operNumber', width: '6%', type: FormTypes.inputNumber, statistics: true,
-            validateRules: [{ required: true, message: '${title}不能为空' }]
-          },
-          { title: '仓库', key: 'depotId', width: '9%', type: FormTypes.select, placeholder: '请选择${title}', options: [],
-            allowSearch:true, validateRules: [{ required: true, message: '${title}不能为空' }]
-          },
-          { title: '单价', key: 'unitPrice', width: '5%', type: FormTypes.hidden },
-          { title: '金额', key: 'allPrice', width: '5%', type: FormTypes.hidden, statistics: true },
-          { title: '关联id', key: 'linkId', width: '5%', type: FormTypes.hidden },
-        ],
-        defDataIndex: ['imgName','name','skuCode','categoryName','unit','fabric','specDisplay','filler','purchaseDecimal','commodityDecimal','marketPrice','operNumber','depotId'],
+        // 明细列定义统一来自 '@/views/bill/config/detailColumns'，页面不再重复声明
+        defColumns: buildDetailColumns(),
+        defDataIndex: DETAIL_DEFAULT_COLUMNS,
         materialTable: {
           loading: false,
           dataSource: [],
@@ -356,53 +338,9 @@
           if (this.$refs.scanBarCode) this.$refs.scanBarCode.focus()
         })
       },
-      //明细行图片地址（与商品信息页面保持一致）
-      getRowImgUrl(record) {
-        if (!record || !record.imgName) return ''
-        const imgUrl = record.imgName
-        if (imgUrl.startsWith('http')) return imgUrl
-        const base = (window._CONFIG && window._CONFIG['domianURL']) ? window._CONFIG['domianURL'] : ''
-        if (imgUrl.indexOf('systemConfig/static/') === -1) {
-          return base + '/systemConfig/static/' + imgUrl
-        }
-        return base + '/' + imgUrl
-      },
-      //规格显示（与商品信息页面一致）：规格名：规格值，多个规格换行并列
-      getSpecDisplay(record) {
-        if (!record) return ''
-        if (record.specJson) {
-          try {
-            const arr = JSON.parse(record.specJson)
-            if (Array.isArray(arr) && arr.length > 0) {
-              return arr.map(item => {
-                const name = item.name || item.attributeName || ''
-                const value = item.value || item.valueText || ''
-                return name ? (name + '：' + value) : value
-              }).filter(t => t !== '').join('\n')
-            }
-          } catch (e) {
-            // 解析失败继续走兜底
-          }
-        }
-        if (record.specSummary) {
-          return record.specSummary.split(';').map(part => part.replace(':', '：')).filter(t => t !== '').join('\n')
-        }
-        if (record.specValues) {
-          try {
-            const arr = JSON.parse(record.specValues)
-            if (Array.isArray(arr) && arr.length > 0) {
-              return arr.map(item => {
-                const name = item.attributeName || item.name || ''
-                const value = item.valueText || item.value || ''
-                return name ? (name + '：' + value) : value
-              }).filter(t => t !== '').join('\n')
-            }
-          } catch (e) {
-            return record.specValues
-          }
-        }
-        return ''
-      },
+      // 图片地址 / 规格显示统一使用 '@/views/material/utils/materialDisplay' 中的实现
+      getRowImgUrl,
+      getSpecDisplay,
       //调用完edit()方法之后会自动调用此方法
       editAfter() {
         this.billStatus = '0'

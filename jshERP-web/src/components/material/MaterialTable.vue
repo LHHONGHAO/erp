@@ -28,6 +28,16 @@
       <div class="mt-spec-cell">{{ resolveSpec(record) }}</div>
     </template>
 
+    <!-- 内置：码列（商品码 / SKU码 / SN码 三合一，标题与取值随 codeMode 变化） -->
+    <template slot="mtCode" slot-scope="text, record">
+      {{ record._dataTableSummary ? text : resolveCode(record) }}
+    </template>
+
+    <!-- 内置：库存（悬浮显示大单位库存） -->
+    <template slot="mtStock" slot-scope="text, record">
+      <a-tooltip :title="record.bigUnitStock || ''">{{ text }}</a-tooltip>
+    </template>
+
     <!-- 内置：操作列 -->
     <template slot="mtAction" slot-scope="text, record">
       <span v-if="visibleActions(record).length > 0" class="mt-action-cell">
@@ -43,11 +53,11 @@
 <script>
   import Vue from 'vue'
   import DataTable from '@/components/DataTable'
-  import { MATERIAL_COLUMNS, buildTableColumns, defaultColumnKeys, actionColumnWidth } from '@/views/material/config/materialColumns'
+  import { MATERIAL_COLUMNS, buildTableColumns, defaultColumnKeys, actionColumnWidth, CODE_MODES } from '@/views/material/config/materialColumns'
   import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
 
   /** 内置插槽名：父组件透传时跳过，避免同名插槽冲突 */
-  const BUILTIN_SLOTS = ['mtImage', 'mtName', 'mtSpec', 'mtAction']
+  const BUILTIN_SLOTS = ['mtImage', 'mtName', 'mtSpec', 'mtCode', 'mtStock', 'mtAction']
 
   export default {
     name: 'MaterialTable',
@@ -60,12 +70,30 @@
       /** 默认显示列（field 数组），不传则按列配置的 defaultVisible + 默认顺序 */
       defaultColumns: { type: Array, default: undefined },
       /** 操作列按钮：[{ title, click(record), show(record)? }] */
-      actions: { type: Array, default: () => [] }
+      actions: { type: Array, default: () => [] },
+      /** 码列三合一：把 SPU码/SKU码 合并为一列，取值与标题随 codeMode 变化（库存页使用） */
+      mergeCode: { type: Boolean, default: false },
+      /** 码列显示方式：spu=商品码 / sku=SKU码 / unit=SN码 */
+      codeMode: { type: String, default: 'spu' }
     },
     computed: {
       /** 按粒度过滤并转换为 a-table 列；操作列宽度按按钮数量重新计算 */
       tableColumns() {
         let cols = buildTableColumns(this.dimension, this.columns)
+        // 码列三合一：去掉 SPU码 / SKU码 两列，在原位置插入一列动态码列
+        if (this.mergeCode) {
+          const firstIdx = cols.findIndex(col => col.dataIndex === 'code' || col.dataIndex === 'skuCode')
+          cols = cols.filter(col => col.dataIndex !== 'code' && col.dataIndex !== 'skuCode')
+          cols.splice(firstIdx > -1 ? firstIdx : 0, 0, {
+            title: CODE_MODES.spu.title,
+            dataIndex: 'materialCode',
+            key: 'materialCode',
+            width: 150,
+            ellipsis: true,
+            summaryRender: true,
+            scopedSlots: { customRender: 'mtCode' }
+          })
+        }
         // 未配置操作按钮的场景（如选商品弹窗）不显示操作列
         if (this.actions.length === 0) {
           return cols.filter(col => col.dataIndex !== 'action')
@@ -79,15 +107,40 @@
       /** 默认显示列 */
       resolvedDefaultColumns() {
         const allKeys = this.tableColumns.map(c => c.dataIndex)
-        const defaults = (this.defaultColumns && this.defaultColumns.length > 0)
+        let defaults = (this.defaultColumns && this.defaultColumns.length > 0)
           ? this.defaultColumns
           : defaultColumnKeys(this.dimension, this.columns)
+        // 码列三合一后，原有的 code / skuCode 统一映射为 materialCode（只保留一次）
+        if (this.mergeCode) {
+          const mapped = []
+          defaults.forEach(k => {
+            if (k === 'code' || k === 'skuCode') {
+              if (mapped.indexOf('materialCode') === -1) mapped.push('materialCode')
+            } else {
+              mapped.push(k)
+            }
+          })
+          defaults = mapped
+        }
         return defaults.filter(k => allKeys.indexOf(k) > -1)
       },
       /** 需要透传给 DataTable 的父组件插槽名 */
       forwardSlotNames() {
         return Object.keys(this.$scopedSlots).filter(name => BUILTIN_SLOTS.indexOf(name) === -1)
       }
+    },
+    watch: {
+      codeMode() {
+        this.syncCodeTitle()
+      }
+    },
+    mounted() {
+      this.syncCodeTitle()
+      // 列被重建（配置中心回填、列设置调整）后重新套用码列标题，避免标题被还原
+      this.$watch(
+        () => (this.$refs.dataTable ? this.$refs.dataTable.displayColumns : null),
+        () => this.applyCodeTitle()
+      )
     },
     created() {
       // 兼容旧版本列设置：原「规格JSON」列已改为「规格显示」列
@@ -105,6 +158,27 @@
       resolveSpec(record) {
         return getSpecDisplay(record)
       },
+      /** 码列取值：单类→SPU码 / 单品→SKU码 / 单件→SN码，缺失时回退商品条码 */
+      resolveCode(record) {
+        if (!record) return ''
+        const mode = CODE_MODES[this.codeMode] || CODE_MODES.spu
+        return record[mode.field] || record.mBarCode || ''
+      },
+      /** 只改码列标题（不重建列，避免切换显示方式时重置列设置） */
+      syncCodeTitle() {
+        if (!this.mergeCode) return
+        this.$nextTick(() => this.applyCodeTitle())
+      },
+      /** 码列标题与当前显示方式对齐（标题已一致时不重复触发重建） */
+      applyCodeTitle() {
+        const dt = this.$refs.dataTable
+        if (!dt || !this.mergeCode) return
+        const mode = CODE_MODES[this.codeMode] || CODE_MODES.spu
+        const col = (dt.allColumns || []).find(c => c.dataIndex === 'materialCode')
+        if (col && col.title !== mode.title) {
+          dt.updateColumnTitle('materialCode', mode.title)
+        }
+      },
       visibleActions(record) {
         return (this.actions || []).filter(act => !act.show || act.show(record))
       },
@@ -112,6 +186,11 @@
         if (act && typeof act.click === 'function') {
           act.click(record)
         }
+      },
+      /** 暴露给父组件：当前实际显示的列（用于导出） */
+      getVisibleColumns() {
+        const dt = this.$refs.dataTable
+        return (dt && dt.displayColumns) || []
       },
       /** 暴露给父组件：恢复默认列 */
       resetColumns() {

@@ -111,7 +111,7 @@
                     v-for="attr in selectedAttrList"
                     :key="attr.key"
                     class="label-preview-item"
-                    :class="{ active: currentAttrKey === attr.key }"
+                    :class="{ active: currentAttrKey === attr.key, 'is-multiline': isMultilineValue(attr.value) }"
                     :style="getItemStyle(attr.key)"
                     @mousedown="onItemMouseDown($event, attr.key)"
                     @dblclick="onItemDoubleClick($event, attr)"
@@ -150,6 +150,16 @@
         <!-- 右栏：标签尺寸 + 样式编辑 -->
         <a-col :span="8">
           <div class="label-edit-panel">
+            <!-- 标签文字：显示当前标签里的全部文字内容 -->
+            <div class="label-text-box">
+              <div class="label-edit-section-title">标签文字</div>
+              <a-textarea
+                :value="labelTextContent"
+                :rows="5"
+                readonly
+                placeholder="勾选属性后，这里显示标签中的全部文字"
+              />
+            </div>
             <!-- 标签宽高（毫米，固定最上端） -->
             <div class="label-size-editor">
               <div class="label-edit-section-title">标签尺寸（毫米）</div>
@@ -210,6 +220,18 @@
                 </a-col>
               </a-row>
 
+              <!-- 字间距 + 行距 -->
+              <a-row :gutter="4" style="margin-top:4px">
+                <a-col :span="12">
+                  <span class="style-label">字间距</span>
+                  <a-input-number v-model="attrStyles[currentAttrKey].letterSpacing" :min="0" :max="30" :step="0.5" size="small" style="width:60px" />
+                </a-col>
+                <a-col :span="12">
+                  <span class="style-label">行距</span>
+                  <a-input-number v-model="attrStyles[currentAttrKey].lineHeight" :min="0.8" :max="4" :step="0.1" size="small" style="width:60px" />
+                </a-col>
+              </a-row>
+
               <!-- X + Y -->
               <a-row :gutter="4" style="margin-top:4px">
                 <a-col :span="12">
@@ -243,8 +265,8 @@
 
 <script>
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
-  import { MATERIAL_COLUMNS } from '@/views/material/config/materialColumns'
-  import { getSpecDisplay } from '@/views/material/utils/materialDisplay'
+  import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
+  import { printLabel } from '@/views/material/utils/labelPrint'
 
   // 像素与毫米转换常量（96dpi: 1mm ≈ 3.779528px）
   var PX_PER_MM = 3.779528
@@ -285,6 +307,7 @@
         resizeStartY: 0,
         resizeOrigW: 0,
         resizeOrigH: 0,
+        resizeOrigFont: 14,
         // 属性名下拉
         presetLabelSelect: undefined,
         presetLabelNames: [
@@ -298,6 +321,17 @@
     computed: {
       selectedAttrList() {
         return this.allAttrs.filter(attr => this.selectedAttrs.indexOf(attr.key) > -1)
+      },
+      // 标签中所有文字，按预览顺序逐行输出「属性名: 值」，属性名留空时只输出值
+      labelTextContent() {
+        var self = this
+        return this.selectedAttrList.map(function(attr) {
+          var label = Object.prototype.hasOwnProperty.call(self.attrLabels, attr.key)
+            ? self.attrLabels[attr.key]
+            : (attr.label || '')
+          var value = attr.value == null ? '' : String(attr.value)
+          return label ? (label + ': ' + value) : value
+        }).join('\n')
       },
       getCurrentAttr() {
         return this.allAttrs.find(a => a.key === this.currentAttrKey)
@@ -356,47 +390,8 @@
         this.visible = false
       },
       buildAttrList() {
-        var record = this.record
-        var sku = this.sku
-        var self = this
-        var list = []
-        var exists = {}
-        // 1. 商品信息表格的所有列（商品基础信息列 + SKU 信息列 + 库存列），标题与表格一致
-        //    值取当前 SKU / 商品行，暂时为空也保留，保证选择属性里有完整的商品信息列
-        MATERIAL_COLUMNS.forEach(function(col) {
-          if (!col.field || col.field === 'action' || col.field === 'imgName' || exists[col.field]) return
-          var value = col.field === 'specDisplay'
-            ? getSpecDisplay(Object.assign({}, record, sku))
-            : self.resolveFieldValue(col.field)
-          exists[col.field] = true
-          list.push({ key: col.field, label: col.title, value: value == null ? '' : String(value), isCustom: false })
-        })
-        // 2. 表格里没有对应列、但旧标签模板可能已保存过的属性键，保留以兼容历史模板
-        var legacy = [
-          { key: 'standard', label: '规格型号', value: record.standard },
-          { key: 'model', label: '型号', value: record.model },
-          { key: 'color', label: '颜色', value: record.color },
-          { key: 'commodityUnit', label: '单位', value: record.commodityUnit },
-          { key: 'otherField1', label: '扩展1', value: record.otherField1 },
-          { key: 'otherField2', label: '扩展2', value: record.otherField2 },
-          { key: 'otherField3', label: '扩展3', value: record.otherField3 },
-          { key: 'specValues', label: '规格值', value: sku.specValuesText },
-          { key: 'wholesaleDecimal', label: '销售价', value: sku.wholesaleDecimal },
-          { key: 'lowDecimal', label: '最低售价', value: sku.lowDecimal }
-        ]
-        legacy.forEach(function(attr) {
-          if (exists[attr.key]) return
-          exists[attr.key] = true
-          list.push({ key: attr.key, label: attr.label, value: attr.value == null ? '' : String(attr.value), isCustom: false })
-        })
-        return list
-      },
-      // SKU 字段优先，其次商品字段
-      resolveFieldValue(field) {
-        var skuVal = this.sku ? this.sku[field] : undefined
-        if (skuVal != null && skuVal !== '') return skuVal
-        var recordVal = this.record ? this.record[field] : undefined
-        return recordVal
+        // 与打印标签预览页共用同一套属性来源（商品信息表格全部列 + 旧模板兼容键）
+        return buildLabelAttrs(this.record, this.sku)
       },
       flattenCategoryTree(tree) {
         var result = []
@@ -427,6 +422,8 @@
           top: s.y + 'px',
           fontSize: s.fontSize + 'px',
           fontWeight: s.fontWeight,
+          letterSpacing: (s.letterSpacing || 0) + 'px',
+          lineHeight: String(s.lineHeight || 1.3),
           width: (s.width || 120) + 'px',
           height: (s.height || 24) + 'px'
         }
@@ -436,19 +433,36 @@
         this.selectedAttrs.forEach(function(key) {
           if (!self.attrStyles[key]) {
             var idx = self.selectedAttrs.indexOf(key)
+            var attr = self.allAttrs.find(function(a) { return a.key === key })
+            var value = attr && attr.value != null ? String(attr.value) : ''
+            var isSpec = key === 'specDisplay' || key === 'specValues'
             self.$set(self.attrStyles, key, {
               fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal',
-              width: 120, height: 24
+              letterSpacing: 0, lineHeight: 1.3,
+              // 规格等含换行的属性，按商品信息表格中的排版加载（宽 220、行高 18 的多行文本）
+              width: isSpec ? 220 : 120,
+              height: self.calcItemHeight(value, 14)
             })
           }
-          if (!self.attrLabels[key]) {
-            var attr = self.allAttrs.find(function(a) { return a.key === key })
-            self.$set(self.attrLabels, key, attr ? attr.label : '')
+          if (!Object.prototype.hasOwnProperty.call(self.attrLabels, key)) {
+            var attrItem = self.allAttrs.find(function(a) { return a.key === key })
+            self.$set(self.attrLabels, key, attrItem ? attrItem.label : '')
           }
         })
         if (this.currentAttrKey && this.selectedAttrs.indexOf(this.currentAttrKey) === -1) {
           this.currentAttrKey = null
         }
+      },
+      // 值是否为多行（规格：子规格名：子规格值 逐行）
+      isMultilineValue(value) {
+        return value != null && String(value).indexOf('\n') > -1
+      },
+      // 按换行行数计算元素高度，单行时保持 24
+      calcItemHeight(value, fontSize) {
+        var text = value == null ? '' : String(value)
+        var lines = text.split('\n').length
+        if (lines <= 1) return 24
+        return Math.max(24, lines * Math.round((fontSize || 14) * 1.3) + 4)
       },
       // 自定义标签
       addCustomLabel() {
@@ -465,6 +479,7 @@
         var idx = this.selectedAttrs.length - 1
         this.$set(this.attrStyles, key, {
           fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal',
+          letterSpacing: 0, lineHeight: 1.3,
           width: 120, height: 24
         })
         this.$set(this.attrLabels, key, '')
@@ -526,6 +541,7 @@
         this.resizeStartY = e.clientY
         this.resizeOrigW = (this.attrStyles[key] && this.attrStyles[key].width) || 120
         this.resizeOrigH = (this.attrStyles[key] && this.attrStyles[key].height) || 24
+        this.resizeOrigFont = (this.attrStyles[key] && this.attrStyles[key].fontSize) || 14
         this.bindDragEvents()
       },
       // 拖拽过程绑定到 document，缩放后移出预览区也能继续拖拽
@@ -561,10 +577,11 @@
           var newW = Math.max(30, this.resizeOrigW + rdx)
           var newH = Math.max(12, this.resizeOrigH + rdy)
           if (this.attrStyles[this.resizeKey]) {
+            // 外框与字号等比缩放：字体随外框放大/缩小
+            var ratio = newH / this.resizeOrigH
             this.$set(this.attrStyles[this.resizeKey], 'width', Math.round(newW))
             this.$set(this.attrStyles[this.resizeKey], 'height', Math.round(newH))
-            // 字体大小随高度自动调整
-            this.$set(this.attrStyles[this.resizeKey], 'fontSize', Math.max(6, Math.round(newH * 0.6)))
+            this.$set(this.attrStyles[this.resizeKey], 'fontSize', Math.max(6, Math.round(this.resizeOrigFont * ratio)))
           }
         }
       },
@@ -682,7 +699,8 @@
           if (self.attrStyles[key]) {
             cleanStyles[key] = JSON.parse(JSON.stringify(self.attrStyles[key]))
           }
-          if (self.attrLabels[key]) {
+          // 属性名允许留空（留空表示只显示规格值），空字符串也要保存
+          if (Object.prototype.hasOwnProperty.call(self.attrLabels, key)) {
             cleanLabels[key] = self.attrLabels[key]
           }
         })
@@ -730,12 +748,17 @@
         this.attrLabels = {}
         tpl.selectedAttrs.forEach(function(key) {
           if (tpl.attrStyles && tpl.attrStyles[key]) {
-            self.$set(self.attrStyles, key, JSON.parse(JSON.stringify(tpl.attrStyles[key])))
+            var style = JSON.parse(JSON.stringify(tpl.attrStyles[key]))
+            // 旧模板没有字间距/行距，补默认值
+            if (style.letterSpacing == null) style.letterSpacing = 0
+            if (style.lineHeight == null) style.lineHeight = 1.3
+            self.$set(self.attrStyles, key, style)
           } else {
             var idx = tpl.selectedAttrs.indexOf(key)
-            self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', width: 120, height: 24 })
+            self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3, width: 120, height: 24 })
           }
-          if (tpl.attrLabels && tpl.attrLabels[key]) {
+          // 模板里存在该属性名的记录就按记录恢复（含空字符串），只有没记录时才用列标题兜底
+          if (tpl.attrLabels && Object.prototype.hasOwnProperty.call(tpl.attrLabels, key)) {
             self.$set(self.attrLabels, key, tpl.attrLabels[key])
           } else {
             var attr = self.allAttrs.find(function(a) { return a.key === key })
@@ -757,11 +780,6 @@
       // 打印
       handlePrint() {
         var self = this
-        var printWin = window.open('', '_blank', 'width=500,height=600')
-        if (!printWin) {
-          this.$message.warning('请允许弹出窗口以打印标签')
-          return
-        }
         var itemsHtml = ''
         this.selectedAttrList.forEach(function(attr) {
           var style = self.attrStyles[attr.key]
@@ -775,25 +793,17 @@
             'height:' + (style.height || 24) + 'px;' +
             'font-size:' + style.fontSize + 'px;' +
             'font-weight:' + style.fontWeight + ';' +
+            'letter-spacing:' + (style.letterSpacing || 0) + 'px;' +
+            'line-height:' + (style.lineHeight || 1.3) + ';' +
+            'white-space:pre-line;' +
             'overflow:hidden;' +
             '">' + displayText + '</div>'
         })
-        printWin.document.write(
-          '<html><head><title>打印标签</title>' +
-          '<style>' +
-          '@page{margin:0}' +
-          'body{margin:0;padding:0;font-family:Arial,"Microsoft YaHei",sans-serif}' +
-          '.label{position:relative;width:' + this.labelWidth + 'px;height:' + this.labelHeight + 'px;overflow:hidden;page-break-after:always}' +
-          '</style></head><body>' +
-          '<div class="label">' + itemsHtml + '</div>' +
-          '</body></html>'
-        )
-        printWin.document.close()
-        printWin.focus()
-        setTimeout(function() {
-          printWin.print()
-          printWin.close()
-        }, 300)
+        printLabel({
+          widthPx: this.labelWidth,
+          heightPx: this.labelHeight,
+          bodyHtml: itemsHtml
+        })
       }
     },
     beforeDestroy() {
@@ -819,6 +829,13 @@
     color: #999;
     text-align: center;
     padding: 20px 0;
+  }
+  .label-text-box {
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
   }
   .label-size-editor {
     background: #fff;
@@ -909,6 +926,13 @@
     white-space: nowrap;
     display: flex;
     align-items: center;
+  }
+  .label-preview-item.is-multiline {
+    /* 规格等属性按商品信息表格的排版显示：逐行、左对齐 */
+    white-space: pre-line;
+    text-align: left;
+    align-items: flex-start;
+    line-height: 1.3;
   }
   .label-preview-item:hover {
     outline: 1px dashed #1890ff;

@@ -2,16 +2,17 @@
   <div ref="container">
     <a-modal
       title="标签编辑"
-      :width="1100"
+      :width="1440"
       :visible="visible"
       :getContainer="() => $refs.container"
       :maskClosable="false"
       :footer="null"
+      :bodyStyle="{ height: 'calc(96vh - 118px)', overflow: 'hidden' }"
       @cancel="handleCancel"
-      style="top:5%;height:90%;">
-      <a-row :gutter="12">
-        <!-- 左栏：属性勾选 + 自定义标签 + 模板管理 -->
-        <a-col :span="6">
+      style="top:2%;height:96%;max-width:98vw;">
+      <a-row type="flex" :gutter="12" class="le-layout">
+        <!-- 左栏：属性勾选 + 自定义标签 + 模板管理（固定宽度） -->
+        <a-col class="le-side" style="width:300px;flex:none">
           <div class="label-edit-panel">
             <div class="label-edit-section-title">选择属性</div>
             <a-checkbox-group v-model="selectedAttrs" @change="onSelectedChange" style="width:100%">
@@ -58,32 +59,12 @@
                 >{{ tpl.name }}<span class="template-cat-name">（{{ tpl.categoryName }}）</span></div>
               </div>
             </div>
-            <!-- 保存模板 -->
-            <div style="margin-top:10px;border-top:1px solid #e8e8e8;padding-top:8px">
-              <a-input v-model="newTemplateName" placeholder="模板名称" style="margin-bottom:8px" />
-              <a-radio-group v-model="templateType" style="margin-bottom:8px">
-                <a-radio value="normal">普通模板</a-radio>
-                <a-radio value="default">默认模板</a-radio>
-              </a-radio-group>
-              <a-select
-                v-if="templateType === 'default'"
-                v-model="templateCategoryId"
-                style="width:100%;margin-bottom:8px"
-                placeholder="选择品类"
-                showSearch
-                :filterOption="filterCategory"
-              >
-                <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
-              </a-select>
-              <a-button type="primary" size="small" @click="saveTemplate" :disabled="!newTemplateName || (templateType === 'default' && !templateCategoryId)">保存模板</a-button>
-              <a-button size="small" @click="deleteTemplate" style="margin-left:8px" :disabled="!selectedTemplateId">删除</a-button>
-            </div>
           </div>
         </a-col>
 
-        <!-- 中栏：标签预览 -->
-        <a-col :span="10">
-          <div class="label-edit-panel">
+        <!-- 中栏：标签预览（自适应宽度） -->
+        <a-col class="le-center" style="flex:1;min-width:0">
+          <div class="label-edit-panel le-panel-center">
             <div class="label-edit-section-title">
               标签预览（{{ labelWidthMm }}mm × {{ labelHeightMm }}mm）
               <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px">点击属性编辑样式，拖拽移动位置，拖拽右下角调节尺寸，双击自定义标签编辑内容</span>
@@ -147,10 +128,31 @@
           </div>
         </a-col>
 
-        <!-- 右栏：标签尺寸 + 样式编辑 -->
-        <a-col :span="8">
+        <!-- 右栏：标签尺寸 + 样式编辑（固定宽度） -->
+        <a-col class="le-side" style="width:340px;flex:none">
           <div class="label-edit-panel">
-            <!-- 标签文字：显示当前标签里的全部文字内容 -->
+            <!-- 保存模板：固定在右栏顶部 -->
+            <div class="label-save-box">
+              <div class="label-edit-section-title">保存模板</div>
+              <a-input v-model="newTemplateName" placeholder="模板名称" style="margin-bottom:8px" />
+              <a-radio-group v-model="templateType" style="margin-bottom:8px">
+                <a-radio value="normal">普通模板</a-radio>
+                <a-radio value="default">默认模板</a-radio>
+              </a-radio-group>
+              <a-select
+                v-if="templateType === 'default'"
+                v-model="templateCategoryId"
+                style="width:100%;margin-bottom:8px"
+                placeholder="选择品类"
+                showSearch
+                :filterOption="filterCategory"
+              >
+                <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
+              </a-select>
+              <a-button type="primary" size="small" @click="saveTemplate" :disabled="!newTemplateName || (templateType === 'default' && !templateCategoryId)">保存模板</a-button>
+              <a-button size="small" @click="deleteTemplate" style="margin-left:8px" :disabled="!selectedTemplateId">删除</a-button>
+            </div>
+            <!-- 标签文字：只读展示当前标签里的全部文字 -->
             <div class="label-text-box">
               <div class="label-edit-section-title">标签文字</div>
               <a-textarea
@@ -205,56 +207,42 @@
                 />
               </div>
 
-              <!-- 字号 + 粗细 -->
-              <a-row :gutter="4" style="margin-top:8px">
-                <a-col :span="12">
-                  <span class="style-label">字号</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].fontSize" :min="6" :max="72" size="small" style="width:60px" />
-                </a-col>
-                <a-col :span="12">
-                  <span class="style-label">粗细</span>
-                  <a-select v-model="attrStyles[currentAttrKey].fontWeight" size="small" style="width:70px">
-                    <a-select-option value="normal">正常</a-select-option>
-                    <a-select-option value="bold">粗体</a-select-option>
-                  </a-select>
-                </a-col>
-              </a-row>
-
-              <!-- 字间距 + 行距 -->
-              <a-row :gutter="4" style="margin-top:4px">
-                <a-col :span="12">
-                  <span class="style-label">字间距</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].letterSpacing" :min="0" :max="30" :step="0.5" size="small" style="width:60px" />
-                </a-col>
-                <a-col :span="12">
-                  <span class="style-label">行距</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].lineHeight" :min="0.8" :max="4" :step="0.1" size="small" style="width:60px" />
-                </a-col>
-              </a-row>
-
-              <!-- X + Y -->
-              <a-row :gutter="4" style="margin-top:4px">
-                <a-col :span="12">
-                  <span class="style-label">X</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].x" :min="0" :max="labelWidth" size="small" style="width:60px" />
-                </a-col>
-                <a-col :span="12">
-                  <span class="style-label">Y</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].y" :min="0" :max="labelHeight" size="small" style="width:60px" />
-                </a-col>
-              </a-row>
-
-              <!-- 标签尺寸（px） -->
-              <a-row :gutter="4" style="margin-top:4px">
-                <a-col :span="12">
-                  <span class="style-label">宽</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].width" :min="20" :max="500" size="small" style="width:60px" />
-                </a-col>
-                <a-col :span="12">
-                  <span class="style-label">高</span>
-                  <a-input-number v-model="attrStyles[currentAttrKey].height" :min="10" :max="200" size="small" style="width:60px" />
-                </a-col>
-              </a-row>
+              <!-- 字体属性：单列排列，数值项带数字调节按钮 -->
+              <div class="style-field">
+                <span class="style-label">字号</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].fontSize" :min="6" :max="72" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">粗细</span>
+                <a-select v-model="attrStyles[currentAttrKey].fontWeight" size="small" style="width:100%">
+                  <a-select-option value="normal">正常</a-select-option>
+                  <a-select-option value="bold">粗体</a-select-option>
+                </a-select>
+              </div>
+              <div class="style-field">
+                <span class="style-label">字间距(px)</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].letterSpacing" :min="0" :max="30" :step="0.5" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">行距(倍)</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].lineHeight" :min="0.8" :max="4" :step="0.1" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">X</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].x" :min="-999" :max="9999" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">Y</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].y" :min="-999" :max="9999" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">宽</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].width" :min="10" :max="2000" size="small" style="width:100%" />
+              </div>
+              <div class="style-field">
+                <span class="style-label">高</span>
+                <a-input-number v-model="attrStyles[currentAttrKey].height" :min="10" :max="1000" size="small" style="width:100%" />
+              </div>
             </div>
           </div>
         </a-col>
@@ -333,6 +321,7 @@
           return label ? (label + ': ' + value) : value
         }).join('\n')
       },
+      // 当前选中的属性
       getCurrentAttr() {
         return this.allAttrs.find(a => a.key === this.currentAttrKey)
       },
@@ -562,11 +551,11 @@
           if (style) {
             var w = style.width || 120
             var h = style.height || 24
-            var rawX = Math.max(0, Math.min(this.labelWidth - 10, this.dragOrigX + dx))
-            var rawY = Math.max(0, Math.min(this.labelHeight - 10, this.dragOrigY + dy))
+            var rawX = Math.max(-this.labelWidth, Math.min(this.labelWidth * 2, this.dragOrigX + dx))
+            var rawY = Math.max(-this.labelHeight, Math.min(this.labelHeight * 2, this.dragOrigY + dy))
             var snap = this.computeSnap(rawX, rawY, w, h, this.dragKey)
-            this.$set(style, 'x', Math.round(Math.max(0, Math.min(this.labelWidth - 10, snap.x))))
-            this.$set(style, 'y', Math.round(Math.max(0, Math.min(this.labelHeight - 10, snap.y))))
+            this.$set(style, 'x', Math.round(Math.max(-this.labelWidth, Math.min(this.labelWidth * 2, snap.x))))
+            this.$set(style, 'y', Math.round(Math.max(-this.labelHeight, Math.min(this.labelHeight * 2, snap.y))))
             this.guideLines = snap.guides
           }
         }
@@ -812,12 +801,44 @@
   }
 </script>
 <style scoped>
+  /* 三栏布局：左右固定宽度，中间自适应并撑满编辑区高度 */
+  .le-layout {
+    height: 100%;
+  }
+  .le-side,
+  .le-center {
+    height: 100%;
+  }
   .label-edit-panel {
     background: #fafafa;
     border-radius: 4px;
     padding: 12px;
-    max-height: 580px;
+    height: 100%;
+    max-height: none;
     overflow-y: auto;
+    box-sizing: border-box;
+  }
+  /* 中栏：预览区占满剩余高度 */
+  .le-panel-center {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .le-panel-center .label-preview-scroll {
+    flex: 1;
+    height: auto;
+    min-height: 200px;
+  }
+  /* 样式属性：单列，每行一个控件 */
+  .style-field {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .style-field > .style-label {
+    width: 76px;
+    flex: none;
+    margin-right: 8px;
   }
   .label-edit-section-title {
     font-weight: bold;
@@ -831,6 +852,14 @@
     padding: 20px 0;
   }
   .label-text-box {
+    background: #fff;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  /* 保存模板卡片 */
+  .label-save-box {
     background: #fff;
     border: 1px solid #e8e8e8;
     border-radius: 4px;
@@ -891,7 +920,9 @@
     top: 0;
     transform-origin: 0 0;
     background: #fff;
-    overflow: hidden;
+    /* 超出标签范围的文字框仍要完整显示并可继续拖动 */
+    overflow: visible;
+    outline: 1px dashed #bfbfbf;
     user-select: none;
   }
   /* 拖拽对齐参考线 */

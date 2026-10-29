@@ -108,7 +108,7 @@
       destroyOnClose
       :bodyStyle="{ padding: 0 }"
     >
-      <material-select-page @back="materialVisible = false" @select="handleMaterialSelect" />
+      <material-select-page :bar-code="scanBarCode" @back="materialVisible = false" @select="handleMaterialSelect" />
     </a-modal>
 
     <!-- 单据弹窗（复用零售出库业务逻辑） -->
@@ -182,7 +182,8 @@
         scanInterval: null,
         barcodeDetector: null,
         // 商品选择
-        materialVisible: false
+        materialVisible: false,
+        scanBarCode: ''
       }
     },
     computed: {
@@ -360,31 +361,37 @@
       },
       // 打开商品选择页面（共用页面）
       openMaterialSelect (barCode) {
+        this.scanBarCode = barCode || ''
         this.materialVisible = true
-        // 后续完善：传递 barCode 参数到商品页面进行筛选
       },
-      // 商品页面选择商品回调
-      handleMaterialSelect (item) {
-        const exist = this.cartList.find(r => String(r.meId) === String(item.meId))
-        if (exist) {
-          exist.operNumber = (exist.operNumber - 0) + 1
-        } else {
-          this.cartList.push({
-            id: item.meId || item.id,
-            meId: item.meId,
-            mId: item.id,
-            name: item.name,
-            standard: item.standard,
-            model: item.model,
-            unitPrice: item.commodityDecimal,
-            commodityDecimal: item.commodityDecimal,
-            operNumber: 1,
-            skuCode: item.skuCode,
-            barCode: item.barCode,
-            unit: item.unit
-          })
+      // 商品页面选择商品回调（接收已选商品数组，含 operNumber 数量）
+      handleMaterialSelect (items) {
+        if (!Array.isArray(items)) return
+        items.forEach(item => {
+          const qty = item.operNumber - 0 || 1
+          const exist = this.cartList.find(r => String(r.meId) === String(item.meId))
+          if (exist) {
+            exist.operNumber = (exist.operNumber - 0) + qty
+          } else {
+            this.cartList.push({
+              id: item.meId || item.id,
+              meId: item.meId,
+              mId: item.id,
+              name: item.name,
+              standard: item.standard,
+              model: item.model,
+              unitPrice: item.commodityDecimal,
+              commodityDecimal: item.commodityDecimal,
+              operNumber: qty,
+              skuCode: item.skuCode,
+              barCode: item.mBarCode || item.barCode,
+              unit: item.unit
+            })
+          }
+        })
+        if (items.length > 0) {
+          this.$message.success('已添加 ' + items.length + ' 个商品')
         }
-        this.$message.success('已添加：' + item.name)
       },
       // 修改数量
       changeQty (index, delta) {

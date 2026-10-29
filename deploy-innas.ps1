@@ -59,23 +59,44 @@ function Ensure-Tools {
     # 首次连接自动信任主机密钥（未显式提供 -HostKey 时）
     if (-not $script:HostKey) {
         Write-Host "==> 首次连接 $Server，接收主机密钥 ..."
-        "y`n" | & $plink -ssh -P $Port "$SshUser@$Server" -pw $SshPass "exit" 2>&1 | Out-Null
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $out = "y`n" | & $plink -ssh -P $Port "$SshUser@$Server" -pw $SshPass "exit" 2>&1
+            $code = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $prev }
+        if ($code -ne 0) {
+            throw @"
+SSH 连接 ${Server}:${Port} 失败（握手后连接被关闭）。
+可能原因：
+  1) 域名在本机被代理/VPN 解析成了假 IP（如 198.18.x.x），请改用真实局域网 IP：-Server 192.168.100.x
+  2) SSH 端口不是 ${Port}，用 -Port 指定
+  3) 目标主机未开启 SSH，或需要先连 VPN
+plink 输出: $($out -join ' ')
+"@
+        }
     }
 }
 function Invoke-Plink([string]$RemoteCmd) {
     $argList = @('-ssh', '-P', $Port, "$SshUser@$Server", '-pw', $SshPass, '-batch')
     if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
     $argList += $RemoteCmd
-    & $plink @argList
-    if ($LASTEXITCODE -ne 0) { throw "远程命令执行失败（退出码 $LASTEXITCODE）: $RemoteCmd" }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $out = & $plink @argList 2>&1; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $prev }
+    $out | ForEach-Object { Write-Host $_ }
+    if ($code -ne 0) { throw "远程命令执行失败（退出码 $code）: $RemoteCmd" }
 }
 function Invoke-Pscp([string[]]$Local, [string]$Remote) {
     $argList = @('-batch', '-P', $Port, '-pw', $SshPass)
     if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
     $argList += $Local
     $argList += "$SshUser@$Server`:$Remote"
-    & $pscp @argList
-    if ($LASTEXITCODE -ne 0) { throw '文件上传失败' }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $out = & $pscp @argList 2>&1; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $prev }
+    $out | ForEach-Object { Write-Host $_ }
+    if ($code -ne 0) { throw '文件上传失败' }
 }
 function Invoke-Maven([string[]]$Goals) {
     $mvn = if ($mavenHome) { Join-Path $mavenHome 'bin\mvn.cmd' } else { 'mvn' }

@@ -17,8 +17,19 @@
     </template>
     <a-spin :spinning="confirmLoading">
       <a-form :form="form">
-        <a-tabs v-model:activeKey="activeKey" size="small">
+        <a-tabs v-model:activeKey="activeKey" size="small" :class="{ 'mm-tabs-mobile': isMobileView }">
           <a-tab-pane key="1" tab="基本信息" id="materialHeadModal" forceRender>
+            <!-- 手机端：顶部三个页签动态条，按页显示标题 -->
+            <div v-if="isMobileView" class="mm-page-tabs">
+              <div v-for="(t, i) in mobilePageTitles" :key="i" class="mm-page-tab" :class="{ active: mobilePageIndex === i }" @click="goMobilePage(i)">
+                <span class="mm-page-tab-text">{{ t }}</span>
+                <span class="mm-page-tab-bar"></span>
+              </div>
+            </div>
+            <!-- 手机端：基本信息 / 商品信息 / 价格设置 三页横向滑动切换 -->
+            <div class="mm-pages" :class="{ 'is-mobile': isMobileView }" ref="mmPages" @scroll="onPagesScroll">
+            <!-- 第 1 页：基本信息 -->
+            <div class="mm-page">
             <div style="margin-bottom: 8px; text-align: right;">
               <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
             </div>
@@ -131,6 +142,9 @@
                 </a-col>
               </a-row>
             </template>
+            </div>
+            <!-- 第 2 页：商品信息（规格） -->
+            <div class="mm-page">
             <!-- 商品信息卡片：规格模块 -->
             <a-card :title="'商品信息' + (categorySelected ? '' : ' — 选择种类')" size="small" :bordered="true" style="margin-top: 12px;">
               <div v-if="!categorySelected" style="text-align: center; padding: 40px 0; color: #999;">
@@ -269,6 +283,9 @@
               </a-button>
               </template>
             </a-card>
+            </div>
+            <!-- 第 3 页：价格设置 -->
+            <div class="mm-page">
             <div style="margin-top:8px;" id="materialDetailModal">
               <div class="price-setting-wrapper" :class="{ 'price-setting-fullscreen': priceTableFullscreen }">
                 <!-- 价格设置标题和进度 -->
@@ -343,6 +360,7 @@
                 </div>
                 <!-- 表格 -->
                 <j-editable-table
+                  v-show="!isMobileView"
                   ref="editableMeTable"
                   :loading="meTable.loading"
                   :columns="meTable.columns"
@@ -356,6 +374,28 @@
                   @added="onAdded"
                   @deleted="onDeleted">
                 </j-editable-table>
+                <!-- 手机端：SKU 价格按卡片单列显示 -->
+                <div v-if="isMobileView" class="mm-sku-cards">
+                  <div v-for="(row, rIndex) in meTable.dataSource" :key="rIndex" class="mm-sku-card">
+                    <div class="mm-sku-card-head">
+                      <span class="mm-sku-card-title">规格块 {{ rIndex + 1 }}</span>
+                      <span class="mm-sku-card-spec">{{ getSkuCardSpecText(row) }}</span>
+                    </div>
+                    <div v-for="col in meTable.columns" :key="col.key" class="mm-sku-card-field">
+                      <span class="mm-sku-card-label">{{ col.title }}</span>
+                      <div class="mm-sku-card-control">
+                        <span v-if="col.readonly" class="mm-sku-card-text">{{ row[col.key] || '-' }}</span>
+                        <a-input-number v-else-if="col.type === 'inputNumber'" v-model="row[col.key]"
+                          :placeholder="colPlaceholder(col)" style="width:100%" />
+                        <a-select v-else-if="col.type === 'sel_search' || col.type === 'select'" v-model="row[col.key]"
+                          :options="col.options || []" :placeholder="colPlaceholder(col)"
+                          style="width:100%" allowClear showSearch optionFilterProp="children" />
+                        <a-input v-else v-model="row[col.key]" :placeholder="colPlaceholder(col)" />
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="meTable.dataSource.length === 0" class="mm-sku-card-empty">暂无规格数据，请先添加规格</div>
+                </div>
               </div>
               <!-- 表单区域 -->
               <batch-set-price-modal ref="priceModalForm" @ok="batchSetPriceModalFormOk"></batch-set-price-modal>
@@ -367,6 +407,8 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            </div>
+            </div>
           </a-tab-pane>
         </a-tabs>
       </a-form>
@@ -446,6 +488,10 @@
         action: '',
         autoAddSpec: false,
         activeKey: '1',
+        // 手机端：基本信息 / 商品信息 / 价格设置 三页横向滑动切换
+        isMobileView: window.innerWidth <= 768,
+        mobilePageIndex: 0,
+        mobilePageTitles: ['基本信息', '商品信息', '价格设置'],
         categoryTree: [],
         fileList:[],
         switchDisabled: false, //开关的启用状态
@@ -696,11 +742,56 @@
     },
     mounted() {
       document.getElementById(this.prefixNo).addEventListener('keydown', this.handleOkKey)
+      window.addEventListener('resize', this.onWindowResize)
     },
     beforeDestroy() {
       document.getElementById(this.prefixNo).removeEventListener('keydown', this.handleOkKey)
+      window.removeEventListener('resize', this.onWindowResize)
     },
     methods: {
+      // 手机端适配：窗口宽度变化时切换分页模式并回到首页
+      onWindowResize() {
+        const isMobile = window.innerWidth <= 768
+        if (isMobile === this.isMobileView) return
+        this.isMobileView = isMobile
+        this.mobilePageIndex = 0
+        this.$nextTick(() => {
+          if (this.$refs.mmPages) this.$refs.mmPages.scrollLeft = 0
+        })
+      },
+      // 横向滑动后同步当前页码
+      onPagesScroll() {
+        const el = this.$refs.mmPages
+        if (!el || !this.isMobileView) return
+        const width = el.clientWidth || 1
+        const index = Math.round(el.scrollLeft / width)
+        if (index !== this.mobilePageIndex) this.mobilePageIndex = index
+      },
+      // 手机端：点击顶部标题切换到对应页
+      goMobilePage(index) {
+        const el = this.$refs.mmPages
+        if (!el) return
+        const left = (el.clientWidth || 1) * index
+        if (el.scrollTo) {
+          el.scrollTo({ left: left, behavior: 'smooth' })
+        } else {
+          el.scrollLeft = left
+        }
+        this.mobilePageIndex = index
+      },
+      // 手机端卡片：规格值组合文本
+      getSkuCardSpecText(row) {
+        const arr = []
+        for (let i = 0; i < this.specModules.length; i++) {
+          const text = row['skuField' + (i + 1)]
+          if (text) arr.push(text)
+        }
+        return arr.join(' / ')
+      },
+      // 手机端卡片：输入提示
+      colPlaceholder(col) {
+        return (col.placeholder || '').replace('${title}', col.title || '')
+      },
       // 快捷键
       handleOkKey(e) {
         const key = window.event.keyCode ? window.event.keyCode : window.event.which
@@ -2480,5 +2571,284 @@
       inset: 4px;
     }
   }
+
+  /* 手机端：基本信息 / 商品信息 / 价格设置 三页横向滑动切换 */
+  .mm-pages.is-mobile {
+    display: flex;
+    width: 100%;
+    max-width: 100vw;
+    height: calc(100vh - 232px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mm-pages.is-mobile::-webkit-scrollbar {
+    display: none;
+  }
+  .mm-pages.is-mobile > .mm-page {
+    flex: 0 0 100%;
+    flex-shrink: 0;
+    width: 100%;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 4px 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scroll-snap-align: start;
+  }
+  /* 手机端：收紧弹窗内容区留白，避免三页左侧留白过多 */
+  @media (max-width: 768px) {
+    ::v-deep .ant-modal-body {
+      padding: 6px 4px 0;
+    }
+    ::v-deep .ant-modal-footer {
+      padding: 8px;
+    }
+  }
+  /* 手机端隐藏原有单页签，改用顶部三页动态条 */
+  .mm-tabs-mobile ::v-deep .ant-tabs-bar {
+    display: none;
+  }
+  .mm-page-tabs {
+    display: flex;
+    align-items: stretch;
+    height: 38px;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 8px;
+  }
+  .mm-page-tab {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #888;
+  }
+  .mm-page-tab.active {
+    color: #1890ff;
+    font-weight: 600;
+  }
+  .mm-page-tab-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: transparent;
+    transition: background .2s;
+  }
+  .mm-page-tab.active .mm-page-tab-bar {
+    background: #1890ff;
+  }
+  /* 手机端：属性标题与输入框同行显示 */
+  .mm-pages.is-mobile ::v-deep .ant-form-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-form-item-label {
+    flex: 0 0 88px;
+    width: 88px !important;
+    max-width: 88px;
+    padding-right: 8px;
+    text-align: right;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-form-item-label > label {
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-form-item-control-wrapper {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+  }
+  /* 手机端：规格大类换行，规格值单列显示 */
+  .mm-pages.is-mobile .spec-header {
+    flex-wrap: wrap;
+  }
+  .mm-pages.is-mobile .spec-header-name {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  .mm-pages.is-mobile .spec-header ::v-deep .ant-select {
+    width: 100% !important;
+    margin-bottom: 8px;
+  }
+  .mm-pages.is-mobile .spec-header-label {
+    margin-right: 8px;
+    white-space: normal;
+  }
+  .mm-pages.is-mobile .spec-value-row {
+    width: 100%;
+    padding-right: 0;
+  }
+  /* 手机端：顶部页签可点击切换 */
+  .mm-page-tab {
+    cursor: pointer;
+  }
+  /* 手机端：批量设置项单列显示 */
+  .mm-pages.is-mobile .price-setting-batch-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row > * {
+    width: 100% !important;
+    margin: 0 0 6px 0;
+  }
+  .mm-pages.is-mobile .spec-filter-trigger {
+    width: 100%;
+  }
+  /* 手机端：SKU 价格卡片单列显示 */
+  .mm-sku-cards {
+    padding-top: 8px;
+  }
+  .mm-sku-card {
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background: #fff;
+  }
+  .mm-sku-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed #eee;
+  }
+  .mm-sku-card-title {
+    font-weight: 600;
+    color: #333;
+  }
+  .mm-sku-card-spec {
+    font-size: 12px;
+    color: #1890ff;
+    text-align: right;
+  }
+  .mm-sku-card-field {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .mm-sku-card-label {
+    flex: 0 0 76px;
+    width: 76px;
+    color: #666;
+    font-size: 13px;
+  }
+  .mm-sku-card-control {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .mm-sku-card-text {
+    color: #333;
+  }
+  .mm-sku-card-empty {
+    text-align: center;
+    color: #999;
+    padding: 20px 0;
+  }
+  /* 手机端：输入框字号不小于 16px，避免聚焦时页面被放大 */
+  .mm-pages.is-mobile ::v-deep input,
+  .mm-pages.is-mobile ::v-deep textarea {
+    font-size: 16px !important;
+  }
+  /* 手机端：规格值行统一预留「图片+删除」宽度，所有输入框宽度保持一致 */
+  .mm-pages.is-mobile .spec-value-row {
+    position: relative;
+    padding-right: 78px;
+  }
+  .mm-pages.is-mobile .spec-value-row ::v-deep .ant-input {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+  }
+  .mm-pages.is-mobile .spec-value-row .spec-value-img-upload {
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+  .mm-pages.is-mobile .spec-value-row .spec-value-delete-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    padding: 0 2px;
+  }
+  /* 手机端：组合规格第 0 行的图片与删除按钮，对齐到行右侧预留区 */
+  .mm-pages.is-mobile .spec-composite-field {
+    position: relative;
+  }
+  .mm-pages.is-mobile .spec-composite-field > .spec-value-img-upload {
+    position: absolute;
+    right: -46px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+  .mm-pages.is-mobile .spec-composite-field > .spec-value-delete-btn {
+    position: absolute;
+    right: -78px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    padding: 0 2px;
+  }
+  /* 手机端：规格区宽度收敛，避免卡片被内容撑破 */
+  .mm-pages.is-mobile .spec-module {
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+  }
+  .mm-pages.is-mobile .spec-main {
+    display: block;
+  }
+  .mm-pages.is-mobile .spec-values-list {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .mm-pages.is-mobile .spec-value-suggestions {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  /* 手机端：价格批量设置项纵向排列且高度固定，避免上下间距过大 */
+  .mm-pages.is-mobile .price-setting-batch-bar {
+    padding: 4px 0;
+    margin-bottom: 6px;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 6px;
+    height: auto;
+    overflow: visible;
+    justify-content: flex-start;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 32px !important;
+    min-height: 32px;
+    flex: 0 0 auto;
+    margin: 0;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-input,
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-select-selection {
+    height: 32px;
+    line-height: 30px;
+  }
 </style>
-iang

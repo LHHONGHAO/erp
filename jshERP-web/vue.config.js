@@ -7,6 +7,8 @@ function resolve (dir) {
 
 // vue.config.js
 module.exports = {
+    // 生产构建与后端同源部署（后端 context-path 为 /jshERP-boot），开发环境仍走根路径
+    publicPath: process.env.NODE_ENV === 'production' ? '/jshERP-boot/' : '/',
     // 如果你不需要生产环境的 source map，可以将其设置为 false 以加速生产环境构建。
     productionSourceMap: false,
     configureWebpack: config => {
@@ -45,7 +47,10 @@ module.exports = {
         }
     },
     devServer: {
+        host: '0.0.0.0',
         port: 3000,
+        // 允许通过局域网 IP（手机）访问开发服务器
+        disableHostCheck: true,
         proxy: {
             '/jshERP-boot': {
                 target: 'http://localhost:9999', // 请求本地 需要jshERP-boot后台项目

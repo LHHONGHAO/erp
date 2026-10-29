@@ -1,5 +1,5 @@
 <template>
-  <div class="back-layout">
+  <div class="back-layout" :style="{ backgroundImage: 'url(' + baseUrl + 'static/bgimg.png?v=1)' }">
     <div class="lang-setting">
       <a-select placeholder="请选择语言" showSearch optionFilterProp="children" :value="currentLang" @change="handleChangeLang" class="select-list">
         <a-select-option class="ignore" value="chinese_simplified">简体中文</a-select-option>
@@ -80,14 +80,14 @@
     <div id="userLayout" :class="['user-layout-wrapper', device]">
       <div class="container">
         <div class="poster-img">
-          <img src="/static/rightImg.png?v=320">
+          <img :src="baseUrl + 'static/rightImg.png?v=320'">
         </div>
         <div class="right-form">
           <div class="top">
             <div class="header">
               <a-row>
                 <a-col>
-                  <a href="/">
+                  <a :href="baseUrl">
                     <span class="title">{{systemTitle}}</span>
                     <small class="desc">V3.6</small>
                   </a>
@@ -102,17 +102,17 @@
     <div class="footer" v-if="device === 'desktop'">
       <div class="third-party-platform" v-if="isShowRight">
         <div class="platform-info" @click="openAndroid()">
-          <img src="/static/Android.png" style="height:30px" >
+          <img :src="baseUrl + 'static/Android.png'" style="height:30px" >
           <span>安卓版</span>
         </div>
         <div style="width:50px"></div>
         <div class="platform-info" @click="openIPhone()">
-          <img src="/static/iPhone.png" style="height:30px" >
+          <img :src="baseUrl + 'static/iPhone.png'" style="height:30px" >
           <span>iPhone版</span>
         </div>
         <div style="width:50px"></div>
         <div class="platform-info" @click="openMiniProgram()">
-          <img src="/static/mini-program.png" style="height:30px" >
+          <img :src="baseUrl + 'static/mini-program.png'" style="height:30px" >
           <span>小程序版</span>
         </div>
       </div>
@@ -127,19 +127,19 @@
       <template slot="footer">
         <a-button key="back" @click="handleAndroidCancel">取消</a-button>
       </template>
-      <div class="platform-modal"><img src="/static/android-code.png" style="width:200px" /></div>
+      <div class="platform-modal"><img :src="baseUrl + 'static/android-code.png'" style="width:200px" /></div>
     </a-modal>
     <a-modal v-model="isIphoneShow" title="微信扫一扫下载iPhone版" width="200" centered>
       <template slot="footer">
         <a-button key="back" @click="handleIphoneCancel">取消</a-button>
       </template>
-      <div class="platform-modal"><img src="/static/iphone-code.png" style="width:200px" /></div>
+      <div class="platform-modal"><img :src="baseUrl + 'static/iphone-code.png'" style="width:200px" /></div>
     </a-modal>
     <a-modal v-model="isMiniProgramShow" title="微信扫一扫使用小程序版" width="200" centered>
       <template slot="footer">
         <a-button key="back" @click="handleMiniProgramCancel">取消</a-button>
       </template>
-      <div class="platform-modal"><img src="/static/weixin-code.png" style="width:200px;" /></div>
+      <div class="platform-modal"><img :src="baseUrl + 'static/weixin-code.png'" style="width:200px;" /></div>
     </a-modal>
   </div>
 </template>
@@ -156,6 +156,8 @@
       return {
         systemTitle: window.SYS_TITLE,
         systemUrl: window.SYS_URL,
+        // 静态资源前缀，兼容本地开发(/)与后端同源部署(/jshERP-boot/)
+        baseUrl: process.env.BASE_URL,
         isShowRight: false,
         isAndroidShow: false,
         isIphoneShow: false,
@@ -209,7 +211,6 @@
   .back-layout {
     width: 100%;
     height: 100%;
-    background-image: url(/static/bgimg.png?v=1);
     background-size: cover;
     background-repeat: no-repeat;
     position: relative;

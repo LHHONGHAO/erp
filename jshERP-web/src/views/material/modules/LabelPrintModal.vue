@@ -36,10 +36,18 @@
                 v-for="attr in selectedAttrList"
                 :key="attr.key"
                 class="lp-item"
-                :class="{ 'is-multiline': attr.value != null && String(attr.value).indexOf('\n') > -1 }"
+                :class="{ 'is-multiline': attr.value != null && String(attr.value).indexOf('\n') > -1, 'is-code': isCodeItem(attr.key) }"
                 :style="itemStyle(attr.key)"
               >
-                <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>{{ attr.value }}
+                <template v-if="isCodeItem(attr.key)">
+                  <div class="lp-code-box">
+                    <div class="lp-code-text" :style="codeTextStyle(attr)">{{ codeText(attr) }}</div>
+                    <img v-if="codeImages[attr.key]" :src="codeImages[attr.key]" class="lp-code-img" :style="codeImgStyle(attr)" />
+                  </div>
+                </template>
+                <template v-else>
+                  <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>{{ attr.value }}
+                </template>
               </div>
             </div>
           </div>
@@ -88,6 +96,8 @@
 <script>
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { printLabel } from '@/views/material/utils/labelPrint'
+  import { fitCodeSize, renderCodeDataUrl } from '@/views/material/utils/labelCode'
+  import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { getAction, postAction } from '@/api/manage'
   var PX_PER_MM = 3.779528
   export default {
@@ -103,6 +113,8 @@
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 条码/二维码图片缓存（key → dataURL）
+        codeImages: {},
         labelWidth: 320,
         labelHeight: 240,
         // 打印机（由后端枚举本机打印机）
@@ -125,9 +137,87 @@
       },
       labelHeightMm() {
         return Math.round(this.labelHeight / PX_PER_MM)
+      },
+      // 编码内容签名：属性值、编码类型、尺寸变化时重新生成条码/二维码图片
+      codeSignature() {
+        var self = this
+        return this.selectedAttrList.map(function(attr) {
+          var s = self.attrStyles[attr.key] || {}
+          return [attr.key, s.codeType || '', attr.value == null ? '' : attr.value, s.width || '', s.height || ''].join('|')
+        }).join(';')
+      }
+    },
+    watch: {
+      codeSignature() {
+        this.refreshCodeImages()
       }
     },
     methods: {
+      // 该属性是否渲染为条码/二维码
+      isCodeItem(key) {
+        var s = this.attrStyles[key]
+        return !!(s && s.codeType)
+      },
+      // 条码/二维码上方的文字：属性名 + 属性值（属性名留空时只显示值）
+      codeText(attr) {
+        var label = Object.prototype.hasOwnProperty.call(this.attrLabels, attr.key)
+          ? this.attrLabels[attr.key]
+          : (attr.label || '')
+        var value = attr.value == null ? '' : String(attr.value)
+        return label ? (label + ': ' + value) : value
+      },
+      // 编码元素布局：文字高度、盒宽、图形尺寸
+      codeLayout(attr) {
+        var s = this.attrStyles[attr.key] || {}
+        var isQr = s.codeType === 'qrcode'
+        var text = this.codeText(attr)
+        var lines = text ? text.split('\n').length : 0
+        var fontSize = s.fontSize || 14
+        var lineHeight = s.lineHeight || 1.3
+        // 文字框固定为文本实际长高 + 2px
+        var textBoxHeight = lines ? Math.round(lines * fontSize) + 2 : 0
+        // 文字与图形之间的间距取原行距留白的三分之一
+        var textGap = lines ? Math.round((lines * fontSize * (lineHeight - 1)) / 3) : 0
+        var textHeight = textBoxHeight + textGap
+        var boxWidth = s.width || (isQr ? 80 : 160)
+        var imgHeight = s.height ? Math.max(20, s.height - textHeight) : (isQr ? 80 : 50)
+        // 按打印机硬件能力换算实际可打印尺寸，预览与打印保持一致
+        var fitted = fitCodeSize(s.codeType, attr.value, boxWidth, imgHeight)
+        return {
+          text: text,
+          textHeight: textHeight,
+          textBoxHeight: textBoxHeight,
+          boxWidth: boxWidth,
+          imgWidth: fitted.width,
+          imgHeight: fitted.height
+        }
+      },
+      // 编码元素上方的文字框：严格贴合文字高度
+      codeTextStyle(attr) {
+        var layout = this.codeLayout(attr)
+        return { height: layout.textBoxHeight + 'px', lineHeight: '1' }
+      },
+      codeImgStyle(attr) {
+        var layout = this.codeLayout(attr)
+        return { width: layout.imgWidth + 'px', height: layout.imgHeight + 'px' }
+      },
+      // 为所有设置为条码/二维码的属性生成图片
+      refreshCodeImages() {
+        var self = this
+        var alive = {}
+        this.selectedAttrList.forEach(function(attr) {
+          var s = self.attrStyles[attr.key]
+          if (!s || !s.codeType) return
+          alive[attr.key] = true
+          var layout = self.codeLayout(attr)
+          renderCodeDataUrl(s.codeType, attr.value, layout.imgWidth, layout.imgHeight).then(function(url) {
+            self.$set(self.codeImages, attr.key, url)
+          })
+        })
+        Object.keys(this.codeImages).forEach(function(key) {
+          if (!alive[key]) self.$delete(self.codeImages, key)
+        })
+      },
       open(record, sku, categoryTree) {
         this.record = record || {}
         this.sku = sku || {}
@@ -163,23 +253,19 @@
       handleCancel() {
         this.visible = false
       },
-      // 模板优先级：当前商品的普通模板 > 品类的默认模板
+      // 模板优先级：当前商品的普通模板 > 品类的默认模板（云端读取，本地缓存兜底）
       loadTemplate() {
-        var templates = []
-        try {
-          var json = localStorage.getItem('labelTemplates')
-          templates = json ? JSON.parse(json) : []
-        } catch (e) {
-          templates = []
-        }
-        var record = this.record
-        var normal = templates.find(function(t) {
-          return t.type === 'normal' && String(t.materialId) === String(record.id)
+        var self = this
+        fetchLabelTemplates().then(function(templates) {
+          var record = self.record
+          var normal = templates.find(function(t) {
+            return t.type === 'normal' && String(t.materialId) === String(record.id)
+          })
+          var defaultTpl = templates.find(function(t) {
+            return t.type === 'default' && String(t.categoryId) === String(record.categoryId)
+          })
+          self.applyTemplate(normal || defaultTpl || null)
         })
-        var defaultTpl = templates.find(function(t) {
-          return t.type === 'default' && String(t.categoryId) === String(record.categoryId)
-        })
-        this.applyTemplate(normal || defaultTpl || null)
       },
       applyTemplate(tpl) {
         var self = this
@@ -198,9 +284,20 @@
         this.selectedAttrs.forEach(function(key) {
           var style = tpl.attrStyles && tpl.attrStyles[key]
           var idx = self.selectedAttrs.indexOf(key)
-          self.$set(self.attrStyles, key, style
-            ? JSON.parse(JSON.stringify(style))
-            : { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', width: 120, height: 24 })
+          if (style) {
+            var copy = JSON.parse(JSON.stringify(style))
+            // 与标签编辑页一致：旧模板没有字间距/行距时补默认值
+            if (copy.letterSpacing == null) copy.letterSpacing = 0
+            if (copy.lineHeight == null) copy.lineHeight = 1.3
+            // 旧模板默认写死的宽高视为自动，避免多行规格被裁掉
+            if (copy.width === 120 && copy.height === 24) {
+              delete copy.width
+              delete copy.height
+            }
+            self.$set(self.attrStyles, key, copy)
+          } else {
+            self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3 })
+          }
           // 模板里存在该属性名的记录就按记录恢复（含空字符串，留空表示只显示值）
           if (tpl.attrLabels && Object.prototype.hasOwnProperty.call(tpl.attrLabels, key)) {
             self.$set(self.attrLabels, key, tpl.attrLabels[key])
@@ -215,16 +312,27 @@
       itemStyle(key) {
         var s = this.attrStyles[key]
         if (!s) return {}
-        return {
+        var style = {
           left: s.x + 'px',
           top: s.y + 'px',
           fontSize: s.fontSize + 'px',
           fontWeight: s.fontWeight,
           letterSpacing: (s.letterSpacing || 0) + 'px',
-          lineHeight: String(s.lineHeight || 1.3),
-          width: (s.width || 120) + 'px',
-          height: (s.height || 24) + 'px'
+          lineHeight: String(s.lineHeight || 1.3)
         }
+        // 未手动指定宽高时由文字撑开，保证多行规格完整显示
+        if (s.width) style.width = s.width + 'px'
+        if (s.height) style.height = s.height + 'px'
+        // 条码/二维码：宽度用设定值或默认 80/160，总高 = 文字高度 + 图形高度
+        if (s.codeType) {
+          var codeAttr = this.selectedAttrList.find(function(a) { return a.key === key })
+          if (codeAttr) {
+            var layout = this.codeLayout(codeAttr)
+            style.width = layout.boxWidth + 'px'
+            style.height = Math.round(layout.textHeight + layout.imgHeight) + 'px'
+          }
+        }
+        return style
       },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
@@ -252,13 +360,41 @@
         this.selectedAttrList.forEach(function(attr) {
           var style = self.attrStyles[attr.key]
           if (!style) return
+          // 条码/二维码：文字照常打印，图形打印在文字下方
+          if (style.codeType) {
+            var layout = self.codeLayout(attr)
+            var codeUrl = self.codeImages[attr.key] || ''
+            items.push({
+              x: style.x,
+              y: style.y,
+              width: layout.boxWidth,
+              height: null,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              letterSpacing: style.letterSpacing || 0,
+              lineHeight: style.lineHeight || 1.3,
+              text: layout.text
+            })
+            items.push({
+              x: style.x,
+              y: style.y + layout.textHeight,
+              width: layout.imgWidth,
+              height: layout.imgHeight,
+              codeType: style.codeType,
+              codeText: attr.value == null ? '' : String(attr.value),
+              // image 仅用于浏览器兜底打印，后端按 codeType + codeText 下发硬件指令
+              image: codeUrl,
+              text: ''
+            })
+            return
+          }
           var labelText = self.attrLabels[attr.key] || ''
           var displayText = labelText ? labelText + ': ' + attr.value : attr.value
           items.push({
             x: style.x,
             y: style.y,
-            width: style.width || 120,
-            height: style.height || 24,
+            width: style.width || null,
+            height: style.height || null,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
             letterSpacing: style.letterSpacing || 0,
@@ -291,17 +427,23 @@
       printByBrowser(items) {
         var bodyHtml = ''
         items.forEach(function(item) {
-          bodyHtml += '<div style="position:absolute;' +
-            'left:' + item.x + 'px;' +
-            'top:' + item.y + 'px;' +
-            'width:' + item.width + 'px;' +
-            'height:' + item.height + 'px;' +
+          var boxStyle = 'position:absolute;left:' + item.x + 'px;top:' + item.y + 'px;'
+          if (item.image) {
+            bodyHtml += '<img src="' + item.image + '" style="' + boxStyle +
+              'width:' + item.width + 'px;height:' + item.height + 'px;display:block;" />'
+            return
+          }
+          var sizeStyle = ''
+          if (item.width) sizeStyle += 'width:' + item.width + 'px;'
+          if (item.height) sizeStyle += 'height:' + item.height + 'px;'
+          bodyHtml += '<div style="' + boxStyle +
+            sizeStyle +
             'font-size:' + item.fontSize + 'px;' +
             'font-weight:' + item.fontWeight + ';' +
             'letter-spacing:' + (item.letterSpacing || 0) + 'px;' +
             'line-height:' + (item.lineHeight || 1.3) + ';' +
             'white-space:pre-line;' +
-            'overflow:hidden;' +
+            'overflow:visible;' +
             '">' + item.text + '</div>'
         })
         printLabel({
@@ -394,6 +536,26 @@
     white-space: pre-line;
     text-align: left;
     line-height: 1.3;
+  }
+  .lp-item.is-code {
+    overflow: visible;
+    white-space: normal;
+  }
+  /* 条码 / 二维码：上方文字、下方图形 */
+  .lp-code-box {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .lp-code-text {
+    white-space: pre-line;
+    word-break: break-word;
+    text-align: left;
+  }
+  .lp-code-img {
+    display: block;
+    object-fit: contain;
   }
   .lp-footer {
     margin-top: 16px;

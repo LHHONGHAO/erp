@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :visible="visible"
-    :width="extractOnly ? 480 : 453"
+    :width="modalWidth"
     :footer="null"
     :maskClosable="false"
     @cancel="handleCancel">
@@ -45,7 +45,7 @@
     <div v-if="!extractOnly" style="margin-top:4px">
       <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">属性信息</a-divider>
       <a-row :gutter="8">
-        <a-col :span="12" v-for="prop in visibleOcrProps" :key="prop.field">
+        <a-col :span="isMobileView ? 24 : 12" v-for="prop in visibleOcrProps" :key="prop.field">
           <div class="ocr-prop-item">
             <div style="font-size:13px;color:rgba(0,0,0,0.85);line-height:20px;margin-bottom:0px">{{ prop.anotherName }}</div>
             <a-input v-model="ocrFields[prop.field]" :placeholder="ocrLoading ? '识别中...' : ''" size="small" />
@@ -65,7 +65,7 @@
       title="拍照识别"
       :visible="cameraVisible"
       :footer="null"
-      :width="560"
+      :width="isMobileView ? '94%' : 560"
       :maskClosable="false"
       @cancel="closeCamera">
       <div class="ocr-camera-wrap">
@@ -84,7 +84,7 @@
     <a-modal
       title="属性显示设置"
       :visible="propertyConfigVisible"
-      :width="500"
+      :width="isMobileView ? '94%' : 500"
       :maskClosable="false"
       @ok="savePropertyConfig"
       @cancel="propertyConfigVisible=false">
@@ -151,6 +151,8 @@ export default {
   },
   data() {
     return {
+      // 手机端适配：窄屏时弹窗宽度自适应
+      isMobileView: window.innerWidth <= 768,
       ocrLoading: false,
       hasOcrResult: false,
       ocrFields: { rawText: '' },
@@ -168,9 +170,17 @@ export default {
     }
   },
   computed: {
+    // 手机端弹窗宽度占满可视区，桌面端保持原宽度
+    modalWidth() {
+      if (this.isMobileView) return '94%'
+      return this.extractOnly ? 480 : 453
+    },
     visibleOcrProps() {
       return this.ocrPropertyList.filter(function(p) { return p.visible })
     }
+  },
+  mounted() {
+    window.addEventListener('resize', this.onWindowResize)
   },
   watch: {
     visible(val) {
@@ -188,9 +198,14 @@ export default {
     }
   },
   beforeDestroy() {
+    window.removeEventListener('resize', this.onWindowResize)
     this.closeCamera()
   },
   methods: {
+    // 手机端适配：窗口宽度变化时切换弹窗宽度
+    onWindowResize() {
+      this.isMobileView = window.innerWidth <= 768
+    },
     resetOcrFields() {
       var fields = { rawText: '' }
       // 预先声明所有属性键，保证属性输入框的 v-model 具备响应式
@@ -562,5 +577,28 @@ export default {
   height: 36px;
   border-radius: 18px;
   font-size: 15px;
+}
+/* 手机端适配：工具栏换行、输入框字号防止聚焦放大 */
+@media (max-width: 768px) {
+  .ocr-text-toolbar {
+    flex-wrap: wrap;
+  }
+  .ocr-text-toolbar-left {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .ocr-ai-btn {
+    width: 100%;
+    min-width: 0;
+    margin-top: 8px;
+  }
+  .ocr-raw-text {
+    font-size: 16px;
+    line-height: 24px;
+    padding: 10px 12px;
+  }
+  .ocr-prop-item .ant-input {
+    font-size: 16px;
+  }
 }
 </style>

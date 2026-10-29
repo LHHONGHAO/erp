@@ -40,6 +40,7 @@ import '@/assets/less/JAreaLinkage.less'
 import VueAreaLinkage from 'vue-area-linkage'
 import DictData from '@/components/DictData'
 import DictTag from '@/components/DictTag'
+import DataTablePro from '@/components/DataTablePro'
 import { initModalDrag } from '@/utils/dragModal'
 
 Vue.config.productionTip = false
@@ -54,6 +55,7 @@ Vue.use(preview)
 Vue.use(vueBus);
 Vue.use(JeecgComponents)
 Vue.use(VueAreaLinkage)
+Vue.use(DataTablePro)
 DictData.install()
 
 new Vue({

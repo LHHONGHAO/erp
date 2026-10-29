@@ -129,7 +129,7 @@
               :visible="hovered"
               @visibleChange="handleHoverChange">
               <div slot="content">
-                <img src="/static/weixin.jpg" style="width:258px" />
+                <img :src="baseUrl + 'static/weixin.jpg'" style="width:258px" />
               </div>
               <a-button type="link" v-if="showWeixinSpan()">管伊佳ERP微信小程序</a-button>
             </a-popover>
@@ -179,6 +179,8 @@
         hovered: false,
         systemTitle: window.SYS_TITLE,
         systemUrl: window.SYS_URL,
+        // 静态资源前缀，兼容本地开发(/)与后端同源部署(/jshERP-boot/)
+        baseUrl: process.env.BASE_URL,
         loading: true,
         center: null,
         statistics: {},

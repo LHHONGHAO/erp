@@ -2,30 +2,49 @@ package com.jsh.erp.service;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.oned.Code128Writer;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import com.google.zxing.qrcode.encoder.Encoder;
+import com.google.zxing.qrcode.encoder.QRCode;
 import org.springframework.stereotype.Service;
 
+import javax.print.Doc;
+import javax.print.DocFlavor;
+import javax.print.DocPrintJob;
 import javax.print.PrintService;
 import javax.print.PrintServiceLookup;
+import javax.print.SimpleDoc;
 import javax.print.attribute.HashPrintRequestAttributeSet;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.print.PageFormat;
-import java.awt.print.Paper;
-import java.awt.print.Printable;
-import java.awt.print.PrinterJob;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 标签打印：枚举本机打印机、按标签布局直接打印到指定打印机
  * 说明：浏览器无法读取系统打印机列表，只能由后端（运行后端的机器）提供
+ *
+ * 输出方式：不栅格化图片，直接把前端传来的坐标/尺寸/内容拼成 TSPL 指令
+ * （TEXT / BARCODE / QRCODE），由打印机固件用硬件字库和条码引擎渲染。
+ * 目标机型：汉印 D45（TSPL，203dpi，8 点/mm）。
  */
 @Service
 public class LabelPrinterService {
 
-    private static final String FONT_NAME = "Microsoft YaHei";
+    /** 打印机分辨率（D45 为 203dpi，即 8 点/mm） */
+    private static final int PRINTER_DPI = 203;
+    private static final double DOTS_PER_MM = 8.0;
+    /** 前端坐标按 96dpi 像素给出，需换算为打印点 */
+    private static final double PX_TO_DOT = (double) PRINTER_DPI / 96.0;
+    /** 中文点阵字体（24x24），打印机的硬件字库 */
+    private static final String TEXT_FONT = "TSS24.BF2";
+    /** 中文内容按 GBK 下发，与打印机内置中文字库编码一致 */
+    private static final Charset CHARSET = Charset.forName("GBK");
 
     /**
      * 本机所有打印机（含默认打印机标记）
@@ -51,112 +70,194 @@ public class LabelPrinterService {
      * @param copies      打印份数
      * @param widthPx     标签宽（px，96dpi）
      * @param heightPx    标签高（px，96dpi）
-     * @param items       标签内容，元素含 x/y/fontSize/fontWeight/letterSpacing/lineHeight/text
+     * @param items       标签内容，元素含 x/y/width/height/fontSize/lineHeight/text/codeType/codeText
      */
-    public void printLabel(String printerName, int copies, int widthPx, int heightPx, final JSONArray items) throws Exception {
-        PrintService target = null;
+    public void printLabel(String printerName, int copies, int widthPx, int heightPx, JSONArray items) throws Exception {
+        PrintService target = findPrinter(printerName);
+        sendRaw(target, buildTsplJob(widthPx, heightPx, items, copies));
+    }
+
+    private PrintService findPrinter(String printerName) throws Exception {
         PrintService[] services = PrintServiceLookup.lookupPrintServices(null, new HashPrintRequestAttributeSet());
         for (PrintService service : services) {
             if (service.getName().equals(printerName)) {
-                target = service;
-                break;
+                return service;
             }
         }
-        if (target == null) {
-            throw new Exception("未找到打印机：" + printerName + "，请刷新打印机列表后重试");
-        }
+        throw new Exception("未找到打印机：" + printerName + "，请刷新打印机列表后重试");
+    }
 
-        // 纸张尺寸按标签实际尺寸设置（px 96dpi → pt 72dpi）
-        double widthPt = widthPx * 72.0 / 96.0;
-        double heightPt = heightPx * 72.0 / 96.0;
-        Paper paper = new Paper();
-        paper.setSize(widthPt, heightPt);
-        paper.setImageableArea(0, 0, widthPt, heightPt);
-        PageFormat pageFormat = new PageFormat();
-        pageFormat.setPaper(paper);
-        pageFormat.setOrientation(PageFormat.PORTRAIT);
-
-        PrinterJob job = PrinterJob.getPrinterJob();
-        job.setPrintService(target);
-        // 直接矢量绘制文字，避免位图缩放导致的字迹粗糙
-        job.setPrintable(new Printable() {
-            @Override
-            public int print(Graphics graphics, PageFormat format, int pageIndex) {
-                if (pageIndex > 0) {
-                    return Printable.NO_SUCH_PAGE;
+    /**
+     * 拼装 TSPL 打印任务：标签尺寸 + 逐元素指令
+     */
+    private byte[] buildTsplJob(int widthPx, int heightPx, JSONArray items, int copies) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeLine(out, "SIZE " + toMm(toDots(widthPx)) + " mm," + toMm(toDots(heightPx)) + " mm");
+        writeLine(out, "CLS");
+        if (items != null) {
+            for (int i = 0; i < items.size(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                if (item == null) {
+                    continue;
                 }
-                Graphics2D g2 = (Graphics2D) graphics;
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                g2.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-                g2.translate(format.getImageableX(), format.getImageableY());
-                g2.scale(72.0 / 96.0, 72.0 / 96.0);
-                drawItems(g2, items);
-                return Printable.PAGE_EXISTS;
+                String codeType = item.getString("codeType");
+                if ("barcode".equals(codeType)) {
+                    appendBarcode(out, item);
+                } else if ("qrcode".equals(codeType)) {
+                    appendQrcode(out, item);
+                } else {
+                    appendText(out, item);
+                }
             }
-        }, pageFormat);
-        job.setCopies(Math.max(1, copies));
-        job.print();
+        }
+        writeLine(out, "PRINT 1," + Math.max(1, copies));
+        return out.toByteArray();
     }
 
     /**
-     * 按标签元素坐标绘制文字（坐标为标签像素坐标）
+     * 文字：硬件字库 TEXT 指令，按前端字号换算出字体放大倍数
      */
-    private void drawItems(Graphics2D g, JSONArray items) {
-        if (items == null) {
+    private void appendText(ByteArrayOutputStream out, JSONObject item) throws IOException {
+        String text = item.getString("text");
+        if (text == null || text.trim().isEmpty()) {
             return;
         }
-        g.setColor(Color.BLACK);
-        for (int i = 0; i < items.size(); i++) {
-            JSONObject item = items.getJSONObject(i);
-            if (item == null) {
-                continue;
+        int x = toDots(item.getIntValue("x"));
+        int y = toDots(item.getIntValue("y"));
+        int fontSize = item.getIntValue("fontSize") > 0 ? item.getIntValue("fontSize") : 14;
+        int scale = fontScale(fontSize);
+        double lineHeight = item.getDoubleValue("lineHeight");
+        if (lineHeight <= 0) {
+            lineHeight = 1.3;
+        }
+        int lineStep = (int) Math.round(fontSize * lineHeight * PX_TO_DOT);
+        String[] lines = text.split("\n", -1);
+        for (String line : lines) {
+            if (!line.isEmpty()) {
+                writeLine(out, "TEXT " + x + "," + y + ",\"" + TEXT_FONT + "\",0," + scale + "," + scale
+                        + ",\"" + escape(line) + "\"");
             }
-            String text = item.getString("text");
-            if (text == null || text.isEmpty()) {
-                continue;
-            }
-            int fontSize = item.getIntValue("fontSize") > 0 ? item.getIntValue("fontSize") : 14;
-            boolean bold = "bold".equalsIgnoreCase(item.getString("fontWeight"));
-            Font font = new Font(FONT_NAME, bold ? Font.BOLD : Font.PLAIN, fontSize);
-            g.setFont(font);
-            FontMetrics metrics = g.getFontMetrics();
-
-            double letterSpacing = item.getDoubleValue("letterSpacing");
-            double lineHeight = item.getDoubleValue("lineHeight");
-            if (lineHeight <= 0) {
-                lineHeight = 1.3;
-            }
-            double lineStep = fontSize * lineHeight;
-            int x = item.getIntValue("x");
-            int y = item.getIntValue("y");
-
-            String[] lines = text.split("\n", -1);
-            for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-                // 与浏览器 line-height 一致：文字在行盒内垂直居中
-                double lineTop = y + lineIndex * lineStep;
-                double baseY = lineTop + (lineStep - metrics.getHeight()) / 2.0 + metrics.getAscent();
-                drawLine(g, lines[lineIndex], x, baseY, letterSpacing, metrics);
-            }
+            y += lineStep;
         }
     }
 
     /**
-     * 绘制单行文字，letterSpacing > 0 时逐字绘制实现字间距
+     * 一维条码：CODE128 走打印机硬件条码引擎，height 为条码高度（点）
      */
-    private void drawLine(Graphics2D g, String line, double x, double baseY, double letterSpacing, FontMetrics metrics) {
-        if (line == null || line.isEmpty()) {
+    private void appendBarcode(ByteArrayOutputStream out, JSONObject item) throws IOException {
+        String content = item.getString("codeText");
+        if (content == null || content.trim().isEmpty() || !isAscii(content)) {
+            // CODE128 只支持 ASCII，含中文时跳过该条码，避免整张标签打印异常
             return;
         }
-        if (letterSpacing <= 0) {
-            g.drawString(line, (float) x, (float) baseY);
+        int x = toDots(item.getIntValue("x"));
+        int y = toDots(item.getIntValue("y"));
+        int height = Math.max(20, toDots(item.getIntValue("height")));
+        int narrow = barcodeNarrowWidth(content.trim(), toDots(item.getIntValue("width")));
+        // 第 5 个参数为是否打印可读字符，置 0 避免条码下方多出一行属性值
+        writeLine(out, "BARCODE " + x + "," + y + ",\"128\"," + height + ",0,0," + narrow + "," + (narrow * 2)
+                + ",\"" + escape(content.trim()) + "\"");
+    }
+
+    /**
+     * 按元素宽度反算条码窄条宽度（点），保证整条条码不超出预览宽度
+     * 条码总宽 = 模块数 × 窄条宽度，窄条取整后可能略窄于预览，但不会溢出
+     */
+    private int barcodeNarrowWidth(String content, int widthDots) {
+        try {
+            BitMatrix matrix = new Code128Writer().encode(content, BarcodeFormat.CODE_128, 0, 1);
+            int modules = matrix.getWidth();
+            if (modules > 0 && widthDots > 0) {
+                return Math.max(1, Math.min(4, widthDots / modules));
+            }
+        } catch (Exception e) {
+            // 编码失败按最窄条输出，至少保证不越界
+        }
+        return 1;
+    }
+
+    /**
+     * 二维码：硬件 QRCODE 指令，纠错等级 M
+     * 打印机按「模块数 × 单元宽度」出图，且只能是正方形
+     * 取预览宽高中较小的一边作为目标边长，向下取整单元宽度，保证打印结果不超出预览框
+     */
+    private void appendQrcode(ByteArrayOutputStream out, JSONObject item) throws IOException {
+        String content = item.getString("codeText");
+        if (content == null || content.trim().isEmpty()) {
             return;
         }
-        double cursor = x;
-        for (int i = 0; i < line.length(); i++) {
-            String ch = String.valueOf(line.charAt(i));
-            g.drawString(ch, (float) cursor, (float) baseY);
-            cursor += metrics.stringWidth(ch) + letterSpacing;
+        int x = toDots(item.getIntValue("x"));
+        int y = toDots(item.getIntValue("y"));
+        int width = toDots(item.getIntValue("width"));
+        int height = toDots(item.getIntValue("height"));
+        int side = (width > 0 && height > 0) ? Math.min(width, height) : Math.max(width, height);
+        int cell = qrCellWidth(content, side);
+        writeLine(out, "QRCODE " + x + "," + y + ",M," + cell + ",A,0,\"" + escape(content) + "\"");
+    }
+
+    /**
+     * 按目标边长反算二维码单元宽度：单元宽度 = 预览边长(点) / 模块数，向下取整防止超出
+     */
+    private int qrCellWidth(String content, int sideDots) {
+        try {
+            Map<EncodeHintType, Object> hints = new HashMap<>();
+            hints.put(EncodeHintType.MARGIN, 0);
+            QRCode qr = Encoder.encode(content, ErrorCorrectionLevel.M, hints);
+            int modules = qr.getMatrix().getWidth();
+            if (modules > 0 && sideDots > 0) {
+                return Math.max(1, Math.min(10, sideDots / modules));
+            }
+        } catch (Exception e) {
+            // 内容无法编码时按默认单元宽度输出，不影响其他元素
         }
+        return 4;
+    }
+
+    /**
+     * 字号（96dpi 像素）换算为 24 点阵字体的放大倍数
+     */
+    private int fontScale(int fontSizePx) {
+        int dots = (int) Math.round(fontSizePx * PX_TO_DOT);
+        return Math.max(1, Math.min(10, (int) Math.round(dots / 24.0)));
+    }
+
+    private int toDots(int px) {
+        return (int) Math.round(px * PX_TO_DOT);
+    }
+
+    private String toMm(int dots) {
+        return String.format(Locale.US, "%.1f", dots / DOTS_PER_MM);
+    }
+
+    /**
+     * 指令内容转义：反斜杠与双引号，去掉换行避免截断指令
+     */
+    private String escape(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "")
+                .replace("\n", " ");
+    }
+
+    private boolean isAscii(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) > 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void writeLine(ByteArrayOutputStream out, String line) throws IOException {
+        out.write((line + "\r\n").getBytes(CHARSET));
+    }
+
+    /**
+     * 以 RAW 方式把指令字节直接投递到打印队列（绕过驱动排版）
+     */
+    private void sendRaw(PrintService service, byte[] data) throws Exception {
+        DocPrintJob job = service.createPrintJob();
+        Doc doc = new SimpleDoc(data, DocFlavor.BYTE_ARRAY.AUTOSENSE, null);
+        job.print(doc, null);
     }
 }

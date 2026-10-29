@@ -71,46 +71,98 @@
             </div>
             <!-- 缩放工具栏 -->
             <div class="label-zoom-bar">
+              <a-button-group size="small">
+                <a-button icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
+                <a-button icon="align-center" title="水平居中" :disabled="selectedKeys.length < 2" @click="alignSelected('center')" />
+                <a-button icon="align-right" title="右对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('right')" />
+              </a-button-group>
+              <a-button-group size="small" style="margin-left:6px">
+                <a-button icon="vertical-align-top" title="顶部对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('top')" />
+                <a-button icon="vertical-align-middle" title="垂直居中" :disabled="selectedKeys.length < 2" @click="alignSelected('middle')" />
+                <a-button icon="vertical-align-bottom" title="底部对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('bottom')" />
+              </a-button-group>
+              <a-button size="small" style="margin-left:6px" :disabled="selectedKeys.length < 3" @click="distributeSelected('h')">左右均分</a-button>
+              <a-button size="small" style="margin-left:6px" :disabled="selectedKeys.length < 3" @click="distributeSelected('v')">上下均分</a-button>
+              <span class="label-zoom-divider"></span>
               <a-button size="small" icon="zoom-out" title="缩小" @click="changeZoom(-0.1)"></a-button>
               <span class="label-zoom-value">{{ Math.round(zoom * 100) }}%</span>
               <a-button size="small" icon="zoom-in" title="放大" @click="changeZoom(0.1)"></a-button>
               <a-button size="small" @click="resetZoom">100%</a-button>
               <a-button size="small" @click="zoomToFit">适应窗口</a-button>
             </div>
-            <div class="label-preview-scroll" ref="previewScroll">
+            <div class="label-preview-scroll" ref="previewScroll" @mousedown.self="clearAttrSelection">
               <div
                 class="label-preview-wrap"
                 :style="{ width: (labelWidth * zoom) + 'px', height: (labelHeight * zoom) + 'px' }"
+                @mousedown.self="clearAttrSelection"
               >
+                <!-- 刻度尺：横向 -->
+                <div class="label-ruler-h" :style="{ width: (labelWidth * zoom) + 'px' }">
+                  <span
+                    v-for="t in rulerHTicks"
+                    :key="'rh' + t.mm"
+                    class="ruler-tick"
+                    :class="{ major: t.major }"
+                    :style="{ left: t.pos + 'px' }"
+                  ><em v-if="t.major">{{ t.mm }}</em></span>
+                </div>
+                <!-- 刻度尺：纵向 -->
+                <div class="label-ruler-v" :style="{ height: (labelHeight * zoom) + 'px' }">
+                  <span
+                    v-for="t in rulerVTicks"
+                    :key="'rv' + t.mm"
+                    class="ruler-tick-v"
+                    :class="{ major: t.major }"
+                    :style="{ top: t.pos + 'px' }"
+                  ><em v-if="t.major">{{ t.mm }}</em></span>
+                </div>
                 <div
                   class="label-preview"
                   :style="{ width: labelWidth + 'px', height: labelHeight + 'px', transform: 'scale(' + zoom + ')' }"
                   ref="labelPreview"
+                  @mousedown.self="onMarqueeStart"
                 >
+                  <!-- 框选矩形 -->
+                  <div
+                    v-if="marquee.active"
+                    class="label-marquee"
+                    :style="{ left: marquee.left + 'px', top: marquee.top + 'px', width: marquee.width + 'px', height: marquee.height + 'px' }"
+                  ></div>
                   <div v-if="selectedAttrList.length === 0" class="label-preview-empty">请先勾选属性</div>
                   <div
                     v-for="attr in selectedAttrList"
                     :key="attr.key"
+                    :data-key="attr.key"
                     class="label-preview-item"
-                    :class="{ active: currentAttrKey === attr.key, 'is-multiline': isMultilineValue(attr.value) }"
+                    :class="{ active: selectedKeys.indexOf(attr.key) > -1, 'is-multiline': isMultilineValue(attr.value), 'is-code': isCodeItem(attr.key) }"
                     :style="getItemStyle(attr.key)"
                     @mousedown="onItemMouseDown($event, attr.key)"
                     @dblclick="onItemDoubleClick($event, attr)"
                   >
-                    <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>
-                    <input
-                      v-if="editingKey === attr.key"
-                      :value="attr.value"
-                      @input="updateCustomValue(attr.key, $event.target.value)"
-                      @blur="editingKey = null"
-                      @keyup.enter="editingKey = null"
-                      @mousedown.stop
-                      class="label-edit-input"
-                    />
-                    <template v-else>{{ attr.value }}</template>
+                    <template v-if="!isCodeItem(attr.key)">
+                      <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>
+                      <input
+                        v-if="editingKey === attr.key"
+                        :value="attr.value"
+                        @input="updateCustomValue(attr.key, $event.target.value)"
+                        @blur="editingKey = null"
+                        @keyup.enter="editingKey = null"
+                        @mousedown.stop
+                        class="label-edit-input"
+                      />
+                      <template v-else>{{ attr.value }}</template>
+                    </template>
+                    <!-- 条码/二维码：文字（属性名+属性值）照常显示，下方生成图形 -->
+                    <template v-else>
+                      <div class="label-code-box">
+                        <div class="label-code-text" :style="codeTextStyle(attr)">{{ codeText(attr) }}</div>
+                        <img v-if="codeImages[attr.key]" :src="codeImages[attr.key]" class="label-code-img" :style="codeImgStyle(attr)" />
+                        <span v-else class="label-code-fallback">{{ attr.value }}</span>
+                      </div>
+                    </template>
                     <!-- resize 手柄 -->
                     <div
-                      v-if="currentAttrKey === attr.key && editingKey !== attr.key"
+                      v-if="selectedKeys.length === 1 && currentAttrKey === attr.key && editingKey !== attr.key"
                       class="resize-handle"
                       @mousedown.stop.prevent="onResizeMouseDown($event, attr.key)"
                     ></div>
@@ -131,7 +183,23 @@
         <!-- 右栏：标签尺寸 + 样式编辑（固定宽度） -->
         <a-col class="le-side" style="width:340px;flex:none">
           <div class="label-edit-panel">
-            <!-- 保存模板：固定在右栏顶部 -->
+            <!-- 标签宽高（毫米）：固定最顶端 -->
+            <div class="label-size-editor" style="margin-bottom:10px">
+              <div class="label-edit-section-title">标签尺寸（毫米）</div>
+              <a-row :gutter="8">
+                <a-col :span="12">
+                  <span class="style-label">宽</span>
+                  <a-input-number v-model="labelWidthMm" :min="10" :max="200" size="small" style="width:70px" />
+                  <span class="style-label" style="margin-left:2px">mm</span>
+                </a-col>
+                <a-col :span="12">
+                  <span class="style-label">高</span>
+                  <a-input-number v-model="labelHeightMm" :min="10" :max="200" size="small" style="width:70px" />
+                  <span class="style-label" style="margin-left:2px">mm</span>
+                </a-col>
+              </a-row>
+            </div>
+            <!-- 保存模板 -->
             <div class="label-save-box">
               <div class="label-edit-section-title">保存模板</div>
               <a-input v-model="newTemplateName" placeholder="模板名称" style="margin-bottom:8px" />
@@ -162,86 +230,65 @@
                 placeholder="勾选属性后，这里显示标签中的全部文字"
               />
             </div>
-            <!-- 标签宽高（毫米，固定最上端） -->
-            <div class="label-size-editor">
-              <div class="label-edit-section-title">标签尺寸（毫米）</div>
-              <a-row :gutter="8">
-                <a-col :span="12">
-                  <span class="style-label">宽</span>
-                  <a-input-number v-model="labelWidthMm" :min="10" :max="200" size="small" style="width:70px" />
-                  <span class="style-label" style="margin-left:2px">mm</span>
-                </a-col>
-                <a-col :span="12">
-                  <span class="style-label">高</span>
-                  <a-input-number v-model="labelHeightMm" :min="10" :max="200" size="small" style="width:70px" />
-                  <span class="style-label" style="margin-left:2px">mm</span>
-                </a-col>
-              </a-row>
+            <!-- 当前选中属性（支持 Shift 多选）的样式编辑 -->
+            <div class="label-edit-section-title" style="margin-top:12px">
+              样式编辑
+              <span v-if="selectedKeys.length > 1" style="font-weight:normal;font-size:12px;color:#1890ff;margin-left:6px">已选 {{ selectedKeys.length }} 项</span>
             </div>
-
-            <!-- 当前选中属性的样式编辑 -->
-            <div class="label-edit-section-title" style="margin-top:12px">样式编辑</div>
-            <div v-if="!currentAttrKey" class="label-edit-empty">请点击预览中的属性</div>
+            <div v-if="!selectedKeys.length" class="label-edit-empty">请点击预览中的属性（Shift + 点击可多选）</div>
             <div v-else>
-              <div class="attr-style-name">
-                {{ getCurrentAttrLabel }}
-                <a-tag v-if="getCurrentAttr && getCurrentAttr.isCustom" color="blue" style="font-size:11px;margin-left:4px">自定义</a-tag>
-              </div>
-
-              <!-- 属性名：下拉选择 + 编辑框 -->
+              <!-- 属性名编辑：可输入可快速选择，留空则不显示属性名 -->
               <div style="margin-bottom:8px">
-                <span class="style-label">属性名</span>
-                <a-select
-                  v-model="presetLabelSelect"
+                <span class="style-label">属性名编辑</span>
+                <a-auto-complete
+                  v-model="currentLabelEdit"
+                  :dataSource="presetLabelNames"
+                  placeholder="选择或输入属性名（留空则不显示属性名）"
                   style="width:100%"
-                  placeholder="快速选择属性名"
-                  @change="onPresetLabelSelect"
-                >
-                  <a-select-option v-for="name in presetLabelNames" :key="name" :value="name">{{ name }}</a-select-option>
-                </a-select>
-                <a-input
-                  v-model="attrLabels[currentAttrKey]"
-                  placeholder="编辑属性名（留空则只显示值）"
-                  style="margin-top:4px"
-                  allowClear
                 />
               </div>
+              <!-- 条码 / 二维码：勾选后按该属性的值生成图形 -->
+              <div style="margin-bottom:8px">
+                <span class="style-label">编码</span>
+                <a-checkbox :checked="currentCodeType === 'barcode'" @change="e => setCodeType('barcode', e.target.checked)">条码</a-checkbox>
+                <a-checkbox :checked="currentCodeType === 'qrcode'" @change="e => setCodeType('qrcode', e.target.checked)">二维码</a-checkbox>
+              </div>
 
-              <!-- 字体属性：单列排列，数值项带数字调节按钮 -->
+              <!-- 字体属性：单列排列，数值项带数字调节按钮；多选时不一致的项显示为空 -->
               <div class="style-field">
                 <span class="style-label">字号</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].fontSize" :min="6" :max="72" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" style="width:100%" placeholder="多个值" />
               </div>
               <div class="style-field">
                 <span class="style-label">粗细</span>
-                <a-select v-model="attrStyles[currentAttrKey].fontWeight" size="small" style="width:100%">
+                <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" style="width:100%" placeholder="多个值">
                   <a-select-option value="normal">正常</a-select-option>
                   <a-select-option value="bold">粗体</a-select-option>
                 </a-select>
               </div>
               <div class="style-field">
                 <span class="style-label">字间距(px)</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].letterSpacing" :min="0" :max="30" :step="0.5" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" style="width:100%" placeholder="多个值" />
               </div>
               <div class="style-field">
                 <span class="style-label">行距(倍)</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].lineHeight" :min="0.8" :max="4" :step="0.1" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" style="width:100%" placeholder="多个值" />
               </div>
               <div class="style-field">
                 <span class="style-label">X</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].x" :min="-999" :max="9999" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('x')" @change="v => setMultiStyle('x', v)" :min="-999" :max="9999" size="small" style="width:100%" placeholder="多个值" />
               </div>
               <div class="style-field">
                 <span class="style-label">Y</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].y" :min="-999" :max="9999" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('y')" @change="v => setMultiStyle('y', v)" :min="-999" :max="9999" size="small" style="width:100%" placeholder="多个值" />
               </div>
               <div class="style-field">
                 <span class="style-label">宽</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].width" :min="10" :max="2000" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('width')" @change="v => setMultiStyle('width', v)" :min="10" :max="2000" size="small" style="width:100%" placeholder="自动" />
               </div>
               <div class="style-field">
                 <span class="style-label">高</span>
-                <a-input-number v-model="attrStyles[currentAttrKey].height" :min="10" :max="1000" size="small" style="width:100%" />
+                <a-input-number :value="getMultiStyle('height')" @change="v => setMultiStyle('height', v)" :min="10" :max="1000" size="small" style="width:100%" placeholder="自动" />
               </div>
             </div>
           </div>
@@ -255,6 +302,8 @@
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { printLabel } from '@/views/material/utils/labelPrint'
+  import { fitCodeSize, renderCodeDataUrl } from '@/views/material/utils/labelCode'
+  import { fetchLabelTemplates, saveLabelTemplates } from '@/views/material/utils/labelTemplateStore'
 
   // 像素与毫米转换常量（96dpi: 1mm ≈ 3.779528px）
   var PX_PER_MM = 3.779528
@@ -272,6 +321,10 @@
         attrStyles: {},
         attrLabels: {},
         currentAttrKey: null,
+        // 多选：Shift + 点击可同时选中多个文本标签
+        selectedKeys: [],
+        // 条码/二维码图片缓存（key → dataURL）
+        codeImages: {},
         editingKey: null,
         templates: [],
         selectedTemplateId: null,
@@ -283,12 +336,15 @@
         // 预览缩放比例与对齐参考线
         zoom: 1,
         guideLines: { v: [], h: [] },
-        // 拖拽移动
+        // 拖拽移动（dragOrigins 记录各选中项的拖动起点，多选时整体移动）
         dragKey: null,
         dragStartX: 0,
         dragStartY: 0,
-        dragOrigX: 0,
-        dragOrigY: 0,
+        dragOrigins: {},
+        // 左键拖动框选
+        marquee: { active: false, left: 0, top: 0, width: 0, height: 0 },
+        marqueeStartX: 0,
+        marqueeStartY: 0,
         // 拖拽resize
         resizeKey: null,
         resizeStartX: 0,
@@ -296,8 +352,7 @@
         resizeOrigW: 0,
         resizeOrigH: 0,
         resizeOrigFont: 14,
-        // 属性名下拉
-        presetLabelSelect: undefined,
+        // 属性名快速选择
         presetLabelNames: [
           '品名', '商品名称', '规格', '条码', '货号', '价格', '零售价',
           '颜色', '尺码', '尺寸', '材质', '产地', '等级', '重量',
@@ -309,6 +364,18 @@
     computed: {
       selectedAttrList() {
         return this.allAttrs.filter(attr => this.selectedAttrs.indexOf(attr.key) > -1)
+      },
+      // 选中项的编码类型（条码/二维码），多选时不一致返回空
+      currentCodeType() {
+        return this.getMultiStyle('codeType') || ''
+      },
+      // 编码内容签名：属性值、编码类型、尺寸变化时重新生成图片
+      codeSignature() {
+        var self = this
+        return this.selectedAttrList.map(function(attr) {
+          var s = self.attrStyles[attr.key] || {}
+          return [attr.key, s.codeType || '', attr.value == null ? '' : attr.value, s.width || '', s.height || ''].join('|')
+        }).join(';')
       },
       // 标签中所有文字，按预览顺序逐行输出「属性名: 值」，属性名留空时只输出值
       labelTextContent() {
@@ -329,6 +396,40 @@
         var attr = this.getCurrentAttr
         return attr ? attr.label : ''
       },
+      // 属性名编辑：显示当前属性名，可直接输入修改，留空表示不显示属性名
+      // 多选时：属性名一致显示该名称，不一致显示为空
+      currentLabelEdit: {
+        get() {
+          var self = this
+          if (!this.selectedKeys.length) return ''
+          var first = null
+          for (var i = 0; i < this.selectedKeys.length; i++) {
+            var key = this.selectedKeys[i]
+            var val = Object.prototype.hasOwnProperty.call(this.attrLabels, key)
+              ? this.attrLabels[key]
+              : self.getAttrDefaultLabel(key)
+            if (i === 0) {
+              first = val
+            } else if (val !== first) {
+              return ''
+            }
+          }
+          return first == null ? '' : first
+        },
+        set(val) {
+          var self = this
+          this.selectedKeys.forEach(function(key) {
+            self.$set(self.attrLabels, key, val == null ? '' : val)
+          })
+        }
+      },
+      // 预览刻度尺
+      rulerHTicks() {
+        return this.buildRulerTicks(this.labelWidthMm)
+      },
+      rulerVTicks() {
+        return this.buildRulerTicks(this.labelHeightMm)
+      },
       labelWidthMm: {
         get() { return Math.round(this.labelWidth / PX_PER_MM) },
         set(val) { this.labelWidth = Math.round(val * PX_PER_MM) }
@@ -348,6 +449,12 @@
         return this.templates.filter(function(t) { return t.type === 'default' })
       }
     },
+    watch: {
+      // 属性内容、编码类型或尺寸变化时重新生成条码/二维码图片
+      codeSignature() {
+        this.refreshCodeImages()
+      }
+    },
     mounted() {
       this.loadTemplates()
     },
@@ -361,12 +468,12 @@
         this.attrStyles = {}
         this.attrLabels = {}
         this.currentAttrKey = null
+        this.selectedKeys = []
         this.editingKey = null
         this.selectedTemplateId = null
         this.newTemplateName = ''
         this.templateType = 'normal'
         this.templateCategoryId = this.record.categoryId || null
-        this.presetLabelSelect = undefined
         this.customCounter = 0
         this.labelWidth = 320
         this.labelHeight = 240
@@ -406,15 +513,78 @@
       getItemStyle(key) {
         var s = this.attrStyles[key]
         if (!s) return {}
-        return {
+        var style = {
           left: s.x + 'px',
           top: s.y + 'px',
           fontSize: s.fontSize + 'px',
           fontWeight: s.fontWeight,
           letterSpacing: (s.letterSpacing || 0) + 'px',
-          lineHeight: String(s.lineHeight || 1.3),
-          width: (s.width || 120) + 'px',
-          height: (s.height || 24) + 'px'
+          lineHeight: String(s.lineHeight || 1.3)
+        }
+        // 未手动指定宽高时边框随文字自适应，字号/行距/字距变化时自动跟随
+        if (s.width) style.width = s.width + 'px'
+        if (s.height) style.height = s.height + 'px'
+        // 条码/二维码：宽度用设定值或默认 80/160，总高 = 文字高度 + 图形高度
+        if (s.codeType) {
+          var codeAttr = this.selectedAttrList.find(function(a) { return a.key === key })
+          if (codeAttr) {
+            var layout = this.codeLayout(codeAttr)
+            style.width = layout.boxWidth + 'px'
+            style.height = Math.round(layout.textHeight + layout.imgHeight) + 'px'
+          }
+        }
+        return style
+      },
+      // 该属性是否渲染为条码/二维码
+      isCodeItem(key) {
+        var s = this.attrStyles[key]
+        return !!(s && s.codeType)
+      },
+      // 条码/二维码上方的文字：属性名 + 属性值（属性名留空时只显示值）
+      codeText(attr) {
+        var label = Object.prototype.hasOwnProperty.call(this.attrLabels, attr.key)
+          ? this.attrLabels[attr.key]
+          : (attr.label || '')
+        var value = attr.value == null ? '' : String(attr.value)
+        return label ? (label + ': ' + value) : value
+      },
+      // 编码元素布局：文字高度、盒宽、图形宽高
+      codeLayout(attr) {
+        var s = this.attrStyles[attr.key] || {}
+        var isQr = s.codeType === 'qrcode'
+        var text = this.codeText(attr)
+        var lines = text ? String(text).split('\n').length : 0
+        var fontSize = s.fontSize || 14
+        var lineHeight = s.lineHeight || 1.3
+        // 文字框固定为文本实际长高 + 2px
+        var textBoxHeight = lines ? Math.round(lines * fontSize) + 2 : 0
+        // 文字与图形之间的间距取原行距留白的三分之一，避免文字和条码之间出现大空隙
+        var textGap = lines ? Math.round((lines * fontSize * (lineHeight - 1)) / 3) : 0
+        var textHeight = textBoxHeight + textGap
+        var boxWidth = s.width || (isQr ? 80 : 160)
+        var imgHeight = s.height ? Math.max(20, s.height - textHeight) : (isQr ? 80 : 50)
+        // 按打印机硬件能力换算实际可打印尺寸，预览与打印保持一致
+        var fitted = fitCodeSize(s.codeType, attr.value, boxWidth, imgHeight)
+        return {
+          text: text,
+          textHeight: textHeight,
+          textBoxHeight: textBoxHeight,
+          boxWidth: boxWidth,
+          imgWidth: fitted.width,
+          imgHeight: fitted.height
+        }
+      },
+      // 编码元素上方的文字框：严格贴合文字高度
+      codeTextStyle(attr) {
+        var layout = this.codeLayout(attr)
+        return { height: layout.textBoxHeight + 'px', lineHeight: '1' }
+      },
+      // 编码图片尺寸
+      codeImgStyle(attr) {
+        var layout = this.codeLayout(attr)
+        return {
+          width: layout.imgWidth + 'px',
+          height: Math.round(layout.imgHeight) + 'px'
         }
       },
       onSelectedChange() {
@@ -422,15 +592,10 @@
         this.selectedAttrs.forEach(function(key) {
           if (!self.attrStyles[key]) {
             var idx = self.selectedAttrs.indexOf(key)
-            var attr = self.allAttrs.find(function(a) { return a.key === key })
-            var value = attr && attr.value != null ? String(attr.value) : ''
-            var isSpec = key === 'specDisplay' || key === 'specValues'
+            // 不预设宽高，默认由文字内容撑开，字号/行距/字距调整时边框自动跟随
             self.$set(self.attrStyles, key, {
               fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal',
-              letterSpacing: 0, lineHeight: 1.3,
-              // 规格等含换行的属性，按商品信息表格中的排版加载（宽 220、行高 18 的多行文本）
-              width: isSpec ? 220 : 120,
-              height: self.calcItemHeight(value, 14)
+              letterSpacing: 0, lineHeight: 1.3
             })
           }
           if (!Object.prototype.hasOwnProperty.call(self.attrLabels, key)) {
@@ -440,18 +605,17 @@
         })
         if (this.currentAttrKey && this.selectedAttrs.indexOf(this.currentAttrKey) === -1) {
           this.currentAttrKey = null
+          this.selectedKeys = []
         }
+        // 已取消勾选的属性同时移出多选集合
+        var selfKeys = this
+        this.selectedKeys = this.selectedKeys.filter(function(k) {
+          return selfKeys.selectedAttrs.indexOf(k) > -1
+        })
       },
       // 值是否为多行（规格：子规格名：子规格值 逐行）
       isMultilineValue(value) {
         return value != null && String(value).indexOf('\n') > -1
-      },
-      // 按换行行数计算元素高度，单行时保持 24
-      calcItemHeight(value, fontSize) {
-        var text = value == null ? '' : String(value)
-        var lines = text.split('\n').length
-        if (lines <= 1) return 24
-        return Math.max(24, lines * Math.round((fontSize || 14) * 1.3) + 4)
       },
       // 自定义标签
       addCustomLabel() {
@@ -468,8 +632,7 @@
         var idx = this.selectedAttrs.length - 1
         this.$set(this.attrStyles, key, {
           fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal',
-          letterSpacing: 0, lineHeight: 1.3,
-          width: 120, height: 24
+          letterSpacing: 0, lineHeight: 1.3
         })
         this.$set(this.attrLabels, key, '')
       },
@@ -479,6 +642,8 @@
         var sIdx = this.selectedAttrs.indexOf(key)
         if (sIdx > -1) this.selectedAttrs.splice(sIdx, 1)
         if (this.currentAttrKey === key) this.currentAttrKey = null
+        var kIdx = this.selectedKeys.indexOf(key)
+        if (kIdx > -1) this.selectedKeys.splice(kIdx, 1)
         delete this.attrStyles[key]
         delete this.attrLabels[key]
       },
@@ -486,12 +651,196 @@
         var attr = this.allAttrs.find(function(a) { return a.key === key })
         if (attr) attr.value = value
       },
-      // 属性名下拉
-      onPresetLabelSelect(value) {
-        if (this.currentAttrKey && value) {
-          this.$set(this.attrLabels, this.currentAttrKey, value)
+      // 点击预览空白处取消选中
+      clearAttrSelection() {
+        this.currentAttrKey = null
+        this.selectedKeys = []
+      },
+      // 左键拖动框选：在标签画布空白处按下并拖拽，选中与选框相交的文本标签
+      onMarqueeStart(e) {
+        if (e.button !== 0) return
+        e.preventDefault()
+        var local = this.getLabelLocalPoint(e)
+        this.marqueeStartX = local.x
+        this.marqueeStartY = local.y
+        this.marquee = { active: true, left: local.x, top: local.y, width: 0, height: 0 }
+        this.currentAttrKey = null
+        this.selectedKeys = []
+        document.addEventListener('mousemove', this.onMarqueeMove)
+        document.addEventListener('mouseup', this.onMarqueeEnd)
+      },
+      onMarqueeMove(e) {
+        if (!this.marquee.active) return
+        var local = this.getLabelLocalPoint(e)
+        var left = Math.min(this.marqueeStartX, local.x)
+        var top = Math.min(this.marqueeStartY, local.y)
+        var width = Math.abs(local.x - this.marqueeStartX)
+        var height = Math.abs(local.y - this.marqueeStartY)
+        this.marquee = { active: true, left: left, top: top, width: width, height: height }
+        var self = this
+        this.selectedKeys = this.selectedAttrList.filter(function(attr) {
+          var s = self.attrStyles[attr.key]
+          if (!s) return false
+          var size = self.getItemSize(attr.key)
+          if (!size.w && !size.h) return false
+          return s.x < left + width && s.x + size.w > left && s.y < top + height && s.y + size.h > top
+        }).map(function(attr) { return attr.key })
+      },
+      onMarqueeEnd() {
+        var keys = this.selectedKeys
+        this.marquee = { active: false, left: 0, top: 0, width: 0, height: 0 }
+        this.currentAttrKey = keys.length === 1 ? keys[0] : null
+        document.removeEventListener('mousemove', this.onMarqueeMove)
+        document.removeEventListener('mouseup', this.onMarqueeEnd)
+      },
+      unbindMarqueeEvents() {
+        document.removeEventListener('mousemove', this.onMarqueeMove)
+        document.removeEventListener('mouseup', this.onMarqueeEnd)
+      },
+      // 鼠标坐标换算为标签画布内坐标（缩放已取消）
+      getLabelLocalPoint(e) {
+        var el = this.$refs.labelPreview
+        if (!el) return { x: 0, y: 0 }
+        var rect = el.getBoundingClientRect()
+        return {
+          x: (e.clientX - rect.left) / this.zoom,
+          y: (e.clientY - rect.top) / this.zoom
         }
-        this.presetLabelSelect = undefined
+      },
+      // 切换编码类型：'barcode' 条码 / 'qrcode' 二维码 / '' 文本（两种编码互斥）
+      setCodeType(type, checked) {
+        var self = this
+        this.selectedKeys.forEach(function(key) {
+          var s = self.attrStyles[key]
+          if (!s) return
+          if (checked) {
+            self.$set(s, 'codeType', type)
+          } else if (s.codeType === type) {
+            self.$delete(s, 'codeType')
+          }
+        })
+      },
+      // 为所有设置为条码/二维码的属性生成图片
+      refreshCodeImages() {
+        var self = this
+        var alive = {}
+        this.selectedAttrList.forEach(function(attr) {
+          var s = self.attrStyles[attr.key]
+          if (!s || !s.codeType) return
+          alive[attr.key] = true
+          var layout = self.codeLayout(attr)
+          renderCodeDataUrl(s.codeType, attr.value, layout.imgWidth, layout.imgHeight).then(function(url) {
+            self.$set(self.codeImages, attr.key, url)
+          })
+        })
+        Object.keys(this.codeImages).forEach(function(key) {
+          if (!alive[key]) self.$delete(self.codeImages, key)
+        })
+      },
+      // 属性默认标题（未自定义属性名时使用）
+      getAttrDefaultLabel(key) {
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return attr ? attr.label : ''
+      },
+      // 多选样式读取：一致返回该值，不一致返回空（输入框显示为空）
+      getMultiStyle(field) {
+        if (!this.selectedKeys.length) return undefined
+        var first = this.attrStyles[this.selectedKeys[0]]
+        if (!first) return undefined
+        var val = first[field]
+        for (var i = 1; i < this.selectedKeys.length; i++) {
+          var s = this.attrStyles[this.selectedKeys[i]]
+          if (!s || s[field] !== val) return undefined
+        }
+        return val
+      },
+      // 多选样式写入：统一应用到所有选中项
+      setMultiStyle(field, val) {
+        var self = this
+        if (val == null && field !== 'width' && field !== 'height') return
+        this.selectedKeys.forEach(function(key) {
+          var s = self.attrStyles[key]
+          if (!s) return
+          if (val == null) {
+            self.$delete(s, field)
+          } else {
+            self.$set(s, field, val)
+          }
+        })
+      },
+      // 读取预览元素实际渲染尺寸（不受缩放影响）
+      getItemSize(key) {
+        var el = document.querySelector('.label-preview-item[data-key="' + key + '"]')
+        return { w: el ? el.offsetWidth : 0, h: el ? el.offsetHeight : 0 }
+      },
+      // 对齐：以选中对象的外接矩形为基准 left/center/right/top/middle/bottom
+      alignSelected(mode) {
+        var self = this
+        var keys = this.selectedKeys
+        if (keys.length < 2) return
+        var rects = keys.map(function(key) {
+          var s = self.attrStyles[key] || {}
+          var size = self.getItemSize(key)
+          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+        })
+        // 选中对象整体的左/右/上/下边界
+        var minX = Math.min.apply(null, rects.map(function(r) { return r.x }))
+        var maxX = Math.max.apply(null, rects.map(function(r) { return r.x + r.w }))
+        var minY = Math.min.apply(null, rects.map(function(r) { return r.y }))
+        var maxY = Math.max.apply(null, rects.map(function(r) { return r.y + r.h }))
+        rects.forEach(function(r) {
+          var s = self.attrStyles[r.key]
+          if (!s) return
+          if (mode === 'left') self.$set(s, 'x', Math.round(minX))
+          if (mode === 'right') self.$set(s, 'x', Math.round(maxX - r.w))
+          if (mode === 'center') self.$set(s, 'x', Math.round((minX + maxX - r.w) / 2))
+          if (mode === 'top') self.$set(s, 'y', Math.round(minY))
+          if (mode === 'bottom') self.$set(s, 'y', Math.round(maxY - r.h))
+          if (mode === 'middle') self.$set(s, 'y', Math.round((minY + maxY - r.h) / 2))
+        })
+      },
+      // 均分：h 左右均分，v 上下均分（首尾保持不动，中间等间距）
+      distributeSelected(dir) {
+        var self = this
+        var keys = this.selectedKeys
+        if (keys.length < 3) return
+        var rects = keys.map(function(key) {
+          var s = self.attrStyles[key] || {}
+          var size = self.getItemSize(key)
+          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+        })
+        if (dir === 'h') {
+          rects.sort(function(a, b) { return a.x - b.x })
+          var totalW = rects.reduce(function(sum, r) { return sum + r.w }, 0)
+          var firstH = rects[0]
+          var lastH = rects[rects.length - 1]
+          var gapH = ((lastH.x + lastH.w) - firstH.x - totalW) / (rects.length - 1)
+          var cursorH = firstH.x
+          rects.forEach(function(r) {
+            self.$set(self.attrStyles[r.key], 'x', Math.round(cursorH))
+            cursorH += r.w + gapH
+          })
+        } else {
+          rects.sort(function(a, b) { return a.y - b.y })
+          var totalH = rects.reduce(function(sum, r) { return sum + r.h }, 0)
+          var firstV = rects[0]
+          var lastV = rects[rects.length - 1]
+          var gapV = ((lastV.y + lastV.h) - firstV.y - totalH) / (rects.length - 1)
+          var cursorV = firstV.y
+          rects.forEach(function(r) {
+            self.$set(self.attrStyles[r.key], 'y', Math.round(cursorV))
+            cursorV += r.h + gapV
+          })
+        }
+      },
+      // 生成刻度尺刻度：每 2mm 一格，每 10mm 标注
+      buildRulerTicks(totalMm) {
+        var ticks = []
+        var perMm = this.zoom * PX_PER_MM
+        for (var mm = 0; mm <= totalMm; mm += 2) {
+          ticks.push({ mm: mm, major: mm % 10 === 0, pos: Math.round(mm * perMm) })
+        }
+        return ticks
       },
       // 缩放
       changeZoom(delta) {
@@ -510,16 +859,36 @@
         var fit = Math.min(sw / this.labelWidth, sh / this.labelHeight)
         this.zoom = Math.max(0.3, Math.min(3, Math.round(fit * 10) / 10))
       },
-      // 拖拽移动
+      // 拖拽移动（Shift + 点击为多选）
       onItemMouseDown(e, key) {
         if (this.editingKey === key) return
+        if (e.shiftKey) {
+          e.preventDefault()
+          e.stopPropagation()
+          var idx = this.selectedKeys.indexOf(key)
+          if (idx > -1) {
+            this.selectedKeys.splice(idx, 1)
+          } else {
+            this.selectedKeys.push(key)
+          }
+          this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+          return
+        }
         e.preventDefault()
         e.stopPropagation()
+        // 点在已选中的多选项上时保留多选，实现整体拖动
+        if (this.selectedKeys.indexOf(key) === -1) {
+          this.selectedKeys = [key]
+        }
         this.dragKey = key
         this.dragStartX = e.clientX
         this.dragStartY = e.clientY
-        this.dragOrigX = this.attrStyles[key] ? this.attrStyles[key].x : 0
-        this.dragOrigY = this.attrStyles[key] ? this.attrStyles[key].y : 0
+        this.dragOrigins = {}
+        var self = this
+        this.selectedKeys.forEach(function(k) {
+          var s = self.attrStyles[k]
+          if (s) self.dragOrigins[k] = { x: s.x, y: s.y }
+        })
         this.currentAttrKey = key
         this.bindDragEvents()
       },
@@ -528,8 +897,10 @@
         this.resizeKey = key
         this.resizeStartX = e.clientX
         this.resizeStartY = e.clientY
-        this.resizeOrigW = (this.attrStyles[key] && this.attrStyles[key].width) || 120
-        this.resizeOrigH = (this.attrStyles[key] && this.attrStyles[key].height) || 24
+        // 未指定固定宽高时，以当前实际渲染尺寸作为拖拽起点
+        var el = document.querySelector('.label-preview-item[data-key="' + key + '"]')
+        this.resizeOrigW = (this.attrStyles[key] && this.attrStyles[key].width) || (el ? el.offsetWidth : 120)
+        this.resizeOrigH = (this.attrStyles[key] && this.attrStyles[key].height) || (el ? el.offsetHeight : 24)
         this.resizeOrigFont = (this.attrStyles[key] && this.attrStyles[key].fontSize) || 14
         this.bindDragEvents()
       },
@@ -543,20 +914,32 @@
         document.removeEventListener('mouseup', this.onPreviewMouseUp)
       },
       onPreviewMouseMove(e) {
-        // 拖拽移动（鼠标位移按缩放比例换算为标签坐标）
+        // 拖拽移动（鼠标位移按缩放比例换算为标签坐标，多选时整体移动）
         if (this.dragKey) {
           var dx = (e.clientX - this.dragStartX) / this.zoom
           var dy = (e.clientY - this.dragStartY) / this.zoom
-          var style = this.attrStyles[this.dragKey]
-          if (style) {
-            var w = style.width || 120
-            var h = style.height || 24
-            var rawX = Math.max(-this.labelWidth, Math.min(this.labelWidth * 2, this.dragOrigX + dx))
-            var rawY = Math.max(-this.labelHeight, Math.min(this.labelHeight * 2, this.dragOrigY + dy))
-            var snap = this.computeSnap(rawX, rawY, w, h, this.dragKey)
-            this.$set(style, 'x', Math.round(Math.max(-this.labelWidth, Math.min(this.labelWidth * 2, snap.x))))
-            this.$set(style, 'y', Math.round(Math.max(-this.labelHeight, Math.min(this.labelHeight * 2, snap.y))))
-            this.guideLines = snap.guides
+          var self2 = this
+          var dragKeys = Object.keys(this.dragOrigins)
+          if (dragKeys.length > 1) {
+            dragKeys.forEach(function(k) {
+              var st = self2.attrStyles[k]
+              var og = self2.dragOrigins[k]
+              if (!st || !og) return
+              self2.$set(st, 'x', Math.round(Math.max(-self2.labelWidth, Math.min(self2.labelWidth * 2, og.x + dx))))
+              self2.$set(st, 'y', Math.round(Math.max(-self2.labelHeight, Math.min(self2.labelHeight * 2, og.y + dy))))
+            })
+            this.guideLines = { v: [], h: [] }
+          } else {
+            var style = this.attrStyles[this.dragKey]
+            var origin = this.dragOrigins[this.dragKey]
+            if (style && origin) {
+              var w = style.width || 120
+              var h = style.height || 24
+              var snap = this.computeSnap(origin.x + dx, origin.y + dy, w, h, this.dragKey)
+              this.$set(style, 'x', Math.round(Math.max(-this.labelWidth, Math.min(this.labelWidth * 2, snap.x))))
+              this.$set(style, 'y', Math.round(Math.max(-this.labelHeight, Math.min(this.labelHeight * 2, snap.y))))
+              this.guideLines = snap.guides
+            }
           }
         }
         // 拖拽resize
@@ -576,6 +959,7 @@
       },
       onPreviewMouseUp() {
         this.dragKey = null
+        this.dragOrigins = {}
         this.resizeKey = null
         this.guideLines = { v: [], h: [] }
         this.unbindDragEvents()
@@ -643,14 +1027,16 @@
           }
         })
       },
-      // 模板管理
+      // 模板管理：云端读取，本地仅作缓存
       loadTemplates() {
-        try {
-          var json = localStorage.getItem('labelTemplates')
-          this.templates = json ? JSON.parse(json) : []
-        } catch (e) {
-          this.templates = []
-        }
+        var self = this
+        fetchLabelTemplates().then(function(list) {
+          self.templates = list
+          // 弹层已打开但模板晚于打开到达时，补一次品类默认模板匹配
+          if (self.visible && !self.selectedTemplateId) {
+            self.loadCategoryDefaultTemplate()
+          }
+        })
       },
       loadCategoryDefaultTemplate() {
         var categoryId = this.record.categoryId
@@ -714,7 +1100,11 @@
           })
         }
         this.templates.push(tpl)
-        localStorage.setItem('labelTemplates', JSON.stringify(this.templates))
+        saveLabelTemplates(this.templates).then(function(res) {
+          if (!res || res.code !== 200) {
+            self.$message.warning('模板已保存到本机，云端保存失败，其他设备暂无法同步')
+          }
+        })
         this.selectedTemplateId = tpl.id
         this.$message.success('模板已保存')
       },
@@ -741,10 +1131,15 @@
             // 旧模板没有字间距/行距，补默认值
             if (style.letterSpacing == null) style.letterSpacing = 0
             if (style.lineHeight == null) style.lineHeight = 1.3
+            // 旧模板默认写死的宽高视为自动，边框继续跟随字号自适应
+            if (style.width === 120 && style.height === 24) {
+              delete style.width
+              delete style.height
+            }
             self.$set(self.attrStyles, key, style)
           } else {
             var idx = tpl.selectedAttrs.indexOf(key)
-            self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3, width: 120, height: 24 })
+            self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3 })
           }
           // 模板里存在该属性名的记录就按记录恢复（含空字符串），只有没记录时才用列标题兜底
           if (tpl.attrLabels && Object.prototype.hasOwnProperty.call(tpl.attrLabels, key)) {
@@ -762,7 +1157,11 @@
         if (!this.selectedTemplateId) return
         var self = this
         this.templates = this.templates.filter(function(t) { return t.id !== self.selectedTemplateId })
-        localStorage.setItem('labelTemplates', JSON.stringify(this.templates))
+        saveLabelTemplates(this.templates).then(function(res) {
+          if (!res || res.code !== 200) {
+            self.$message.warning('模板已保存到本机，云端保存失败，其他设备暂无法同步')
+          }
+        })
         this.selectedTemplateId = null
         this.$message.success('模板已删除')
       },
@@ -773,19 +1172,43 @@
         this.selectedAttrList.forEach(function(attr) {
           var style = self.attrStyles[attr.key]
           if (!style) return
+          // 条码/二维码：上方文字 + 下方图形
+          if (style.codeType) {
+            var codeUrl = self.codeImages[attr.key]
+            if (codeUrl) {
+              var codeLayout = self.codeLayout(attr)
+              itemsHtml += '<div style="position:absolute;' +
+                'left:' + style.x + 'px;' +
+                'top:' + style.y + 'px;' +
+                'width:' + codeLayout.boxWidth + 'px;' +
+                'height:' + Math.round(codeLayout.textHeight + codeLayout.imgHeight) + 'px;' +
+                'font-size:' + style.fontSize + 'px;' +
+                'font-weight:' + style.fontWeight + ';' +
+                'letter-spacing:' + (style.letterSpacing || 0) + 'px;' +
+                'line-height:' + (style.lineHeight || 1.3) + ';' +
+                '">' +
+                '<div style="white-space:pre-line;word-break:break-word;line-height:1;height:' + codeLayout.textBoxHeight + 'px;">' + codeLayout.text + '</div>' +
+                '<img src="' + codeUrl + '" style="display:block;width:' + codeLayout.imgWidth + 'px;height:' + Math.round(codeLayout.imgHeight) + 'px;" />' +
+                '</div>'
+              return
+            }
+          }
           var labelText = self.attrLabels[attr.key] || ''
           var displayText = labelText ? labelText + ': ' + attr.value : attr.value
+          // 未手动指定宽高时，打印元素同样由文字内容自适应
+          var sizeStyle = ''
+          if (style.width) sizeStyle += 'width:' + style.width + 'px;'
+          if (style.height) sizeStyle += 'height:' + style.height + 'px;'
           itemsHtml += '<div style="position:absolute;' +
             'left:' + style.x + 'px;' +
             'top:' + style.y + 'px;' +
-            'width:' + (style.width || 120) + 'px;' +
-            'height:' + (style.height || 24) + 'px;' +
+            sizeStyle +
             'font-size:' + style.fontSize + 'px;' +
             'font-weight:' + style.fontWeight + ';' +
             'letter-spacing:' + (style.letterSpacing || 0) + 'px;' +
             'line-height:' + (style.lineHeight || 1.3) + ';' +
             'white-space:pre-line;' +
-            'overflow:hidden;' +
+            'overflow:visible;' +
             '">' + displayText + '</div>'
         })
         printLabel({
@@ -797,6 +1220,7 @@
     },
     beforeDestroy() {
       this.unbindDragEvents()
+      this.unbindMarqueeEvents()
     }
   }
 </script>
@@ -873,12 +1297,6 @@
     padding: 8px;
     margin-bottom: 8px;
   }
-  .attr-style-name {
-    font-weight: bold;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #1890ff;
-  }
   .style-label {
     font-size: 12px;
     color: #666;
@@ -887,8 +1305,15 @@
   .label-zoom-bar {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    flex-wrap: wrap;
     margin-bottom: 8px;
+  }
+  .label-zoom-divider {
+    width: 1px;
+    height: 16px;
+    background: #e8e8e8;
+    margin: 0 8px;
   }
   .label-zoom-value {
     display: inline-block;
@@ -901,7 +1326,7 @@
   .label-preview-scroll {
     height: 460px;
     overflow: auto;
-    padding: 12px;
+    padding: 28px 16px 16px 32px;
     background: #f0f2f5;
     border: 1px solid #e8e8e8;
     border-radius: 4px;
@@ -924,6 +1349,14 @@
     overflow: visible;
     outline: 1px dashed #bfbfbf;
     user-select: none;
+  }
+  /* 框选矩形 */
+  .label-marquee {
+    position: absolute;
+    z-index: 20;
+    border: 1px dashed #1890ff;
+    background: rgba(24, 144, 255, 0.08);
+    pointer-events: none;
   }
   /* 拖拽对齐参考线 */
   .snap-guide {
@@ -948,6 +1381,31 @@
     text-align: center;
     line-height: 200px;
   }
+  /* 条码 / 二维码：上方文字、下方图形 */
+  .label-preview-item.is-code {
+    align-items: flex-start;
+    overflow: visible;
+    white-space: normal;
+  }
+  .label-code-box {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .label-code-text {
+    white-space: pre-line;
+    word-break: break-word;
+    text-align: left;
+  }
+  .label-code-img {
+    display: block;
+    object-fit: contain;
+  }
+  .label-code-fallback {
+    font-size: 11px;
+    color: #999;
+  }
   .label-preview-item {
     position: absolute;
     cursor: move;
@@ -957,6 +1415,7 @@
     white-space: nowrap;
     display: flex;
     align-items: center;
+    outline: 1px dashed #d9d9d9;
   }
   .label-preview-item.is-multiline {
     /* 规格等属性按商品信息表格的排版显示：逐行、左对齐 */
@@ -969,8 +1428,68 @@
     outline: 1px dashed #1890ff;
   }
   .label-preview-item.active {
-    border: 2px solid #1890ff;
+    outline: 1px dashed #1890ff;
+    outline-offset: 1px;
     background: rgba(24, 144, 255, 0.05);
+  }
+  /* 预览刻度尺 */
+  .label-ruler-h {
+    position: absolute;
+    left: 0;
+    top: -22px;
+    height: 20px;
+    background: #fafafa;
+    border-bottom: 1px solid #d9d9d9;
+    pointer-events: none;
+  }
+  .label-ruler-v {
+    position: absolute;
+    top: 0;
+    left: -26px;
+    width: 24px;
+    background: #fafafa;
+    border-right: 1px solid #d9d9d9;
+    pointer-events: none;
+  }
+  .ruler-tick {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 5px;
+    background: #bfbfbf;
+  }
+  .ruler-tick.major {
+    height: 9px;
+    background: #8c8c8c;
+  }
+  .ruler-tick em {
+    position: absolute;
+    left: 2px;
+    top: -10px;
+    font-size: 10px;
+    font-style: normal;
+    line-height: 1;
+    color: #8c8c8c;
+  }
+  .ruler-tick-v {
+    position: absolute;
+    right: 0;
+    height: 1px;
+    width: 5px;
+    background: #bfbfbf;
+  }
+  .ruler-tick-v.major {
+    width: 9px;
+    background: #8c8c8c;
+  }
+  .ruler-tick-v em {
+    position: absolute;
+    left: 1px;
+    top: -5px;
+    font-size: 10px;
+    font-style: normal;
+    line-height: 1;
+    color: #8c8c8c;
   }
   .label-edit-input {
     border: none;

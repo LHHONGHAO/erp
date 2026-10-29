@@ -89,6 +89,9 @@
               <a-button size="small" icon="zoom-in" title="放大" @click="changeZoom(0.1)"></a-button>
               <a-button size="small" @click="resetZoom">100%</a-button>
               <a-button size="small" @click="zoomToFit">适应窗口</a-button>
+              <span class="label-zoom-divider"></span>
+              <a-button size="small" @click="saveAsTemplate">另存为</a-button>
+              <a-button size="small" type="primary" @click="saveTemplate">保存</a-button>
             </div>
             <div class="label-preview-scroll" ref="previewScroll" @mousedown.self="clearAttrSelection">
               <div
@@ -199,27 +202,6 @@
                 </a-col>
               </a-row>
             </div>
-            <!-- 保存模板 -->
-            <div class="label-save-box">
-              <div class="label-edit-section-title">保存模板</div>
-              <a-input v-model="newTemplateName" placeholder="模板名称" style="margin-bottom:8px" />
-              <a-radio-group v-model="templateType" style="margin-bottom:8px">
-                <a-radio value="normal">普通模板</a-radio>
-                <a-radio value="default">默认模板</a-radio>
-              </a-radio-group>
-              <a-select
-                v-if="templateType === 'default'"
-                v-model="templateCategoryId"
-                style="width:100%;margin-bottom:8px"
-                placeholder="选择品类"
-                showSearch
-                :filterOption="filterCategory"
-              >
-                <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
-              </a-select>
-              <a-button type="primary" size="small" @click="saveTemplate" :disabled="!newTemplateName || (templateType === 'default' && !templateCategoryId)">保存模板</a-button>
-              <a-button size="small" @click="deleteTemplate" style="margin-left:8px" :disabled="!selectedTemplateId">删除</a-button>
-            </div>
             <!-- 标签文字：只读展示当前标签里的全部文字 -->
             <div class="label-text-box">
               <div class="label-edit-section-title">标签文字</div>
@@ -295,21 +277,56 @@
         </a-col>
       </a-row>
     </a-modal>
+
+    <!-- 打印标签页面（打印按钮打开） -->
+    <label-print-modal ref="labelPrintModal"></label-print-modal>
+
+    <!-- 模板保存弹层：新建模板时弹出 -->
+    <a-modal
+      title="保存模板"
+      :width="380"
+      :visible="saveModalVisible"
+      :zIndex="3000"
+      okText="保存"
+      cancelText="取消"
+      @ok="confirmSaveTemplate"
+      @cancel="saveModalVisible = false"
+    >
+      <div style="margin-bottom:12px">
+        <div class="label-edit-section-title" style="margin-bottom:6px">模板名称</div>
+        <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
+      </div>
+      <div>
+        <div class="label-edit-section-title" style="margin-bottom:6px">商品类型</div>
+        <a-select
+          v-model="templateCategoryId"
+          style="width:100%"
+          placeholder="不选择则保存为普通模板"
+          allowClear
+          showSearch
+          :filterOption="filterCategory"
+        >
+          <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
+        </a-select>
+        <div style="margin-top:6px;font-size:12px;color:#999">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script>
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
-  import { printLabel } from '@/views/material/utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates, saveLabelTemplates } from '@/views/material/utils/labelTemplateStore'
+  import LabelPrintModal from './LabelPrintModal'
 
   // 像素与毫米转换常量（96dpi: 1mm ≈ 3.779528px）
   var PX_PER_MM = 3.779528
 
   export default {
     name: "LabelEditModal",
+    components: { LabelPrintModal },
     data() {
       return {
         visible: false,
@@ -329,8 +346,13 @@
         templates: [],
         selectedTemplateId: null,
         newTemplateName: '',
-        templateType: 'normal',
         templateCategoryId: null,
+        // 模板保存弹层
+        saveModalVisible: false,
+        // 关闭确认保存后是否继续关闭编辑器
+        closeAfterSave: false,
+        // 干净状态快照：用于判断关闭时是否有未保存修改
+        cleanSnapshot: '',
         labelWidth: 320,
         labelHeight: 240,
         // 预览缩放比例与对齐参考线
@@ -472,8 +494,9 @@
         this.editingKey = null
         this.selectedTemplateId = null
         this.newTemplateName = ''
-        this.templateType = 'normal'
-        this.templateCategoryId = this.record.categoryId || null
+        this.templateCategoryId = null
+        this.saveModalVisible = false
+        this.closeAfterSave = false
         this.customCounter = 0
         this.labelWidth = 320
         this.labelHeight = 240
@@ -481,8 +504,45 @@
         this.guideLines = { v: [], h: [] }
         this.visible = true
         this.loadCategoryDefaultTemplate()
+        var self = this
+        this.$nextTick(function() { self.markClean() })
+      },
+      // 记录当前编辑状态快照（保存/打开模板后调用），用于关闭时判断是否有改动
+      snapshotState() {
+        return JSON.stringify({
+          attrs: this.selectedAttrs,
+          styles: this.attrStyles,
+          labels: this.attrLabels,
+          w: this.labelWidth,
+          h: this.labelHeight
+        })
+      },
+      markClean() {
+        this.cleanSnapshot = this.snapshotState()
+      },
+      isDirty() {
+        return this.snapshotState() !== this.cleanSnapshot
       },
       handleCancel() {
+        var self = this
+        // 模板被修改过或存在未保存内容时，提示是否保存
+        if (this.isDirty()) {
+          this.$confirm({
+            title: '模板内容已修改',
+            content: '关闭前是否保存当前标签模板？',
+            okText: '保存',
+            cancelText: '不保存',
+            zIndex: 3100,
+            onOk: function() {
+              self.closeAfterSave = true
+              self.saveTemplate()
+            },
+            onCancel: function() {
+              self.visible = false
+            }
+          })
+          return
+        }
         this.visible = false
       },
       buildAttrList() {
@@ -1050,15 +1110,8 @@
           this.$nextTick(function() { self.onTemplateChange(tpl.id) })
         }
       },
-      saveTemplate() {
-        if (!this.newTemplateName) {
-          this.$message.warning('请输入模板名称')
-          return
-        }
-        if (this.templateType === 'default' && !this.templateCategoryId) {
-          this.$message.warning('请选择品类')
-          return
-        }
+      // 收集当前编辑内容，组装模板数据对象
+      buildTplPayload(tpl) {
         var self = this
         // 收集自定义标签
         var customLabels = []
@@ -1079,34 +1132,76 @@
             cleanLabels[key] = self.attrLabels[key]
           }
         })
-        var tpl = {
-          id: 'tpl_' + Date.now(),
-          name: this.newTemplateName,
-          type: this.templateType,
-          materialId: this.templateType === 'normal' ? (this.record.id || null) : null,
-          categoryId: this.templateType === 'default' ? this.templateCategoryId : null,
-          categoryName: this.templateType === 'default' ? this.getCategoryName(this.templateCategoryId) : null,
+        return Object.assign(tpl || {}, {
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
           attrStyles: cleanStyles,
           attrLabels: cleanLabels,
           customLabels: customLabels,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight
-        }
-        // 默认模板：同品类只保留一个
-        if (this.templateType === 'default' && this.templateCategoryId) {
-          this.templates = this.templates.filter(function(t) {
-            return !(t.type === 'default' && String(t.categoryId) === String(self.templateCategoryId))
-          })
-        }
-        this.templates.push(tpl)
+        })
+      },
+      persistTemplates(successMsg) {
+        var self = this
         saveLabelTemplates(this.templates).then(function(res) {
           if (!res || res.code !== 200) {
             self.$message.warning('模板已保存到本机，云端保存失败，其他设备暂无法同步')
           }
         })
+        this.markClean()
+        this.$message.success(successMsg)
+        // 从关闭确认流程进入的保存：保存完成后关闭编辑器
+        if (this.closeAfterSave) {
+          this.closeAfterSave = false
+          this.visible = false
+        }
+      },
+      // 保存按钮：已有模板（编辑打开）直接覆盖；新建弹保存弹层
+      saveTemplate() {
+        var self = this
+        var exist = this.selectedTemplateId ? this.templates.find(function(t) { return t.id === self.selectedTemplateId }) : null
+        if (exist) {
+          // 覆盖原有模板：保留 id/名称/类型/品类归属，仅更新内容
+          var idx = this.templates.indexOf(exist)
+          this.templates.splice(idx, 1, this.buildTplPayload(exist))
+          this.persistTemplates('模板已覆盖保存')
+          return
+        }
+        // 新建模板：弹保存弹层
+        this.newTemplateName = ''
+        this.templateCategoryId = null
+        this.saveModalVisible = true
+      },
+      // 另存为：无论是否已有模板，都弹保存弹层存为新模板
+      saveAsTemplate() {
+        this.saveModalVisible = true
+      },
+      // 保存弹层确认：不选商品类型=普通模板，选了=该类型的通用模板
+      confirmSaveTemplate() {
+        if (!this.newTemplateName) {
+          this.$message.warning('请输入模板名称')
+          return
+        }
+        var self = this
+        var isCategoryTpl = !!this.templateCategoryId
+        var tpl = this.buildTplPayload({
+          id: 'tpl_' + Date.now(),
+          name: this.newTemplateName,
+          type: isCategoryTpl ? 'default' : 'normal',
+          materialId: isCategoryTpl ? null : (this.record.id || null),
+          categoryId: isCategoryTpl ? this.templateCategoryId : null,
+          categoryName: isCategoryTpl ? this.getCategoryName(this.templateCategoryId) : null
+        })
+        // 类型通用模板：同类型只保留一个
+        if (isCategoryTpl) {
+          this.templates = this.templates.filter(function(t) {
+            return !(t.type === 'default' && String(t.categoryId) === String(self.templateCategoryId))
+          })
+        }
+        this.templates.push(tpl)
         this.selectedTemplateId = tpl.id
-        this.$message.success('模板已保存')
+        this.saveModalVisible = false
+        this.persistTemplates('模板已保存')
       },
       onTemplateChange(tplId) {
         var self = this
@@ -1152,6 +1247,9 @@
         if (tpl.labelWidth) this.labelWidth = tpl.labelWidth
         if (tpl.labelHeight) this.labelHeight = tpl.labelHeight
         this.currentAttrKey = null
+        // 打开模板后视为干净状态，关闭时不再提示保存
+        var that = this
+        this.$nextTick(function() { that.markClean() })
       },
       deleteTemplate() {
         if (!this.selectedTemplateId) return
@@ -1165,57 +1263,13 @@
         this.selectedTemplateId = null
         this.$message.success('模板已删除')
       },
-      // 打印
+      // 打印：直接打开打印标签页面，并带上当前编辑内容（所见即所得）
       handlePrint() {
         var self = this
-        var itemsHtml = ''
-        this.selectedAttrList.forEach(function(attr) {
-          var style = self.attrStyles[attr.key]
-          if (!style) return
-          // 条码/二维码：上方文字 + 下方图形
-          if (style.codeType) {
-            var codeUrl = self.codeImages[attr.key]
-            if (codeUrl) {
-              var codeLayout = self.codeLayout(attr)
-              itemsHtml += '<div style="position:absolute;' +
-                'left:' + style.x + 'px;' +
-                'top:' + style.y + 'px;' +
-                'width:' + codeLayout.boxWidth + 'px;' +
-                'height:' + Math.round(codeLayout.textHeight + codeLayout.imgHeight) + 'px;' +
-                'font-size:' + style.fontSize + 'px;' +
-                'font-weight:' + style.fontWeight + ';' +
-                'letter-spacing:' + (style.letterSpacing || 0) + 'px;' +
-                'line-height:' + (style.lineHeight || 1.3) + ';' +
-                '">' +
-                '<div style="white-space:pre-line;word-break:break-word;line-height:1;height:' + codeLayout.textBoxHeight + 'px;">' + codeLayout.text + '</div>' +
-                '<img src="' + codeUrl + '" style="display:block;width:' + codeLayout.imgWidth + 'px;height:' + Math.round(codeLayout.imgHeight) + 'px;" />' +
-                '</div>'
-              return
-            }
-          }
-          var labelText = self.attrLabels[attr.key] || ''
-          var displayText = labelText ? labelText + ': ' + attr.value : attr.value
-          // 未手动指定宽高时，打印元素同样由文字内容自适应
-          var sizeStyle = ''
-          if (style.width) sizeStyle += 'width:' + style.width + 'px;'
-          if (style.height) sizeStyle += 'height:' + style.height + 'px;'
-          itemsHtml += '<div style="position:absolute;' +
-            'left:' + style.x + 'px;' +
-            'top:' + style.y + 'px;' +
-            sizeStyle +
-            'font-size:' + style.fontSize + 'px;' +
-            'font-weight:' + style.fontWeight + ';' +
-            'letter-spacing:' + (style.letterSpacing || 0) + 'px;' +
-            'line-height:' + (style.lineHeight || 1.3) + ';' +
-            'white-space:pre-line;' +
-            'overflow:visible;' +
-            '">' + displayText + '</div>'
-        })
-        printLabel({
-          widthPx: this.labelWidth,
-          heightPx: this.labelHeight,
-          bodyHtml: itemsHtml
-        })
+        var exist = this.selectedTemplateId ? this.templates.find(function(t) { return t.id === self.selectedTemplateId }) : null
+        var base = exist ? JSON.parse(JSON.stringify(exist)) : { id: 'unsaved', name: '', type: 'normal' }
+        var tpl = this.buildTplPayload(base)
+        this.$refs.labelPrintModal.open(this.record, this.sku, this.categoryTree, tpl)
       }
     },
     beforeDestroy() {
@@ -1276,14 +1330,6 @@
     padding: 20px 0;
   }
   .label-text-box {
-    background: #fff;
-    border: 1px solid #e8e8e8;
-    border-radius: 4px;
-    padding: 8px;
-    margin-bottom: 8px;
-  }
-  /* 保存模板卡片 */
-  .label-save-box {
     background: #fff;
     border: 1px solid #e8e8e8;
     border-radius: 4px;

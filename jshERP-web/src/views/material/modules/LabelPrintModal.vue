@@ -12,6 +12,7 @@
     :visible="visible"
     :maskClosable="false"
     :footer="null"
+    :zIndex="2900"
     :wrapClassName="isMobile ? 'lp-modal-mobile' : ''"
     @cancel="handleCancel"
   >
@@ -243,12 +244,18 @@
           if (!alive[key]) self.$delete(self.codeImages, key)
         })
       },
-      open(record, sku, categoryTree) {
+      open(record, sku, categoryTree, preferredTpl) {
         this.record = record || {}
         this.sku = sku || {}
         this.categoryTree = categoryTree || []
         this.allAttrs = this.buildAttrList()
-        this.loadTemplate()
+        if (preferredTpl) {
+          // 由标签编辑页打开时直接使用其当前编辑内容，保持所见即所得
+          this.template = null
+          this.applyTemplate(preferredTpl)
+        } else {
+          this.loadTemplate()
+        }
         this.selectedPrinter = undefined
         this.copies = 1
         this.loadPrinters()

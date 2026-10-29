@@ -346,23 +346,27 @@ public class MaterialService {
             JSONObject row = rows.getJSONObject(i);
             Long depotId = row.getLong("depotId");
             BigDecimal quantity = row.getBigDecimal("stock");
-            if (quantity == null || quantity.compareTo(BigDecimal.ZERO) == 0) {
+            BigDecimal lowSafeStock = row.getBigDecimal("lowSafeStock");
+            BigDecimal highSafeStock = row.getBigDecimal("highSafeStock");
+            boolean hasQuantity = quantity != null && quantity.compareTo(BigDecimal.ZERO) != 0;
+            // 既无库存又无预警阈值的行直接跳过
+            if (!hasQuantity && lowSafeStock == null && highSafeStock == null) {
                 continue;
             }
-            if (quantity.compareTo(BigDecimal.ZERO) < 0) {
+            if (quantity != null && quantity.compareTo(BigDecimal.ZERO) < 0) {
                 throw new IllegalStateException("SKU初始库存不能为负数");
             }
-            BigDecimal normalizedQuantity = quantity.stripTrailingZeros();
-            if (normalizedQuantity.scale() > 0) {
-                throw new IllegalStateException("单件商品库存必须为整数，不能为小数");
+            BigDecimal normalizedQuantity = null;
+            if (hasQuantity) {
+                normalizedQuantity = quantity.stripTrailingZeros();
+                if (normalizedQuantity.scale() > 0) {
+                    throw new IllegalStateException("单件商品库存必须为整数，不能为小数");
+                }
             }
             if (depotId == null) {
-                throw new IllegalStateException("SKU库存不为零时，请先选择仓库");
+                throw new IllegalStateException("录入库存或库存预警时，请先选择仓库");
             }
             String rowId = row.getString("id");
-            if (onlyNewSku && (rowId == null || rowId.length() <= 19)) {
-                continue;
-            }
             String specValues = row.getString("specValues");
             String sku = row.getString("sku");
             com.jsh.erp.datasource.vo.MaterialExtendVo4List savedSku = null;
@@ -384,15 +388,47 @@ public class MaterialService {
             if (!StringUtil.isNotEmpty(savedSku.getSkuCode())) {
                 throw new IllegalStateException("SKU编码为空，无法生成单件商品码");
             }
-            insertInitialStockByMaterialAndDepot(depotId, materialId, quantity, null, null,
+            if (onlyNewSku && (rowId == null || rowId.length() <= 19)) {
+                // 编辑时的已有 SKU：库存不再重置，仅更新库存预警阈值
+                upsertSkuSafeStock(materialId, depotId, savedSku.getId(), savedSku.getSkuCode(), lowSafeStock, highSafeStock);
+                savedAny = true;
+                continue;
+            }
+            insertInitialStockByMaterialAndDepot(depotId, materialId, hasQuantity ? quantity : null, lowSafeStock, highSafeStock,
                     savedSku.getId(), savedSku.getSkuCode());
-            insertCurrentStockByMaterialAndDepot(depotId, materialId, quantity,
-                    savedSku.getId(), savedSku.getSkuCode());
-            saveInitialMaterialInstances(materialId, savedSku, depotId, row.getString("store"),
-                    normalizedQuantity.intValueExact());
+            if (hasQuantity) {
+                insertCurrentStockByMaterialAndDepot(depotId, materialId, quantity,
+                        savedSku.getId(), savedSku.getSkuCode());
+                saveInitialMaterialInstances(materialId, savedSku, depotId, row.getString("store"),
+                        normalizedQuantity.intValueExact());
+            }
             savedAny = true;
         }
         return savedAny;
+    }
+
+    /** 更新已有 SKU 在某仓库的库存预警阈值（不存在则补一条零库存的期初记录承载阈值）。 */
+    private void upsertSkuSafeStock(Long materialId, Long depotId, Long materialExtendId, String skuCode,
+                                    BigDecimal lowSafeStock, BigDecimal highSafeStock) {
+        MaterialInitialStockExample example = new MaterialInitialStockExample();
+        example.createCriteria().andMaterialIdEqualTo(materialId).andDepotIdEqualTo(depotId);
+        List<MaterialInitialStock> list = materialInitialStockMapper.selectByExample(example);
+        MaterialInitialStock exist = null;
+        if (list != null) {
+            for (MaterialInitialStock mis : list) {
+                if (materialExtendId != null && materialExtendId.equals(mis.getMaterialExtendId())) {
+                    exist = mis;
+                    break;
+                }
+            }
+        }
+        if (exist != null) {
+            exist.setLowSafeStock(lowSafeStock);
+            exist.setHighSafeStock(highSafeStock);
+            materialInitialStockMapper.updateByPrimaryKey(exist);
+        } else {
+            insertInitialStockByMaterialAndDepot(depotId, materialId, null, lowSafeStock, highSafeStock, materialExtendId, skuCode);
+        }
     }
 
     /** 为期初库存的每件实物生成一条单件档案，库存与单件档案同事务提交。 */

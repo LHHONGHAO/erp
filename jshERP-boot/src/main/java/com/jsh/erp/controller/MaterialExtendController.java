@@ -170,6 +170,16 @@ public class MaterialExtendController {
                     item.put("wholesaleDecimal", md.getWholesaleDecimal());
                     item.put("lowDecimal", md.getLowDecimal());
                     item.put("currentStock", md.getCurrentStock()!=null? md.getCurrentStock(): BigDecimal.ZERO);
+                    // 库存预警阈值与对应仓库（期初库存表回显）
+                    if (md.getDepotId() != null) {
+                        item.put("depotId", md.getDepotId());
+                    }
+                    if (md.getLowSafeStock() != null) {
+                        item.put("lowSafeStock", md.getLowSafeStock());
+                    }
+                    if (md.getHighSafeStock() != null) {
+                        item.put("highSafeStock", md.getHighSafeStock());
+                    }
                     dataArray.add(item);
                 }
             }

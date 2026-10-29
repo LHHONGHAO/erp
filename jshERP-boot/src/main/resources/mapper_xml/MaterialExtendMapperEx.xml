@@ -6,12 +6,16 @@
         <result column="commodity_unit" jdbcType="VARCHAR" property="commodityUnit" />
         <result column="sku" jdbcType="VARCHAR" property="sku" />
         <result column="current_stock" jdbcType="DECIMAL" property="currentStock" />
+        <result column="low_safe_stock" jdbcType="DECIMAL" property="lowSafeStock" />
+        <result column="high_safe_stock" jdbcType="DECIMAL" property="highSafeStock" />
+        <result column="depot_id" jdbcType="BIGINT" property="depotId" />
     </resultMap>
 
     <select id="getDetailList" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="ResultMapList">
         select d.id,d.spec_values,m.bar_code as bar_code,m.unit as commodity_unit,d.spec_values as sku,d.sku_code,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,d.market_price,
                d.low_decimal,d.default_flag,d.img_url,
-               IFNULL(s.current_stock,0) as current_stock
+               IFNULL(s.current_stock,0) as current_stock,
+               w.low_safe_stock as low_safe_stock, w.high_safe_stock as high_safe_stock, w.depot_id as depot_id
         from jsh_material_extend d
         left join jsh_material m on d.material_id = m.id
         left join (
@@ -21,6 +25,13 @@
             and material_extend_id is not null
             group by material_extend_id
         ) s on d.id = s.material_extend_id
+        left join (
+            select material_extend_id, max(depot_id) as depot_id, max(low_safe_stock) as low_safe_stock, max(high_safe_stock) as high_safe_stock
+            from jsh_material_initial_stock
+            where ifnull(delete_flag,'0') !='1'
+            and material_extend_id is not null
+            group by material_extend_id
+        ) w on d.id = w.material_extend_id
         where d.material_id = #{materialId}
         and ifnull(d.delete_flag,'0') !='1'
         order by d.default_flag desc,d.id asc

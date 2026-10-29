@@ -193,6 +193,47 @@ public class PlatformConfigController extends BaseController {
     }
 
     /**
+     * 读取前端共享 UI 配置（所有设备共用一套设置）
+     */
+    @GetMapping(value = "/getUiConfig")
+    @ApiOperation(value = "读取前端共享UI配置")
+    public BaseResponseInfo getUiConfig(@RequestParam("key") String key,
+                                        HttpServletRequest request)throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            res.code = 200;
+            res.data = platformConfigService.getUiConfigValue(key);
+        } catch(Exception e){
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "获取数据失败";
+        }
+        return res;
+    }
+
+    /**
+     * 保存前端共享 UI 配置（key 不存在时插入，存在时更新）
+     */
+    @PostMapping(value = "/saveUiConfig")
+    @ApiOperation(value = "保存前端共享UI配置")
+    public BaseResponseInfo saveUiConfig(@RequestBody JSONObject object,
+                                         HttpServletRequest request)throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            String key = object.getString("key");
+            String value = object.getString("value");
+            int result = platformConfigService.saveUiConfig(key, value);
+            res.code = result > 0 ? 200 : 500;
+            res.data = result > 0 ? "保存成功" : "保存失败";
+        } catch(Exception e){
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "保存失败";
+        }
+        return res;
+    }
+
+    /**
      * 根据platformKey查询信息
      * @param platformKey
      * @param request

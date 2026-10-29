@@ -353,6 +353,8 @@
                   <a-input v-model="batchCommodityPrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchMarketPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="price-setting-input" />
                   <a-input v-model="batchStock" addonBefore="期初库存" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchLowSafeStock" addonBefore="最低库存预警" placeholder="请输入" class="price-setting-input" />
+                  <a-input v-model="batchHighSafeStock" addonBefore="最高库存预警" placeholder="请输入" class="price-setting-input" />
                   <a-select v-model="batchDepotId" placeholder="请选择仓库" class="price-setting-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
                   <a-select v-model="batchStore" placeholder="请选择门店" class="price-setting-input" :options="storeOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
                   <a-button type="primary" @click="batchSetColumn">批量设置</a-button>
@@ -461,7 +463,7 @@
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
   import { changeNameToPinYin, checkMaterial, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
   import { autoJumpNextInput, handleIntroJs, removeByVal, addBigNumbers } from '@/utils/util'
-  import { getAction, httpAction } from '@/api/manage'
+  import { getAction, httpAction, postAction } from '@/api/manage'
   import JImageUpload from '@/components/jeecg/JImageUpload'
   import JDate from '@/components/jeecg/JDate'
   import Vue from 'vue'
@@ -513,6 +515,8 @@
         batchPurchasePrice: '',
         batchCommodityPrice: '',
         batchStock: '',
+        batchLowSafeStock: '',
+        batchHighSafeStock: '',
         batchMarketPrice: '',
         batchDepotId: undefined,
         batchStore: undefined,
@@ -594,6 +598,12 @@
             },
             {
               title: '期初库存', key: 'stock', width: '15%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '请输入${title}'
+            },
+            {
+              title: '最低库存预警', key: 'lowSafeStock', width: '12%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '低于该值预警'
+            },
+            {
+              title: '最高库存预警', key: 'highSafeStock', width: '12%', type: FormTypes.inputNumber, defaultValue: '', placeholder: '高于该值预警'
             },
             {
               title: '仓库', key: 'depotId', width: '20%', type: FormTypes.sel_search, defaultValue: '', placeholder: '请选择${title}',
@@ -967,6 +977,14 @@
             rows[i].stock = this.batchStock
             hasValue = true
           }
+          if (this.batchLowSafeStock !== '') {
+            rows[i].lowSafeStock = this.batchLowSafeStock
+            hasValue = true
+          }
+          if (this.batchHighSafeStock !== '') {
+            rows[i].highSafeStock = this.batchHighSafeStock
+            hasValue = true
+          }
           if (this.batchDepotId !== undefined && this.batchDepotId !== null && this.batchDepotId !== '') {
             rows[i].depotId = this.batchDepotId
             hasValue = true
@@ -1151,6 +1169,16 @@
             }
             if (dsRow.image && !meList[i].image) {
               meList[i].image = dsRow.image
+            }
+            // 兜底：预警阈值/仓库等字段若表格值丢失则从 dataSource 补齐
+            if ((meList[i].lowSafeStock === undefined || meList[i].lowSafeStock === null || meList[i].lowSafeStock === '') && dsRow.lowSafeStock !== undefined) {
+              meList[i].lowSafeStock = dsRow.lowSafeStock
+            }
+            if ((meList[i].highSafeStock === undefined || meList[i].highSafeStock === null || meList[i].highSafeStock === '') && dsRow.highSafeStock !== undefined) {
+              meList[i].highSafeStock = dsRow.highSafeStock
+            }
+            if ((meList[i].depotId === undefined || meList[i].depotId === null || meList[i].depotId === '') && dsRow.depotId !== undefined) {
+              meList[i].depotId = dsRow.depotId
             }
           }
         }
@@ -1580,7 +1608,7 @@
         // 固定列的宽度权重，用于按规格列数量等比例压缩
         const fixedWeights = {
           purchaseDecimal: 15, commodityDecimal: 15, marketPrice: 15,
-          stock: 15, depotId: 20, store: 20
+          stock: 15, lowSafeStock: 12, highSafeStock: 12, depotId: 20, store: 20
         }
         const specCount = this.specModules.length
         // 每个规格列占 10%，剩余宽度按权重分给固定列（固定列至少保留 60%，超出则横向滚动）
@@ -1999,7 +2027,31 @@
         })
       },
       loadBasePropertyConfig() {
+        const self = this
+        // 优先读取后端共享配置（所有设备共用一套），无配置或接口异常时回退本地缓存
+        getAction('/platformConfig/getUiConfig', { key: 'material_base_property_setting' }).then(res => {
+          let parsed = null
+          if (res && res.code === 200 && res.data) {
+            try { parsed = JSON.parse(res.data) } catch (e) { parsed = null }
+          }
+          if (parsed && parsed.config) {
+            self.applyBasePropertyConfig(parsed.config, parsed.cols, parsed.order)
+          } else {
+            self.loadBasePropertyConfigFromLocal()
+          }
+        }).catch(() => {
+          self.loadBasePropertyConfigFromLocal()
+        })
+      },
+      // 本地缓存兜底（旧版本仅保存在浏览器 localStorage）
+      loadBasePropertyConfigFromLocal() {
         const saved = Vue.ls.get('material_base_property_config')
+        const colsSaved = Vue.ls.get('material_base_property_cols')
+        const orderSaved = Vue.ls.get('material_base_property_order')
+        this.applyBasePropertyConfig(saved, colsSaved, orderSaved)
+      },
+      // 应用属性配置：config 为字段配置数组，cols 为每行列数，order 为勾选顺序
+      applyBasePropertyConfig(saved, colsSaved, orderSaved) {
         if (saved && saved.length) {
           // 合并保存的配置：所有字段都恢复 visible/sort，仅非fixed字段恢复 anotherName
           for (let i = 0; i < saved.length; i++) {
@@ -2019,12 +2071,10 @@
           }
         }
         // 加载每行列数配置
-        const colsSaved = Vue.ls.get('material_base_property_cols')
         if (colsSaved) {
           this.propertyConfigCols = colsSaved
         }
         // 加载勾选顺序配置（按保存的顺序构建 propertyConfigSelected）
-        const orderSaved = Vue.ls.get('material_base_property_order')
         if (orderSaved && orderSaved.length) {
           const ordered = orderSaved.filter(f => this.basePropertyFields.includes(f))
           // 历史配置中不存在的新增字段（默认可见）追加到末尾，避免升级后字段消失
@@ -2084,12 +2134,21 @@
             item.anotherName = this.propertyConfigAlias[field] || ('扩展' + i)
           }
         }
-        // 3. 保存到本地存储
-        Vue.ls.set('material_base_property_config', this.basePropertyList.map(p => ({
+        // 3. 保存到本地存储（缓存）+ 后端（所有设备共用一套设置）
+        const configSnapshot = this.basePropertyList.map(p => ({
           field: p.field, visible: p.visible, sort: p.sort, anotherName: p.anotherName
-        })), 365 * 24 * 60 * 60 * 1000)
+        }))
+        Vue.ls.set('material_base_property_config', configSnapshot, 365 * 24 * 60 * 60 * 1000)
         Vue.ls.set('material_base_property_cols', this.propertyConfigCols, 365 * 24 * 60 * 60 * 1000)
         Vue.ls.set('material_base_property_order', this.propertyConfigSelected, 365 * 24 * 60 * 60 * 1000)
+        postAction('/platformConfig/saveUiConfig', {
+          key: 'material_base_property_setting',
+          value: JSON.stringify({
+            config: configSnapshot,
+            cols: this.propertyConfigCols,
+            order: this.propertyConfigSelected
+          })
+        }).catch(() => {})
         this.propertyConfigVisible = false
       },
       handlePropertyConfigReset() {

@@ -151,6 +151,47 @@ public class PlatformConfigService {
         return result;
     }
 
+    /**
+     * 读取前端共享 UI 配置（所有设备共用），key 不存在时返回 null
+     */
+    public String getUiConfigValue(String platformKey) {
+        try {
+            PlatformConfigExample example = new PlatformConfigExample();
+            example.createCriteria().andPlatformKeyEqualTo(platformKey);
+            List<PlatformConfig> list = platformConfigMapper.selectByExample(example);
+            if (list != null && !list.isEmpty()) {
+                return list.get(0).getPlatformValue();
+            }
+        } catch (Exception e) {
+            JshException.readFail(logger, e);
+        }
+        return null;
+    }
+
+    /**
+     * 保存前端共享 UI 配置：key 不存在时插入，存在时更新（所有登录用户可用）
+     */
+    public int saveUiConfig(String platformKey, String platformValue) {
+        try {
+            PlatformConfigExample example = new PlatformConfigExample();
+            example.createCriteria().andPlatformKeyEqualTo(platformKey);
+            List<PlatformConfig> list = platformConfigMapper.selectByExample(example);
+            if (list != null && !list.isEmpty()) {
+                PlatformConfig update = new PlatformConfig();
+                update.setId(list.get(0).getId());
+                update.setPlatformValue(platformValue);
+                return platformConfigMapper.updateByPrimaryKeySelective(update);
+            }
+            PlatformConfig insert = new PlatformConfig();
+            insert.setPlatformKey(platformKey);
+            insert.setPlatformValue(platformValue);
+            return platformConfigMapper.insertSelective(insert);
+        } catch (Exception e) {
+            JshException.writeFail(logger, e);
+        }
+        return 0;
+    }
+
     public PlatformConfig getInfoByKey(String platformKey)throws Exception {
         PlatformConfig platformConfig = new PlatformConfig();
         try{

@@ -8,13 +8,14 @@
 <template>
   <a-modal
     title="打印标签"
-    :width="820"
+    :width="modalWidth"
     :visible="visible"
     :maskClosable="false"
     :footer="null"
+    :wrapClassName="isMobile ? 'lp-modal-mobile' : ''"
     @cancel="handleCancel"
   >
-    <div class="lp-body">
+    <div class="lp-body" :class="{ 'lp-mobile': isMobile }">
       <template v-if="!template">
         <a-alert
           type="info"
@@ -122,10 +123,15 @@
         selectedPrinter: undefined,
         loadingPrinters: false,
         printing: false,
-        copies: 1
+        copies: 1,
+        // 手机浏览器（窄屏）时预览/设置改为上下布局
+        isMobile: false
       }
     },
     computed: {
+      modalWidth() {
+        return this.isMobile ? '100%' : 820
+      },
       selectedAttrList() {
         var self = this
         return this.selectedAttrs
@@ -150,6 +156,25 @@
     watch: {
       codeSignature() {
         this.refreshCodeImages()
+      }
+    },
+    created() {
+      var self = this
+      this._mql = window.matchMedia('(max-width: 768px)')
+      this.isMobile = this._mql.matches
+      this._onMqChange = function(e) { self.isMobile = e.matches }
+      if (this._mql.addEventListener) {
+        this._mql.addEventListener('change', this._onMqChange)
+      } else if (this._mql.addListener) {
+        this._mql.addListener(this._onMqChange)
+      }
+    },
+    beforeDestroy() {
+      if (!this._mql) return
+      if (this._mql.removeEventListener) {
+        this._mql.removeEventListener('change', this._onMqChange)
+      } else if (this._mql.removeListener) {
+        this._mql.removeListener(this._onMqChange)
       }
     },
     methods: {
@@ -563,5 +588,39 @@
   }
   .lp-footer .ant-btn {
     margin-left: 8px;
+  }
+  /* 手机浏览器：预览在上、打印设置在下 */
+  .lp-mobile .lp-main {
+    flex-direction: column;
+  }
+  .lp-mobile .lp-preview-wrap {
+    width: 100%;
+    min-height: 220px;
+    max-height: 50vh;
+  }
+  .lp-mobile .lp-settings {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 16px;
+  }
+  .lp-mobile .lp-footer {
+    text-align: center;
+  }
+  .lp-mobile .lp-footer .ant-btn {
+    margin: 4px;
+  }
+</style>
+
+<!-- 弹层容器类挂在组件根节点之外，需用非 scoped 样式 -->
+<style>
+  .lp-modal-mobile .ant-modal {
+    top: 0;
+    margin: 0;
+    max-width: 100vw;
+    padding-bottom: 0;
+  }
+  .lp-modal-mobile .ant-modal-content {
+    border-radius: 0;
+    min-height: 100vh;
   }
 </style>

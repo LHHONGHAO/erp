@@ -22,6 +22,37 @@ public class MaterialExtendVo4List extends MaterialExtend {
 
     private String attribute;
 
+    // 库存预警阈值与对应仓库（取自期初库存表，用于编辑回显）
+    private BigDecimal lowSafeStock;
+
+    private BigDecimal highSafeStock;
+
+    private Long depotId;
+
+    public BigDecimal getLowSafeStock() {
+        return lowSafeStock;
+    }
+
+    public void setLowSafeStock(BigDecimal lowSafeStock) {
+        this.lowSafeStock = lowSafeStock;
+    }
+
+    public BigDecimal getHighSafeStock() {
+        return highSafeStock;
+    }
+
+    public void setHighSafeStock(BigDecimal highSafeStock) {
+        this.highSafeStock = highSafeStock;
+    }
+
+    public Long getDepotId() {
+        return depotId;
+    }
+
+    public void setDepotId(Long depotId) {
+        this.depotId = depotId;
+    }
+
     public String getSupplier() {
         return supplier;
     }

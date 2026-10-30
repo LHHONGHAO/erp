@@ -6,6 +6,32 @@
     </div>
     <!-- 分割线 -->
     <a-divider class="rso-divider" />
+    <!-- 单据信息（与电脑端业务字段保持一致，单列对齐） -->
+    <div class="rso-billinfo">
+      <div class="rso-billinfo-row">
+        <span class="rso-billinfo-label">会员卡号</span>
+        <a-select v-model="billForm.organId" placeholder="请选择会员卡号" allowClear showSearch
+                  optionFilterProp="children" class="rso-billinfo-field">
+          <a-select-option v-for="item in retailList" :key="item.id" :value="item.id">{{ item.supplier }}</a-select-option>
+        </a-select>
+      </div>
+      <div class="rso-billinfo-row">
+        <span class="rso-billinfo-label">单据日期</span>
+        <a-date-picker v-model="billForm.operTime" showTime format="YYYY-MM-DD HH:mm:ss"
+                       class="rso-billinfo-field" />
+      </div>
+      <div class="rso-billinfo-row">
+        <span class="rso-billinfo-label">单据编号</span>
+        <a-input v-model="billForm.number" placeholder="请输入单据编号" class="rso-billinfo-field" />
+      </div>
+      <div class="rso-billinfo-row">
+        <span class="rso-billinfo-label">收款类型</span>
+        <a-select v-model="billForm.payType" class="rso-billinfo-field">
+          <a-select-option value="现付">现付</a-select-option>
+          <a-select-option value="预付款">预付款</a-select-option>
+        </a-select>
+      </div>
+    </div>
     <!-- 操作按钮区：扫码添加 + 选择商品 -->
     <div class="rso-actions">
       <a-button type="primary" icon="scan" size="large" block @click="openScanner">扫码添加</a-button>
@@ -42,34 +68,21 @@
       </div>
     </div>
 
-    <!-- 历史单据列表（保留原业务逻辑，方便核对） -->
-    <div class="rso-history">
-      <div class="rso-history-title">历史单据</div>
-      <a-form layout="inline" class="rso-search" @keyup.enter.native="searchQuery">
-        <a-input placeholder="单据编号/商品信息" v-model="queryParam.number" style="width: 60%" />
-        <a-button type="primary" @click="searchQuery">查询</a-button>
-      </a-form>
-      <data-table
-        ref="table"
-        bordered
-        size="small"
-        row-key="id"
-        table-key="bill_retail_sale_order"
-        :extra-columns="defColumns"
-        :default-columns="defDataIndex"
-        storage-key="columns_LSCK"
-        :data-source="dataSource"
-        :pagination="ipagination"
-        :loading="loading"
-        @change="handleTableChange">
-        <span slot="action" slot-scope="text, record">
-          <a @click="myHandleDetail(record, '零售出库', prefixNo)">查看</a>
-        </span>
-        <template slot="customRenderStatus" slot-scope="status">
-          <a-tag v-if="status == '0'" color="red">未审核</a-tag>
-          <a-tag v-if="status == '1'" color="green">已审核</a-tag>
-        </template>
-      </data-table>
+    <!-- 底部金额栏（单据金额 / 收款金额 / 找零，一行置顶显示） -->
+    <div class="rso-bottom-bar">
+      <div class="rso-bottom-item">
+        <span class="rso-bottom-label">单据金额</span>
+        <span class="rso-bottom-value">¥{{ cartTotal }}</span>
+      </div>
+      <div class="rso-bottom-item">
+        <span class="rso-bottom-label">收款金额</span>
+        <a-input-number v-model="billForm.payAmount" :min="0" :precision="2" :controls="false"
+                        size="small" class="rso-bottom-input" />
+      </div>
+      <div class="rso-bottom-item">
+        <span class="rso-bottom-label">找零</span>
+        <span class="rso-bottom-value">¥{{ changeAmount }}</span>
+      </div>
     </div>
 
     <!-- 全屏扫码界面 -->
@@ -115,6 +128,7 @@
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import { getMaterialByBarCode } from '@/api/api'
+  import { getAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import DataTable from '@/components/DataTable'
   import { BrowserMultiFormatReader } from '@zxing/library'
@@ -165,6 +179,14 @@
         },
         // 欲售商品列表
         cartList: [],
+        // 单据信息（与电脑端保持一致）
+        billForm: {
+          organId: undefined,
+          operTime: null,
+          number: '',
+          payType: '现付',
+          payAmount: 0
+        },
         // 扫码相关
         scanVisible: false,
         showManualInput: false,
@@ -186,10 +208,16 @@
           const price = item.unitPrice - 0 || item.commodityDecimal - 0 || 0
           return sum + price * (item.operNumber - 0 || 1)
         }, 0).toFixed(2)
+      },
+      // 找零 = 收款金额 - 单据金额（不足时为 0）
+      changeAmount () {
+        const diff = (this.billForm.payAmount - 0) - (this.cartTotal - 0)
+        return diff > 0 ? diff.toFixed(2) : '0.00'
       }
     },
     created () {
       this.initSystemConfig()
+      this.initBillForm()
       this.initRetail()
       this.getDepotData()
       this.initUser()
@@ -484,6 +512,16 @@
         })
       },
       // 提交订单：复用零售出库弹窗逻辑
+      // 初始化单据信息：默认日期为当前时间，单据编号由后端序列生成
+      initBillForm () {
+        this.billForm.operTime = moment()
+        getAction('/sequence/buildNumber').then(res => {
+          if (res && res.code === 200) {
+            this.billForm.number = this.prefixNo + res.data.defaultNumber
+          }
+        })
+      },
+      // 提交订单：复用零售出库弹窗逻辑
       submitOrder () {
         if (this.cartList.length === 0) {
           this.$message.warning('请先添加商品')
@@ -496,6 +534,18 @@
         this.$refs.modalForm.add()
         this.$refs.modalForm.title = "销售开单"
         this.$refs.modalForm.disableSubmit = false
+        // 将手机端录入的单据信息带入弹窗
+        this.$nextTick(() => {
+          const form = this.$refs.modalForm && this.$refs.modalForm.form
+          if (form) {
+            form.setFieldsValue({
+              organId: this.billForm.organId,
+              operTime: this.billForm.operTime,
+              number: this.billForm.number,
+              payType: this.billForm.payType
+            })
+          }
+        })
         // 后续完善：将 cartList 注入到弹窗明细
       },
       tableAddTotalRow () {}
@@ -507,7 +557,75 @@
 .retail-sale-order {
   min-height: 100vh;
   background: #f5f5f5;
-  padding-bottom: 20px;
+  // 给底部固定金额栏留出空间
+  padding-bottom: 92px;
+}
+// 单据信息：单列对齐
+.rso-billinfo {
+  background: #fff;
+  padding: 4px 12px;
+  .rso-billinfo-row {
+    display: flex;
+    align-items: center;
+    min-height: 46px;
+    border-bottom: 1px solid #f0f0f0;
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+  .rso-billinfo-label {
+    flex: 0 0 76px;
+    width: 76px;
+    color: #333;
+    font-size: 14px;
+    text-align: left;
+  }
+  .rso-billinfo-field {
+    flex: 1;
+    min-width: 0;
+  }
+}
+// 底部固定金额栏
+.rso-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 12px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid #eee;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  .rso-bottom-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+  }
+  .rso-bottom-label {
+    color: #999;
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .rso-bottom-value {
+    color: #333;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
+  }
+  .rso-bottom-input {
+    width: 90%;
+    margin-top: 2px;
+    /deep/ .ant-input-number-input {
+      text-align: center;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  }
 }
 .rso-header {
   display: flex;

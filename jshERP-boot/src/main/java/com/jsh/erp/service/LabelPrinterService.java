@@ -20,6 +20,9 @@ import javax.print.SimpleDoc;
 import javax.print.attribute.HashPrintRequestAttributeSet;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Locale;
@@ -75,6 +78,36 @@ public class LabelPrinterService {
     public void printLabel(String printerName, int copies, int widthPx, int heightPx, JSONArray items) throws Exception {
         PrintService target = findPrinter(printerName);
         sendRaw(target, buildTsplJob(widthPx, heightPx, items, copies));
+    }
+
+    /**
+     * 测试网络打印机连通性（TCP 连接 ip:port，默认原始打印端口 9100）
+     */
+    public boolean testNetworkPrinter(String ip, int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(ip, port), 3000);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 打印标签到网络打印机：把同样的 TSPL 指令通过 Socket 直接发送到 ip:port
+     */
+    public void printNetworkLabel(String ip, int port, int copies, int widthPx, int heightPx, JSONArray items) throws Exception {
+        byte[] data = buildTsplJob(widthPx, heightPx, items, copies);
+        sendToSocket(ip, port, data);
+    }
+
+    private void sendToSocket(String ip, int port, byte[] data) throws Exception {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(ip, port), 5000);
+            socket.setSoTimeout(5000);
+            OutputStream os = socket.getOutputStream();
+            os.write(data);
+            os.flush();
+        }
     }
 
     private PrintService findPrinter(String printerName) throws Exception {

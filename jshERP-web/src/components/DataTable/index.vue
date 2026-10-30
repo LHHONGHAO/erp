@@ -5,7 +5,7 @@
       <div class="data-table-toolbar-left">
         <slot name="toolbar"></slot>
       </div>
-      <div class="data-table-toolbar-right" v-if="showColumnSetting && settingColumns.length > 0">
+      <div class="data-table-toolbar-right" v-if="showColumnSetting && showColumnSettingButton && settingColumns.length > 0">
         <a-popover trigger="click" placement="bottom" :overlayStyle="{ zIndex: 1050 }">
           <template slot="content">
             <a-checkbox-group @change="onColChange" v-model="settingDataIndex">
@@ -52,6 +52,27 @@
     <div class="dt-hscroll" ref="hscroll" v-show="hscrollVisible">
       <div class="dt-hscroll-inner" :style="{ width: hscrollContentWidth + 'px' }"></div>
     </div>
+    <!-- 外部按钮触发的列设置弹窗（页面把“列设置”按钮移到页头时使用） -->
+    <a-modal
+      :visible="columnSettingOpen"
+      title="列设置"
+      width="360px"
+      :footer="null"
+      @cancel="columnSettingOpen = false"
+    >
+      <div v-if="settingColumns.length > 0">
+        <div style="padding: 4px 0 8px; color: #999; font-size: 12px;">按勾选顺序排列显示</div>
+        <a-checkbox-group @change="onColChange" v-model="settingDataIndex">
+          <a-row v-for="item in settingColumns" :key="item.dataIndex" style="margin-bottom: 6px;">
+            <a-checkbox :value="item.dataIndex">{{ columnLabel(item) }}</a-checkbox>
+          </a-row>
+        </a-checkbox-group>
+        <a-row style="padding-top: 10px; margin-top: 10px; border-top: 1px solid #f0f0f0;">
+          <a-checkbox :checked="isAllColumnsChecked" @change="handleSelectAllColumns">全选</a-checkbox>
+          <a-button @click="handleRestDefault" type="link" size="small">恢复默认</a-button>
+        </a-row>
+      </div>
+    </a-modal>
     <!-- 合计行模式下：合计行追加在本页数据末尾，必须关闭内置分页，用外部翻页器避免合计行被分页截断 -->
     <div class="dt-summary-pager" v-if="summaryPager">
       <a-pagination
@@ -117,6 +138,8 @@
       summaryFields: { type: String, default: '' },
       /** 是否显示列设置按钮 */
       showColumnSetting: { type: Boolean, default: true },
+      /** 是否在表格工具栏内显示列设置按钮（设 false 时由页面外部按钮调用 openColumnSetting 打开） */
+      showColumnSettingButton: { type: Boolean, default: true },
       /** 自定义 localStorage 键（默认根据 tableName/tableKey 生成） */
       storageKey: { type: String, default: '' },
       /** 是否可编辑：开启后，带 editType 的列渲染为编辑控件 */
@@ -172,7 +195,9 @@
         /** 明细模式：统计列合计对象（兼容 JEditableTable.statisticsColumns） */
         statisticsColumns: {},
         /** 明细模式：行高（兼容 resetScrollTop 滚动定位） */
-        rowHeight: 40
+        rowHeight: 40,
+        /** 列设置弹窗是否可见（页面外部按钮触发） */
+        columnSettingOpen: false
       }
     },
     computed: {
@@ -994,6 +1019,11 @@
           total[f] = sum
         })
         this.statisticsColumns = total
+      },
+
+      /** 打开列设置弹窗（供页面外部“列设置”按钮调用） */
+      openColumnSetting() {
+        this.columnSettingOpen = true
       },
 
       /** 明细模式：获取所有行值（兼容 JEditableTable.getAll，返回 Promise） */

@@ -16,7 +16,6 @@ import com.jsh.erp.service.DepotItemService;
 import com.jsh.erp.service.MaterialService;
 import com.jsh.erp.service.RoleService;
 import com.jsh.erp.service.SystemConfigService;
-import com.jsh.erp.service.UnitService;
 import com.jsh.erp.service.UserService;
 import com.jsh.erp.utils.*;
 import io.swagger.annotations.Api;
@@ -57,9 +56,6 @@ public class DepotItemController {
 
     @Resource
     private MaterialService materialService;
-
-    @Resource
-    private UnitService unitService;
 
     @Resource
     private DepotService depotService;
@@ -164,11 +160,6 @@ public class DepotItemController {
                     stock = depotItemService.getSkuStockByParam(depotId,materialVo4Unit.getMeId(),null,null);
                 } else {
                     stock = depotItemService.getCurrentStockByParam(depotId, materialVo4Unit.getId());
-                    if(materialVo4Unit.getUnitId()!=null) {
-                        Unit unit = unitService.getUnit(materialVo4Unit.getUnitId());
-                        String commodityUnit = materialVo4Unit.getCommodityUnit();
-                        stock = unitService.parseStockByUnit(stock, unit, commodityUnit);
-                    }
                 }
             }
             map.put("stock", stock);
@@ -233,15 +224,10 @@ public class DepotItemController {
                     item.put("otherField2", diEx.getMOtherField2());
                     item.put("otherField3", diEx.getMOtherField3());
                     BigDecimal stock;
-                    Unit unitInfo = materialService.findUnit(diEx.getMaterialId()); //查询多单位信息
-                    String materialUnit = diEx.getMaterialUnit();
                     if(StringUtil.isNotEmpty(diEx.getSku())){
                         stock = depotItemService.getSkuStockByParam(diEx.getDepotId(),diEx.getMaterialExtendId(),null,null);
                     } else {
                         stock = depotItemService.getCurrentStockByParam(diEx.getDepotId(),diEx.getMaterialId());
-                        if (StringUtil.isNotEmpty(unitInfo.getName())) {
-                            stock = unitService.parseStockByUnit(stock, unitInfo, materialUnit);
-                        }
                     }
                     item.put("stock", stock);
                     item.put("unit", diEx.getMaterialUnit());
@@ -254,9 +240,9 @@ public class DepotItemController {
                     item.put("operNumber", diEx.getOperNumber());
                     item.put("basicNumber", diEx.getBasicNumber());
                     item.put("preNumber", diEx.getOperNumber()); //原数量
-                    BigDecimal finishPurchaseNumber = depotItemService.getFinishPurchaseNumber(diEx.getMaterialExtendId(), diEx.getId(), diEx.getHeaderId(), unitInfo, materialUnit, linkType);
+                    BigDecimal finishPurchaseNumber = depotItemService.getFinishPurchaseNumber(diEx.getMaterialExtendId(), diEx.getId(), diEx.getHeaderId(), linkType);
                     item.put("finishPurchaseNumber", finishPurchaseNumber); //已采购（以销定购的情况）
-                    BigDecimal finishNumber = depotItemService.getFinishNumber(diEx.getMaterialExtendId(), diEx.getId(), diEx.getHeaderId(), unitInfo, materialUnit, linkType);
+                    BigDecimal finishNumber = depotItemService.getFinishNumber(diEx.getMaterialExtendId(), diEx.getId(), diEx.getHeaderId(), linkType);
                     item.put("finishNumber", finishNumber); //已采购|已销售|已入库|已出库
                     item.put("purchaseDecimal", roleService.parseBillPriceByLimit(diEx.getPurchaseDecimal(), billCategory, priceLimit, request));  //采购价
                     if("basic".equals(linkType) || "1".equals(isReadOnly)) {
@@ -391,7 +377,7 @@ public class DepotItemController {
                     item.put("outSum", outSum);
                     item.put("thisSum", thisSum);
                     //将小单位的库存换算为大单位的库存
-                    item.put("bigUnitStock", materialService.getBigUnitStock(thisSum, diEx.getUnitId()));
+                    item.put("bigUnitStock", "");
                     if(moveAvgPriceFlag) {
                         item.put("unitPrice", roleService.parseStockPriceByLimit(diEx.getCurrentUnitPrice(), priceLimit, request));
                     } else {

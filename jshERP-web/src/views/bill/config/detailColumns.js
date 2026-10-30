@@ -104,9 +104,6 @@ export const RETAIL_OUT_COLUMNS = [
   { key: 'purchaseDecimal', title: '进货价', width: 80 },
   { key: 'commodityDecimal', title: '零售价', width: 80 },
   { key: 'marketPrice', title: '划线价', width: 80 },
-  { key: 'snList', title: '序列号', width: 160, type: FormTypes.popupJsh, kind: 'sn', multi: true },
-  { key: 'batchNumber', title: '批号', width: 120, type: FormTypes.popupJsh, kind: 'batch', multi: false },
-  { key: 'expirationDate', title: '有效期', width: 120, type: FormTypes.input, readonly: true },
   {
     key: 'operNumber',
     title: '数量',
@@ -115,8 +112,7 @@ export const RETAIL_OUT_COLUMNS = [
     statistics: true,
     validateRules: [{ required: true, message: '${title}不能为空' }]
   },
-  { key: 'unitPrice', title: '单价', width: 80, type: FormTypes.inputNumber },
-  { key: 'allPrice', title: '金额', width: 90, type: FormTypes.inputNumber, statistics: true },
+  { key: 'allPrice', title: '金额', width: 90, type: FormTypes.inputNumber, readonly: true, statistics: true },
   { key: 'remark', title: '备注', width: 120, type: FormTypes.input }
 ]
 

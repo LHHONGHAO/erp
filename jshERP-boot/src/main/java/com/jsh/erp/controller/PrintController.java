@@ -63,4 +63,43 @@ public class PrintController extends BaseController {
             return returnJson(objectMap, "打印失败：" + e.getMessage(), ErpInfo.ERROR.code);
         }
     }
+
+    @PostMapping(value = "/networkTest")
+    @ApiOperation(value = "测试网络打印机连通性")
+    public String networkTest(@RequestBody JSONObject body) {
+        Map<String, Object> objectMap = new HashMap<>();
+        String ip = body.getString("ip");
+        int port = body.getIntValue("port") > 0 ? body.getIntValue("port") : 9100;
+        if (ip == null || ip.trim().isEmpty()) {
+            return returnJson(objectMap, "请输入打印机 IP", ErpInfo.ERROR.code);
+        }
+        boolean connected = labelPrinterService.testNetworkPrinter(ip.trim(), port);
+        objectMap.put("connected", connected);
+        if (connected) {
+            return returnJson(objectMap, "连接成功", ErpInfo.OK.code);
+        }
+        return returnJson(objectMap, "无法连接 " + ip + ":" + port + "，请确认打印机已开机且与服务器同一网段", ErpInfo.ERROR.code);
+    }
+
+    @PostMapping(value = "/network")
+    @ApiOperation(value = "打印标签到网络打印机（IP:端口）")
+    public String printNetworkLabel(@RequestBody JSONObject body) {
+        Map<String, Object> objectMap = new HashMap<>();
+        String ip = body.getString("ip");
+        int port = body.getIntValue("port") > 0 ? body.getIntValue("port") : 9100;
+        if (ip == null || ip.trim().isEmpty()) {
+            return returnJson(objectMap, "请先配置打印机 IP", ErpInfo.ERROR.code);
+        }
+        int copies = body.getIntValue("copies") > 0 ? body.getIntValue("copies") : 1;
+        int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
+        int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
+        JSONArray items = body.getJSONArray("items");
+        try {
+            labelPrinterService.printNetworkLabel(ip.trim(), port, copies, width, height, items);
+            return returnJson(objectMap, "打印成功", ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("网络打印机打印失败", e);
+            return returnJson(objectMap, "打印失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
 }

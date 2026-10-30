@@ -184,7 +184,7 @@ CREATE TABLE `jsh_depot_item`  (
   `material_id` bigint(0) NOT NULL COMMENT '商品Id',
   `material_extend_id` bigint(0) NULL DEFAULT NULL COMMENT '商品扩展id',
   `material_unit` varchar(20) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '商品单位',
-  `sku` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '多属性',
+  `sku` varchar(1000) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '多属性',
   `oper_number` decimal(24, 6) NULL DEFAULT NULL COMMENT '数量',
   `basic_number` decimal(24, 6) NULL DEFAULT NULL COMMENT '基础数量，如kg、瓶',
   `unit_price` decimal(24, 6) NULL DEFAULT NULL COMMENT '单价',
@@ -273,11 +273,11 @@ INSERT INTO `jsh_function` VALUES (208, '030103', '采购统计', '0301', '/repo
 INSERT INTO `jsh_function` VALUES (209, '030104', '销售统计', '0301', '/report/sale_out_report', '/report/SaleOutReport', b'0', '0630', b'1', '电脑版', '', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (210, '040102', '零售出库', '0401', '/bill/retail_out', '/bill/RetailOutList', b'0', '0405', b'1', '电脑版', '1,2,3,7', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (262, '040103', '销售开单', '0401', '/bill/retail_sale_order', '/bill/RetailSaleOrderEntry', b'0', '0406', b'1', '电脑版', '1,2,3,7', 'profile', '0');
+INSERT INTO `jsh_function` VALUES (266, '010103', '新增商品', '0101', '/material/material_add', '/material/MaterialAdd', b'0', '0250', b'1', '电脑版', '1,2,3,7', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (211, '040104', '零售退货', '0401', '/bill/retail_back', '/bill/RetailBackList', b'0', '0407', b'1', '电脑版', '1,2,3,7', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (212, '070407', '收预付款', '0704', '/financial/advance_in', '/financial/AdvanceInList', b'0', '0495', b'1', '电脑版', '1,2,3,7', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (217, '01020102', '客户信息', '0102', '/system/customer', '/system/CustomerList', b'0', '0262', b'1', '电脑版', '1,3', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (218, '01020103', '会员信息', '0102', '/system/member', '/system/MemberList', b'0', '0263', b'1', '电脑版', '1,3', 'profile', '0');
-INSERT INTO `jsh_function` VALUES (220, '010103', '多单位', '0101', '/system/unit', '/system/UnitList', b'0', '0245', b'1', '电脑版', '1', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (225, '0401', '零售管理', '0', '/billC', '/layouts/TabLayout', b'0', '0101', b'1', '电脑版', '', 'gift', '0');
 INSERT INTO `jsh_function` VALUES (226, '030106', '入库明细', '0301', '/report/in_detail', '/report/InDetail', b'0', '0640', b'1', '电脑版', '', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (227, '030107', '出库明细', '0301', '/report/out_detail', '/report/OutDetail', b'0', '0645', b'1', '电脑版', '', 'profile', '0');
@@ -295,7 +295,6 @@ INSERT INTO `jsh_function` VALUES (243, '000108', '部门管理', '0001', '/syst
 INSERT INTO `jsh_function` VALUES (244, '030112', '库存预警', '0301', '/report/stock_warning_report', '/report/StockWarningReport', b'0', '0670', b'1', '电脑版', '', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (245, '000107', '插件管理', '0001', '/system/plugin', '/system/PluginList', b'0', '0170', b'1', '电脑版', '1', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (246, '030113', '商品库存', '0301', '/report/material_stock', '/report/MaterialStock', b'0', '0605', b'1', '电脑版', '', 'profile', '0');
-INSERT INTO `jsh_function` VALUES (247, '010105', '多属性', '0101', '/material/material_attribute', '/material/MaterialAttributeList', b'0', '0250', b'1', '电脑版', '1', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (248, '030150', '调拨明细', '0301', '/report/allocation_detail', '/report/AllocationDetail', b'0', '0646', b'1', '电脑版', '', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (258, '000112', '平台配置', '0001', '/system/platform_config', '/system/PlatformConfigList', b'0', '0175', b'1', '电脑版', '', 'profile', '0');
 INSERT INTO `jsh_function` VALUES (259, '030105', '零售统计', '0301', '/report/retail_out_report', '/report/RetailOutReport', b'0', '0615', b'1', '电脑版', '', 'profile', '0');
@@ -935,32 +934,8 @@ CREATE TABLE `jsh_tenant`  (
 INSERT INTO `jsh_tenant` VALUES (13, 63, 'jsh', 2000, '1', b'1', '2021-02-17 23:19:17', '2099-02-17 23:19:17', NULL, '0');
 
 -- ----------------------------
--- Table structure for jsh_unit
+-- Table structure for jsh_unit (已废弃，多单位功能移除)
 -- ----------------------------
-DROP TABLE IF EXISTS `jsh_unit`;
-CREATE TABLE `jsh_unit`  (
-  `id` bigint(0) NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `name` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '名称，支持多单位',
-  `basic_unit` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '基础单位',
-  `other_unit` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '副单位',
-  `other_unit_two` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '副单位2',
-  `other_unit_three` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '副单位3',
-  `ratio` decimal(24, 3) NULL DEFAULT NULL COMMENT '比例',
-  `ratio_two` decimal(24, 3) NULL DEFAULT NULL COMMENT '比例2',
-  `ratio_three` decimal(24, 3) NULL DEFAULT NULL COMMENT '比例3',
-  `enabled` bit(1) NULL DEFAULT NULL COMMENT '启用',
-  `tenant_id` bigint(0) NULL DEFAULT NULL COMMENT '租户id',
-  `delete_flag` varchar(1) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT '0' COMMENT '删除标记，0未删除，1删除',
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 22 CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '多单位表' ROW_FORMAT = Dynamic;
-
--- ----------------------------
--- Records of jsh_unit
--- ----------------------------
-INSERT INTO `jsh_unit` VALUES (15, '个/(箱=12个)', '个', '箱', NULL, NULL, 12.000, NULL, NULL, b'1', 63, '0');
-INSERT INTO `jsh_unit` VALUES (19, '个/(盒=15个)', '个', '盒', NULL, NULL, 15.000, NULL, NULL, b'1', 63, '0');
-INSERT INTO `jsh_unit` VALUES (20, '盒/(箱=8盒)', '盒', '箱', NULL, NULL, 8.000, NULL, NULL, b'1', 63, '0');
-INSERT INTO `jsh_unit` VALUES (21, '瓶/(箱=12瓶)', '瓶', '箱', NULL, NULL, 12.000, NULL, NULL, b'1', 63, '0');
 
 -- ----------------------------
 -- Table structure for jsh_user

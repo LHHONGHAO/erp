@@ -37,7 +37,7 @@
     </resultMap>
 
     <select id="getUnitListWithStock" resultMap="ResultMapListWithStock">
-        select m.*, u.name unitName, mc.name categoryName, me.id meId,
+        select m.*, m.unit unitName, mc.name categoryName, me.id meId,
                me.spec_values sku, me.sku_code skuCode, me.spec_values specValues,
                ifnull(me.purchase_decimal,0) purchaseDecimal,
                mi.unit_code unitCode, mi.unit_code mBarCode,
@@ -49,7 +49,7 @@
         from jsh_material_instance mi
         join jsh_material m on m.id=mi.material_id and ifnull(m.delete_flag,'0')!='1'
         left join jsh_material_extend me on me.id=mi.material_extend_id and ifnull(me.delete_flag,'0')!='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_flag,'0')!='1'
+        
         left join jsh_material_category mc on m.category_id=mc.id and ifnull(mc.delete_flag,'0')!='1'
         left join jsh_depot d on d.id=mi.current_depot_id and ifnull(d.delete_flag,'0')!='1'
         where mi.status='IN_STOCK' and ifnull(mi.delete_flag,'0')!='1'
@@ -144,7 +144,7 @@
     </resultMap>
 
     <select id="selectByConditionMaterial" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultMapList">
-        select jm.*, u.name unitName, mc.name categoryName, jm.bar_code,
+        select jm.*, jm.unit unitName, mc.name categoryName, jm.bar_code,
         jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal, jme.spec_values sku,
         coalesce((select ss.image_url from sku_spec ss
                 join sku s on s.id = ss.sku_id
@@ -231,14 +231,14 @@
         order by m.id desc) tb
         left join jsh_material jm on tb.id = jm.id and ifnull(jm.delete_Flag,'0') !='1'
         left join jsh_material_extend jme on tb.meId = jme.id and ifnull(jme.delete_Flag,'0') !='1'
-        left join jsh_unit u on u.name = jm.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left join jsh_material_category mc on jm.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         order by tb.id desc
     </select>
 
     <!-- SKU维度商品列表：一行一个SKU，商品信息与SKU信息合并展示 -->
     <select id="selectSkuListByConditionMaterial" resultMap="ResultAndUnitMap">
-        select jm.*, u.name unit_name, mc.name categoryName, jme.id meId, jm.bar_code m_bar_code,
+        select jm.*, jm.unit unit_name, mc.name categoryName, jme.id meId, jm.bar_code m_bar_code,
         jme.purchase_decimal, jme.commodity_decimal, jme.wholesale_decimal, jme.low_decimal,
         jme.spec_values sku, jme.sku_code, jme.spec_values specValues, jm.unit,
         jme.default_flag,
@@ -262,7 +262,7 @@
         from jsh_material jm
         left join jsh_material_extend jme on jm.id = jme.material_id and ifnull(jme.delete_flag,'0') !='1'
         left join sku s on s.spu_id = jm.id and s.sku_code = jme.sku_code and s.deleted_at is null
-        left join jsh_unit u on u.name = jm.unit and ifnull(u.delete_flag,'0') !='1'
+        
         left join jsh_material_category mc on jm.category_id = mc.id and ifnull(mc.delete_flag,'0') !='1'
         where 1=1
         <if test="materialParam != null and materialParam !=''">
@@ -521,26 +521,19 @@
         </trim>
     </insert>
 
-    <select id="findUnitList" resultType="com.jsh.erp.datasource.entities.Unit">
-        select u.* from jsh_unit u
-        left join jsh_material m on u.name = m.unit and ifnull(m.delete_flag,'0') !='1'
-        where m.id = #{mId}
-        and ifnull(u.delete_flag,'0') !='1'
-    </select>
-
     <select id="findById" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name from jsh_material m
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_flag,'0') !='1'
+        select m.*,m.unit unit_name from jsh_material m
+        
         where m.id = #{id}
         and ifnull(m.delete_flag,'0') !='1'
     </select>
 
     <select id="findByIdWithBarCode" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unit_name,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.img_url as imgName
         from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         where me.id = #{meId}
         and ifnull(m.delete_flag,'0') !='1'
     </select>
@@ -560,7 +553,7 @@
     </select>
 
     <select id="findBySelectWithBarCode" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,mc.name categoryName,me.id meId,m.bar_code m_bar_code,m.unit,me.spec_values sku,
+        select m.*,m.unit unit_name,mc.name categoryName,me.id meId,m.bar_code m_bar_code,m.unit,me.spec_values sku,
         me.sku_code,me.purchase_decimal,me.commodity_decimal,me.wholesale_decimal,me.low_decimal,
         me.spec_values as specValues, me.img_url as imgName,
         IFNULL(s.current_stock,0) as stock from jsh_material m
@@ -569,7 +562,7 @@
                    from jsh_material_current_stock
                    where ifnull(delete_flag,'0') !='1'
                    group by material_extend_id) s on me.id = s.material_extend_id
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where me.id is not null
         <if test="q != null and q !=''">
@@ -636,7 +629,7 @@
     <select id="findBySelectWithBarCodeCount" resultType="java.lang.Integer">
         select count(1) from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         where me.id is not null
         <if test="q != null and q !=''">
             <bind name="bindKey" value="'%'+q+'%'"/>
@@ -696,11 +689,11 @@
     </select>
 
     <select id="exportExcel" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultMapList">
-        select m.*,u.name unitName, u.ratio, mc.name categoryName,m.bar_code,m.unit,me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unitName, mc.name categoryName,m.bar_code,m.unit,me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.spec_values
         from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
-        left JOIN jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where 1=1
         and (me.default_flag=1 or (me.spec_values is not null and me.spec_values!=''))
@@ -808,31 +801,16 @@
         )
         and ifnull(delete_flag,'0') !='1'
     </select>
-    <select id="getMaterialListByUnitIds"  resultMap="com.jsh.erp.datasource.mappers.MaterialMapper.BaseResultMap">
-        select
-        <include refid="com.jsh.erp.datasource.mappers.MaterialMapper.Base_Column_List" />
-        from jsh_material
-        where 1=1
-        and unit in (
-        select u.name from jsh_unit u where u.id in (
-        <foreach collection="unitIds" item="unitId" separator=",">
-            #{unitId}
-        </foreach>
-        )
-        )
-        and ifnull(delete_flag,'0') !='1'
-    </select>
-
     <select id="getBarCodeList" resultType="java.lang.String">
         select m.bar_code from jsh_material m
         where ifnull(m.delete_flag,'0') !='1' and ifnull(m.bar_code,'') !=''
     </select>
 
     <select id="getMaterialByMeId" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultMapList">
-        select m.*,m.bar_code,u.name unitName, mc.name categoryName
+        select m.*,m.unit unitName, mc.name categoryName
         FROM jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
-        left JOIN jsh_unit u on u.name = m.unit and ifnull(u.delete_flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where 1=1
         <if test="meId != null">
@@ -849,7 +827,7 @@
     </select>
 
     <select id="getMaterialByBarCode" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.spec_values sku, me.sku_code, me.spec_values specValues,
         coalesce((select ss.image_url from sku_spec ss
                 where ss.sku_id = s.id and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1), me.img_url) as imgName,
@@ -857,7 +835,7 @@
         from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
         left join sku s on s.spu_id = m.id and s.sku_code = me.sku_code and s.deleted_at is null
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left join jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where
         (m.bar_code in (
@@ -875,7 +853,7 @@
 
     <!-- 按SKU编码查询商品（入库扫码用） -->
     <select id="getMaterialBySkuCode" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.spec_values sku, me.sku_code, me.spec_values specValues,
         coalesce((select ss.image_url from sku_spec ss
                 where ss.sku_id = s.id and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1), me.img_url) as imgName,
@@ -883,19 +861,23 @@
         from jsh_material m
         inner join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
         left join sku s on s.spu_id = m.id and s.sku_code = me.sku_code and s.deleted_at is null
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left join jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
-        where me.sku_code in (
+        where (me.sku_code in (
         <foreach collection="skuCodeArray" item="skuCode" separator=",">
             #{skuCode}
         </foreach>
-        )
+        ) or m.code in (
+        <foreach collection="skuCodeArray" item="skuCode2" separator=",">
+            #{skuCode2}
+        </foreach>
+        ))
         and ifnull(m.delete_flag,'0') !='1'
         order by m.id desc, me.default_flag desc, me.id asc
     </select>
 
     <select id="getMaterialByMeIds" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.spec_values sku, me.sku_code, me.spec_values specValues,
         coalesce((select ss.image_url from sku_spec ss
                 where ss.sku_id = s.id and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1), me.img_url) as imgName,
@@ -903,7 +885,7 @@
         from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
         left join sku s on s.spu_id = m.id and s.sku_code = me.sku_code and s.deleted_at is null
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left join jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where
         me.id in (
@@ -916,7 +898,7 @@
     </select>
 
     <select id="getMaterialByBarCodeAndWithOutMId" parameterType="com.jsh.erp.datasource.entities.MaterialExample" resultMap="ResultAndUnitMap">
-        select m.*,u.name unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
+        select m.*,m.unit unit_name,mc.name categoryName, me.id meId,m.bar_code m_bar_code, m.unit, me.purchase_decimal, me.commodity_decimal,
         me.wholesale_decimal, me.low_decimal, me.spec_values sku, me.sku_code, me.spec_values specValues,
         coalesce((select ss.image_url from sku_spec ss
                 where ss.sku_id = s.id and ss.image_url is not null and ss.image_url &lt;&gt; '' limit 1), me.img_url) as imgName,
@@ -924,7 +906,7 @@
         from jsh_material m
         left join jsh_material_extend me on m.id=me.material_id and ifnull(me.delete_Flag,'0') !='1'
         left join sku s on s.spu_id = m.id and s.sku_code = me.sku_code and s.deleted_at is null
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left join jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where
         (m.bar_code in (
@@ -959,7 +941,7 @@
     <!-- SKU维度库存列表：每个规格/SKU一行，库存仅汇总该SKU在所选仓库中的数量 -->
     <select id="getSkuListWithStock" resultMap="ResultMapListWithStock">
         select stock_rows.* from (
-            select m.*, u.name unitName, u.ratio, mc.name categoryName,
+            select m.*, m.unit unitName, mc.name categoryName,
             me.id meId, coalesce(nullif(me.sku_code,''), nullif(m.bar_code,''), m.bar_code) mBarCode,
             me.spec_values sku, me.sku_code skuCode, me.spec_values specValues, me.img_url imgName,
             ifnull(me.purchase_decimal,0) purchaseDecimal,
@@ -1001,7 +983,7 @@
              </if>),0) currentWeight
             from jsh_material m
             join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_flag,'0')!='1'
-            left join jsh_unit u on u.name = m.unit and ifnull(u.delete_flag,'0')!='1'
+            
             left join jsh_material_category mc on m.category_id=mc.id and ifnull(mc.delete_flag,'0')!='1'
             where ifnull(m.delete_flag,'0')!='1'
             <if test="idList != null and idList.size()>0">
@@ -1081,7 +1063,7 @@
                 #{item}
             </foreach>
         </if>
-        left JOIN jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where 1=1
         <if test="idList.size()>0">
@@ -1132,7 +1114,7 @@
                 #{item}
             </foreach>
         </if>
-        left JOIN jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where 1=1
         <if test="idList.size()>0">
@@ -1167,7 +1149,7 @@
         from jsh_material m
         left JOIN jsh_material_extend me on m.id = me.material_id and ifnull(me.delete_Flag,'0') !='1' and me.default_flag=1
         left join jsh_material_current_stock mcs on m.id = mcs.material_id and ifnull(mcs.delete_flag,'0') !='1'
-        left JOIN jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+        
         left JOIN jsh_material_category mc on m.category_id = mc.id and ifnull(mc.delete_Flag,'0') !='1'
         where 1=1
         <if test="depotList.size()>0">

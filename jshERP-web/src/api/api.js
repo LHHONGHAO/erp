@@ -1,4 +1,4 @@
-import { getAction, deleteAction, putAction, postAction, httpAction } from '@/api/manage'
+﻿import { getAction, deleteAction, putAction, postAction, httpAction } from '@/api/manage'
 
 //首页统计
 const getBuyAndSaleStatistics = (params)=>getAction("/depotHead/getBuyAndSaleStatistics",params);
@@ -69,11 +69,7 @@ const changeNameToPinYin = (params)=>postAction("/material/changeNameToPinYin",p
 const batAddSerialNumber = (params)=>postAction("/serialNumber/batAddSerialNumber",params);
 const getEnableSerialNumberList = (params)=>postAction("/serialNumber/getEnableSerialNumberList",params);
 //多属性
-const addMaterialAttribute = (params)=>postAction("/materialAttribute/add",params);
-const editMaterialAttribute = (params)=>putAction("/materialAttribute/update",params);
-const checkMaterialAttribute = (params)=>getAction("/materialAttribute/checkIsNameExist",params);
 const getMaterialAttributeNameList = (params)=>getAction("/materialAttribute/getNameList",params);
-const getMaterialAttributeValueListById = (params)=>getAction("/materialAttribute/getValueListById",params);
 const getMaterialCategorySpecValues = (params)=>getAction("/materialAttrValue/getByCategoryAndAttribute",params);
 const deleteMaterialCategorySpecValue = (params)=>deleteAction("/materialAttrValue/hideSuggestion",params);
 //功能管理
@@ -104,10 +100,6 @@ const editUserBusiness = (params)=>putAction("/userBusiness/update",params);
 const checkUserBusiness = (params)=>getAction("/userBusiness/checkIsValueExist",params);
 const updateBtnStrByRoleId = (params)=>postAction("/userBusiness/updateBtnStr",params);
 const updateOneValueByKeyIdAndType = (params)=>postAction("/userBusiness/updateOneValueByKeyIdAndType",params);
-//多单位
-const addUnit = (params)=>postAction("/unit/add",params);
-const editUnit = (params)=>putAction("/unit/update",params);
-const checkUnit = (params)=>getAction("/unit/checkIsNameExist",params);
 //供应商|客户|会员
 const addSupplier = (params)=>postAction("/supplier/add",params);
 const editSupplier = (params)=>putAction("/supplier/update",params);
@@ -182,11 +174,7 @@ export {
   changeNameToPinYin,
   batAddSerialNumber,
   getEnableSerialNumberList,
-  addMaterialAttribute,
-  editMaterialAttribute,
-  checkMaterialAttribute,
   getMaterialAttributeNameList,
-  getMaterialAttributeValueListById,
   getMaterialCategorySpecValues,
   deleteMaterialCategorySpecValue,
   addFunction,
@@ -212,9 +200,6 @@ export {
   checkUserBusiness,
   updateBtnStrByRoleId,
   updateOneValueByKeyIdAndType,
-  addUnit,
-  editUnit,
-  checkUnit,
   addSupplier,
   editSupplier,
   checkSupplier,

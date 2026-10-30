@@ -56,8 +56,6 @@ public class DepotItemService {
     @Resource
     private DepotService depotService;
     @Resource
-    private UnitService unitService;
-    @Resource
     private MaterialCurrentStockMapper materialCurrentStockMapper;
     @Resource
     private MaterialCurrentStockMapperEx materialCurrentStockMapperEx;
@@ -499,28 +497,11 @@ public class DepotItemService {
                 if (StringUtil.isExist(rowObj.get("linkId"))) {
                     depotItem.setLinkId(rowObj.getLong("linkId"));
                 }
-                //以下进行单位换算
-                Unit unitInfo = materialService.findUnit(materialExtend.getMaterialId()); //查询多单位信息
+                //统一按基本单位处理，操作数量即基本数量
                 if (StringUtil.isExist(rowObj.get("operNumber"))) {
-                    depotItem.setOperNumber(rowObj.getBigDecimal("operNumber"));
-                    String unit = rowObj.get("unit") == null ? "" : rowObj.get("unit").toString();
                     BigDecimal oNumber = rowObj.getBigDecimal("operNumber");
-                    if (StringUtil.isNotEmpty(unitInfo.getName())) {
-                        String basicUnit = unitInfo.getBasicUnit(); //基本单位
-                        if (unit.equals(basicUnit)) { //如果等于基本单位
-                            depotItem.setBasicNumber(oNumber); //数量一致
-                        } else if (unit.equals(unitInfo.getOtherUnit())) { //如果等于副单位
-                            depotItem.setBasicNumber(oNumber.multiply(unitInfo.getRatio())); //数量乘以比例
-                        } else if (unit.equals(unitInfo.getOtherUnitTwo())) { //如果等于副单位2
-                            depotItem.setBasicNumber(oNumber.multiply(unitInfo.getRatioTwo())); //数量乘以比例
-                        } else if (unit.equals(unitInfo.getOtherUnitThree())) { //如果等于副单位3
-                            depotItem.setBasicNumber(oNumber.multiply(unitInfo.getRatioThree())); //数量乘以比例
-                        } else {
-                            depotItem.setBasicNumber(oNumber); //数量一致
-                        }
-                    } else {
-                        depotItem.setBasicNumber(oNumber); //其他情况
-                    }
+                    depotItem.setOperNumber(oNumber);
+                    depotItem.setBasicNumber(oNumber);
                 }
                 //如果数量+已完成数量>原订单数量，给出预警(判断前提是存在关联订单|关联请购单)
                 String linkStr = StringUtil.isNotEmpty(depotHead.getLinkNumber())? depotHead.getLinkNumber(): depotHead.getLinkApply();
@@ -539,13 +520,12 @@ public class DepotItemService {
                         //当前单据的类型
                         String currentSubType = depotHead.getSubType();
                         //在更新模式进行状态赋值
-                        String unit = rowObj.get("unit") == null ? "" : rowObj.get("unit").toString();
                         Long preHeaderId = depotHeadService.getDepotHead(linkStr).getId();
                         if(null!=preHeaderId) {
                             //前一个单据的数量
                             BigDecimal preNumber = getPreItemByHeaderIdAndMaterial(linkStr, depotItem.getMaterialExtendId(), depotItem.getLinkId()).getOperNumber();
                             //除去此单据之外的已入库|已出库
-                            BigDecimal realFinishNumber = getRealFinishNumber(currentSubType, depotItem.getMaterialExtendId(), depotItem.getLinkId(), preHeaderId, headerId, unitInfo, unit);
+                            BigDecimal realFinishNumber = getRealFinishNumber(currentSubType, depotItem.getMaterialExtendId(), depotItem.getLinkId(), preHeaderId, headerId);
                             if(preNumber!=null) {
                                 if (depotItem.getOperNumber().add(realFinishNumber).compareTo(preNumber) > 0) {
                                     if (!systemConfigService.getOverLinkBillFlag()) {
@@ -580,7 +560,6 @@ public class DepotItemService {
                     BusinessConstants.SUB_TYPE_RETAIL_RETURN.equals(depotHead.getSubType())) {
                     boolean moveAvgPriceFlag = systemConfigService.getMoveAvgPriceFlag();
                     BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(materialExtend.getMaterialId());
-                    currentUnitPrice = unitService.parseUnitPriceByUnit(currentUnitPrice, unitInfo, depotItem.getMaterialUnit());
                     BigDecimal unitPrice = moveAvgPriceFlag? currentUnitPrice: materialExtend.getPurchaseDecimal();
                     depotItem.setPurchaseUnitPrice(unitPrice);
                     if(StringUtil.isNotEmpty(depotItem.getBatchNumber())) {
@@ -1142,8 +1121,6 @@ public class DepotItemService {
         Boolean forceFlag = systemConfigService.getForceApprovalFlag();
         //此处给出入库管理的传值默认为false，不然会导致查询不到销售相关的单据
         Boolean inOutManageFlag = false;
-        //查询多单位信息
-        Unit unitInfo = materialService.findUnit(depotItem.getMaterialId());
         List<DepotItemVo4DetailByTypeAndMId> itemList = findDetailByDepotIdsAndMaterialIdList(null, forceFlag, inOutManageFlag, null,
                 null, null, null, null, depotItem.getMaterialId(), null, null);
         Collections.reverse(itemList); //倒序之后变成按时间从前往后排序
@@ -1153,7 +1130,7 @@ public class DepotItemService {
         for(DepotItemVo4DetailByTypeAndMId item: itemList) {
             BigDecimal basicNumber = item.getBnum()!=null?item.getBnum():BigDecimal.ZERO;
             //数量*单价  另外计算新的成本价
-            BigDecimal allPrice = unitService.parseAllPriceByUnit(item.getAllPrice()!=null?item.getAllPrice():BigDecimal.ZERO, unitInfo, item.getMaterialUnit());
+            BigDecimal allPrice = item.getAllPrice()!=null?item.getAllPrice():BigDecimal.ZERO;
             if(basicNumber.compareTo(BigDecimal.ZERO)!=0 && allPrice.compareTo(BigDecimal.ZERO)!=0) {
                 //入库
                 if (BusinessConstants.DEPOTHEAD_TYPE_IN.equals(item.getType())) {
@@ -1236,7 +1213,7 @@ public class DepotItemService {
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public BigDecimal getFinishPurchaseNumber(Long meId, Long id, Long headerId, Unit unitInfo, String materialUnit, String linkType) {
+    public BigDecimal getFinishPurchaseNumber(Long meId, Long id, Long headerId, String linkType) {
         BigDecimal count = BigDecimal.ZERO;
         Long linkId = id;
         DepotHead depotHead =depotHeadMapper.selectByPrimaryKey(headerId);
@@ -1246,22 +1223,12 @@ public class DepotItemService {
             String goToType = BusinessConstants.SUB_TYPE_PURCHASE_ORDER;
             String noType = "normal";
             count = depotItemMapperEx.getFinishNumber(meId, linkId, linkStr, noType, goToType);
-            //根据多单位情况进行数量的转换
-            if(materialUnit.equals(unitInfo.getOtherUnit()) && unitInfo.getRatio()!=null && unitInfo.getRatio().compareTo(BigDecimal.ZERO)!=0) {
-                count = count.divide(unitInfo.getRatio(),2,BigDecimal.ROUND_HALF_UP);
-            }
-            if(materialUnit.equals(unitInfo.getOtherUnitTwo()) && unitInfo.getRatioTwo()!=null && unitInfo.getRatioTwo().compareTo(BigDecimal.ZERO)!=0) {
-                count = count.divide(unitInfo.getRatioTwo(),2,BigDecimal.ROUND_HALF_UP);
-            }
-            if(materialUnit.equals(unitInfo.getOtherUnitThree()) && unitInfo.getRatioThree()!=null && unitInfo.getRatioThree().compareTo(BigDecimal.ZERO)!=0) {
-                count = count.divide(unitInfo.getRatioThree(),2,BigDecimal.ROUND_HALF_UP);
-            }
         }
         return count;
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public BigDecimal getFinishNumber(Long meId, Long id, Long headerId, Unit unitInfo, String materialUnit, String linkType) {
+    public BigDecimal getFinishNumber(Long meId, Long id, Long headerId, String linkType) {
         Long linkId = id;
         String goToType = "";
         DepotHead depotHead =depotHeadMapper.selectByPrimaryKey(headerId);
@@ -1297,16 +1264,6 @@ public class DepotItemService {
             noType = "apply";
         }
         BigDecimal count = depotItemMapperEx.getFinishNumber(meId, linkId, linkStr, noType, goToType);
-        //根据多单位情况进行数量的转换
-        if(materialUnit.equals(unitInfo.getOtherUnit()) && unitInfo.getRatio()!=null && unitInfo.getRatio().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatio(),2,BigDecimal.ROUND_HALF_UP);
-        }
-        if(materialUnit.equals(unitInfo.getOtherUnitTwo()) && unitInfo.getRatioTwo()!=null && unitInfo.getRatioTwo().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatioTwo(),2,BigDecimal.ROUND_HALF_UP);
-        }
-        if(materialUnit.equals(unitInfo.getOtherUnitThree()) && unitInfo.getRatioThree()!=null && unitInfo.getRatioThree().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatioThree(),2,BigDecimal.ROUND_HALF_UP);
-        }
         return count;
     }
 
@@ -1317,12 +1274,10 @@ public class DepotItemService {
      * @param linkId
      * @param preHeaderId
      * @param currentHeaderId
-     * @param unitInfo
-     * @param materialUnit
      * @return
      */
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public BigDecimal getRealFinishNumber(String currentSubType, Long meId, Long linkId, Long preHeaderId, Long currentHeaderId, Unit unitInfo, String materialUnit) {
+    public BigDecimal getRealFinishNumber(String currentSubType, Long meId, Long linkId, Long preHeaderId, Long currentHeaderId) {
         String goToType = currentSubType;
         DepotHead depotHead =depotHeadMapper.selectByPrimaryKey(preHeaderId);
         String linkStr = depotHead.getNumber(); //订单号
@@ -1331,16 +1286,6 @@ public class DepotItemService {
             linkType = "apply";
         }
         BigDecimal count = depotItemMapperEx.getRealFinishNumber(meId, linkId, linkStr, linkType, currentHeaderId, goToType);
-        //根据多单位情况进行数量的转换
-        if(materialUnit.equals(unitInfo.getOtherUnit()) && unitInfo.getRatio()!=null && unitInfo.getRatio().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatio(),2,BigDecimal.ROUND_HALF_UP);
-        }
-        if(materialUnit.equals(unitInfo.getOtherUnitTwo()) && unitInfo.getRatioTwo()!=null && unitInfo.getRatioTwo().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatioTwo(),2,BigDecimal.ROUND_HALF_UP);
-        }
-        if(materialUnit.equals(unitInfo.getOtherUnitThree()) && unitInfo.getRatioThree()!=null && unitInfo.getRatioThree().compareTo(BigDecimal.ZERO)!=0) {
-            count = count.divide(unitInfo.getRatioThree(),2,BigDecimal.ROUND_HALF_UP);
-        }
         return count;
     }
 
@@ -1352,11 +1297,6 @@ public class DepotItemService {
         for(DepotItemVoBatchNumberList bn: list) {
             if(bn.getTotalNum()!=null && bn.getTotalNum().compareTo(BigDecimal.ZERO)>0) {
                 bn.setExpirationDateStr(Tools.parseDateToStr(bn.getExpirationDate()));
-                if(bn.getUnitId()!=null) {
-                    Unit unit = unitService.getUnit(bn.getUnitId());
-                    String commodityUnit = bn.getCommodityUnit();
-                    bn.setTotalNum(unitService.parseStockByUnit(bn.getTotalNum(), unit, commodityUnit));
-                }
                 reslist.add(bn);
             }
         }
@@ -1380,13 +1320,6 @@ public class DepotItemService {
         if(list!=null && list.size()>0) {
             DepotItemVoBatchNumberList bn = list.get(0);
             totalNum = bn.getTotalNum();
-            if(bn.getTotalNum()!=null && bn.getTotalNum().compareTo(BigDecimal.ZERO)>0) {
-                if(bn.getUnitId()!=null) {
-                    Unit unit = unitService.getUnit(bn.getUnitId());
-                    String commodityUnit = bn.getCommodityUnit();
-                    totalNum = unitService.parseStockByUnit(bn.getTotalNum(), unit, commodityUnit);
-                }
-            }
         }
         return totalNum;
     }

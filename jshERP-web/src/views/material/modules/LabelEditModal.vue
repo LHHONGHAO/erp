@@ -305,6 +305,8 @@
           allowClear
           showSearch
           :filterOption="filterCategory"
+          :getPopupContainer="getBodyContainer"
+          :dropdownStyle="{ zIndex: 3200 }"
         >
           <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
         </a-select>
@@ -564,6 +566,10 @@
       },
       filterCategory(input, option) {
         return option.componentOptions.children[0].text.indexOf(input) >= 0
+      },
+      // 下拉挂到 body：避免被「保存模板」弹窗裁剪/遮挡，且不受弹窗定位影响
+      getBodyContainer() {
+        return document.body
       },
       getCategoryName(categoryId) {
         if (!categoryId) return ''

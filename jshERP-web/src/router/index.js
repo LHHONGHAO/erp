@@ -28,11 +28,6 @@ export default new Router({
       path: '/test/datatable-pro',
       name: 'testDataTablePro',
       component: () => import('@/views/TestDataTablePro')
-    },
-    {
-      path: '/system/tableColumnConfig',
-      name: 'tableColumnConfig',
-      component: () => import('@/views/system/TableColumnConfig')
     }
   ])
 })

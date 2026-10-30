@@ -385,14 +385,14 @@
     <select id="getInOutStock" parameterType="com.jsh.erp.datasource.entities.DepotItemExample" resultMap="ResultByMaterial">
         select m.id MId, m.bar_code, m.name MName, m.mfrs MMfrs, m.brand,
         m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3, me.img_url as imgName,
-        concat_ws('', m.unit, u.basic_unit) MaterialUnit, u.name unit_name,
+        m.unit MaterialUnit, m.unit unit_name,
         ifnull(me.purchase_decimal,0) purchase_decimal, ifnull(mcs.current_unit_price,0) currentUnitPrice
         from jsh_material m
         left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_Flag,'0') !='1'
         left join jsh_material_current_stock mcs on m.id = mcs.material_id and ifnull(mcs.delete_flag,'0') !='1'
         left join jsh_depot_item di on di.material_id=m.id and ifnull(di.delete_Flag,'0') !='1'
         left join jsh_depot_head dh on di.header_id=dh.id and ifnull(dh.delete_flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+
         where 1=1 and me.default_flag=1
         <if test="materialParam != null and materialParam !=''">
             <bind name="bindKey" value="'%'+materialParam+'%'"/>
@@ -410,7 +410,7 @@
         </if>
         and ifnull(m.delete_flag,'0') !='1'
         group by m.id, m.bar_code, m.name, m.mfrs, m.brand,
-        m.other_field1,m.other_field2,m.other_field3, me.img_url ,m.unit, u.basic_unit, u.name,
+        m.other_field1,m.other_field2,m.other_field3, me.img_url ,m.unit,
         me.purchase_decimal, mcs.current_unit_price
         order by m.id desc
         <if test="offset != null and rows != null">
@@ -446,12 +446,12 @@
     <select id="getListWithBuyOrSale" parameterType="com.jsh.erp.datasource.entities.DepotItemExample" resultMap="ResultByMaterial">
         select m.id MId, di.material_extend_id, m.bar_code, m.name MName, m.mfrs MMfrs,
         m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3,
-        concat_ws('', m.unit, u.basic_unit) MaterialUnit, m.brand, u.name unit_name
+        m.unit MaterialUnit, m.brand, m.unit unit_name
         from jsh_material m
         left join jsh_depot_item di on di.material_id=m.id  and ifnull(di.delete_Flag,'0') !='1'
         left join jsh_material_extend me on me.id=di.material_extend_id  and ifnull(me.delete_Flag,'0') !='1'
         left join jsh_depot_head dh on di.header_id=dh.id  and ifnull(dh.delete_flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+
         where 1=1
         <if test="categoryList.size()>0">
             and m.category_id in
@@ -507,7 +507,7 @@
         </if>
         and ifnull(m.delete_flag,'0') !='1'
         group by m.id, di.material_extend_id, m.bar_code, m.name, m.mfrs,
-        m.other_field1,m.other_field2,m.other_field3, m.unit, u.basic_unit, m.brand, u.name
+        m.other_field1,m.other_field2,m.other_field3, m.unit, m.brand
         order by m.id desc
         <if test="offset != null and rows != null">
             limit #{offset},#{rows}
@@ -920,13 +920,13 @@
     <select id="findStockWarningCount" parameterType="com.jsh.erp.datasource.entities.DepotItemExample" resultMap="ResultStockWarningCount">
         select m.id MId, m.name MName, m.bar_code, m.mfrs MMfrs, m.brand,
         m.other_field1 MOtherField1,m.other_field2 MOtherField2,m.other_field3 MOtherField3,d.name depotName,
-        m.unit MaterialUnit, u.basic_unit unit_name,mcs.current_number,
+        m.unit MaterialUnit, m.unit unit_name,mcs.current_number,
         mis.low_safe_stock, mis.high_safe_stock
         from jsh_material m
         left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_Flag,'0') !='1'
         left join jsh_material_initial_stock mis on mis.material_id=m.id and ifnull(mis.delete_Flag,'0') !='1'
         left join jsh_material_current_stock mcs on mcs.material_id=m.id and ifnull(mcs.delete_Flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+
         left join jsh_depot d on d.id=mis.depot_id and ifnull(u.delete_flag,'0') !='1'
         where 1=1
         and me.default_flag=1
@@ -964,7 +964,7 @@
         left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_Flag,'0') !='1'
         left join jsh_material_initial_stock mis on mis.material_id=m.id and ifnull(mis.delete_Flag,'0') !='1'
         left join jsh_material_current_stock mcs on mcs.material_id=m.id and ifnull(mcs.delete_Flag,'0') !='1'
-        left join jsh_unit u on u.name = m.unit and ifnull(u.delete_Flag,'0') !='1'
+
         left join jsh_depot d on d.id=mis.depot_id and ifnull(u.delete_flag,'0') !='1'
         where 1=1
         and me.default_flag=1

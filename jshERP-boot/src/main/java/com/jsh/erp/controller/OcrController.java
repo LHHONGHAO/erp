@@ -12,10 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.FileWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -97,8 +93,8 @@ public class OcrController {
         Map<String, Object> objectMap = new HashMap<>();
         try {
             logger.info("OCR recognizeAddress called");
-            if (!OcrUtil.isEnabled()) {
-                return returnJson(objectMap, "OCR功能未启用，请先在配置文件中配置百度OCR的API Key和Secret Key", ErpInfo.ERROR.code);
+            if (!OcrUtil.isAddressEnabled()) {
+                return returnJson(objectMap, "地址识别未启用，请先配置地址识别的API Key和Secret Key", ErpInfo.ERROR.code);
             }
             if (file.isEmpty()) {
                 return returnJson(objectMap, "请上传图片文件", ErpInfo.ERROR.code);
@@ -174,29 +170,57 @@ public class OcrController {
                 return returnJson(objectMap, "请输入百度 OCR Secret Key", ErpInfo.ERROR.code);
             }
 
-            String configPath = System.getProperty("user.dir") + "/config/ocr-config.properties";
-            Path path = Paths.get(configPath);
-            if (!Files.exists(path.getParent())) {
-                Files.createDirectories(path.getParent());
-            }
-
-            StringBuilder content = new StringBuilder();
-            content.append("ocr.baidu.enabled=").append(enabled).append("\n");
-            content.append("ocr.baidu.apiKey=").append(apiKey).append("\n");
-            content.append("ocr.baidu.secretKey=").append(secretKey).append("\n");
-            content.append("ocr.baidu.tokenUrl=https://aip.baidubce.com/oauth/2.0/token\n");
-            content.append("ocr.baidu.ocrUrl=https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic\n");
-
-            try (FileWriter writer = new FileWriter(configPath)) {
-                writer.write(content.toString());
-            }
-
+            OcrUtil.saveConfigToFile("ocr.baidu", enabled, apiKey, secretKey);
             OcrUtil.updateConfig(enabled, apiKey, secretKey);
 
             objectMap.put("success", true);
             return returnJson(objectMap, "配置保存成功，下次启动后生效", ErpInfo.OK.code);
         } catch (Exception e) {
             logger.error("保存OCR配置失败", e);
+            return returnJson(objectMap, "保存失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
+    @GetMapping(value = "/addressConfig")
+    @ApiOperation(value = "获取地址识别配置")
+    public String getAddressConfig(HttpServletRequest request) throws Exception {
+        Map<String, Object> objectMap = new HashMap<>();
+        objectMap.put("enabled", OcrUtil.isAddressEnabled());
+        objectMap.put("apiKey", OcrUtil.getMaskedAddressApiKey());
+        objectMap.put("secretKey", OcrUtil.getMaskedAddressSecretKey());
+        return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+    }
+
+    @PostMapping(value = "/saveAddressConfig")
+    @ApiOperation(value = "保存地址识别配置（与图片识别使用不同的API Key）")
+    public String saveAddressConfig(@RequestBody JSONObject params, HttpServletRequest request) throws Exception {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            String apiKey = params.getString("apiKey");
+            String secretKey = params.getString("secretKey");
+            boolean enabled = params.getBoolean("enabled");
+
+            // 留空表示沿用已保存的密钥，不覆盖
+            if (apiKey == null || apiKey.trim().isEmpty()) {
+                apiKey = OcrUtil.getAddressApiKey();
+            }
+            if (secretKey == null || secretKey.trim().isEmpty()) {
+                secretKey = OcrUtil.getAddressSecretKey();
+            }
+            if (enabled && (apiKey == null || apiKey.trim().isEmpty())) {
+                return returnJson(objectMap, "请输入地址识别的 API Key", ErpInfo.ERROR.code);
+            }
+            if (enabled && (secretKey == null || secretKey.trim().isEmpty())) {
+                return returnJson(objectMap, "请输入地址识别的 Secret Key", ErpInfo.ERROR.code);
+            }
+
+            OcrUtil.saveConfigToFile("ocr.address", enabled, apiKey, secretKey);
+            OcrUtil.updateAddressConfig(enabled, apiKey, secretKey);
+
+            objectMap.put("success", true);
+            return returnJson(objectMap, "地址识别配置保存成功", ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("保存地址识别配置失败", e);
             return returnJson(objectMap, "保存失败：" + e.getMessage(), ErpInfo.ERROR.code);
         }
     }

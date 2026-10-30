@@ -47,9 +47,6 @@ public class MaterialController extends BaseController {
     private SystemConfigService systemConfigService;
 
     @Resource
-    private UnitService unitService;
-
-    @Resource
     private DepotService depotService;
 
     @Resource
@@ -375,29 +372,6 @@ public class MaterialController extends BaseController {
                 for (MaterialVo4Unit material : dataList) {
                     JSONObject item = new JSONObject();
                     item.put("id", material.getMeId()); //商品扩展表的id
-                    String ratioStr = ""; //比例
-                    Unit unit = new Unit();
-                    if (material.getUnitId() == null) {
-                        ratioStr = "";
-                    } else {
-                        unit = unitService.getUnit(material.getUnitId());
-                        //拼接副单位的比例
-                        String commodityUnit = material.getCommodityUnit();
-                        if(StringUtil.isNotEmpty(commodityUnit) && unit!=null) {
-                            if(commodityUnit.equals(unit.getBasicUnit())) {
-                                ratioStr = "[基本]";
-                            }
-                            if(commodityUnit.equals(unit.getOtherUnit()) && unit.getRatio()!=null) {
-                                ratioStr = "[" + unit.getRatio().stripTrailingZeros().toPlainString() + unit.getBasicUnit() + "]";
-                            }
-                            if(commodityUnit.equals(unit.getOtherUnitTwo()) && unit.getRatioTwo()!=null) {
-                                ratioStr = "[" + unit.getRatioTwo().stripTrailingZeros().toPlainString() + unit.getBasicUnit() + "]";
-                            }
-                            if(commodityUnit.equals(unit.getOtherUnitThree()) && unit.getRatioThree()!=null) {
-                                ratioStr = "[" + unit.getRatioThree().stripTrailingZeros().toPlainString() + unit.getBasicUnit() + "]";
-                            }
-                        }
-                    }
                     item.put("mBarCode", material.getmBarCode());
                     item.put("barCode", material.getmBarCode());
                     item.put("code", material.getCode());
@@ -411,7 +385,7 @@ public class MaterialController extends BaseController {
                     item.put("color", material.getColor());
                     item.put("brand", material.getBrand());
                     item.put("mfrs", material.getMfrs());
-                    item.put("unit", material.getCommodityUnit() + ratioStr);
+                    item.put("unit", material.getCommodityUnit());
                     item.put("sku", material.getSku());
                     item.put("specValues", material.getSpecValues());
                     item.put("enableSerialNumber", material.getEnableSerialNumber());
@@ -421,10 +395,6 @@ public class MaterialController extends BaseController {
                         stock = depotItemService.getSkuStockByParam(depotId,material.getMeId(),null,null);
                     } else {
                         stock = depotItemService.getCurrentStockByParam(depotId, material.getId());
-                        if (material.getUnitId()!=null){
-                            String commodityUnit = material.getCommodityUnit();
-                            stock = unitService.parseStockByUnit(stock, unit, commodityUnit);
-                        }
                     }
                     item.put("stock", stock);
                     item.put("expand", materialService.getMaterialOtherByParam(mpArr, material));
@@ -780,11 +750,6 @@ public class MaterialController extends BaseController {
             stock = depotItemService.getSkuStockByParam(mvo.getDepotId(), mvo.getMeId(), null, null);
         } else {
             stock = depotItemService.getCurrentStockByParam(mvo.getDepotId(), mvo.getId());
-            if (mvo.getUnitId() != null) {
-                Unit unit = unitService.getUnit(mvo.getUnitId());
-                String commodityUnit = mvo.getCommodityUnit();
-                stock = unitService.parseStockByUnit(stock, unit, commodityUnit);
-            }
         }
         mvo.setStock(stock);
     }

@@ -530,11 +530,12 @@
     font-size: 12px;
     color: #ccc;
   }
-  /* 规格显示：每个规格单独一行，与上一行并列显示 */
+  /* 规格显示：每个规格单独一行，单列左对齐 */
   .spec-display-cell {
     white-space: pre-line;
     line-height: 18px;
     word-break: break-all;
+    text-align: left;
   }
 
   /* ============================================================

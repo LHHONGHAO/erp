@@ -1,19 +1,12 @@
 <template>
-  <j-modal
-    :title="title"
-    :width="width"
-    :visible="visible"
-    :confirmLoading="confirmLoading"
-    :keyboard="false"
-    :forceRender="true"
-    v-bind:prefixNo="prefixNo"
-    fullscreen
-    switchHelp
-    switchFullscreen
+  <component
+    :is="inline ? 'div' : 'JModal'"
+    v-bind="inline ? {} : modalProps"
+    :class="inline ? 'ro-inline-form' : ''"
     @cancel="handleCancel"
     :id="prefixNo"
-    style="top:20px;height: 95%;">
-    <template slot="footer">
+    :style="inline ? '' : modalStyle">
+    <template v-if="!inline" slot="footer">
       <a-button @click="handleCancel">取消</a-button>
       <a-button v-if="billPrintFlag && isShowPrintBtn" @click="handlePrintPro('零售出库')">三联打印-新版</a-button>
       <a-button v-if="billPrintFlag && isShowPrintBtn" @click="handlePrint('零售出库')">三联打印</a-button>
@@ -24,8 +17,11 @@
     </template>
     <a-spin :spinning="confirmLoading">
       <a-form :form="form">
+        <!-- 单据抬头：与下方明细表格同宽（左右边缘对齐），字段间距压缩 -->
         <a-row class="form-row" :gutter="24">
-          <a-col :lg="6" :md="12" :sm="24">
+          <a-col :lg="18" :md="24" :sm="24">
+            <a-row class="bill-head-row" :gutter="12">
+          <a-col :lg="5" :md="12" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="会员卡号" data-step="1" data-title="会员卡号"
                          data-intro="如果发现需要选择的会员卡号尚未录入，可以在下拉框中点击新增会员信息进行录入">
               <a-select placeholder="请选择会员卡号" v-decorator="[ 'organId' ]"
@@ -42,18 +38,27 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :lg="6" :md="12" :sm="24">
+          <a-col :lg="5" :md="12" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单据日期">
               <j-date v-decorator="['operTime', validatorRules.operTime]" :show-time="true"/>
             </a-form-item>
           </a-col>
-          <a-col :lg="6" :md="12" :sm="24">
+          <a-col :lg="5" :md="12" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单据编号" data-step="2" data-title="单据编号"
                          data-intro="单据编号自动生成、自动累加、开头是单据类型的首字母缩写，累加的规则是每次打开页面会自动占用一个新的编号">
               <a-input placeholder="请输入单据编号" v-decorator.trim="[ 'number', validatorRules.number ]" />
             </a-form-item>
           </a-col>
-          <a-col :lg="6" :md="12" :sm="24">
+          <a-col :lg="5" :md="12" :sm="24">
+            <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="仓库">
+              <a-select placeholder="请选择仓库" v-model="currentSelectDepotId" :dropdownMatchSelectWidth="false" @change="onChangeDepot">
+                <a-select-option v-for="item in depotList" :key="item.id" :value="String(item.id)">
+                  {{ item.depotName }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :lg="4" :md="12" :sm="24">
             <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="收款类型" data-step="3" data-title="收款类型"
                          data-intro="收款类型可以有现付和预付款两种类型，当选择了会员之后，如果该会员有预付款，在此处会显示具体预付款的金额，而且系统会优先默认选中预付款">
               <a-select placeholder="请选择付款类型" v-decorator="[ 'payType' ]" :dropdownMatchSelectWidth="false">
@@ -62,6 +67,8 @@
                 </a-select-option>
               </a-select>
             </a-form-item>
+          </a-col>
+            </a-row>
           </a-col>
         </a-row>
         <a-row class="form-row" :gutter="24">
@@ -81,17 +88,12 @@
               :detail="true"
               :editable="true"
               :preserve-column-setting="true"
+              :show-column-setting-button="false"
               @edit-change="onDetailEditChange">
               <template slot="toolbar">
-                <a-input v-if="rowCanEdit" :placeholder="scanPlaceholder" v-model="scanBarCode" @pressEnter="scanPressEnter" ref="scanBarCode" style="width:260px;flex-shrink:0;"/>
-                <a-radio-group v-if="rowCanEdit" v-model="scanType" data-step="4" data-title="扫码录入" data-intro="支持按SKU码、商品码、二维码录入商品" style="flex-shrink:0;">
-                  <a-radio-button value="sku">SKU码</a-radio-button>
-                  <a-radio-button value="barCode">商品码</a-radio-button>
-                  <a-radio-button value="qrCode">二维码</a-radio-button>
-                </a-radio-group>
+                <a-input v-if="rowCanEdit" :placeholder="scanPlaceholder" v-model="scanBarCode" @pressEnter="scanPressEnter" ref="scanBarCode" style="width:320px;flex-shrink:0;"/>
+                <a-button type="primary" icon="search" @click="scanPressEnter" style="flex-shrink:0;">搜索</a-button>
                 <a-button type="primary" icon="plus" @click="openSelectMaterial" style="flex-shrink:0;">新增商品</a-button>
-                <a-button @click="handleBatchSetDepot" style="flex-shrink:0;">批量设置仓库</a-button>
-                <a-button icon="import" @click="onImport(prefixNo)" style="flex-shrink:0;">导入明细</a-button>
               </template>
               <template slot="barCode" slot-scope="text, record">
                 <j-select-list kind="material" :value="record.barCode" :rows="getPopupRows(record)" :multi="true" @change="v => onDetailPopupChange('barCode', v, record)" />
@@ -102,12 +104,6 @@
               </template>
               <template slot="specDisplay" slot-scope="text, record">
                 <div class="detail-spec-display">{{ getSpecDisplay(record) }}</div>
-              </template>
-              <template slot="snList" slot-scope="text, record">
-                <j-select-list kind="sn" :value="record.snList" :rows="getPopupRows(record)" @change="v => onDetailPopupChange('snList', v, record)" />
-              </template>
-              <template slot="batchNumber" slot-scope="text, record">
-                <j-select-list kind="batch" :value="record.batchNumber" :rows="getPopupRows(record)" @change="v => onDetailPopupChange('batchNumber', v, record)" />
               </template>
             </data-table>
             <a-row class="form-row" :gutter="24">
@@ -177,20 +173,18 @@
     <member-modal ref="memberModalForm" @ok="memberModalFormOk"></member-modal>
     <depot-modal ref="depotModalForm" @ok="depotModalFormOk"></depot-modal>
     <account-modal ref="accountModalForm" @ok="accountModalFormOk"></account-modal>
-    <batch-set-depot ref="batchSetDepotModalForm" @ok="batchSetDepotModalFormOk"></batch-set-depot>
     <import-item-modal ref="importItemModalForm" @ok="importItemModalFormOk"></import-item-modal>
     <j-select-material-modal ref="selectMaterialModal" :multi="true" @ok="onSelectMaterialOk"></j-select-material-modal>
     <workflow-iframe ref="modalWorkflow" @ok="workflowModalFormOk"></workflow-iframe>
     <bill-print-iframe ref="modalPrint"></bill-print-iframe>
     <bill-print-pro-iframe ref="modalPrintPro"></bill-print-pro-iframe>
-  </j-modal>
+  </component>
 </template>
 <script>
   import pick from 'lodash.pick'
   import MemberModal from '../../system/modules/MemberModal'
   import DepotModal from '../../system/modules/DepotModal'
   import AccountModal from '../../system/modules/AccountModal'
-  import BatchSetDepot from '../dialog/BatchSetDepot'
   import ImportItemModal from '../dialog/ImportItemModal'
   import WorkflowIframe from '@/components/tools/WorkflowIframe'
   import BillPrintIframe from '../dialog/BillPrintIframe'
@@ -204,6 +198,7 @@
   import { getAction } from '@/api/manage'
   import JUpload from '@/components/jeecg/JUpload'
   import JDate from '@/components/jeecg/JDate'
+  import JModal from '@/components/jeecg/JModal'
   import DataTable from '@/components/DataTable'
   import JSelectList from '@/components/jeecgbiz/JSelectList'
   import JSelectMaterialModal from '@/components/jeecgbiz/modal/JSelectMaterialModal'
@@ -214,11 +209,17 @@
   export default {
     name: "RetailOutModal",
     mixins: [JEditableTableMixin, BillModalMixin, DataTableDetailMixin],
+    props: {
+      // 嵌入模式：不使用弹窗，直接把单据表单渲染为页面内容
+      inline: {
+        type: Boolean,
+        default: false
+      }
+    },
     components: {
       MemberModal,
       DepotModal,
       AccountModal,
-      BatchSetDepot,
       ImportItemModal,
       WorkflowIframe,
       BillPrintIframe,
@@ -228,6 +229,7 @@
       DataTable,
       JSelectList,
       JSelectMaterialModal,
+      JModal,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -237,6 +239,7 @@
       return {
         title:"操作",
         width: '1600px',
+        modalStyle: 'top:20px;height: 95%;',
         moreStatus: false,
         // 新增时子表默认添加几行空数据
         addDefaultRowNum: 1,
@@ -260,8 +263,7 @@
         // 明细列定义统一来自 '@/views/bill/config/detailColumns'，与入库类明细同一套字段
         defColumns: buildRetailOutColumns(),
         defDataIndex: RETAIL_OUT_DEFAULT_COLUMNS,
-        //扫码录入方式：sku（直接加行）/ barCode / qrCode（弹出商品选择）
-        scanType: 'sku',
+        //统一搜索框内容：回车或点击“搜索”后按内容格式自动匹配字段
         scanBarCode: '',
         rowCanEdit: true,
         materialTable: {
@@ -297,44 +299,83 @@
     created () {
       this.initPayTypeList()
       this.initColumns()
+      this.initDepotSelect()
       let realScreenWidth = window.screen.width
       this.minWidth = realScreenWidth<1500?1800:2200
     },
     computed: {
-      //扫码输入框提示语，跟随所选录入方式变化
+      // 弹窗模式下透传给 JModal 的属性集合
+      modalProps() {
+        return {
+          title: this.title,
+          width: this.width,
+          visible: this.visible,
+          confirmLoading: this.confirmLoading,
+          keyboard: false,
+          forceRender: true,
+          prefixNo: this.prefixNo,
+          fullscreen: true,
+          switchHelp: true,
+          switchFullscreen: true
+        }
+      },
+      //统一搜索框提示语：按内容自动识别商品码/SKU码/条码
       scanPlaceholder() {
-        if (this.scanType === 'sku') {
-          return '请输入或扫描SKU码后回车，直接加入明细（重复输入数量+1）'
+        return '请输入商品码、SKU码或条码后回车/点搜索，直接加入明细'
+      }
+    },
+    watch: {
+      // 明细行发生任何变化（选品、扫码、改数量、删除）都重新计算单据金额/收款金额
+      'materialTable.dataSource': {
+        deep: true,
+        handler() {
+          this.$nextTick(() => this.autoChangePrice())
         }
-        if (this.scanType === 'barCode') {
-          return '请输入或扫描商品码后回车，弹出该码对应的商品供选择'
-        }
-        return '请输入或扫描二维码后回车，弹出该码对应的商品供选择'
       }
     },
     methods: {
-      //扫码/输入回车：SKU码直接加入明细，商品码/二维码弹出商品选择窗
+      //加载仓库下拉：抬头选定仓库后，明细行统一使用该仓库
+      initDepotSelect() {
+        getAction('/depot/findDepotByCurrentUser').then((res) => {
+          if (res && res.code === 200) {
+            this.depotList = res.data || []
+            //只有一个仓库时默认选中
+            if (this.depotList.length === 1) {
+              this.currentSelectDepotId = String(this.depotList[0].id)
+            }
+          }
+        })
+      },
+      //抬头切换仓库：同步到所有明细行并刷新库存
+      onChangeDepot(value) {
+        const rows = this.materialTable.dataSource || []
+        const target = this.$refs[this.refKeys[0]]
+        rows.forEach((row) => {
+          row.depotId = value || ''
+          if (row.barCode && typeof this.getStockByDepotBarCode === 'function') {
+            this.getStockByDepotBarCode(row, target)
+          }
+        })
+      },
+      //统一搜索：回车或点击“搜索”后，按输入内容格式识别字段并查询
+      //纯数字 → 条码；含字母/横杠 → SKU码或商品码（后台查询同时匹配这两个字段）
       scanPressEnter() {
         const code = (this.scanBarCode || '').trim()
         if (!code) return
-        if (this.scanType !== 'sku') {
-          this.clearScanAndFocus()
-          this.$refs.selectMaterialModal.showModal(code)
-          return
-        }
-        this.addSkuCodeToDetail(code)
+        const isBarCode = /^[0-9]+$/.test(code)
+        this.addSkuCodeToDetail(code, isBarCode ? 'barCode' : 'skuCode')
       },
-      //按SKU码查询商品并加入明细；同一SKU重复录入则数量+1
-      addSkuCodeToDetail(skuCode) {
+      //按识别出的字段查询商品并加入明细；同一商品重复录入则数量+1
+      addSkuCodeToDetail(code, field) {
         const param = {
-          skuCode: skuCode,
           organId: this.form.getFieldValue('organId'),
           mpList: getMpListShort(Vue.ls.get('materialPropertyList')),
           prefixNo: this.prefixNo
         }
+        param[field || 'skuCode'] = code
         getMaterialByBarCode(param).then((res) => {
           if (!(res && res.code === 200 && res.data && res.data.length > 0)) {
-            this.$message.warning('未找到SKU码为「' + skuCode + '」的商品')
+            this.$message.warning('未找到「' + code + '」对应的商品')
             this.clearScanAndFocus()
             return
           }
@@ -343,13 +384,15 @@
           const exist = detailArr.find(r => mInfo.meId != null && String(r.meId) === String(mInfo.meId))
           if (exist) {
             exist.operNumber = (exist.operNumber - 0) + 1
-            const unitPrice = exist.unitPrice - 0
-            exist.allPrice = (unitPrice * exist.operNumber).toFixed(2) - 0
+            // 金额 = 零售价 × 数量
+            const retailPrice = (exist.commodityDecimal - 0) || 0
+            exist.unitPrice = retailPrice
+            exist.allPrice = (retailPrice * exist.operNumber).toFixed(2) - 0
           } else {
             this.changeColumnShow(mInfo)
             const mObj = this.parseInfoToObj(mInfo)
             mObj.id = this._genDetailId()
-            mObj.depotId = mInfo.depotId == null ? mInfo.depotId : String(mInfo.depotId)
+            mObj.depotId = this.currentSelectDepotId ? String(this.currentSelectDepotId) : (mInfo.depotId == null ? mInfo.depotId : String(mInfo.depotId))
             mObj.stock = mInfo.stock
             mObj.meId = mInfo.meId
             mObj.mId = mInfo.id
@@ -403,7 +446,7 @@
             handleIntroJs(this.prefixNo, 1)
           })
           this.$nextTick(() => {
-            this.form.setFieldsValue({'payType': '现付', 'getAmount':0, 'backAmount':0})
+            this.form.setFieldsValue({'payType': '现付', 'changeAmount':0, 'getAmount':0, 'backAmount':0})
           })
         } else {
           this.model.operTime = this.model.operTimeStr
@@ -505,9 +548,30 @@
           }
         })
       },
-      //改变实收金额、收款金额的值
-      autoChangePrice(target) {
-        let allLastMoney = target.statisticsColumns.allPrice
+      // 覆盖：单价固定取零售价，金额=零售价×数量；不再引入序列号/批号/有效期
+      parseInfoToObj(mInfo) {
+        const retailPrice = (mInfo.commodityDecimal - 0) || 0
+        return {
+          barCode: mInfo.mBarCode,
+          name: mInfo.name,
+          unit: mInfo.commodityUnit,
+          sku: mInfo.sku,
+          commodityDecimal: mInfo.commodityDecimal,
+          operNumber: 1,
+          unitPrice: retailPrice,
+          allPrice: retailPrice,
+          taxRate: mInfo.taxRate,
+          taxMoney: mInfo.taxMoney,
+          taxLastMoney: mInfo.taxLastMoney
+        }
+      },
+      //改变实收金额、收款金额的值：直接按明细行「金额」列求和，不依赖表格统计列
+      autoChangePrice() {
+        let allLastMoney = 0
+        for (const row of (this.materialTable.dataSource || [])) {
+          allLastMoney += (row.allPrice - 0) || 0
+        }
+        allLastMoney = allLastMoney.toFixed(2) - 0
         this.$nextTick(() => {
           this.form.setFieldsValue({'changeAmount':allLastMoney,'getAmount':allLastMoney,'backAmount':0})
         });
@@ -529,12 +593,23 @@
   }
 </script>
 <style scoped>
+  /* 嵌入模式（页面内展示）时占满内容区 */
+  .ro-inline-form {
+    width: 100%;
+  }
   .detail-sku-img {
     width: 36px;
     height: 36px;
     object-fit: cover;
     border-radius: 4px;
     vertical-align: middle;
+  }
+  /* 规格显示：统一为「规格名：规格值」单列左对齐，多行显示 */
+  .detail-spec-display {
+    white-space: pre-line;
+    line-height: 18px;
+    text-align: left;
+    word-break: break-all;
   }
   .detail-sku-img-placeholder {
     font-size: 12px;

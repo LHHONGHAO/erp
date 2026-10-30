@@ -1,17 +1,11 @@
 <template>
-  <j-modal
-    :title="title"
-    :width="width"
-    :visible="visible"
-    :confirmLoading="confirmLoading"
-    v-bind:prefixNo="prefixNo"
-    fullscreen
-    switchHelp
-    switchFullscreen
+  <component
+    :is="inline ? 'div' : 'JModal'"
+    v-bind="inline ? {} : modalProps"
+    :class="inline ? 'mm-inline-form' : ''"
     @cancel="handleCancel"
-    :id="prefixNo"
-    :style="modalStyle">
-    <template slot="footer">
+    :style="inline ? '' : modalStyle">
+    <template v-if="!inline" slot="footer">
       <a-button key="back" @click="handleCancel">取消</a-button>
       <a-button type="primary" v-if="showOkFlag" :loading="confirmLoading" @click="handleOk">保存（Ctrl+S）</a-button>
     </template>
@@ -30,7 +24,7 @@
             <div class="mm-pages" :class="{ 'is-mobile': isMobileView }" ref="mmPages" @scroll="onPagesScroll">
             <!-- 第 1 页：基本信息 -->
             <div class="mm-page">
-            <div style="margin-bottom: 8px; text-align: right;">
+            <div v-if="!inline" style="margin-bottom: 8px; text-align: right;">
               <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
             </div>
             <template v-for="(row, rowIndex) in basePropertyRows">
@@ -453,7 +447,7 @@
       :imageFile="specImageOcrFile"
       :extractOnly="true"
       @cancel="handleSpecImageOcrClose" />
-  </j-modal>
+  </component>
 </template>
 <script>
   import pick from 'lodash.pick'
@@ -466,6 +460,7 @@
   import { getAction, httpAction, postAction } from '@/api/manage'
   import JImageUpload from '@/components/jeecg/JImageUpload'
   import JDate from '@/components/jeecg/JDate'
+  import JModal from '@/components/jeecg/JModal'
   import Vue from 'vue'
 
   export default {
@@ -475,10 +470,18 @@
       OcrRecognizeModal,
       JImageUpload,
       JDate,
+      JModal,
       JEditableTable,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
+      }
+    },
+    props: {
+      // 嵌入模式：不使用弹窗，直接把表单渲染为页面内容
+      inline: {
+        type: Boolean,
+        default: false
       }
     },
     data () {
@@ -647,6 +650,19 @@
       }
     },
     computed: {
+      // 弹窗模式下透传给 JModal 的属性集合
+      modalProps() {
+        return {
+          title: this.title,
+          width: this.width,
+          visible: this.visible,
+          confirmLoading: this.confirmLoading,
+          prefixNo: this.prefixNo,
+          switchHelp: true,
+          switchFullscreen: true,
+          id: this.prefixNo
+        }
+      },
       // 属性设置弹窗中可选的列：仅商品基础信息属性
       propertyConfigBaseColumns() {
         return this.basePropertyList.filter(p => this.basePropertyFields.includes(p.field))
@@ -868,7 +884,7 @@
         this.maxBarCodeInfo = ''
         this.visible = true
         this.meDeleteIdList = []
-        this.modalStyle = 'top:20px;height: 95%;'
+        this.modalStyle = 'top: 24px;'
         if(JSON.stringify(record) === '{}') {
           this.fileList = []
         } else {
@@ -2184,6 +2200,15 @@
   }
 </script>
 <style scoped>
+  /* 嵌入模式（页面内展示）时占满内容区 */
+  .mm-inline-form {
+    width: 100%;
+  }
+  /* 非全屏弹窗时，内容区域超出视口可滚动 */
+  /deep/ .ant-modal-body {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
   .input-table {
     max-width: 100%;
     min-width: 1200px;

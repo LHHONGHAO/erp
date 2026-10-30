@@ -465,5 +465,7 @@
   .detail-spec-display {
     white-space: pre-line;
     line-height: 18px;
+    text-align: left;
+    word-break: break-all;
   }
 </style>

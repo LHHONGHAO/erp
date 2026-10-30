@@ -9,6 +9,19 @@
       <span>地址识别</span>
     </template>
 
+    <!-- 地址识别参数配置：与图片识别的 API 相互独立 -->
+    <div class="ocr-config-bar">
+      <span class="ocr-config-label">地址识别参数</span>
+      <a-switch v-model="cfg.enabled" checkedChildren="启用" unCheckedChildren="禁用" size="small" />
+      <a-input v-model="cfg.apiKey" size="small" allowClear
+               :placeholder="cfg.maskedApiKey ? ('已保存 ' + cfg.maskedApiKey + '，留空则沿用') : 'API Key（与图片识别不同的 API）'"
+               style="width:230px" />
+      <a-input v-model="cfg.secretKey" size="small" allowClear type="password"
+               :placeholder="cfg.maskedSecretKey ? ('已保存 ' + cfg.maskedSecretKey + '，留空则沿用') : 'Secret Key'"
+               style="width:230px" />
+      <a-button size="small" type="primary" :loading="cfgSaving" @click="saveConfig">保存</a-button>
+    </div>
+
     <!-- 图片上传区域 -->
     <div style="display:flex;gap:12px;margin-top:4px">
       <div style="width:200px;flex-shrink:0">
@@ -74,7 +87,7 @@
 </template>
 
 <script>
-import { postAction } from '@/api/manage'
+import { getAction, postAction } from '@/api/manage'
 
 export default {
   name: 'OcrMemberRecognizeModal',
@@ -91,6 +104,14 @@ export default {
       hasOcrResult: false,
       imageUrl: '',
       pasteText: '',
+      cfgSaving: false,
+      cfg: {
+        enabled: false,
+        apiKey: '',
+        secretKey: '',
+        maskedApiKey: '',
+        maskedSecretKey: ''
+      },
       ocrFields: {
         rawText: '',
         contacts: '',
@@ -112,10 +133,47 @@ export default {
     visible(val) {
       if (val) {
         this.resetOcrFields()
+        this.loadConfig()
       }
     }
   },
   methods: {
+    /** 读取地址识别参数配置（独立于图片识别的 API Key） */
+    loadConfig() {
+      getAction('/ocr/addressConfig').then(res => {
+        if (res && res.code === 200 && res.data) {
+          this.cfg.enabled = !!res.data.enabled
+          this.cfg.maskedApiKey = res.data.apiKey || ''
+          this.cfg.maskedSecretKey = res.data.secretKey || ''
+          this.cfg.apiKey = ''
+          this.cfg.secretKey = ''
+        }
+      }).catch(() => {
+        this.$message.error('读取地址识别配置失败')
+      })
+    },
+    /** 保存地址识别参数配置 */
+    saveConfig() {
+      this.cfgSaving = true
+      postAction('/ocr/saveAddressConfig', {
+        enabled: this.cfg.enabled,
+        apiKey: this.cfg.apiKey,
+        secretKey: this.cfg.secretKey
+      }).then(res => {
+        this.cfgSaving = false
+        if (res && res.code === 200) {
+          this.$message.success('地址识别参数保存成功')
+          this.cfg.apiKey = ''
+          this.cfg.secretKey = ''
+          this.loadConfig()
+        } else {
+          this.$message.error((res && res.data && res.data.message) ? res.data.message : '保存失败')
+        }
+      }).catch(err => {
+        this.cfgSaving = false
+        this.$message.error('保存请求失败：' + (err && err.message ? err.message : '未知错误'))
+      })
+    },
     resetOcrFields() {
       this.ocrFields = {
         rawText: '',
@@ -208,5 +266,20 @@ export default {
 <style scoped>
 .ocr-prop-item {
   padding: 4px 0;
+}
+.ocr-config-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+.ocr-config-label {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
 }
 </style>

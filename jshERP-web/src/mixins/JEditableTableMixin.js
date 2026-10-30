@@ -105,11 +105,23 @@ export const JEditableTableMixin = {
           this.confirmLoading = false
           this.close()
         } else {
-          this.$message.warning(res.data.message);
+          this.$message.warning(this.getErrorMessage(res) || '保存失败')
           this.confirmLoading = false
         }
-      }).finally(() => {
+      }).catch((e) => {
+        // 接口异常时也要给出提示，避免点击保存后毫无反应
+        this.$message.error(this.getErrorMessage(e && e.response && e.response.data) || '保存失败，请查看系统日志')
+        this.confirmLoading = false
       })
+    },
+
+    /** 从响应体中提取提示文案 */
+    getErrorMessage(res) {
+      if (!res) return ''
+      if (typeof res === 'string') return res
+      if (res.data && res.data.message) return res.data.message
+      if (res.message) return res.message
+      return ''
     },
 
     /* --- handle 事件 --- */
@@ -142,8 +154,11 @@ export const JEditableTableMixin = {
         if (e.error === VALIDATE_NO_PASSED) {
           // 如果有未通过表单验证的子表，就自动跳转到它所在的tab
           this.activeKey = e.index == null ? this.activeKey : this.refKeys[e.index]
+          // 未填必填项或明细不完整时给出提示，避免点击保存后无反应
+          this.$message.warning('保存失败，请检查必填项与商品明细')
         } else {
           console.error(e)
+          this.$message.error('保存失败，请检查必填项与商品明细')
         }
       })
     },

@@ -56,8 +56,6 @@ public class MaterialService {
     @Resource
     private MaterialCategoryService materialCategoryService;
     @Resource
-    private UnitService unitService;
-    @Resource
     private MaterialInitialStockMapper materialInitialStockMapper;
     @Resource
     private MaterialInitialStockMapperEx materialInitialStockMapperEx;
@@ -154,9 +152,7 @@ public class MaterialService {
                     }
                     m.setMaterialOther(getMaterialOtherByParam(mpArr, m));
                     m.setInitialStock(initialStockMap.get(m.getId())!=null? initialStockMap.get(m.getId()): BigDecimal.ZERO);
-                    m.setBigUnitInitialStock(getBigUnitStock(m.getInitialStock(), m.getUnitId()));
                     m.setStock(currentStockMap.get(m.getId())!=null? currentStockMap.get(m.getId()): BigDecimal.ZERO);
-                    m.setBigUnitStock(getBigUnitStock(m.getStock(), m.getUnitId()));
                 }
             }
         } catch(Exception e){
@@ -197,11 +193,9 @@ public class MaterialService {
                     if(m.getInitialStock()==null) {
                         m.setInitialStock(BigDecimal.ZERO);
                     }
-                    m.setBigUnitInitialStock(getBigUnitStock(m.getInitialStock(), m.getUnitId()));
                     if(m.getStock()==null) {
                         m.setStock(BigDecimal.ZERO);
                     }
-                    m.setBigUnitStock(getBigUnitStock(m.getStock(), m.getUnitId()));
                 }
             }
         } catch(Exception e){
@@ -210,8 +204,45 @@ public class MaterialService {
         return list;
     }
 
+    /**
+     * 清理数值字段的空值：前端清空数值输入框时可能提交空字符串或 "null"，
+     * 直接交给 fastjson 转换会抛 parseDecimal error，这里先移除这些字段
+     */
+    private void sanitizeNumbers(JSONObject obj) {
+        if (obj == null) {
+            return;
+        }
+        removeBlankNumber(obj, "id", "categoryId", "unitId", "expiryNum", "weight", "tenantId");
+        JSONArray meList = obj.getJSONArray("meList");
+        if (meList != null) {
+            for (int i = 0; i < meList.size(); i++) {
+                JSONObject row = meList.getJSONObject(i);
+                if (row == null) {
+                    continue;
+                }
+                removeBlankNumber(row, "id", "materialId", "purchaseDecimal", "commodityDecimal",
+                        "wholesaleDecimal", "marketPrice", "lowDecimal", "tenantId",
+                        "depotId", "stock", "lowSafeStock", "highSafeStock");
+            }
+        }
+    }
+
+    private void removeBlankNumber(JSONObject target, String... keys) {
+        for (String key : keys) {
+            Object value = target.get(key);
+            if (value == null) {
+                continue;
+            }
+            String text = value.toString().trim();
+            if (text.isEmpty() || "null".equalsIgnoreCase(text)) {
+                target.remove(key);
+            }
+        }
+    }
+
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int insertMaterial(JSONObject obj, HttpServletRequest request)throws Exception {
+        sanitizeNumbers(obj);
         Material m = JSONObject.parseObject(obj.toJSONString(), Material.class);
         m.setEnabled(true);
         // 自动生成新版 SPU 码：SP + 两位类型码 + 款号
@@ -277,6 +308,7 @@ public class MaterialService {
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int updateMaterial(JSONObject obj, HttpServletRequest request) throws Exception{
+        sanitizeNumbers(obj);
         Material material = JSONObject.parseObject(obj.toJSONString(), Material.class);
         try{
             // 历史商品无商品码时补生成，商品码一经生成不再变更
@@ -364,7 +396,11 @@ public class MaterialService {
                 }
             }
             if (depotId == null) {
-                throw new IllegalStateException("录入库存或库存预警时，请先选择仓库");
+                // 期初库存为空或为 0 时不要求填写仓库，直接跳过该行
+                if (!hasQuantity) {
+                    continue;
+                }
+                throw new IllegalStateException("录入初始库存时，请先选择仓库");
             }
             String rowId = row.getString("id");
             String specValues = row.getString("specValues");
@@ -554,19 +590,6 @@ public class MaterialService {
             JshException.readFail(logger, e);
         }
         return result;
-    }
-
-    public Unit findUnit(Long mId)throws Exception{
-        Unit unit = new Unit();
-        try{
-            List<Unit> list = materialMapperEx.findUnitList(mId);
-            if(list!=null && list.size()>0) {
-                unit = list.get(0);
-            }
-        }catch(Exception e){
-            JshException.readFail(logger, e);
-        }
-        return unit;
     }
 
     public List<MaterialVo4Unit> findById(Long id)throws Exception{
@@ -931,29 +954,7 @@ public class MaterialService {
                 basicObj.put("wholesaleDecimal", wholesaleDecimal);
                 basicObj.put("lowDecimal", lowDecimal);
                 materialExObj.put("basic", basicObj);
-                if(StringUtil.isNotEmpty(manyUnit) && StringUtil.isNotEmpty(ratio)){ //多单位
-                    //校验比例是否是数字（含小数）
-                    if(!StringUtil.isPositiveBigDecimal(ratio.trim())) {
-                        throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_RATIO_NOT_INTEGER_CODE,
-                                String.format(ExceptionConstants.MATERIAL_RATIO_NOT_INTEGER_MSG, i+1));
-                    }
-                    Long unitId = unitService.getUnitIdByParam(unit, manyUnit, new BigDecimal(ratio.trim()));
-                    if(unitId == null) {
-                        throw new BusinessRunTimeException(ExceptionConstants.MATERIAL_UNIT_MATE_CODE,
-                                String.format(ExceptionConstants.MATERIAL_UNIT_MATE_MSG, manyBarCode));
-                    }
-                    m.setUnit(unit);
-                    JSONObject otherObj = new JSONObject();
-                    otherObj.put("barCode", manyBarCode);
-                    otherObj.put("commodityUnit", manyUnit);
-                    otherObj.put("purchaseDecimal", parsePrice(purchaseDecimal,ratio));
-                    otherObj.put("commodityDecimal", parsePrice(commodityDecimal,ratio));
-                    otherObj.put("wholesaleDecimal", parsePrice(wholesaleDecimal,ratio));
-                    otherObj.put("lowDecimal", parsePrice(lowDecimal,ratio));
-                    materialExObj.put("other", otherObj);
-                } else {
-                    m.setUnit(unit);
-                }
+                m.setUnit(unit);
                 m.setMaterialExObj(materialExObj);
                 m.setEnabled("1".equals(enabled));
                 if(StringUtil.isNotEmpty(enableSerialNumber) && "1".equals(enableSerialNumber)) {
@@ -1591,9 +1592,7 @@ public class MaterialService {
             }
             item.setPurchaseDecimal(roleService.parseStockPriceByLimit(item.getPurchaseDecimal(), priceLimit, request));
             item.setCurrentStockPrice(roleService.parseStockPriceByLimit(item.getCurrentStockPrice(), priceLimit, request));
-            item.setUnitName(null!=item.getUnitId()?item.getUnitName() + "[多单位]":item.getUnitName());
             item.setInitialStock(null!=initialStockMap.get(item.getId())?initialStockMap.get(item.getId()):BigDecimal.ZERO);
-            item.setBigUnitStock(getBigUnitStock(item.getCurrentStock(), item.getUnitId()));
             if(fileUploadType == 2) {
                 item.setImgSmall("small");
                 item.setImgLarge("large");
@@ -1615,11 +1614,8 @@ public class MaterialService {
             }
             item.setPurchaseDecimal(roleService.parseStockPriceByLimit(item.getPurchaseDecimal(), priceLimit, request));
             item.setCurrentStockPrice(roleService.parseStockPriceByLimit(item.getCurrentStockPrice(), priceLimit, request));
-            item.setUnitName(item.getUnitId() != null ? item.getUnitName() + "[多单位]" : item.getUnitName());
             if (item.getCurrentStock() == null) item.setCurrentStock(BigDecimal.ZERO);
             if (item.getInitialStock() == null) item.setInitialStock(BigDecimal.ZERO);
-            item.setBigUnitStock(getBigUnitStock(item.getCurrentStock(), item.getUnitId()));
-            item.setBigUnitInitialStock(getBigUnitStock(item.getInitialStock(), item.getUnitId()));
             if (fileUploadType == 2) {
                 item.setImgSmall("small");
                 item.setImgLarge("large");
@@ -1671,24 +1667,6 @@ public class MaterialService {
         res.setCurrentStockMovePrice(roleService.parseStockPriceByLimit(res.getCurrentStockMovePrice(), priceLimit, request));
         res.setCurrentStockPrice(roleService.parseStockPriceByLimit(res.getCurrentStockPrice(), priceLimit, request));
         return res;
-    }
-
-    /**
-     * 将小单位的库存换算为大单位的库存
-     * @param stock
-     * @param unitId
-     * @return
-     * @throws Exception
-     */
-    public String getBigUnitStock(BigDecimal stock, Long unitId) throws Exception {
-        String bigUnitStock = "";
-        if(null!= unitId) {
-            Unit unit = unitService.getUnit(unitId);
-            if(unit.getRatio()!=null && unit.getRatio().compareTo(BigDecimal.ZERO)!=0 && stock!=null) {
-                bigUnitStock = stock.divide(unit.getRatio(),2,BigDecimal.ROUND_HALF_UP) + unit.getOtherUnit();
-            }
-        }
-        return bigUnitStock;
     }
 
     /**

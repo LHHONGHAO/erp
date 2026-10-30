@@ -171,7 +171,8 @@ export const DataTableDetailMixin = {
             const mObj = typeof this.parseInfoToObj === 'function' ? this.parseInfoToObj(mInfo) : {}
             mObj.id = this._genDetailId()
             //仓库下拉的选项值为字符串，这里保持一致，避免选中值显示为ID
-            mObj.depotId = mInfo.depotId == null ? mInfo.depotId : String(mInfo.depotId)
+            //抬头已选定仓库时优先使用抬头仓库，否则用后台返回的仓库
+            mObj.depotId = this.currentSelectDepotId ? String(this.currentSelectDepotId) : (mInfo.depotId == null ? mInfo.depotId : String(mInfo.depotId))
             mObj.stock = mInfo.stock
             mObj.meId = mInfo.meId
             mObj.mId = mInfo.id

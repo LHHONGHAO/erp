@@ -67,8 +67,6 @@ public interface MaterialMapperEx {
 
     Long insertSelectiveEx(Material record);
 
-    List<Unit> findUnitList(@Param("mId") Long mId);
-
     List<MaterialVo4Unit> findById(@Param("id") Long id);
 
     List<MaterialVo4Unit> findByIdWithBarCode(@Param("meId") Long meId);
@@ -139,8 +137,6 @@ public interface MaterialMapperEx {
     int batchDeleteMaterialByIds(@Param("updateTime") Date updateTime, @Param("updater") Long updater, @Param("ids") String ids[]);
 
     List<Material> getMaterialListByCategoryIds(@Param("categoryIds") String[] categoryIds);
-
-    List<Material> getMaterialListByUnitIds(@Param("unitIds") String[] unitIds);
 
     List<String> getBarCodeList();
 

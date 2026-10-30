@@ -61,7 +61,6 @@
         <table tableName="jsh_role" domainObjectName="Role"></table>
         <table tableName="jsh_supplier" domainObjectName="Supplier"></table>
         <table tableName="jsh_system_config" domainObjectName="SystemConfig"></table>
-        <table tableName="jsh_unit" domainObjectName="Unit"></table>
         <table tableName="jsh_user" domainObjectName="User"></table>
         <table tableName="jsh_user_business" domainObjectName="UserBusiness"></table>
         <table tableName="jsh_serial_number" domainObjectName="SerialNumber"></table>

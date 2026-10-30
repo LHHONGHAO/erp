@@ -76,10 +76,17 @@ export const BillModalMixin = {
     this.minWidth = realScreenWidth<1500?1150:1500
   },
   mounted() {
-    document.getElementById(this.prefixNo).addEventListener('keydown', this.handleOkKey)
+    // 弹窗模式下监听根节点；内嵌页面模式没有该 id，回退到组件根元素，避免为 null 时报错
+    const el = document.getElementById(this.prefixNo) || this.$el
+    if (el) {
+      el.addEventListener('keydown', this.handleOkKey)
+    }
   },
   beforeDestroy() {
-    document.getElementById(this.prefixNo).removeEventListener('keydown', this.handleOkKey)
+    const el = document.getElementById(this.prefixNo) || this.$el
+    if (el) {
+      el.removeEventListener('keydown', this.handleOkKey)
+    }
   },
   computed: {
     readOnly: function() {

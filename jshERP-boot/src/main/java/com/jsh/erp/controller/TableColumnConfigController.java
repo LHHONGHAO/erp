@@ -26,34 +26,6 @@ public class TableColumnConfigController {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    @GetMapping("/list")
-    @ApiOperation(value = "获取所有表格列显示配置")
-    public BaseResponseInfo list() {
-        BaseResponseInfo info = new BaseResponseInfo();
-        try {
-            String sql = "SELECT id, table_key, table_names, config_json, tenant_id " +
-                         "FROM jsh_table_column_config WHERE delete_flag = '0' ORDER BY id";
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Map<String, Object> row : rows) {
-                Map<String, Object> item = new HashMap<>();
-                item.put("id", row.get("id"));
-                item.put("tableKey", row.get("table_key"));
-                item.put("tableNames", row.get("table_names"));
-                item.put("config", parseConfig(String.valueOf(row.get("config_json"))));
-                item.put("tenantId", row.get("tenant_id"));
-                result.add(item);
-            }
-            info.code = 200;
-            info.data = result;
-        } catch (Exception e) {
-            logger.error("获取表格列配置失败: " + e.getMessage(), e);
-            info.code = 500;
-            info.data = e.getMessage();
-        }
-        return info;
-    }
-
     @GetMapping("/{tableKey}")
     @ApiOperation(value = "根据表格场景标识获取列显示配置")
     public BaseResponseInfo getByKey(@PathVariable String tableKey) {
@@ -112,23 +84,6 @@ public class TableColumnConfigController {
             info.data = "保存成功";
         } catch (Exception e) {
             logger.error("保存表格列配置失败: " + e.getMessage(), e);
-            info.code = 500;
-            info.data = e.getMessage();
-        }
-        return info;
-    }
-
-    @DeleteMapping("/{tableKey}")
-    @ApiOperation(value = "删除表格列显示配置")
-    public BaseResponseInfo delete(@PathVariable String tableKey) {
-        BaseResponseInfo info = new BaseResponseInfo();
-        try {
-            String sql = "UPDATE jsh_table_column_config SET delete_flag = '1' WHERE table_key = ?";
-            jdbcTemplate.update(sql, tableKey);
-            info.code = 200;
-            info.data = "删除成功";
-        } catch (Exception e) {
-            logger.error("删除表格列配置失败: " + e.getMessage(), e);
             info.code = 500;
             info.data = e.getMessage();
         }

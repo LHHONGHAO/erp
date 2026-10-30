@@ -104,45 +104,30 @@
                 </div>
               </div>
 
-              <!-- Wi-Fi 打印机搜索 -->
+              <!-- Wi-Fi / 网络打印机：设备列表 + 手动添加（名称/IP/端口） -->
               <div v-if="isMobile && printerType === 'wifi'" class="lp-printer-search">
-                <div class="lp-ip-row">
-                  <a-input v-model="wifiIp" placeholder="打印机IP，如 192.168.1.100" style="flex:1" />
-                  <a-button :loading="wifiProbing" @click="handleWifiProbe">探测</a-button>
-                </div>
-                <a-button size="small" style="margin-top:6px" @click="handleWifiScan">扫描同网段</a-button>
-                <div v-if="wifiList.length > 0" class="lp-device-list">
+                <div v-if="wifiPrinters.length > 0" class="lp-device-list">
                   <div
-                    v-for="p in wifiList"
+                    v-for="p in wifiPrinters"
                     :key="p.id"
                     class="lp-device-item"
-                    :class="{ selected: selectedPrinter === p.id }"
-                    @click="selectDiscoveredPrinter(p)"
+                    :class="{ selected: activeWifiId === p.id }"
+                    @click="selectWifiPrinter(p)"
                   >
-                    <a-icon type="wifi" /> {{ p.name }}
+                    <a-icon type="printer" />
+                    <div class="lp-device-main">
+                      <div class="lp-device-name">{{ p.name }}</div>
+                      <div class="lp-device-sub">TSPL · {{ p.ip }}:{{ p.port }}</div>
+                    </div>
+                    <a-tag v-if="wifiStatus[p.id]" color="green" class="lp-device-status">已连接</a-tag>
+                    <a-tag v-else class="lp-device-status">未连接</a-tag>
+                    <a-icon type="delete" class="lp-device-del" @click.stop="handleRemoveWifiPrinter(p)" />
                   </div>
                 </div>
-              </div>
-
-              <!-- 网络共享打印机搜索 -->
-              <div v-if="isMobile && printerType === 'network'" class="lp-printer-search">
-                <div class="lp-ip-row">
-                  <a-input v-model="networkIp" placeholder="共享主机IP" style="flex:1" />
-                  <a-input v-model="networkShare" placeholder="共享名(可选)" style="flex:1;margin-left:6px" />
-                  <a-button :loading="netProbing" @click="handleNetworkProbe">探测</a-button>
+                <div v-else class="lp-tip" style="margin:8px 0">
+                  还没有配置打印机，点击下方「添加打印机」填写名称、IP 地址和端口号
                 </div>
-                <a-button size="small" style="margin-top:6px" @click="handleNetworkScan">扫描同网段</a-button>
-                <div v-if="networkList.length > 0" class="lp-device-list">
-                  <div
-                    v-for="p in networkList"
-                    :key="p.id"
-                    class="lp-device-item"
-                    :class="{ selected: selectedPrinter === p.id }"
-                    @click="selectDiscoveredPrinter(p)"
-                  >
-                    <a-icon type="share-alt" /> {{ p.name }}
-                  </div>
-                </div>
+                <a-button type="primary" block icon="plus" @click="openAddWifiPrinter">添加打印机</a-button>
               </div>
 
               <!-- 云打印机 -->
@@ -164,10 +149,41 @@
             </div>
             <div class="lp-tip">
               打印由后端直接发送到所选打印机；若后端不可用，将自动改用浏览器打印对话框。
+              Wi-Fi 打印机按 IP:端口 由后端下发 TSPL 指令，需保证后端所在电脑能访问该地址。
             </div>
           </div>
         </div>
       </template>
+
+      <!-- 添加 Wi-Fi 打印机（名称 / IP 地址 / 端口号） -->
+      <a-modal
+        :visible="addWifiVisible"
+        title="配置"
+        width="360px"
+        :confirmLoading="addWifiTesting"
+        okText="确定"
+        cancelText="取消"
+        @ok="handleSaveWifiPrinter"
+        @cancel="addWifiVisible = false"
+      >
+        <div class="lp-add-form">
+          <div class="lp-add-item">
+            <div class="lp-add-label">名称</div>
+            <a-input v-model="addWifiForm.name" placeholder="如 汉印 D45" />
+          </div>
+          <div class="lp-add-item">
+            <div class="lp-add-label">IP 地址</div>
+            <a-input v-model="addWifiForm.ip" placeholder="如 192.168.10.10" />
+          </div>
+          <div class="lp-add-item">
+            <div class="lp-add-label">端口号</div>
+            <a-input-number v-model="addWifiForm.port" :min="1" :max="65535" style="width:100%" />
+          </div>
+          <div class="lp-tip" style="margin-top:10px">
+            指令集固定为 TSPL，端口默认 9100（原始打印端口）。
+          </div>
+        </div>
+      </a-modal>
       <div class="lp-footer">
         <a-button type="primary" icon="printer" :disabled="!template" :loading="printing" @click="handlePrint">打印</a-button>
         <a-button icon="edit" @click="handleEdit">编辑</a-button>
@@ -184,14 +200,15 @@
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { getAction, postAction } from '@/api/manage'
   import {
-    PRINTER_TYPES,
+    DEFAULT_PRINTER_PORT,
     getPrinterCapabilities,
     searchBluetoothPrinter,
-    probeWifiPrinter,
-    searchWifiPrinters,
-    probeNetworkPrinter,
-    searchNetworkPrinters,
-    getCloudPrinterInfo
+    getCloudPrinterInfo,
+    getWifiPrinters,
+    saveWifiPrinter,
+    removeWifiPrinter,
+    testWifiPrinter,
+    printToWifiPrinter
   } from '@/utils/printerSearch'
   var PX_PER_MM = 3.779528
   export default {
@@ -219,23 +236,22 @@
         copies: 1,
         // 手机浏览器（窄屏）时预览/设置改为上下布局
         isMobile: false,
-        // ===== 打印机搜索（手机端）=====
-        printerType: 'backend', // backend | bluetooth | wifi | network | cloud
+        // ===== 打印机（手机端）=====
+        printerType: 'backend', // backend | bluetooth | wifi | cloud
         printerCaps: getPrinterCapabilities(),
-        // 已发现的打印机对象（非后端枚举的）
+        // 已发现的打印机对象（蓝牙/云，非后端枚举的）
         discoveredPrinter: null,
         // 蓝牙
         btSearching: false,
         btDevice: null,
-        // Wi-Fi
-        wifiIp: '',
-        wifiProbing: false,
-        wifiList: [],
-        // 网络共享
-        networkIp: '',
-        networkShare: '',
-        netProbing: false,
-        networkList: []
+        // Wi-Fi 打印机：手动配置（名称/IP/端口），保存在本地
+        wifiPrinters: [],
+        activeWifiId: null,
+        wifiStatus: {},
+        // 添加打印机弹窗
+        addWifiVisible: false,
+        addWifiTesting: false,
+        addWifiForm: { name: '', ip: '', port: DEFAULT_PRINTER_PORT }
       }
     },
     computed: {
@@ -246,7 +262,6 @@
           { key: 'backend', label: '后端', icon: 'desktop' },
           { key: 'bluetooth', label: '蓝牙', icon: 'bluetooth' },
           { key: 'wifi', label: 'Wi-Fi', icon: 'wifi' },
-          { key: 'network', label: '共享', icon: 'share-alt' },
           { key: 'cloud', label: '云', icon: 'cloud' }
         ].filter(function(t) {
           return t.key === 'backend' || caps[t.key]
@@ -380,16 +395,13 @@
         }
         this.selectedPrinter = undefined
         this.copies = 1
-        // 重置打印机搜索状态
-        this.printerType = this.isMobile ? 'backend' : 'backend'
+        // 重置打印机状态
+        this.printerType = 'backend'
         this.discoveredPrinter = null
         this.btDevice = null
-        this.wifiIp = ''
-        this.wifiList = []
-        this.networkIp = ''
-        this.networkShare = ''
-        this.networkList = []
+        this.activeWifiId = null
         this.loadPrinters()
+        this.loadWifiPrinters()
         this.visible = true
       },
       // 加载本机打印机列表（后端枚举），默认选中默认打印机
@@ -419,6 +431,7 @@
         this.selectedPrinter = undefined
         this.discoveredPrinter = null
         if (type === 'backend') this.loadPrinters()
+        if (type === 'wifi') this.loadWifiPrinters()
       },
       // 蓝牙打印机搜索
       handleBluetoothSearch() {
@@ -435,65 +448,72 @@
           }
         })
       },
-      // Wi-Fi 打印机：探测指定 IP
-      handleWifiProbe() {
+      // 读取本地已配置的 Wi-Fi 打印机，并自动选中第一台
+      loadWifiPrinters() {
+        this.wifiPrinters = getWifiPrinters()
+        if (this.wifiPrinters.length > 0 && !this.activeWifiId) {
+          this.selectWifiPrinter(this.wifiPrinters[0])
+        }
+      },
+      // 选中一台 Wi-Fi 打印机（同时测试连通性）
+      selectWifiPrinter(printer) {
         var self = this
-        if (!this.wifiIp) {
-          this.$message.warning('请输入打印机 IP')
+        this.activeWifiId = printer.id
+        this.selectedPrinter = printer.id
+        this.discoveredPrinter = null
+        this.testWifiPrinterStatus(printer)
+      },
+      // 测试 Wi-Fi 打印机连通性（后端 TCP 探测）
+      testWifiPrinterStatus(printer) {
+        var self = this
+        testWifiPrinter(printer.ip, printer.port).then(function(res) {
+          self.$set(self.wifiStatus, printer.id, res.connected)
+        }).catch(function() {
+          self.$set(self.wifiStatus, printer.id, false)
+        })
+      },
+      // 打开「添加打印机」弹窗
+      openAddWifiPrinter() {
+        this.addWifiForm = { name: '', ip: '', port: DEFAULT_PRINTER_PORT }
+        this.addWifiVisible = true
+      },
+      // 保存打印机配置：名称 + IP + 端口
+      handleSaveWifiPrinter() {
+        var self = this
+        var form = this.addWifiForm || {}
+        var ip = String(form.ip || '').trim()
+        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+          this.$message.warning('请输入正确的 IP 地址，如 192.168.10.10')
           return
         }
-        this.wifiProbing = true
-        probeWifiPrinter(this.wifiIp).then(function(printer) {
-          self.wifiProbing = false
-          if (printer) {
-            self.wifiList = [printer]
-            self.$message.success('发现打印机：' + printer.name)
-          } else {
-            self.wifiList = []
-            self.$message.warning('未在该 IP 发现支持 IPP 的打印机')
-          }
-        })
-      },
-      // Wi-Fi 打印机：扫描同网段
-      handleWifiScan() {
-        var self = this
-        this.wifiProbing = true
-        this.wifiList = []
-        searchWifiPrinters('', 1200).then(function(list) {
-          self.wifiProbing = false
-          self.wifiList = list
-          if (list.length === 0) {
-            self.$message.info('同网段未发现打印机，可尝试手动输入 IP')
-          }
-        })
-      },
-      // 网络共享打印机：探测指定 IP
-      handleNetworkProbe() {
-        var self = this
-        if (!this.networkIp) {
-          this.$message.warning('请输入共享主机 IP')
-          return
+        var port = Number(form.port) || DEFAULT_PRINTER_PORT
+        this.addWifiTesting = true
+        this.wifiPrinters = saveWifiPrinter({ name: form.name, ip: ip, port: port })
+        this.addWifiTesting = false
+        this.addWifiVisible = false
+        var saved = this.wifiPrinters.find(function(p) { return p.ip === ip && p.port === port })
+        if (saved) {
+          this.selectWifiPrinter(saved)
         }
-        this.netProbing = true
-        probeNetworkPrinter(this.networkIp, this.networkShare).then(function(printer) {
-          self.netProbing = false
-          if (printer) {
-            self.networkList = [printer]
-            self.$message.success('发现共享打印机：' + printer.name)
-          } else {
-            self.networkList = []
-            self.$message.warning('未发现共享打印机')
-          }
-        })
+        this.$message.success('打印机已保存')
       },
-      // 网络共享打印机：扫描同网段
-      handleNetworkScan() {
+      // 删除一台 Wi-Fi 打印机
+      handleRemoveWifiPrinter(printer) {
         var self = this
-        this.netProbing = true
-        this.networkList = []
-        searchNetworkPrinters('').then(function(list) {
-          self.netProbing = false
-          self.networkList = list
+        this.$confirm({
+          title: '删除打印机',
+          content: '确定删除「' + printer.name + '」？',
+          okText: '删除',
+          cancelText: '取消',
+          onOk: function() {
+            self.wifiPrinters = removeWifiPrinter(printer.id)
+            self.$delete(self.wifiStatus, printer.id)
+            if (self.activeWifiId === printer.id) {
+              self.activeWifiId = null
+              self.selectedPrinter = undefined
+            }
+            self.$message.success('已删除')
+          }
         })
       },
       // 选中已发现的打印机
@@ -604,7 +624,7 @@
         this.visible = false
         setTimeout(() => this.$emit('edit', payload), 200)
       },
-      // 通过搜索发现的打印机打印（蓝牙/Wi-Fi/网络/云）
+      // 通过搜索发现的打印机打印（蓝牙/云）
       handleDiscoveredPrint() {
         var self = this
         var printer = this.discoveredPrinter
@@ -613,8 +633,6 @@
         var items = this.buildPrintItems()
         if (type === 'bluetooth') {
           this.printViaBluetooth(printer, items)
-        } else if (type === 'wifi' || type === 'network') {
-          this.printViaNetwork(printer, items)
         } else if (type === 'cloud') {
           this.printing = false
           this.printByBrowser(items)
@@ -685,45 +703,6 @@
         bytes.push(0x1d, 0x56, 0x00)
         return new Uint8Array(bytes)
       },
-      // 网络打印：通过 IPP 发送打印任务
-      printViaNetwork(printer, items) {
-        var self = this
-        var url = printer.capabilities.url
-        var bodyHtml = this.itemsToHtml(items)
-        // IPP Print-Job 操作（简化）：将 HTML 转为 base64 发送
-        var base64 = btoa(unescape(encodeURIComponent(bodyHtml)))
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/ipp' },
-          body: base64
-        }).then(function(res) {
-          self.printing = false
-          if (res.ok) {
-            self.$message.success('已发送到网络打印机：' + printer.name)
-          } else {
-            self.$message.error('网络打印失败，HTTP ' + res.status)
-            self.printByBrowser(items)
-          }
-        }).catch(function() {
-          self.printing = false
-          self.$message.error('网络打印失败，改用浏览器打印')
-          self.printByBrowser(items)
-        })
-      },
-      // 将打印项转为 HTML（供网络/浏览器打印）
-      itemsToHtml(items) {
-        var html = ''
-        items.forEach(function(item) {
-          if (item.image) {
-            html += '<img src="' + item.image + '" style="position:absolute;left:' + item.x +
-              'px;top:' + item.y + 'px;width:' + item.width + 'px;height:' + item.height + 'px;" />'
-          } else {
-            html += '<div style="position:absolute;left:' + item.x + 'px;top:' + item.y +
-              'px;font-size:' + item.fontSize + 'px;">' + item.text + '</div>'
-          }
-        })
-        return html
-      },
       // 构造打印项数组（供 discovered 打印复用）
       buildPrintItems() {
         var self = this
@@ -763,16 +742,46 @@
       // 打印：直接发送到所选打印机（后端执行），后端不可用时回退浏览器打印
       handlePrint() {
         if (!this.template) return
+        var self = this
+        // Wi-Fi 打印机：由后端按 IP:端口 下发 TSPL 指令
+        if (this.printerType === 'wifi') {
+          this.printViaWifi()
+          return
+        }
         if (!this.selectedPrinter) {
           this.$message.warning('请先选择打印机')
           return
         }
-        var self = this
-        // 若选择的是搜索发现的打印机（蓝牙/Wi-Fi/网络/云），走对应打印通道
+        // 若选择的是搜索发现的打印机（蓝牙/云），走对应打印通道
         if (this.discoveredPrinter && this.discoveredPrinter.id === this.selectedPrinter) {
           this.handleDiscoveredPrint()
           return
         }
+        var items = this.buildLayoutItems()
+        this.printing = true
+        postAction('/print/label', {
+          printerName: this.selectedPrinter,
+          copies: this.copies,
+          width: this.labelWidth,
+          height: this.labelHeight,
+          items: items
+        }).then(function(res) {
+          self.printing = false
+          var data = (res && res.data) || {}
+          if (res && res.code === 200) {
+            self.$message.success('已发送到打印机：' + self.selectedPrinter)
+          } else {
+            self.$message.error(data.message || '打印失败')
+            self.printByBrowser(items)
+          }
+        }).catch(function() {
+          self.printing = false
+          self.printByBrowser(items)
+        })
+      },
+      // 组装标签打印项（后端打印机与网络打印机共用同一份布局数据）
+      buildLayoutItems() {
+        var self = this
         var items = []
         this.selectedAttrList.forEach(function(attr) {
           var style = self.attrStyles[attr.key]
@@ -819,25 +828,33 @@
             text: displayText
           })
         })
+        return items
+      },
+      // 打印到 Wi-Fi 打印机：后端通过 Socket 发送 TSPL 指令到 ip:端口
+      printViaWifi() {
+        var self = this
+        var printer = this.wifiPrinters.find(function(p) { return p.id === self.activeWifiId })
+        if (!printer) {
+          this.$message.warning('请先点击「添加打印机」配置打印机')
+          return
+        }
         this.printing = true
-        postAction('/print/label', {
-          printerName: this.selectedPrinter,
+        printToWifiPrinter(printer, {
           copies: this.copies,
           width: this.labelWidth,
           height: this.labelHeight,
-          items: items
+          items: this.buildLayoutItems()
         }).then(function(res) {
           self.printing = false
-          var data = (res && res.data) || {}
           if (res && res.code === 200) {
-            self.$message.success('已发送到打印机：' + self.selectedPrinter)
+            self.$message.success('已发送到打印机：' + printer.name)
+            self.$set(self.wifiStatus, printer.id, true)
           } else {
-            self.$message.error(data.message || '打印失败')
-            self.printByBrowser(items)
+            self.$message.error((res && res.data) || '打印失败')
           }
         }).catch(function() {
           self.printing = false
-          self.printByBrowser(items)
+          self.$message.error('网络打印失败，请检查打印机与后端网络')
         })
       },
       // 浏览器打印（后端打印不可用时兜底）
@@ -1034,10 +1051,39 @@
   .lp-printer-search {
     margin-top: 8px;
   }
-  .lp-ip-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  /* Wi-Fi 打印机列表项 */
+  .lp-device-main {
+    flex: 1;
+    min-width: 0;
+    margin-right: 8px;
+  }
+  .lp-device-name {
+    font-size: 13px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lp-device-sub {
+    font-size: 11px;
+    color: #999;
+    margin-top: 2px;
+  }
+  .lp-device-status {
+    margin-right: 6px;
+  }
+  .lp-device-del {
+    color: #ff4d4f;
+    cursor: pointer;
+  }
+  /* 添加打印机表单 */
+  .lp-add-item {
+    margin-bottom: 12px;
+  }
+  .lp-add-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
   }
   .lp-device-info {
     margin-top: 8px;

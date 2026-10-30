@@ -89,8 +89,13 @@
     <div v-if="scanVisible" class="rso-scan-fullscreen">
       <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
       <canvas ref="scanCanvas" class="rso-scan-canvas"></canvas>
+      <canvas ref="scanOverlay" class="rso-scan-overlay" @click="confirmDetectedCode"></canvas>
       <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
-      <div class="rso-scan-tip">将条码/二维码对准框内即可自动识别</div>
+      <div class="rso-scan-tip">{{ detectedCode ? '已识别，点击绿色方框使用' : '将条码/二维码对准画面，识别后点击方框' }}</div>
+      <div v-if="detectedCode" class="rso-scan-detected">
+        <span class="rso-scan-code">{{ detectedCode }}</span>
+        <a-button type="primary" size="small" @click.stop="confirmDetectedCode">使用此条码</a-button>
+      </div>
       <div class="rso-scan-actions">
         <a-button @click="switchCamera">{{ frontCamera ? '切换后置' : '切换前置' }}</a-button>
         <a-button @click="showManualInput = !showManualInput">手动输入</a-button>
@@ -195,6 +200,9 @@
         scanStream: null,
         scanInterval: null,
         barcodeDetector: null,
+        // 已识别但未确认的条码：框选位置（视频像素坐标）与内容
+        detectedCode: '',
+        detectedBox: null,
         // ZXing 解码器（浏览器不支持 BarcodeDetector 时使用）
         zxingReader: null,
         // 商品选择
@@ -246,6 +254,8 @@
         this.scanVisible = true
         this.showManualInput = false
         this.manualCode = ''
+        this.detectedCode = ''
+        this.detectedBox = null
         // iPhone 在 http 非安全源下无法调用 getUserMedia，直接打开系统相机拍照识别
         if (!this.cameraAvailable()) {
           this.captureByCamera()
@@ -292,11 +302,24 @@
         if (!this.zxingReader) {
           this.zxingReader = new BrowserMultiFormatReader()
         }
-        let handled = false
         this.zxingReader.decodeFromStream(this.scanStream, video, (result) => {
-          if (handled || !result) return
-          handled = true
-          this.handleScanResult(result.getText())
+          if (!result) return
+          // 识别到条码：只框选，不自动确认；用户点击方框后再处理
+          const points = (result.getResultPoints && result.getResultPoints()) || []
+          let box = null
+          if (points.length > 0) {
+            const xs = points.map(p => p.getX())
+            const ys = points.map(p => p.getY())
+            box = {
+              x: Math.min.apply(null, xs),
+              y: Math.min.apply(null, ys),
+              w: Math.max.apply(null, xs) - Math.min.apply(null, xs),
+              h: Math.max.apply(null, ys) - Math.min.apply(null, ys)
+            }
+          }
+          this.detectedCode = result.getText()
+          this.detectedBox = box
+          this.drawOverlay(video.videoWidth, video.videoHeight)
         }).catch(err => {
           console.error('ZXing 扫码失败:', err)
         })
@@ -349,8 +372,12 @@
             if (this.barcodeDetector) {
               this.barcodeDetector.detect(canvas).then(results => {
                 if (results && results.length > 0) {
-                  const code = results[0].rawValue
-                  this.handleScanResult(code)
+                  const r = results[0]
+                  // 识别到条码：只记录内容与位置，等用户点击框选区域后确认
+                  this.detectedCode = r.rawValue
+                  const bb = r.boundingBox
+                  this.detectedBox = bb ? { x: bb.x, y: bb.y, w: bb.width, h: bb.height } : null
+                  this.drawOverlay(canvas.width, canvas.height)
                 }
               }).catch(() => {})
             }
@@ -359,9 +386,45 @@
         }
         detect()
       },
+      // 在视频上绘制识别结果的选框（视频像素坐标 → 屏幕显示坐标）
+      drawOverlay (videoW, videoH) {
+        const video = this.$refs.scanVideo
+        const overlay = this.$refs.scanOverlay
+        if (!video || !overlay || !videoW || !videoH) return
+        const elW = video.clientWidth
+        const elH = video.clientHeight
+        if (overlay.width !== elW) overlay.width = elW
+        if (overlay.height !== elH) overlay.height = elH
+        const ctx = overlay.getContext('2d')
+        ctx.clearRect(0, 0, elW, elH)
+        const box = this.detectedBox
+        if (!box) return
+        // 视频使用 object-fit: contain，按等比缩放 + 居中偏移换算
+        const scale = Math.min(elW / videoW, elH / videoH)
+        const offX = (elW - videoW * scale) / 2
+        const offY = (elH - videoH * scale) / 2
+        const x = offX + box.x * scale
+        const y = offY + box.y * scale
+        const w = Math.max(box.w * scale, 24)
+        const h = Math.max(box.h * scale, 24)
+        ctx.fillStyle = 'rgba(82, 196, 26, 0.18)'
+        ctx.fillRect(x, y, w, h)
+        ctx.strokeStyle = '#52c41a'
+        ctx.lineWidth = 3
+        ctx.strokeRect(x, y, w, h)
+      },
+      // 点击识别框确认：退出相机并按该条码搜索商品
+      confirmDetectedCode () {
+        if (!this.detectedCode) return
+        const code = this.detectedCode
+        this.closeScanner()
+        this.handleScanResult(code)
+      },
       // 切换前后摄像头
       switchCamera () {
         this.frontCamera = !this.frontCamera
+        this.detectedCode = ''
+        this.detectedBox = null
         this.stopScan()
         this.startScan()
       },
@@ -385,6 +448,8 @@
       },
       closeScanner () {
         this.stopScan()
+        this.detectedCode = ''
+        this.detectedBox = null
         this.scanVisible = false
       },
       /**
@@ -769,11 +834,43 @@
     left: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     background: #000;
   }
   .rso-scan-canvas {
     display: none;
+  }
+  /* 识别框选层：占满屏幕，点击方框确认条码 */
+  .rso-scan-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+  }
+  .rso-scan-detected {
+    position: absolute;
+    bottom: 160px;
+    left: 0;
+    width: 100%;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+    .rso-scan-code {
+      max-width: 60%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      color: #52c41a;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
   }
   .rso-scan-close {
     position: absolute;

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   jshERP 一键部署脚本：打包 -> 上传 -> 重启远端 Docker 容器 -> 验证
 .DESCRIPTION
@@ -52,8 +52,17 @@ function Ensure-Tools {
 }
 function Invoke-Maven([string]$WorkDir, [string[]]$Goals) {
     $mvn = if ($mavenHome) { Join-Path $mavenHome 'bin\mvn.cmd' } else { 'mvn' }
-    & $mvn @Goals 2>&1 | Select-Object -Last 5
-    if ($LASTEXITCODE -ne 0) { throw "maven 执行失败: $Goals" }
+    Push-Location $WorkDir
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $mvn @Goals 2>&1 | Select-Object -Last 5
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prev
+        Pop-Location
+    }
+    if ($code -ne 0) { throw "maven 执行失败: $Goals" }
 }
 function Invoke-Plink([string]$RemoteCmd) {
     & $plink -ssh "$SshUser@$Server" -pw $SshPass -batch -hostkey $HostKey $RemoteCmd
@@ -72,13 +81,16 @@ if (-not $SkipBuild) {
         Write-Host '==> 构建前端 dist ...'
         Push-Location $webDir
         try {
-            $nodeCandidates = @(
+            $nodeDir = @(
                 "$env:LOCALAPPDATA\Programs\node16\node-v16.20.2-win-x64",
                 "$env:ProgramFiles\nodejs"
-            ) | Where-Object { Test-Path (Join-Path $_ 'node.exe') }
-            if ($nodeCandidates) { $env:Path = "$($nodeCandidates[0]);$env:Path" }
-            npm run build 2>&1 | Select-Object -Last 3
-            if ($LASTEXITCODE -ne 0) { throw '前端构建失败' }
+            ) | Where-Object { Test-Path (Join-Path $_ 'node.exe') } | Select-Object -First 1
+            if ($nodeDir) { $env:Path = "$nodeDir;$env:Path" }
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try { $out = npm run build 2>&1; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $prev }
+            $out | Select-Object -Last 3
+            if ($code -ne 0) { throw '前端构建失败' }
         } finally { Pop-Location }
     }
 }

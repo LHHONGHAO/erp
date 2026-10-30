@@ -123,13 +123,16 @@ if (-not $SkipBuild) {
         Write-Host '==> 构建前端 dist ...'
         Push-Location $webDir
         try {
-            $nodeCandidates = @(
+            $nodeDir = @(
                 "$env:LOCALAPPDATA\Programs\node16\node-v16.20.2-win-x64",
                 "$env:ProgramFiles\nodejs"
-            ) | Where-Object { Test-Path (Join-Path $_ 'node.exe') }
-            if ($nodeCandidates) { $env:Path = "$($nodeCandidates[0]);$env:Path" }
-            npm run build 2>&1 | Select-Object -Last 3
-            if ($LASTEXITCODE -ne 0) { throw '前端构建失败' }
+            ) | Where-Object { Test-Path (Join-Path $_ 'node.exe') } | Select-Object -First 1
+            if ($nodeDir) { $env:Path = "$nodeDir;$env:Path" }
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try { $out = npm run build 2>&1; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $prev }
+            $out | Select-Object -Last 3
+            if ($code -ne 0) { throw '前端构建失败' }
         } finally { Pop-Location }
     }
 } else {

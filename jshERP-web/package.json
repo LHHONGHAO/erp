@@ -9,6 +9,7 @@
   "dependencies": {
     "@antv/data-set": "^0.11.2",
     "@tinymce/tinymce-vue": "^2.0.0",
+    "@zxing/library": "^0.23.0",
     "ant-design-vue": "1.5.2",
     "area-data": "^5.0.6",
     "axios": "^0.18.0",

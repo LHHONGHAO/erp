@@ -72,30 +72,21 @@
       </data-table>
     </div>
 
-    <!-- 扫码弹窗 -->
-    <a-modal
-      :visible="scanVisible"
-      title="扫码添加"
-      @cancel="closeScanner"
-      :footer="null"
-      width="90%"
-      centered
-      destroyOnClose
-    >
-      <div class="rso-scan-box">
-        <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
-        <canvas ref="scanCanvas" class="rso-scan-canvas"></canvas>
-        <div class="rso-scan-tip">将条码/二维码对准框内即可自动识别</div>
-        <div class="rso-scan-actions">
-          <a-button @click="switchCamera">{{ frontCamera ? '切换后置' : '切换前置' }}</a-button>
-          <a-button @click="showManualInput = !showManualInput">手动输入</a-button>
-        </div>
-        <div v-if="showManualInput" class="rso-manual-input">
-          <a-input v-model="manualCode" placeholder="请输入条码或SKU码" @pressEnter="handleScanResult(manualCode)" />
-          <a-button type="primary" @click="handleScanResult(manualCode)">确定</a-button>
-        </div>
+    <!-- 全屏扫码界面 -->
+    <div v-if="scanVisible" class="rso-scan-fullscreen">
+      <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
+      <canvas ref="scanCanvas" class="rso-scan-canvas"></canvas>
+      <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
+      <div class="rso-scan-tip">将条码/二维码对准框内即可自动识别</div>
+      <div class="rso-scan-actions">
+        <a-button @click="switchCamera">{{ frontCamera ? '切换后置' : '切换前置' }}</a-button>
+        <a-button @click="showManualInput = !showManualInput">手动输入</a-button>
       </div>
-    </a-modal>
+      <div v-if="showManualInput" class="rso-manual-input">
+        <a-input v-model="manualCode" placeholder="请输入条码或SKU码" @pressEnter="handleScanResult(manualCode)" />
+        <a-button type="primary" @click="handleScanResult(manualCode)">确定</a-button>
+      </div>
+    </div>
 
     <!-- 商品选择页面（共用页面，弹窗形式加载） -->
     <a-modal
@@ -126,6 +117,7 @@
   import { getMaterialByBarCode } from '@/api/api'
   import { getMpListShort } from '@/utils/util'
   import DataTable from '@/components/DataTable'
+  import { BrowserMultiFormatReader } from '@zxing/library'
   import Vue from 'vue'
   import moment from 'moment'
   import { getFormatDate } from '@/utils/util'
@@ -181,6 +173,8 @@
         scanStream: null,
         scanInterval: null,
         barcodeDetector: null,
+        // ZXing 解码器（浏览器不支持 BarcodeDetector 时使用）
+        zxingReader: null,
         // 商品选择
         materialVisible: false,
         scanBarCode: ''
@@ -219,20 +213,28 @@
       this.stopScan()
     },
     methods: {
-      // 打开扫码弹窗并启动摄像头
+      // 打开全屏扫码界面并立即启动摄像头
       openScanner () {
         this.scanVisible = true
         this.showManualInput = false
         this.manualCode = ''
+        // iPhone 在 http 非安全源下无法调用 getUserMedia，直接打开系统相机拍照识别
+        if (!this.cameraAvailable()) {
+          this.captureByCamera()
+          return
+        }
         this.$nextTick(() => {
           this.startScan()
         })
       },
+      // 是否可以使用网页摄像头（非安全源或缺少 mediaDevices 时不可用）
+      cameraAvailable () {
+        return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+      },
       // 启动摄像头扫码
       startScan () {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          this.$message.warning('当前浏览器不支持摄像头扫码，请使用手动输入')
-          this.showManualInput = true
+        if (!this.cameraAvailable()) {
+          this.captureByCamera()
           return
         }
         const constraints = {
@@ -244,11 +246,63 @@
           if (video) {
             video.srcObject = stream
             video.play()
-            this.startDetectLoop()
+            // Chrome/Android 使用原生 BarcodeDetector，其余浏览器使用 ZXing
+            if (this.barcodeDetector) {
+              this.startDetectLoop()
+            } else {
+              this.startZxingLoop(video)
+            }
           }
         }).catch(err => {
           console.error('摄像头开启失败:', err)
           this.$message.warning('无法访问摄像头，请检查权限或使用手动输入')
+          this.showManualInput = true
+        })
+      },
+      // 使用 ZXing 对同一个视频流做识别（iPhone Safari 等不支持 BarcodeDetector 的浏览器）
+      startZxingLoop (video) {
+        if (!this.zxingReader) {
+          this.zxingReader = new BrowserMultiFormatReader()
+        }
+        let handled = false
+        this.zxingReader.decodeFromStream(this.scanStream, video, (result) => {
+          if (handled || !result) return
+          handled = true
+          this.handleScanResult(result.getText())
+        }).catch(err => {
+          console.error('ZXing 扫码失败:', err)
+        })
+      },
+      // 原生相机拍照识别：创建隐藏的 file 输入并触发（iOS http 环境下的降级方案）
+      captureByCamera () {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'image/*'
+        input.capture = 'environment'
+        input.style.display = 'none'
+        document.body.appendChild(input)
+        input.addEventListener('change', () => {
+          const file = input.files && input.files[0]
+          document.body.removeChild(input)
+          if (!file) return
+          this.decodeBarcodeImage(file)
+        })
+        input.click()
+      },
+      // 解码拍照得到的条码图片
+      decodeBarcodeImage (file) {
+        const url = URL.createObjectURL(file)
+        if (!this.zxingReader) {
+          this.zxingReader = new BrowserMultiFormatReader()
+        }
+        this.zxingReader.decodeFromImageUrl(url).then(result => {
+          URL.revokeObjectURL(url)
+          if (result) {
+            this.handleScanResult(result.getText())
+          }
+        }).catch(() => {
+          URL.revokeObjectURL(url)
+          this.$message.warning('未识别到条码，请重试或手动输入')
           this.showManualInput = true
         })
       },
@@ -283,15 +337,22 @@
         this.stopScan()
         this.startScan()
       },
-      // 停止扫码
+      // 停止扫码：动画循环、ZXing 解码循环与视频轨道都要释放
       stopScan () {
         if (this.scanInterval) {
           cancelAnimationFrame(this.scanInterval)
           this.scanInterval = null
         }
+        if (this.zxingReader) {
+          this.zxingReader.reset()
+          this.zxingReader = null
+        }
         if (this.scanStream) {
           this.scanStream.getTracks().forEach(track => track.stop())
           this.scanStream = null
+        }
+        if (this.$refs.scanVideo) {
+          this.$refs.scanVideo.srcObject = null
         }
       },
       closeScanner () {
@@ -330,7 +391,12 @@
           if (!(res && res.code === 200 && res.data && res.data.length > 0)) {
             this.$message.warning('未找到SKU码为「' + skuCode + '」的商品')
             this.scanVisible = true
-            this.startScan()
+            // 拍照识别模式下不自动重开相机，改为展示手动输入
+            if (this.cameraAvailable()) {
+              this.startScan()
+            } else {
+              this.showManualInput = true
+            }
             return
           }
           const mInfo = res.data[0]
@@ -572,33 +638,63 @@
     margin-bottom: 10px;
   }
 }
-/* 扫码弹窗样式 */
-.rso-scan-box {
-  text-align: center;
+/* 全屏扫码界面样式 */
+.rso-scan-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+  overflow: hidden;
   .rso-scan-video {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    max-height: 50vh;
+    height: 100%;
+    object-fit: cover;
     background: #000;
-    border-radius: 6px;
   }
   .rso-scan-canvas {
     display: none;
   }
+  .rso-scan-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    z-index: 3;
+    color: #fff;
+    font-size: 24px;
+  }
   .rso-scan-tip {
-    margin: 12px 0;
-    font-size: 13px;
-    color: #666;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    width: 100%;
+    z-index: 2;
+    text-align: center;
+    font-size: 14px;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
   .rso-scan-actions {
+    position: absolute;
+    bottom: 96px;
+    left: 0;
+    width: 100%;
+    z-index: 2;
     display: flex;
     justify-content: center;
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 16px;
   }
   .rso-manual-input {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    width: 100%;
+    z-index: 2;
     display: flex;
     gap: 8px;
-    padding: 0 10px;
+    padding: 0 12px;
   }
 }
 </style>

@@ -285,6 +285,8 @@ public class SupplierController extends BaseController {
                     item.put("id", supplier.getId());
                     //客户名称
                     item.put("supplier", supplier.getSupplier());
+                    item.put("contacts", supplier.getContacts()); //会员姓名
+                    item.put("telephone", supplier.getTelephone()); //手机号
                     item.put("advanceIn", supplier.getAdvanceIn()); //预付款金额
                     dataArray.add(item);
                 }

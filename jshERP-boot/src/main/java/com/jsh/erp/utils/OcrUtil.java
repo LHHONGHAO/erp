@@ -407,7 +407,8 @@ public class OcrUtil {
         keyMapping.put("编码", "barCode");
         keyMapping.put("规格", "standard");
         keyMapping.put("净含量", "standard");
-        keyMapping.put("重量", "standard");
+        keyMapping.put("重量", "weight");
+        keyMapping.put("填充物重量", "weight");
         keyMapping.put("容量", "standard");
         keyMapping.put("品牌", "brand");
         keyMapping.put("商标", "brand");

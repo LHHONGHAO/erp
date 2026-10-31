@@ -254,7 +254,8 @@
 .material-select-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: #f5f5f5;
 }
 .msp-header {

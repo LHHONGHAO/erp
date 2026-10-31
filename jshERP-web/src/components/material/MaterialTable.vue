@@ -53,39 +53,41 @@
 
   <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
   <div v-if="isMobileView" class="mt-mobile-list">
-    <div v-for="row in mobileRows" :key="row.skuRowKey || row.id" class="mt-mobile-card">
-      <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
-      <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
-      <div class="mt-mobile-body">
-        <div class="mt-mobile-title">
-          {{ row.name }}
-          <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
-          <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
-        </div>
-        <div class="mt-mobile-code">{{ resolveCode(row) }}</div>
-        <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
-        <div class="mt-mobile-meta">
-          库存 {{ row.stock == null ? '-' : row.stock }}　零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}
-        </div>
-        <div v-if="visibleActions(row).length > 0" class="mt-mobile-actions">
-          <a-button
-            v-for="(act, i) in visibleActions(row)"
-            :key="'mact-' + i"
-            size="small"
-            @click="onAction(act, row)">{{ act.title }}</a-button>
+    <div v-for="row in mobileList" :key="row.skuRowKey || row.id" class="mt-mobile-card">
+      <div class="mt-mobile-top">
+        <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
+        <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
+        <div class="mt-mobile-body">
+          <div class="mt-mobile-title">
+            {{ row.name }}
+            <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
+            <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
+          </div>
+          <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
         </div>
       </div>
+      <!-- SKU码 / 库存 / 零售价：一行排列，左对齐图片框左边 -->
+      <div class="mt-mobile-meta">
+        <span class="mt-mobile-sku">SKU码 {{ row.skuCode || '-' }}</span>
+        <span>库存 {{ row.stock == null ? '-' : row.stock }}</span>
+        <span>零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}</span>
+      </div>
+      <div v-if="visibleActions(row).length > 0" class="mt-mobile-actions">
+        <a-button
+          v-for="(act, i) in visibleActions(row)"
+          :key="'mact-' + i"
+          size="small"
+          @click="onAction(act, row)">{{ act.title }}</a-button>
+      </div>
     </div>
-    <div v-if="mobileRows.length === 0" class="mt-mobile-empty">暂无数据</div>
-    <div v-if="mobilePagination && mobilePagination.total > 0" class="mt-mobile-pager">
-      <a-pagination
-        size="small"
-        :current="mobilePagination.current"
-        :page-size="mobilePagination.pageSize"
-        :total="mobilePagination.total"
-        :show-total="mobilePagination.showTotal"
-        @change="onMobilePageChange" />
+    <div v-if="mobileList.length === 0 && !mobileLoading" class="mt-mobile-empty">暂无数据</div>
+    <!-- 下拉（滚动到底部）自动加载：不再显示分页 -->
+    <div ref="mobileSentinel" class="mt-mobile-sentinel"></div>
+    <div v-if="mobileLoading" class="mt-mobile-loadmore">
+      <a-spin size="small" />
+      <span class="mt-mobile-loadtext">加载中...</span>
     </div>
+    <div v-else-if="mobileList.length > 0 && !mobileHasMore" class="mt-mobile-no-more">没有更多了</div>
   </div>
   </div>
 </template>
@@ -119,7 +121,15 @@
     data() {
       return {
         /** 当前窗口宽度是否属于手机浏览器（<=768px） */
-        isMobileView: false
+        isMobileView: false,
+        /** 手机端下拉加载已累积的数据（翻页时追加，不再整页替换） */
+        mobileList: [],
+        /** 已加载到的页码 */
+        mobileLoadedPage: 0,
+        /** 是否正在触发下拉加载（防止重复请求） */
+        mobileLoadingMore: false,
+        /** 底部哨兵元素的可见性监听器 */
+        mobileObserver: null
       }
     },
     computed: {
@@ -182,11 +192,42 @@
       mobilePagination() {
         const p = this.$attrs.pagination
         return p && typeof p === 'object' ? p : null
+      },
+      /** 手机端总页数 */
+      mobileTotalPages() {
+        const p = this.mobilePagination
+        if (!p) return 1
+        return Math.ceil((p.total || 0) / (p.pageSize || 10)) || 1
+      },
+      /** 是否还有下一页可下拉加载 */
+      mobileHasMore() {
+        const p = this.mobilePagination
+        if (!p) return false
+        return (p.current || 1) < this.mobileTotalPages
+      },
+      /** 表格加载状态（父组件通过 loading 传入） */
+      mobileLoading() {
+        return !!(this.$attrs.loading)
       }
     },
     watch: {
       codeMode() {
         this.syncCodeTitle()
+      },
+      /** 父组件数据变化：首页整体替换，后续页追加到列表尾部 */
+      mobileRows: {
+        handler(rows) {
+          this.syncMobileList(rows || [])
+        },
+        immediate: true
+      },
+      /** 桌面表格 / 手机卡片切换时重新绑定底部哨兵监听 */
+      isMobileView(visible) {
+        if (visible) {
+          this.$nextTick(this.bindMobileObserver)
+        } else {
+          this.unbindMobileObserver()
+        }
       }
     },
     mounted() {
@@ -194,6 +235,7 @@
       // 手机浏览器（<=768px）改为卡片列表：图片、规格、操作按钮纵向排列
       this.isMobileView = window.innerWidth <= 768
       window.addEventListener('resize', this.onWindowResize)
+      this.$nextTick(this.bindMobileObserver)
       // 列被重建（配置中心回填、列设置调整）后重新套用码列标题，避免标题被还原
       this.$watch(
         () => (this.$refs.dataTable ? this.$refs.dataTable.displayColumns : null),
@@ -202,6 +244,7 @@
     },
     beforeDestroy() {
       window.removeEventListener('resize', this.onWindowResize)
+      this.unbindMobileObserver()
     },
     created() {
       // 兼容旧版本列设置：原「规格JSON」列已改为「规格显示」列
@@ -220,10 +263,61 @@
           this.isMobileView = mobile
         }
       },
-      /** 手机端翻页：按 a-table 的 change 签名通知父组件 */
-      onMobilePageChange(page) {
-        const size = this.mobilePagination ? this.mobilePagination.pageSize : 10
-        this.$emit('change', { current: page, pageSize: size }, {}, {})
+      /** 手机端数据同步：第 1 页整体替换，后续页追加；同页重载则更新已有行 */
+      syncMobileList(rows) {
+        const page = (this.mobilePagination && this.mobilePagination.current) || 1
+        const keyOf = row => row.skuRowKey || row.id
+        if (page <= 1) {
+          this.mobileList = rows.slice()
+          this.mobileLoadedPage = 1
+          this.mobileLoadingMore = false
+          return
+        }
+        if (page > this.mobileLoadedPage) {
+          const exists = {}
+          this.mobileList.forEach(row => { exists[keyOf(row)] = true })
+          const appended = this.mobileList.slice()
+          rows.forEach(row => {
+            const key = keyOf(row)
+            if (!exists[key]) {
+              exists[key] = true
+              appended.push(row)
+            }
+          })
+          this.mobileList = appended
+          this.mobileLoadedPage = page
+        } else {
+          // 同一页重新加载（编辑/刷新）：用新数据覆盖对应行
+          const incoming = {}
+          rows.forEach(row => { incoming[keyOf(row)] = row })
+          this.mobileList = this.mobileList.map(row => incoming[keyOf(row)] || row)
+        }
+        this.mobileLoadingMore = false
+      },
+      /** 监听底部哨兵：滚动到列表末尾时自动加载下一页 */
+      bindMobileObserver() {
+        this.unbindMobileObserver()
+        if (!this.isMobileView || typeof IntersectionObserver === 'undefined') return
+        const el = this.$refs.mobileSentinel
+        if (!el) return
+        this.mobileObserver = new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting)) this.loadMoreMobile()
+        }, { rootMargin: '0px 0px 80px 0px' })
+        this.mobileObserver.observe(el)
+      },
+      unbindMobileObserver() {
+        if (this.mobileObserver) {
+          this.mobileObserver.disconnect()
+          this.mobileObserver = null
+        }
+      },
+      /** 加载下一页：按 a-table 的 change 签名通知父组件 */
+      loadMoreMobile() {
+        if (this.mobileLoadingMore || this.mobileLoading) return
+        const p = this.mobilePagination
+        if (!p || !this.mobileHasMore) return
+        this.mobileLoadingMore = true
+        this.$emit('change', { current: (p.current || 1) + 1, pageSize: p.pageSize || 10 }, {}, {})
       },
       resolveImg(record) {
         return getRowImgUrl(record)
@@ -280,13 +374,18 @@
   }
   .mt-mobile-card {
     display: flex;
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: column;
     background: #fff;
     border: 1px solid #F0F2F5;
     border-radius: 8px;
     padding: 8px;
     margin-bottom: 8px;
+  }
+  /* 上部：图片 + 名称规格 */
+  .mt-mobile-top {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
   }
   .mt-mobile-img {
     width: 88px;
@@ -316,13 +415,6 @@
     color: #1D2129;
     word-break: break-all;
   }
-  .mt-mobile-code {
-    margin-top: 4px;
-    font-size: 12px;
-    color: #86909C;
-    font-family: Consolas, Monaco, monospace;
-    word-break: break-all;
-  }
   .mt-mobile-spec {
     margin-top: 6px;
     font-size: 13px;
@@ -332,20 +424,34 @@
     text-align: left;
     word-break: break-all;
   }
+  /* SKU码 / 库存 / 零售价：同一行，左对齐图片框左边 */
   .mt-mobile-meta {
-    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
     font-size: 12px;
     color: #86909C;
+    white-space: nowrap;
+    overflow: hidden;
+    .mt-mobile-sku {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    span {
+      flex-shrink: 0;
+    }
   }
+  /* 操作按钮：全部一行排列，左对齐图片框左边 */
   .mt-mobile-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 8px;
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px dashed #F0F2F5;
-  }
-  .mt-mobile-actions > * {
-    margin: 0 8px 6px 0;
+    overflow-x: auto;
   }
   .mt-mobile-empty {
     text-align: center;
@@ -353,10 +459,19 @@
     color: #bbb;
     font-size: 13px;
   }
-  .mt-mobile-pager {
+  /* 下拉加载：底部哨兵 + 加载中 / 到底提示 */
+  .mt-mobile-sentinel {
+    height: 1px;
+  }
+  .mt-mobile-loadmore,
+  .mt-mobile-no-more {
     display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 10px 0 4px;
+    gap: 6px;
+    padding: 12px 0;
+    color: #999;
+    font-size: 12px;
   }
   .mt-row-img {
     width: 100px;

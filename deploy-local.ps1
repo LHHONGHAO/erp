@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 .SYNOPSIS
   JSH_ERP 本地一键部署脚本（Windows PowerShell 5 兼容）
 .DESCRIPTION

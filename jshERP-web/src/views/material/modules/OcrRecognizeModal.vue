@@ -111,7 +111,7 @@ var BASE_PROPERTIES = [
   { nativeName: '品牌', field: 'brand', visible: true, sort: 2, anotherName: '品牌', fixed: true },
   { nativeName: '助记码', field: 'mnemonic', visible: true, sort: 3, anotherName: '助记码', fixed: true },
   { nativeName: '类别', field: 'categoryId', visible: true, sort: 4, anotherName: '类别', fixed: true },
-  { nativeName: '基础重量', field: 'weight', visible: true, sort: 5, anotherName: '基础重量', fixed: true },
+  { nativeName: '填充物重量', field: 'weight', visible: true, sort: 5, anotherName: '填充物重量', fixed: true },
   { nativeName: '制造商', field: 'mfrs', visible: true, sort: 6, anotherName: '制造商', fixed: true },
   { nativeName: '条码', field: 'barCode', visible: true, sort: 8, anotherName: '条码', fixed: true },
   { nativeName: '商品ID', field: 'id', visible: false, sort: 9, anotherName: '商品ID', fixed: true },

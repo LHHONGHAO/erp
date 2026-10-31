@@ -56,7 +56,7 @@
                                    :placeholder="'请选择'+prop.anotherName+'（须选二级类目，一级类目不可选）'" @change="handleCategoryChange">
                     </a-tree-select>
                   </a-form-item>
-                  <!-- 基础重量 -->
+                  <!-- 填充物重量 -->
                   <a-form-item v-else-if="prop.field==='weight'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input-number style="width: 100%" :placeholder="'请输入'+prop.anotherName+'(kg)'" v-decorator.trim="[ 'weight' ]" />
                   </a-form-item>
@@ -546,7 +546,7 @@
           { nativeName: '品牌', field: 'brand', visible: true, sort: 2, anotherName: '品牌', fixed: true },
           { nativeName: '助记码', field: 'mnemonic', visible: true, sort: 3, anotherName: '助记码', fixed: true },
           { nativeName: '类别', field: 'categoryId', visible: true, sort: 4, anotherName: '类别', fixed: true },
-          { nativeName: '基础重量', field: 'weight', visible: true, sort: 5, anotherName: '基础重量', fixed: true },
+          { nativeName: '填充物重量', field: 'weight', visible: true, sort: 5, anotherName: '填充物重量', fixed: true },
           { nativeName: '制造商', field: 'mfrs', visible: true, sort: 6, anotherName: '制造商', fixed: true },
           { nativeName: '序列号', field: 'enableSerialNumber', visible: false, sort: 7, anotherName: '序列号', fixed: true },
           { nativeName: '条码', field: 'barCode', visible: true, sort: 8, anotherName: '条码', fixed: true },
@@ -2683,6 +2683,14 @@
     overflow-x: hidden;
     overflow-y: auto;
     scroll-snap-align: start;
+  }
+  /* 独立页面模式（非弹窗）：手机端取消内层固定高度与内部滚动，内容随页面整体滚动到底 */
+  .mm-inline-form .mm-pages.is-mobile {
+    height: auto;
+  }
+  .mm-inline-form .mm-pages.is-mobile > .mm-page {
+    height: auto;
+    overflow-y: visible;
   }
   /* 手机端：收紧弹窗内容区留白，避免三页左侧留白过多 */
   @media (max-width: 768px) {

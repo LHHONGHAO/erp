@@ -1,13 +1,12 @@
 <template>
   <!-- 固定高度容器，内容超出时页面内滚动 -->
   <div class="material-add-page" :style="cardStyle">
-    <!-- 页面头部：标题 + 操作按钮，滚动时固定在顶部 -->
+    <!-- 页面头部：操作按钮一行并列，滚动时固定在顶部 -->
     <div class="ma-header">
-      <span class="ma-title">新增商品</span>
       <div class="ma-actions">
         <a-button icon="setting" @click="handlePropertyConfig">属性设置</a-button>
-        <a-button style="margin-left: 8px" @click="handleReset">重置</a-button>
-        <a-button type="primary" style="margin-left: 8px" @click="handleOk">保存（Ctrl+S）</a-button>
+        <a-button @click="handleReset">重置</a-button>
+        <a-button type="primary" @click="handleOk">保存</a-button>
       </div>
     </div>
     <!-- 表单直接铺在页面中，非弹窗 -->
@@ -43,8 +42,12 @@
       window.removeEventListener('resize', this.setHeight)
     },
     methods: {
-      // 按窗口高度计算内容区高度（与商品信息列表页保持一致）
+      // 按窗口高度计算内容区高度（仅桌面端固定高度；手机端改为页面自然滚动，避免底部内容被裁剪）
       setHeight () {
+        if (document.documentElement.clientWidth <= 768) {
+          this.cardStyle = ''
+          return
+        }
         this.cardStyle = 'height:' + (document.documentElement.clientHeight - 100) + 'px'
       },
       // 初始化新增商品表单
@@ -95,8 +98,8 @@
   }
   .ma-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
+    justify-content: flex-start;
     padding: 12px 0;
     margin-bottom: 8px;
     border-bottom: 1px solid #e8e8e8;
@@ -105,12 +108,21 @@
     top: 0;
     z-index: 2;
   }
-  .ma-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: rgba(0, 0, 0, 0.85);
+  .ma-actions {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
   .ma-body {
     padding-bottom: 24px;
+  }
+  /* 手机端：不限制容器高度，内容随页面整体滚动到底部 */
+  @media (max-width: 768px) {
+    .material-add-page {
+      height: auto !important;
+      overflow: visible;
+      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
   }
 </style>

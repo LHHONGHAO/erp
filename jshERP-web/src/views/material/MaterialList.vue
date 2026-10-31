@@ -1,6 +1,6 @@
 <!-- by 7527189 2 0 -->
 <template>
-  <a-row :gutter="24">
+  <a-row :gutter="24" class="material-list-page">
     <a-col :md="24">
       <a-card :style="cardStyle" :bordered="false">
         <!-- 查询区域 -->
@@ -476,9 +476,9 @@
         }
         this.$refs.labelPrintModal.open(record, sku, this.categoryTree)
       },
-      // 预览弹层点「编辑」：打开标签编辑弹层
-      handleEditLabel({ record, sku, categoryTree }) {
-        this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree)
+      // 预览弹层点「编辑」：打开标签编辑弹层，并按其当前模板加载标签数据
+      handleEditLabel({ record, sku, categoryTree, templateId }) {
+        this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId)
       },
       handleImportXls() {
         let importExcelUrl = this.url.importExcelUrl
@@ -505,6 +505,18 @@
   @import '~@assets/less/common.less'
 </style>
 <style>
+  /* 手机浏览器：缩小页面左右边距，让商品卡片尽量占满屏宽 */
+  @media (max-width: 768px) {
+    .material-list-page .ant-card-body {
+      padding: 8px !important;
+    }
+    .material-list-page .table-operator {
+      margin-bottom: 8px !important;
+    }
+    .material-list-page .ant-form-item {
+      margin-bottom: 8px !important;
+    }
+  }
   .item-info {
     float:left;
     width:38px;

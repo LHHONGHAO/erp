@@ -56,9 +56,18 @@ public class OcrUtil {
         loadConfigFromFile();
     }
 
+    /** OCR 配置文件路径：优先取统一数据目录（-Djsh.data.dir），否则退回启动目录下 config/ */
+    private static String getOcrConfigPath() {
+        String dataDir = System.getProperty("jsh.data.dir");
+        if (dataDir != null && !dataDir.trim().isEmpty()) {
+            return dataDir.replace('\\', '/') + "/config/ocr-config.properties";
+        }
+        return System.getProperty("user.dir") + "/config/ocr-config.properties";
+    }
+
     private static void loadConfigFromFile() {
         try {
-            String configPath = System.getProperty("user.dir") + "/config/ocr-config.properties";
+            String configPath = getOcrConfigPath();
             Path path = Paths.get(configPath);
             if (Files.exists(path)) {
                 Properties props = new Properties();
@@ -673,7 +682,7 @@ public class OcrUtil {
 
     /** 将指定前缀（如 ocr.baidu / ocr.address）的配置写入配置文件，保留其他配置项 */
     public static synchronized void saveConfigToFile(String prefix, boolean enabled, String apiKey, String secretKey) throws Exception {
-        String configPath = System.getProperty("user.dir") + "/config/ocr-config.properties";
+        String configPath = getOcrConfigPath();
         Path path = Paths.get(configPath);
         if (!Files.exists(path.getParent())) {
             Files.createDirectories(path.getParent());

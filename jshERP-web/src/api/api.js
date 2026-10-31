@@ -1,4 +1,4 @@
-﻿import { getAction, deleteAction, putAction, postAction, httpAction } from '@/api/manage'
+﻿﻿import { getAction, deleteAction, putAction, postAction, httpAction } from '@/api/manage'
 
 //首页统计
 const getBuyAndSaleStatistics = (params)=>getAction("/depotHead/getBuyAndSaleStatistics",params);

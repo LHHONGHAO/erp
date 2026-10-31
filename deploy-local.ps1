@@ -54,6 +54,9 @@ $Log     = Join-Path $BootDir 'deploy-backend.log'
 $ErrLog  = Join-Path $BootDir 'deploy-backend.err.log'
 # application.yml 中配置的外部静态资源目录（相对 jshERP-boot 启动目录）
 $StaticLink = Join-Path $BootDir 'frontend-dist'
+# 统一数据目录：图片、导出缓存、外部配置、数据库备份都放在这里，重新部署不受影响
+$DataDir = Join-Path (Split-Path -Parent $Root) 'jshERP-data'
+$DataDirs = @('upload', 'export', 'config', 'backup', 'logs')
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  JSH_ERP 本地部署脚本" -ForegroundColor Cyan
@@ -76,6 +79,26 @@ function Write-Warn([string]$Msg) {
 }
 function Write-Fail([string]$Msg) {
     Write-Host "    [FAIL] $Msg" -ForegroundColor Red
+}
+
+function Initialize-DataDir {
+    Write-Step "初始化统一数据目录 $DataDir"
+    if (-not (Test-Path $DataDir)) {
+        New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+        Write-Ok "已创建数据目录"
+    }
+    foreach ($sub in $DataDirs) {
+        $p = Join-Path $DataDir $sub
+        if (-not (Test-Path $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
+    }
+    Write-Ok "子目录就绪: $($DataDirs -join ', ')"
+    # 首次部署：把项目内的 OCR 等配置迁移到统一数据目录（之后更新部署不会覆盖）
+    $srcCfg = Join-Path $BootDir 'config\ocr-config.properties'
+    $dstCfg = Join-Path $DataDir 'config\ocr-config.properties'
+    if ((Test-Path $srcCfg) -and (-not (Test-Path $dstCfg))) {
+        Copy-Item $srcCfg $dstCfg -Force
+        Write-Ok "已迁移 ocr-config.properties 到数据目录"
+    }
 }
 
 function Stop-OldService([int]$ListenPort) {
@@ -164,15 +187,19 @@ function Invoke-External {
 function Launch-Service {
     param([string]$DistPath)
 
+    Initialize-DataDir
+
     Write-Step "启动后端服务"
     # 用 Start-Process + -ArgumentList 数组，PowerShell 会正确传递每个参数给 java.exe
     # 显式指定静态资源绝对路径，避免依赖进程工作目录
     $staticDir = ($StaticLink -replace '\\', '/') + '/'
+    $dataDirArg = ($DataDir -replace '\\', '/')
     $argList = @(
         '-Xms256m', '-Xmx1024m',
         '-Dspring.profiles.active=dev',
         '-Dfile.encoding=UTF-8',
         "-Dspring.resources.static-locations=file:$staticDir",
+        "-Djsh.data.dir=$dataDirArg",
         '-jar', $Jar
     )
     $proc = Start-Process -FilePath $javaExe `

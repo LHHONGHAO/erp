@@ -347,6 +347,8 @@
         editingKey: null,
         templates: [],
         selectedTemplateId: null,
+        // 从打印预览进入时要加载的模板 id（优先于品类默认模板）
+        pendingTemplateId: null,
         newTemplateName: '',
         templateCategoryId: null,
         // 模板保存弹层
@@ -483,10 +485,12 @@
       this.loadTemplates()
     },
     methods: {
-      open(record, sku, categoryTree) {
+      open(record, sku, categoryTree, templateId) {
         this.record = record || {}
         this.sku = sku || {}
         this.categoryTree = categoryTree || []
+        // 从打印预览进入时带上的模板 id：优先加载这套模板（即预览里看到的那套标签数据）
+        this.pendingTemplateId = templateId || null
         this.allAttrs = this.buildAttrList()
         this.selectedAttrs = []
         this.attrStyles = {}
@@ -1105,10 +1109,24 @@
         })
       },
       loadCategoryDefaultTemplate() {
+        var self = this
+        var tpl = null
+        // 从打印预览进入：先加载预览里正在用的那套模板
+        if (this.pendingTemplateId) {
+          tpl = this.templates.find(function(t) { return t.id === self.pendingTemplateId }) || null
+          if (tpl) {
+            this.selectedTemplateId = tpl.id
+            this.$nextTick(function() {
+              self.onTemplateChange(tpl.id)
+              // 打开时的模板加载不算修改，避免关闭时误弹保存确认
+              self.markClean()
+            })
+            return
+          }
+        }
         var categoryId = this.record.categoryId
         if (!categoryId) return
-        var self = this
-        var tpl = this.templates.find(function(t) {
+        tpl = this.templates.find(function(t) {
           return t.type === 'default' && String(t.categoryId) === String(categoryId)
         })
         if (tpl) {

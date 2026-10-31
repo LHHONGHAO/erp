@@ -58,8 +58,33 @@ public class MaterialController extends BaseController {
     @Resource
     private SupplierService supplierService;
 
+    @Resource
+    private BarcodeScanService barcodeScanService;
+
     @Value(value="${file.uploadType}")
     private Long fileUploadType;
+
+    /**
+     * 手机扫码识别：接收前端上传的视频帧/照片（base64 JPEG），
+     * 返回画面中全部条码/二维码及其位置 [{code,x,y,w,h}]
+     */
+    @PostMapping(value = "/scanFrame")
+    @ApiOperation(value = "识别上传的条码帧")
+    public String scanFrame(@RequestBody String body) throws Exception {
+        String image = body;
+        try {
+            JSONObject json = JSONObject.parseObject(body);
+            if (json != null && json.containsKey("image")) {
+                image = json.getString("image");
+            }
+        } catch (Exception ignore) {
+            // 非 JSON：直接按 base64 处理
+        }
+        JSONArray codes = barcodeScanService.decodeFrame(image);
+        Map<String, Object> objectMap = new HashMap<>();
+        objectMap.put("codes", codes);
+        return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+    }
 
     @GetMapping(value = "/info")
     @ApiOperation(value = "根据id获取信息")

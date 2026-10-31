@@ -615,11 +615,13 @@
         return buildLabelAttrs(this.record, this.sku)
       },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
+      // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
       handleEdit() {
         var payload = {
           record: this.record,
           sku: this.sku,
-          categoryTree: this.categoryTree
+          categoryTree: this.categoryTree,
+          templateId: this.template ? this.template.id : null
         }
         this.visible = false
         setTimeout(() => this.$emit('edit', payload), 200)

@@ -1,37 +1,5 @@
 <template>
   <div class="retail-sale-order">
-    <!-- 顶部标题栏 -->
-    <div class="rso-header">
-      <span class="rso-title">销售开单</span>
-    </div>
-    <!-- 分割线 -->
-    <a-divider class="rso-divider" />
-    <!-- 单据信息（与电脑端业务字段保持一致，单列对齐） -->
-    <div class="rso-billinfo">
-      <div class="rso-billinfo-row">
-        <span class="rso-billinfo-label">会员卡号</span>
-        <a-select v-model="billForm.organId" placeholder="请选择会员卡号" allowClear showSearch
-                  optionFilterProp="children" class="rso-billinfo-field">
-          <a-select-option v-for="item in retailList" :key="item.id" :value="item.id">{{ item.supplier }}</a-select-option>
-        </a-select>
-      </div>
-      <div class="rso-billinfo-row">
-        <span class="rso-billinfo-label">单据日期</span>
-        <a-date-picker v-model="billForm.operTime" showTime format="YYYY-MM-DD HH:mm:ss"
-                       class="rso-billinfo-field" />
-      </div>
-      <div class="rso-billinfo-row">
-        <span class="rso-billinfo-label">单据编号</span>
-        <a-input v-model="billForm.number" placeholder="请输入单据编号" class="rso-billinfo-field" />
-      </div>
-      <div class="rso-billinfo-row">
-        <span class="rso-billinfo-label">收款类型</span>
-        <a-select v-model="billForm.payType" class="rso-billinfo-field">
-          <a-select-option value="现付">现付</a-select-option>
-          <a-select-option value="预付款">预付款</a-select-option>
-        </a-select>
-      </div>
-    </div>
     <!-- 操作按钮区：扫码添加 + 选择商品 -->
     <div class="rso-actions">
       <a-button type="primary" icon="scan" size="large" block @click="openScanner">扫码添加</a-button>
@@ -67,8 +35,7 @@
         <a-button type="primary" @click="submitOrder">提交订单</a-button>
       </div>
     </div>
-
-    <!-- 底部金额栏（单据金额 / 收款金额 / 找零，一行置顶显示） -->
+    <!-- 底部金额栏（单据金额 / 收款金额 / 找零 + 结算按钮，一行置顶显示） -->
     <div class="rso-bottom-bar">
       <div class="rso-bottom-item">
         <span class="rso-bottom-label">单据金额</span>
@@ -83,19 +50,61 @@
         <span class="rso-bottom-label">找零</span>
         <span class="rso-bottom-value">¥{{ changeAmount }}</span>
       </div>
+      <div class="rso-bottom-settle">
+        <a-button type="primary" @click="openSettle">结算</a-button>
+      </div>
     </div>
+
+    <!-- 结算弹窗：单据信息（与电脑端业务字段保持一致，单列对齐） -->
+    <a-modal
+      :visible="settleVisible"
+      title="结算"
+      @cancel="settleVisible = false"
+      :footer="null"
+      width="90%"
+      centered
+      :bodyStyle="{ padding: 0 }"
+    >
+      <div class="rso-billinfo">
+        <div class="rso-billinfo-row">
+          <span class="rso-billinfo-label">会员卡号</span>
+          <a-select v-model="billForm.organId" placeholder="请选择会员卡号" allowClear showSearch
+                    optionFilterProp="children" class="rso-billinfo-field">
+            <a-select-option v-for="item in retailList" :key="item.id" :value="item.id">{{ item.supplier }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="rso-billinfo-row">
+          <span class="rso-billinfo-label">单据日期</span>
+          <a-date-picker v-model="billForm.operTime" showTime format="YYYY-MM-DD HH:mm:ss"
+                         class="rso-billinfo-field" />
+        </div>
+        <div class="rso-billinfo-row">
+          <span class="rso-billinfo-label">单据编号</span>
+          <a-input v-model="billForm.number" placeholder="请输入单据编号" class="rso-billinfo-field" />
+        </div>
+        <div class="rso-billinfo-row">
+          <span class="rso-billinfo-label">收款类型</span>
+          <a-select v-model="billForm.payType" class="rso-billinfo-field">
+            <a-select-option value="现付">现付</a-select-option>
+            <a-select-option value="预付款">预付款</a-select-option>
+          </a-select>
+        </div>
+      </div>
+      <div class="rso-settle-footer">
+        <a-button @click="settleVisible = false">关闭</a-button>
+        <a-button type="primary" @click="submitOrder">提交订单</a-button>
+      </div>
+    </a-modal>
 
     <!-- 全屏扫码界面 -->
     <div v-if="scanVisible" class="rso-scan-fullscreen">
-      <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
-      <canvas ref="scanCanvas" class="rso-scan-canvas"></canvas>
-      <canvas ref="scanOverlay" class="rso-scan-overlay" @click="confirmDetectedCode"></canvas>
-      <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
-      <div class="rso-scan-tip">{{ detectedCode ? '已识别，点击绿色方框使用' : '将条码/二维码对准画面，识别后点击方框' }}</div>
-      <div v-if="detectedCode" class="rso-scan-detected">
-        <span class="rso-scan-code">{{ detectedCode }}</span>
-        <a-button type="primary" size="small" @click.stop="confirmDetectedCode">使用此条码</a-button>
+      <div class="rso-scan-stage" @click="onScanTap">
+        <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
+        <canvas ref="scanCanvas" class="rso-scan-canvas"></canvas>
+        <canvas ref="scanOverlay" class="rso-scan-overlay"></canvas>
       </div>
+      <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
+      <div class="rso-scan-tip">{{ scanTip }}</div>
       <div class="rso-scan-actions">
         <a-button @click="switchCamera">{{ frontCamera ? '切换后置' : '切换前置' }}</a-button>
         <a-button @click="showManualInput = !showManualInput">手动输入</a-button>
@@ -133,10 +142,9 @@
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import { getMaterialByBarCode } from '@/api/api'
-  import { getAction } from '@/api/manage'
+  import { getAction, postAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import DataTable from '@/components/DataTable'
-  import { BrowserMultiFormatReader } from '@zxing/library'
   import Vue from 'vue'
   import moment from 'moment'
   import { getFormatDate } from '@/utils/util'
@@ -197,17 +205,31 @@
         showManualInput: false,
         manualCode: '',
         frontCamera: false,
+        // 识别定时器与视频流
+        scanTimer: null,
         scanStream: null,
-        scanInterval: null,
-        barcodeDetector: null,
-        // 已识别但未确认的条码：框选位置（视频像素坐标）与内容
-        detectedCode: '',
-        detectedBox: null,
-        // ZXing 解码器（浏览器不支持 BarcodeDetector 时使用）
-        zxingReader: null,
+        // 防止上一帧解码未结束时重复进入
+        decoding: false,
+        // 拍照模式下识别出的照片（绘制在识别层，供多码框选）
+        photoImage: null,
+        // 各码值已连续命中的帧数（用于判断“唯一码稳定出现”）
+        codeHits: {},
+        // 是否已进入多码框选模式（出现过两个以上不同码值后锁定）
+        multiScanMode: false,
+        // 本帧识别到的码：[{ code, box }]
+        detectedCodes: [],
+        // 多码模式下绘制到屏幕的框（屏幕坐标，用于点击命中判断）
+        screenBoxes: [],
+        // 解码帧尺寸（识别框坐标以该尺寸为准）
+        frameW: 0,
+        frameH: 0,
+        // 唯一码连续命中多少帧后自动加载
+        autoConfirmFrames: 3,
         // 商品选择
         materialVisible: false,
-        scanBarCode: ''
+        scanBarCode: '',
+        // 结算弹窗（单据信息）
+        settleVisible: false
       }
     },
     computed: {
@@ -221,6 +243,13 @@
       changeAmount () {
         const diff = (this.billForm.payAmount - 0) - (this.cartTotal - 0)
         return diff > 0 ? diff.toFixed(2) : '0.00'
+      },
+      // 扫码提示语：多码模式提示点击方框
+      scanTip () {
+        if (this.multiScanMode) {
+          return `画面中有 ${this.detectedCodes.length} 个码，请点击要使用的方框`
+        }
+        return '将条码/二维码对准画面，画面中只有一个码时会自动加载'
       }
     },
     created () {
@@ -238,12 +267,6 @@
       this.queryParam.beginTime = today
       this.queryParam.endTime = today
       this.queryParam.createTimeRange = [moment(today), moment(today)]
-      // 初始化 BarcodeDetector（如浏览器支持）
-      if (window.BarcodeDetector) {
-        this.barcodeDetector = new window.BarcodeDetector({
-          formats: ['code_128', 'code_39', 'code_93', 'codabar', 'ean_13', 'ean_8', 'itf', 'upc_a', 'upc_e', 'qr_code']
-        })
-      }
     },
     beforeDestroy () {
       this.stopScan()
@@ -254,8 +277,6 @@
         this.scanVisible = true
         this.showManualInput = false
         this.manualCode = ''
-        this.detectedCode = ''
-        this.detectedBox = null
         // iPhone 在 http 非安全源下无法调用 getUserMedia，直接打开系统相机拍照识别
         if (!this.cameraAvailable()) {
           this.captureByCamera()
@@ -269,60 +290,170 @@
       cameraAvailable () {
         return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
       },
-      // 启动摄像头扫码
+      // 启动摄像头：每 250ms 解码一帧；唯一码稳定出现自动加载，多码进入框选
       startScan () {
         if (!this.cameraAvailable()) {
           this.captureByCamera()
           return
         }
+        this.stopScan()
+        this.detectedCodes = []
+        this.screenBoxes = []
+        this.codeHits = {}
+        this.multiScanMode = false
         const constraints = {
-          video: { facingMode: this.frontCamera ? 'user' : 'environment' }
+          video: {
+            facingMode: this.frontCamera ? 'user' : 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         }
         navigator.mediaDevices.getUserMedia(constraints).then(stream => {
           this.scanStream = stream
           const video = this.$refs.scanVideo
-          if (video) {
-            video.srcObject = stream
-            video.play()
-            // Chrome/Android 使用原生 BarcodeDetector，其余浏览器使用 ZXing
-            if (this.barcodeDetector) {
-              this.startDetectLoop()
-            } else {
-              this.startZxingLoop(video)
-            }
-          }
+          if (!video) return
+          video.srcObject = stream
+          video.play()
+          // 服务端识别每帧有网络+解码耗时，帧间隔放宽到 400ms
+          this.scanTimer = setInterval(() => this.decodeFrame(), 400)
         }).catch(err => {
           console.error('摄像头开启失败:', err)
           this.$message.warning('无法访问摄像头，请检查权限或使用手动输入')
           this.showManualInput = true
         })
       },
-      // 使用 ZXing 对同一个视频流做识别（iPhone Safari 等不支持 BarcodeDetector 的浏览器）
-      startZxingLoop (video) {
-        if (!this.zxingReader) {
-          this.zxingReader = new BrowserMultiFormatReader()
-        }
-        this.zxingReader.decodeFromStream(this.scanStream, video, (result) => {
-          if (!result) return
-          // 识别到条码：只框选，不自动确认；用户点击方框后再处理
-          const points = (result.getResultPoints && result.getResultPoints()) || []
-          let box = null
-          if (points.length > 0) {
-            const xs = points.map(p => p.getX())
-            const ys = points.map(p => p.getY())
-            box = {
-              x: Math.min.apply(null, xs),
-              y: Math.min.apply(null, ys),
-              w: Math.max.apply(null, xs) - Math.min.apply(null, xs),
-              h: Math.max.apply(null, ys) - Math.min.apply(null, ys)
-            }
-          }
-          this.detectedCode = result.getText()
-          this.detectedBox = box
-          this.drawOverlay(video.videoWidth, video.videoHeight)
-        }).catch(err => {
-          console.error('ZXing 扫码失败:', err)
+      // 原生条码检测器已废弃：识别统一交给服务端 ZXing
+      initBarcodeDetector () {},
+      // 解码当前视频帧：抽帧发给服务端 ZXing 识别（识别率/多码支持远好于浏览器内 JS 库）
+      decodeFrame () {
+        const video = this.$refs.scanVideo
+        const canvas = this.$refs.scanCanvas
+        if (!this.scanVisible || !video || !canvas || this.decoding) return
+        if (video.readyState < 2 || !video.videoWidth) return
+        const vw = video.videoWidth
+        const vh = video.videoHeight
+        // 限制帧尺寸：服务端识别耗时与像素数正相关
+        const targetW = Math.min(960, vw)
+        const scale = targetW / vw
+        const fw = targetW
+        const fh = Math.round(vh * scale)
+        if (canvas.width !== fw) canvas.width = fw
+        if (canvas.height !== fh) canvas.height = fh
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0, fw, fh)
+        const base64 = canvas.toDataURL('image/jpeg', 0.7)
+        this.decoding = true
+        this.frameW = fw
+        this.frameH = fh
+        postAction('/material/scanFrame', { image: base64 }).then(res => {
+          this.decoding = false
+          if (!this.scanVisible) return
+          const list = (res && res.data && res.data.codes) || []
+          this.onFrameDecoded(list.map(c => ({
+            code: c.code,
+            box: c.w ? { x: c.x, y: c.y, w: c.w, h: c.h } : null
+          })))
+        }).catch(() => {
+          this.decoding = false
         })
+      },
+      // 每帧识别结果处理：去重 → 多码判定 → 唯一码连续命中后自动加载
+      onFrameDecoded (list) {
+        if (!this.scanVisible) return
+        // 按码值去重（同一商品贴多张相同条码仍视为唯一）
+        const unique = []
+        const seen = {}
+        list.forEach(item => {
+          if (!item.code || seen[item.code]) return
+          seen[item.code] = true
+          unique.push(item)
+        })
+        this.detectedCodes = unique
+        if (unique.length >= 2) {
+          // 出现两个以上不同码值：锁定多码模式，等待点击框选
+          this.multiScanMode = true
+        }
+        const hits = {}
+        unique.forEach(item => {
+          hits[item.code] = (this.codeHits[item.code] || 0) + 1
+        })
+        this.codeHits = hits
+        this.drawScanOverlay()
+        if (this.multiScanMode) return
+        // 唯一码连续命中达到阈值 → 自动加载
+        if (unique.length === 1 && hits[unique[0].code] >= this.autoConfirmFrames) {
+          const code = unique[0].code
+          if (navigator.vibrate) navigator.vibrate(80)
+          this.closeScanner()
+          this.handleScanResult(code)
+        }
+      },
+      // 绘制识别框：视频坐标 → 屏幕坐标（按 object-fit: cover 换算）
+      drawScanOverlay () {
+        const video = this.$refs.scanVideo
+        const overlay = this.$refs.scanOverlay
+        if (!video || !overlay) return
+        const elW = video.clientWidth
+        const elH = video.clientHeight
+        if (!elW || !elH) return
+        if (overlay.width !== elW) overlay.width = elW
+        if (overlay.height !== elH) overlay.height = elH
+        const ctx = overlay.getContext('2d')
+        ctx.clearRect(0, 0, elW, elH)
+        this.screenBoxes = []
+        if (this.detectedCodes.length === 0) return
+        const fw = this.frameW || video.videoWidth
+        const fh = this.frameH || video.videoHeight
+        if (!fw || !fh) return
+        const scale = Math.max(elW / fw, elH / fh)
+        const offX = (elW - fw * scale) / 2
+        const offY = (elH - fh * scale) / 2
+        // 拍照模式：先把照片铺到识别层（此时无视频流，画面为黑底）
+        if (this.photoImage) {
+          ctx.drawImage(this.photoImage, offX, offY, fw * scale, fh * scale)
+        }
+        this.detectedCodes.forEach((item, index) => {
+          if (!item.box) return
+          const b = item.box
+          const w = Math.max(b.w * scale, 70)
+          const h = Math.max(b.h * scale, 48)
+          const x = Math.min(Math.max(offX + b.x * scale, 0), elW - 10)
+          const y = Math.min(Math.max(offY + b.y * scale, 0), elH - 10)
+          this.screenBoxes.push({ code: item.code, x, y, w, h })
+          ctx.fillStyle = 'rgba(82, 196, 26, 0.16)'
+          ctx.fillRect(x, y, w, h)
+          ctx.strokeStyle = '#52c41a'
+          ctx.lineWidth = 3
+          ctx.strokeRect(x, y, w, h)
+          // 左上角序号，便于说明“点击哪个方框”
+          ctx.fillStyle = '#52c41a'
+          ctx.fillRect(x, y - 20, 20, 20)
+          ctx.fillStyle = '#fff'
+          ctx.font = '12px sans-serif'
+          ctx.fillText(String(index + 1), x + 6, y - 5)
+        })
+      },
+      // 点击画面：多码模式下命中哪个框就用哪个码；单码时点击即确认
+      onScanTap (event) {
+        if (this.detectedCodes.length === 0) return
+        if (!this.multiScanMode) {
+          if (this.detectedCodes.length === 1) {
+            this.closeScanner()
+            this.handleScanResult(this.detectedCodes[0].code)
+          }
+          return
+        }
+        const video = this.$refs.scanVideo
+        if (!video) return
+        const rect = video.getBoundingClientRect()
+        const cx = event.clientX - rect.left
+        const cy = event.clientY - rect.top
+        const hit = (this.screenBoxes || []).find(b =>
+          cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h
+        )
+        if (!hit) return
+        this.closeScanner()
+        this.handleScanResult(hit.code)
       },
       // 原生相机拍照识别：创建隐藏的 file 输入并触发（iOS http 环境下的降级方案）
       captureByCamera () {
@@ -340,116 +471,85 @@
         })
         input.click()
       },
-      // 解码拍照得到的条码图片
+      // 解码拍照得到的图片：发给服务端识别；单码直接加载，多码在照片上框选
       decodeBarcodeImage (file) {
-        const url = URL.createObjectURL(file)
-        if (!this.zxingReader) {
-          this.zxingReader = new BrowserMultiFormatReader()
-        }
-        this.zxingReader.decodeFromImageUrl(url).then(result => {
-          URL.revokeObjectURL(url)
-          if (result) {
-            this.handleScanResult(result.getText())
-          }
-        }).catch(() => {
-          URL.revokeObjectURL(url)
-          this.$message.warning('未识别到条码，请重试或手动输入')
-          this.showManualInput = true
-        })
-      },
-      // 扫码识别循环
-      startDetectLoop () {
-        const video = this.$refs.scanVideo
-        const canvas = this.$refs.scanCanvas
-        if (!video || !canvas) return
-        const ctx = canvas.getContext('2d')
-        const detect = () => {
-          if (!this.scanVisible) return
-          if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-            if (this.barcodeDetector) {
-              this.barcodeDetector.detect(canvas).then(results => {
-                if (results && results.length > 0) {
-                  const r = results[0]
-                  // 识别到条码：只记录内容与位置，等用户点击框选区域后确认
-                  this.detectedCode = r.rawValue
-                  const bb = r.boundingBox
-                  this.detectedBox = bb ? { x: bb.x, y: bb.y, w: bb.width, h: bb.height } : null
-                  this.drawOverlay(canvas.width, canvas.height)
-                }
-              }).catch(() => {})
+        const reader = new FileReader()
+        reader.onload = () => {
+          const base64 = reader.result
+          postAction('/material/scanFrame', { image: base64 }).then(res => {
+            const codes = (res && res.data && res.data.codes) || []
+            if (codes.length === 0) {
+              this.$message.warning('未识别到条码，请重试或手动输入')
+              this.showManualInput = true
+              return
             }
-          }
-          this.scanInterval = requestAnimationFrame(detect)
+            // 去重
+            const seen = {}
+            const unique = codes.filter(c => {
+              if (!c.code || seen[c.code]) return false
+              seen[c.code] = true
+              return true
+            })
+            if (unique.length === 1) {
+              this.handleScanResult(unique[0].code)
+              return
+            }
+            // 多个码：把照片画到识别层并框选
+            this.showPhotoForPick(base64, unique)
+          }).catch(() => {
+            this.$message.warning('识别服务异常，请重试')
+            this.showManualInput = true
+          })
         }
-        detect()
+        reader.readAsDataURL(file)
       },
-      // 在视频上绘制识别结果的选框（视频像素坐标 → 屏幕显示坐标）
-      drawOverlay (videoW, videoH) {
-        const video = this.$refs.scanVideo
-        const overlay = this.$refs.scanOverlay
-        if (!video || !overlay || !videoW || !videoH) return
-        const elW = video.clientWidth
-        const elH = video.clientHeight
-        if (overlay.width !== elW) overlay.width = elW
-        if (overlay.height !== elH) overlay.height = elH
-        const ctx = overlay.getContext('2d')
-        ctx.clearRect(0, 0, elW, elH)
-        const box = this.detectedBox
-        if (!box) return
-        // 视频使用 object-fit: contain，按等比缩放 + 居中偏移换算
-        const scale = Math.min(elW / videoW, elH / videoH)
-        const offX = (elW - videoW * scale) / 2
-        const offY = (elH - videoH * scale) / 2
-        const x = offX + box.x * scale
-        const y = offY + box.y * scale
-        const w = Math.max(box.w * scale, 24)
-        const h = Math.max(box.h * scale, 24)
-        ctx.fillStyle = 'rgba(82, 196, 26, 0.18)'
-        ctx.fillRect(x, y, w, h)
-        ctx.strokeStyle = '#52c41a'
-        ctx.lineWidth = 3
-        ctx.strokeRect(x, y, w, h)
-      },
-      // 点击识别框确认：退出相机并按该条码搜索商品
-      confirmDetectedCode () {
-        if (!this.detectedCode) return
-        const code = this.detectedCode
-        this.closeScanner()
-        this.handleScanResult(code)
+      // 拍照识别出多个码时：照片铺满画面并画出每个码的方框，点框选择
+      showPhotoForPick (base64, codes) {
+        const img = new Image()
+        img.onload = () => {
+          this.frameW = img.naturalWidth
+          this.frameH = img.naturalHeight
+          this.photoImage = img
+          this.multiScanMode = true
+          this.detectedCodes = codes.map(c => ({
+            code: c.code,
+            box: c.w ? { x: c.x, y: c.y, w: c.w, h: c.h } : null
+          }))
+          this.$nextTick(() => this.drawScanOverlay())
+        }
+        img.src = base64
       },
       // 切换前后摄像头
       switchCamera () {
         this.frontCamera = !this.frontCamera
-        this.detectedCode = ''
-        this.detectedBox = null
         this.stopScan()
         this.startScan()
       },
-      // 停止扫码：动画循环、ZXing 解码循环与视频轨道都要释放
+      // 停止扫码：清理定时器、视频流与识别状态
       stopScan () {
-        if (this.scanInterval) {
-          cancelAnimationFrame(this.scanInterval)
-          this.scanInterval = null
+        if (this.scanTimer) {
+          clearInterval(this.scanTimer)
+          this.scanTimer = null
         }
-        if (this.zxingReader) {
-          this.zxingReader.reset()
-          this.zxingReader = null
-        }
+        this.decoding = false
         if (this.scanStream) {
           this.scanStream.getTracks().forEach(track => track.stop())
           this.scanStream = null
         }
-        if (this.$refs.scanVideo) {
-          this.$refs.scanVideo.srcObject = null
+        const video = this.$refs.scanVideo
+        if (video) video.srcObject = null
+        const overlay = this.$refs.scanOverlay
+        if (overlay) {
+          const ctx = overlay.getContext('2d')
+          ctx.clearRect(0, 0, overlay.width, overlay.height)
         }
+        this.detectedCodes = []
+        this.screenBoxes = []
+        this.codeHits = {}
+        this.photoImage = null
       },
       closeScanner () {
         this.stopScan()
-        this.detectedCode = ''
-        this.detectedBox = null
         this.scanVisible = false
       },
       /**
@@ -586,12 +686,17 @@
           }
         })
       },
+      // 打开结算弹窗
+      openSettle () {
+        this.settleVisible = true
+      },
       // 提交订单：复用零售出库弹窗逻辑
       submitOrder () {
         if (this.cartList.length === 0) {
           this.$message.warning('请先添加商品')
           return
         }
+        this.settleVisible = false
         this.$refs.modalForm.action = "add"
         if (this.btnEnableList.indexOf(2) === -1) {
           this.$refs.modalForm.isCanCheck = false
@@ -625,7 +730,7 @@
   // 给底部固定金额栏留出空间
   padding-bottom: 92px;
 }
-// 单据信息：单列对齐
+// 结算弹窗内的单据信息：单列对齐
 .rso-billinfo {
   background: #fff;
   padding: 4px 12px;
@@ -691,21 +796,31 @@
       font-weight: 600;
     }
   }
-}
-.rso-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 48px;
-  background: #fff;
-  border-bottom: 1px solid #eee;
-  .rso-title {
-    font-size: 17px;
-    font-weight: 600;
+  // 结算按钮固定在金额栏右侧
+  .rso-bottom-settle {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    padding-left: 8px;
+    /deep/ .ant-btn {
+      height: 100%;
+      min-height: 40px;
+      padding: 0 18px;
+      font-size: 15px;
+      font-weight: 600;
+    }
   }
 }
-.rso-divider {
-  margin: 0;
+// 结算弹窗底部按钮
+.rso-settle-footer {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid #f0f0f0;
+  /deep/ .ant-btn {
+    flex: 1;
+  }
 }
 .rso-actions {
   display: flex;
@@ -828,49 +943,38 @@
   z-index: 2000;
   background: #000;
   overflow: hidden;
+  /* 扫码舞台：视频 + 隐藏解码画布 + 识别框绘制层 */
+  .rso-scan-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    z-index: 1;
+  }
   .rso-scan-video {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     background: #000;
   }
   .rso-scan-canvas {
     display: none;
   }
-  /* 识别框选层：占满屏幕，点击方框确认条码 */
+  /* 识别框层：只负责绘制，不拦截点击（点击由 stage 处理） */
   .rso-scan-overlay {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
+    pointer-events: none;
     z-index: 2;
-  }
-  .rso-scan-detected {
-    position: absolute;
-    bottom: 160px;
-    left: 0;
-    width: 100%;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 0 16px;
-    .rso-scan-code {
-      max-width: 60%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 13px;
-      color: #52c41a;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
   }
   .rso-scan-close {
     position: absolute;

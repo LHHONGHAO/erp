@@ -1,5 +1,7 @@
 <template>
+  <div class="material-table-wrap">
   <data-table
+    v-if="!isMobileView"
     ref="dataTable"
     v-bind="$attrs"
     :extra-columns="tableColumns"
@@ -48,6 +50,44 @@
       </span>
     </template>
   </data-table>
+
+  <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
+  <div v-if="isMobileView" class="mt-mobile-list">
+    <div v-for="row in mobileRows" :key="row.skuRowKey || row.id" class="mt-mobile-card">
+      <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
+      <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
+      <div class="mt-mobile-body">
+        <div class="mt-mobile-title">
+          {{ row.name }}
+          <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
+          <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
+        </div>
+        <div class="mt-mobile-code">{{ resolveCode(row) }}</div>
+        <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
+        <div class="mt-mobile-meta">
+          库存 {{ row.stock == null ? '-' : row.stock }}　零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}
+        </div>
+        <div v-if="visibleActions(row).length > 0" class="mt-mobile-actions">
+          <a-button
+            v-for="(act, i) in visibleActions(row)"
+            :key="'mact-' + i"
+            size="small"
+            @click="onAction(act, row)">{{ act.title }}</a-button>
+        </div>
+      </div>
+    </div>
+    <div v-if="mobileRows.length === 0" class="mt-mobile-empty">暂无数据</div>
+    <div v-if="mobilePagination && mobilePagination.total > 0" class="mt-mobile-pager">
+      <a-pagination
+        size="small"
+        :current="mobilePagination.current"
+        :page-size="mobilePagination.pageSize"
+        :total="mobilePagination.total"
+        :show-total="mobilePagination.showTotal"
+        @change="onMobilePageChange" />
+    </div>
+  </div>
+  </div>
 </template>
 
 <script>
@@ -75,6 +115,12 @@
       mergeCode: { type: Boolean, default: false },
       /** 码列显示方式：spu=商品码 / sku=SKU码 / unit=SN码 */
       codeMode: { type: String, default: 'spu' }
+    },
+    data() {
+      return {
+        /** 当前窗口宽度是否属于手机浏览器（<=768px） */
+        isMobileView: false
+      }
     },
     computed: {
       /** 按粒度过滤并转换为 a-table 列；操作列宽度按按钮数量重新计算 */
@@ -127,6 +173,15 @@
       /** 需要透传给 DataTable 的父组件插槽名 */
       forwardSlotNames() {
         return Object.keys(this.$scopedSlots).filter(name => BUILTIN_SLOTS.indexOf(name) === -1)
+      },
+      /** 手机端卡片列表数据（取父组件传给表格的 dataSource） */
+      mobileRows() {
+        return this.$attrs['data-source'] || this.$attrs.dataSource || []
+      },
+      /** 手机端分页信息 */
+      mobilePagination() {
+        const p = this.$attrs.pagination
+        return p && typeof p === 'object' ? p : null
       }
     },
     watch: {
@@ -136,11 +191,17 @@
     },
     mounted() {
       this.syncCodeTitle()
+      // 手机浏览器（<=768px）改为卡片列表：图片、规格、操作按钮纵向排列
+      this.isMobileView = window.innerWidth <= 768
+      window.addEventListener('resize', this.onWindowResize)
       // 列被重建（配置中心回填、列设置调整）后重新套用码列标题，避免标题被还原
       this.$watch(
         () => (this.$refs.dataTable ? this.$refs.dataTable.displayColumns : null),
         () => this.applyCodeTitle()
       )
+    },
+    beforeDestroy() {
+      window.removeEventListener('resize', this.onWindowResize)
     },
     created() {
       // 兼容旧版本列设置：原「规格JSON」列已改为「规格显示」列
@@ -152,6 +213,18 @@
       }
     },
     methods: {
+      /** 窗口尺寸变化时切换桌面表格 / 手机卡片布局 */
+      onWindowResize() {
+        const mobile = window.innerWidth <= 768
+        if (mobile !== this.isMobileView) {
+          this.isMobileView = mobile
+        }
+      },
+      /** 手机端翻页：按 a-table 的 change 签名通知父组件 */
+      onMobilePageChange(page) {
+        const size = this.mobilePagination ? this.mobilePagination.pageSize : 10
+        this.$emit('change', { current: page, pageSize: size }, {}, {})
+      },
       resolveImg(record) {
         return getRowImgUrl(record)
       },
@@ -201,6 +274,90 @@
 </script>
 
 <style scoped>
+  /* === 手机端卡片列表：图片 → 名称规格 → 库存价格 → 操作按钮 依次向下排列 === */
+  .mt-mobile-list {
+    padding: 0;
+  }
+  .mt-mobile-card {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    background: #fff;
+    border: 1px solid #F0F2F5;
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .mt-mobile-img {
+    width: 88px;
+    height: 88px;
+    object-fit: cover;
+    border-radius: 8px;
+    flex-shrink: 0;
+    margin: 0 10px 0 0;
+  }
+  .mt-mobile-img-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #FAFBFD;
+    color: #bbb;
+    font-size: 12px;
+  }
+  .mt-mobile-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mt-mobile-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1D2129;
+    word-break: break-all;
+  }
+  .mt-mobile-code {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #86909C;
+    font-family: Consolas, Monaco, monospace;
+    word-break: break-all;
+  }
+  .mt-mobile-spec {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #4F535C;
+    white-space: pre-line;
+    line-height: 18px;
+    text-align: left;
+    word-break: break-all;
+  }
+  .mt-mobile-meta {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #86909C;
+  }
+  .mt-mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #F0F2F5;
+  }
+  .mt-mobile-actions > * {
+    margin: 0 8px 6px 0;
+  }
+  .mt-mobile-empty {
+    text-align: center;
+    padding: 30px 0;
+    color: #bbb;
+    font-size: 13px;
+  }
+  .mt-mobile-pager {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 4px;
+  }
   .mt-row-img {
     width: 100px;
     height: 80px;

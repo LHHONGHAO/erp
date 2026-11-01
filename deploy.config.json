@@ -1,0 +1,18 @@
+{
+  "//": "JSH_ERP 本地部署固化配置。所有部署脚本/代理/计划任务统一读取此文件。",
+  "//publicUrl": "对外访问地址（固化 HTTPS，不带任何后缀/上下文路径）",
+  "publicUrl": "https://192.168.100.157:9999",
+  "proxyPort": 9999,
+  "backendPort": 9998,
+  "contextPath": "/jshERP-boot",
+  "dataDir": "D:/erp/data",
+  "backendJar": "jshERP-boot/target/jshERP.jar",
+  "frontendDist": "jshERP-boot/frontend-dist",
+  "//https": "公网入口由 tools/local-proxy.js 以 HTTPS 提供；pfx 为自签名证书，安装说明见 installPage",
+  "https": {
+    "pfx": "D:/erp/data/config/jsh-https.p12",
+    "passphrase": "changeit",
+    "cer": "D:/erp/data/config/jsh-erp.cer",
+    "installPage": "D:/erp/tools/cert-install.html"
+  }
+}

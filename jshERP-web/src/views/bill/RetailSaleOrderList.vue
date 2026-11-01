@@ -137,6 +137,8 @@
 
     <!-- 全屏扫码界面 -->
     <div v-if="scanVisible" class="rso-scan-fullscreen">
+      <!-- 无法获取摄像头权限时：展示证书安装下载说明 -->
+      <cert-install-guide v-if="certGuideVisible" @close="closeCertGuide" @retry="retryScan" />
       <div class="rso-scan-stage" @click="onScanTap">
         <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
         <canvas ref="scanOverlay" class="rso-scan-overlay"></canvas>
@@ -146,9 +148,7 @@
       <div class="rso-scan-tip" :class="scanTipClass">{{ scanTip }}</div>
       <!-- 拍照识别：只分析取景框内的图像 -->
       <div v-if="!multiScanMode" class="rso-scan-capture">
-        <a-button type="primary" size="large" block :loading="capturing" @click="shoot">
-          {{ photoMode ? '重新拍照' : '拍照识别' }}
-        </a-button>
+        <a-button type="primary" size="large" block :loading="capturing" @click="shoot">拍照识别</a-button>
       </div>
       <!-- 焦距调节：默认后置摄像头，初始焦距为原生焦距的三分之一 -->
       <div v-if="!multiScanMode && zoomSupported" class="rso-scan-zoom">
@@ -183,6 +183,7 @@
   import BillDetail from './dialog/BillDetail'
   import MaterialSelectPage from '@/views/material/MaterialSelectPage'
   import MemberModal from '@/views/system/modules/MemberModal'
+  import CertInstallGuide from './modules/CertInstallGuide'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import { getAction, postAction } from '@/api/manage'
@@ -202,6 +203,7 @@
       BillDetail,
       MaterialSelectPage,
       MemberModal,
+      CertInstallGuide,
       DataTable
     },
     data () {
@@ -270,10 +272,8 @@
         zoomMin: 1,
         zoomMax: 1,
         zoomStepValue: 0.5,
-        // 非 HTTPS 环境使用系统相机拍照识别（保留多码框选）
-        photoMode: false,
-        // 拍照模式下识别出的照片（绘制在识别层，供多码框选）
-        photoImage: null,
+        // 无法获取摄像头权限时展示证书安装下载说明
+        certGuideVisible: false,
         // 是否已进入多码框选模式（出现过两个以上不同码值后锁定）
         multiScanMode: false,
         // 本帧识别到的码：[{ code, box }]
@@ -312,9 +312,6 @@
       scanTip () {
         if (this.multiScanMode) {
           return `画面中有 ${this.detectedCodes.length} 个码，请点击要使用的方框`
-        }
-        if (this.photoMode) {
-          return '请使用系统相机拍摄条码/二维码'
         }
         if (this.scanState === 'SUCCESS') {
           const name = this.scanResult && this.scanResult.name
@@ -382,16 +379,12 @@
         this.scanError = ''
         this.scanState = SCANNER_STATE.INITIAL
         this.searching = false
-        // iPhone 在 http 非安全源下无法调用 getUserMedia，直接打开系统相机拍照识别
-        if (!this.cameraAvailable()) {
-          this.captureByCamera()
-          return
-        }
+        this.certGuideVisible = false
         this.$nextTick(() => {
           this.startScan()
         })
       },
-      // 是否可以使用网页摄像头（非安全源或缺少 mediaDevices 时不可用）
+      // 是否具备网页摄像头调用条件（必须 HTTPS 安全连接且浏览器支持 getUserMedia）
       cameraAvailable () {
         return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
       },
@@ -439,8 +432,11 @@
       },
       // 启动摄像头：只做预览，不自动解码；识别在点击「拍照识别」时只分析取景框区域
       startScan () {
+        // 统一申请摄像头权限：非 HTTPS 安全连接下浏览器不会提供摄像头，直接展示证书安装说明
         if (!this.cameraAvailable()) {
-          this.captureByCamera()
+          this.scanState = SCANNER_STATE.ERROR
+          this.scanError = '当前页面不是 HTTPS 安全连接，无法申请摄像头权限'
+          this.certGuideVisible = true
           return
         }
         const video = this.$refs.scanVideo
@@ -451,8 +447,6 @@
         this.detectedCodes = []
         this.screenBoxes = []
         this.multiScanMode = false
-        this.photoImage = null
-        this.photoMode = false
         this.scanState = SCANNER_STATE.REQUESTING
         // 固定使用后置摄像头（扫码更清晰）
         const constraints = {
@@ -520,14 +514,10 @@
       changeZoom (direction) {
         this.applyZoom(this.zoomValue + direction * this.zoomStepValue)
       },
-      // 拍照入口：网页摄像头走框内裁剪识别，系统相机模式重新拍照
+      // 拍照入口：截取取景框内的画面交给后端识别
       shoot () {
         // 拍照是用户点击动作，这里解锁音频，后续提示音才能正常播放
         this.unlockAudio()
-        if (this.photoMode) {
-          this.captureByCamera()
-          return
-        }
         this.captureFrame()
       },
       // 拍照识别：只截取取景框内的画面，放大后交给后端识别
@@ -652,18 +642,19 @@
           ctx.stroke()
         })
       },
-      // 摄像头或识别异常：停止摄像头并给出页内提示
+      // 摄像头异常：没有权限时展示证书安装下载说明，其余异常在页面内提示
       onScannerError (error) {
         const message = error && error.message ? error.message : '摄像头或识别异常'
+        const name = (error && error.name) || ''
         console.error('扫码异常:', error)
-        this.scanError = message.indexOf('Permission') >= 0 || message.indexOf('NotAllowed') >= 0
-          ? '无法访问摄像头，请检查浏览器摄像头权限'
-          : message
+        const denied = name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError'
+        this.scanError = denied ? '无法访问摄像头，请允许摄像头权限' : message
         this.scanState = SCANNER_STATE.ERROR
         if (this.scanStream) {
           this.stopStream(this.scanStream)
           this.scanStream = null
         }
+        if (denied) this.certGuideVisible = true
       },
       // 释放视频流
       stopStream (stream) {
@@ -691,10 +682,6 @@
         const scale = Math.min(elW / fw, elH / fh)
         const offX = (elW - fw * scale) / 2
         const offY = (elH - fh * scale) / 2
-        // 拍照模式：先把照片铺到识别层（此时无视频流，画面为黑底）
-        if (this.photoImage) {
-          ctx.drawImage(this.photoImage, offX, offY, fw * scale, fh * scale)
-        }
         this.detectedCodes.forEach((item, index) => {
           if (!item.box) return
           const b = item.box
@@ -737,79 +724,6 @@
         if (!hit) return
         this.handleScannedContent(hit.code, hit.format || 'UNKNOWN', hit.type || 'UNKNOWN')
       },
-      // 原生相机拍照识别：创建隐藏的 file 输入并触发（iOS http 环境下的降级方案）
-      captureByCamera () {
-        this.photoMode = true
-        this.scanState = SCANNER_STATE.SCANNING
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.accept = 'image/*'
-        input.capture = 'environment'
-        input.style.display = 'none'
-        document.body.appendChild(input)
-        input.addEventListener('change', () => {
-          const file = input.files && input.files[0]
-          document.body.removeChild(input)
-          if (!file) return
-          this.decodeBarcodeImage(file)
-        })
-        input.click()
-      },
-      // 解码拍照得到的图片：发给服务端识别；单码直接加载，多码在照片上框选
-      decodeBarcodeImage (file) {
-        this.scanState = SCANNER_STATE.RECOGNIZING
-        const reader = new FileReader()
-        reader.onload = () => {
-          const base64 = reader.result
-          postAction('/material/scanFrame', { image: base64 }).then(res => {
-            const codes = (res && res.data && res.data.codes) || []
-            if (codes.length === 0) {
-              this.scanError = '条码未识别，请将条码完整放入框内后重试'
-              this.scanState = SCANNER_STATE.ERROR
-              this.playFeedbackSound(false)
-              return
-            }
-            // 去重
-            const seen = {}
-            const unique = codes.filter(c => {
-              if (!c.code || seen[c.code]) return false
-              seen[c.code] = true
-              return true
-            })
-            if (unique.length === 1) {
-              this.handleScannedContent(unique[0].code, unique[0].format || 'UNKNOWN', unique[0].type || 'UNKNOWN')
-              return
-            }
-            // 多个码：把照片画到识别层并框选
-            this.showPhotoForPick(base64, unique)
-          }).catch(error => {
-            this.scanError = '识别服务异常：' + (error && error.message ? error.message : '请重试')
-            this.scanState = SCANNER_STATE.ERROR
-            this.playFeedbackSound(false)
-          })
-        }
-        reader.readAsDataURL(file)
-      },
-      // 拍照识别出多个码时：照片铺满画面并画出每个码的方框，点框选择
-      showPhotoForPick (base64, codes) {
-        const img = new Image()
-        img.onload = () => {
-          this.frameW = img.naturalWidth
-          this.frameH = img.naturalHeight
-          this.photoImage = img
-          this.photoMode = true
-          this.multiScanMode = true
-          this.scanState = SCANNER_STATE.RECOGNIZING
-          this.detectedCodes = codes.map(c => ({
-            code: c.code,
-            format: c.format || 'UNKNOWN',
-            type: c.type || 'UNKNOWN',
-            box: c.w ? { x: c.x, y: c.y, w: c.w, h: c.h } : null
-          }))
-          this.$nextTick(() => this.drawScanOverlay())
-        }
-        img.src = base64
-      },
       // 停止扫码：释放视频流、画面资源与状态
       stopScan (nextState) {
         if (this.successTimer) {
@@ -836,8 +750,6 @@
         this.detectedCodes = []
         this.screenBoxes = []
         this.multiScanMode = false
-        this.photoImage = null
-        this.photoMode = false
         if (nextState) {
           this.scanState = nextState
         }
@@ -845,6 +757,18 @@
       closeScanner () {
         this.stopScan(SCANNER_STATE.STOPPED)
         this.scanVisible = false
+        this.certGuideVisible = false
+      },
+      // 关闭证书安装说明
+      closeCertGuide () {
+        this.certGuideVisible = false
+      },
+      // 安装证书后重新申请摄像头权限
+      retryScan () {
+        this.certGuideVisible = false
+        this.scanState = SCANNER_STATE.INITIAL
+        this.scanError = ''
+        this.$nextTick(() => this.startScan())
       },
       /**
        * 识别内容统一入口（拍照识别、多码框选共用）。

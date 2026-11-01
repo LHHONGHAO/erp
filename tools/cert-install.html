@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JSH_ERP 证书安装说明</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f7fa;
+    color: #1f2d3d;
+    line-height: 1.7;
+    padding: 20px 16px 40px;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .header {
+    background: linear-gradient(135deg, #1890ff, #0050b3);
+    color: #fff;
+    border-radius: 14px;
+    padding: 22px 20px;
+    box-shadow: 0 8px 24px rgba(24, 144, 255, .25);
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header p { margin-top: 8px; font-size: 14px; opacity: .92; }
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px 18px 20px;
+    margin-top: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+  }
+  .card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0050b3;
+    margin-bottom: 10px;
+    padding-left: 10px;
+    border-left: 4px solid #1890ff;
+  }
+  .btn {
+    display: block;
+    text-align: center;
+    background: #1890ff;
+    color: #fff;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 13px 16px;
+    border-radius: 10px;
+    margin-top: 10px;
+  }
+  .btn.secondary {
+    background: #fff;
+    color: #1890ff;
+    border: 1px solid #1890ff;
+  }
+  .addr {
+    display: block;
+    word-break: break-all;
+    background: #f0f5ff;
+    color: #0050b3;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 15px;
+    margin-top: 8px;
+  }
+  ol, ul { padding-left: 20px; font-size: 14px; }
+  ol li, ul li { margin-top: 6px; }
+  .tip {
+    font-size: 13px;
+    color: #8c8c8c;
+    background: #fafafa;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 12px;
+  }
+  .warn {
+    font-size: 13px;
+    color: #ad6800;
+    background: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 12px;
+  }
+  .footer { text-align: center; font-size: 12px; color: #bfbfbf; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>JSH_ERP 手机扫码 · 证书安装说明</h1>
+    <p>扫码需要调用摄像头，浏览器只在 HTTPS 安全连接下才允许获取摄像头权限。安装本系统的自签名证书后，即可正常扫码。</p>
+  </div>
+
+  <div class="card">
+    <h2>第一步：下载证书</h2>
+    <a class="btn" href="/cert/jsh-erp.cer" download="jsh-erp.cer">下载证书（jsh-erp.cer）</a>
+    <a class="btn secondary" href="/cert/jsh-erp.pfx" download="jsh-erp.pfx">下载 Windows 证书（jsh-erp.pfx）</a>
+    <div class="tip">下载后按下方对应系统的步骤安装。证书由本机自签名，仅供局域网内部使用。</div>
+  </div>
+
+  <div class="card">
+    <h2>第二步：安装并信任证书</h2>
+    <ol>
+      <li><b>Android（Chrome / 系统浏览器）</b><br>
+        下载 jsh-erp.cer → 设置 → 安全 → 更多安全设置 → 加密与凭据 → 安装证书 → CA 证书 → 仍然安装 → 选择下载的 jsh-erp.cer → 安装完成。</li>
+      <li><b>iPhone / iPad（Safari）</b><br>
+        用 Safari 下载 jsh-erp.cer → 允许下载描述文件 → 设置 → 已下载描述文件 → 安装 → 设置 → 通用 → 关于本机 → 证书信任设置 → 打开 “jsh-erp.local” 的完全信任 → 重新打开 Safari。</li>
+      <li><b>Windows 电脑</b><br>
+        双击 jsh-erp.cer → 安装证书 → 本地计算机 → 将所有的证书都放入下列存储 → 受信任的根证书颁发机构 → 完成。</li>
+    </ol>
+    <div class="warn">证书安装完成后，浏览器访问时不再提示“不安全”。如果安装前浏览器提示证书风险，请选择“高级 / 继续访问”进入本页。</div>
+  </div>
+
+  <div class="card">
+    <h2>第三步：返回扫码页面</h2>
+    <p style="font-size:14px">确认使用下面的 HTTPS 地址访问系统，然后回到「零售销售开单」页面重新点击「扫码添加」并允许摄像头权限。</p>
+    <span class="addr" id="addr">https://192.168.100.157:9999</span>
+    <a class="btn" href="https://192.168.100.157:9999/jshERP-boot/" id="goBtn">进入系统</a>
+    <div class="tip">若仍然无法扫码：请检查浏览器的摄像头权限设置，确认未被系统或浏览器禁用；iPhone 需在“设置 → Safari → 相机”中选择“允许”。</div>
+  </div>
+
+  <div class="footer">JSH_ERP 本地部署 · 本页由本地 HTTPS 入口直接提供</div>
+</div>
+</body>
+</html>

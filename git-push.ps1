@@ -2,7 +2,7 @@
 .SYNOPSIS
   将本地改动提交并推送到 GitHub
 .DESCRIPTION
-  在本仓库根目录执行。自动暂存改动（tools/、.token 等已在 .gitignore 中排除），
+  在本仓库根目录执行。自动暂存改动（data/、构建产物、tools 下二进制与 .token 已在 .gitignore 中排除），
   有改动才提交；提交后推送到当前分支。
 .EXAMPLE
   .\git-push.ps1

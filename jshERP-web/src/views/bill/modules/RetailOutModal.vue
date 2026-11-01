@@ -17,6 +17,10 @@
     </template>
     <a-spin :spinning="confirmLoading">
       <a-form :form="form">
+        <!-- 隐藏字段：实收金额（移动端结算弹窗传入，随 beanJson 一起保存） -->
+        <a-form-item v-show="false">
+          <a-input v-decorator="[ 'realAmount' ]" />
+        </a-form-item>
         <!-- 单据抬头：与下方明细表格同宽（左右边缘对齐），字段间距压缩 -->
         <a-row class="form-row" :gutter="24">
           <a-col :lg="18" :md="24" :sm="24">
@@ -463,7 +467,7 @@
           }
           this.$nextTick(() => {
             this.form.setFieldsValue(pick(this.model,'organId', 'operTime', 'number', 'payType', 'remark',
-              'discount','discountMoney','discountLastMoney','otherMoney','accountId','changeAmount','getAmount','backAmount'))
+              'discount','discountMoney','discountLastMoney','otherMoney','accountId','changeAmount','getAmount','backAmount','realAmount'))
           });
           // 加载子表数据
           let params = {

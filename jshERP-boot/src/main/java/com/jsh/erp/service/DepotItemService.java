@@ -572,6 +572,13 @@ public class DepotItemService {
                 if (StringUtil.isExist(rowObj.get("allPrice"))) {
                     depotItem.setAllPrice(rowObj.getBigDecimal("allPrice"));
                 }
+                //实收字段（由 DepotHeadService 按实收金额占比分摊后传入）
+                if (StringUtil.isExist(rowObj.get("realUnitPrice"))) {
+                    depotItem.setRealUnitPrice(rowObj.getBigDecimal("realUnitPrice"));
+                }
+                if (StringUtil.isExist(rowObj.get("realAmount"))) {
+                    depotItem.setRealAmount(rowObj.getBigDecimal("realAmount"));
+                }
                 if (StringUtil.isExist(rowObj.get("depotId"))) {
                     depotItem.setDepotId(rowObj.getLong("depotId"));
                 } else {

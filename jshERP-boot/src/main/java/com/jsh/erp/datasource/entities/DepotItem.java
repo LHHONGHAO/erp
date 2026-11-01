@@ -22,11 +22,17 @@ public class DepotItem {
 
     private BigDecimal unitPrice;
 
+    //实收单价（按实收金额占比分摊）
+    private BigDecimal realUnitPrice;
+
     private BigDecimal purchaseUnitPrice;
 
     private BigDecimal taxUnitPrice;
 
     private BigDecimal allPrice;
+
+    //实收金额（该行实际成交金额）
+    private BigDecimal realAmount;
 
     private String remark;
 
@@ -126,6 +132,14 @@ public class DepotItem {
         this.unitPrice = unitPrice;
     }
 
+    public BigDecimal getRealUnitPrice() {
+        return realUnitPrice;
+    }
+
+    public void setRealUnitPrice(BigDecimal realUnitPrice) {
+        this.realUnitPrice = realUnitPrice;
+    }
+
     public BigDecimal getPurchaseUnitPrice() {
         return purchaseUnitPrice;
     }
@@ -148,6 +162,14 @@ public class DepotItem {
 
     public void setAllPrice(BigDecimal allPrice) {
         this.allPrice = allPrice;
+    }
+
+    public BigDecimal getRealAmount() {
+        return realAmount;
+    }
+
+    public void setRealAmount(BigDecimal realAmount) {
+        this.realAmount = realAmount;
     }
 
     public String getRemark() {

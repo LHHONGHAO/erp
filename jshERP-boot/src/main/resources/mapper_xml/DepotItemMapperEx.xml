@@ -121,14 +121,16 @@
 
     <insert id="batchInsert" parameterType="java.util.List">
         insert into jsh_depot_item (header_id, material_id, material_extend_id, material_unit, sku, oper_number,
-        basic_number, unit_price, purchase_unit_price, tax_unit_price, all_price, remark, depot_id, another_depot_id,
+        basic_number, unit_price, real_unit_price, purchase_unit_price, tax_unit_price, all_price, real_amount, remark, depot_id, another_depot_id,
         tax_rate, tax_money, tax_last_money, material_type, sn_list, batch_number, expiration_date, link_id)
         values
         <foreach collection="list" item="item" separator=",">
             (#{item.headerId,jdbcType=BIGINT}, #{item.materialId,jdbcType=BIGINT},
             #{item.materialExtendId,jdbcType=BIGINT}, #{item.materialUnit,jdbcType=VARCHAR}, #{item.sku,jdbcType=VARCHAR},
             #{item.operNumber,jdbcType=DECIMAL}, #{item.basicNumber,jdbcType=DECIMAL}, #{item.unitPrice,jdbcType=DECIMAL},
+            #{item.realUnitPrice,jdbcType=DECIMAL},
             #{item.purchaseUnitPrice,jdbcType=DECIMAL}, #{item.taxUnitPrice,jdbcType=DECIMAL}, #{item.allPrice,jdbcType=DECIMAL},
+            #{item.realAmount,jdbcType=DECIMAL},
             #{item.remark,jdbcType=VARCHAR}, #{item.depotId,jdbcType=BIGINT}, #{item.anotherDepotId,jdbcType=BIGINT},
             #{item.taxRate,jdbcType=DECIMAL}, #{item.taxMoney,jdbcType=DECIMAL}, #{item.taxLastMoney,jdbcType=DECIMAL},
             #{item.materialType,jdbcType=VARCHAR}, #{item.snList,jdbcType=VARCHAR}, #{item.batchNumber,jdbcType=VARCHAR},

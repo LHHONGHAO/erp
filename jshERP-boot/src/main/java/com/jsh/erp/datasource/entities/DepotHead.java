@@ -30,6 +30,9 @@ public class DepotHead {
 
     private BigDecimal totalPrice;
 
+    //实收金额（议价后的实际成交金额）
+    private BigDecimal realAmount;
+
     private String payType;
 
     private String billType;
@@ -174,6 +177,14 @@ public class DepotHead {
 
     public void setTotalPrice(BigDecimal totalPrice) {
         this.totalPrice = totalPrice;
+    }
+
+    public BigDecimal getRealAmount() {
+        return realAmount;
+    }
+
+    public void setRealAmount(BigDecimal realAmount) {
+        this.realAmount = realAmount;
     }
 
     public String getPayType() {

@@ -40,36 +40,59 @@
         </div>
       </div>
     </div>
-    <!-- 底部金额栏（单据金额 / 收款金额 / 找零 + 结算按钮，一行置顶显示） -->
+    <!-- 底部栏：数量（所有商品累加）/ 金额（商品累加金额）+ 结算按钮 -->
     <div class="rso-bottom-bar">
       <div class="rso-bottom-item">
-        <span class="rso-bottom-label">单据金额</span>
-        <span class="rso-bottom-value">¥{{ cartTotal }}</span>
+        <span class="rso-bottom-label">数量</span>
+        <span class="rso-bottom-value">{{ cartCount }}</span>
       </div>
       <div class="rso-bottom-item">
-        <span class="rso-bottom-label">收款金额</span>
-        <a-input-number v-model="billForm.payAmount" :min="0" :precision="2" :controls="false"
-                        size="small" class="rso-bottom-input" />
-      </div>
-      <div class="rso-bottom-item">
-        <span class="rso-bottom-label">找零</span>
-        <span class="rso-bottom-value">¥{{ changeAmount }}</span>
+        <span class="rso-bottom-label">金额</span>
+        <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
       </div>
       <div class="rso-bottom-settle">
         <a-button type="primary" @click="openSettle">结算</a-button>
       </div>
     </div>
 
-    <!-- 结算弹窗：单据信息（与电脑端业务字段保持一致，单列对齐） -->
+    <!-- 结算弹窗：宽度全屏；分割线下方为商品明细（名称/规格/数量/金额）+ 实收，高度随商品数量变化（上限为屏幕高度） -->
     <a-modal
       :visible="settleVisible"
       title="结算"
       @cancel="settleVisible = false"
       :footer="null"
-      width="90%"
+      width="100%"
       centered
       :bodyStyle="{ padding: 0 }"
+      class="rso-settle-modal"
     >
+      <!-- 商品明细：名称 / 规格 / 数量 / 金额，随商品数量增长，超出后内部滚动 -->
+      <div class="rso-settle-items">
+        <div v-for="(item, index) in cartList" :key="item.id || index" class="rso-settle-item">
+          <div class="rso-settle-item-row">
+            <span class="rso-settle-item-name">{{ item.name }}</span>
+            <span class="rso-settle-item-amount">¥{{ itemAmount(item) }}</span>
+          </div>
+          <div class="rso-settle-item-row">
+            <span class="rso-settle-item-spec">{{ cartSpec(item) || '-' }}</span>
+            <span class="rso-settle-item-qty">x{{ item.operNumber }}</span>
+          </div>
+        </div>
+        <div v-if="cartList.length === 0" class="rso-settle-empty">暂无商品</div>
+      </div>
+      <!-- 合计 + 实收输入框 + 找零 -->
+      <div class="rso-settle-summary">
+        <div class="rso-settle-summary-row">
+          <span class="rso-settle-label">合计</span>
+          <span class="rso-settle-value">共 {{ cartCount }} 件，¥{{ cartTotal }}</span>
+        </div>
+        <div class="rso-settle-summary-row">
+          <span class="rso-settle-label">实收</span>
+          <a-input-number v-model="billForm.payAmount" :min="0" :precision="2" :controls="false"
+                          class="rso-settle-pay-input" />
+          <span class="rso-settle-change">找零 ¥{{ changeAmount }}</span>
+        </div>
+      </div>
       <div class="rso-billinfo">
         <div class="rso-billinfo-row">
           <span class="rso-billinfo-label">单据日期</span>
@@ -297,13 +320,17 @@
           return sum + price * (item.operNumber - 0 || 1)
         }, 0).toFixed(2)
       },
+      // 底部栏数量：所有商品数量累加
+      cartCount () {
+        return this.cartList.reduce((sum, item) => sum + (item.operNumber - 0 || 0), 0)
+      },
       // 会员输入框显示：卡号 + 姓名
       memberDisplay () {
         const m = this.selectedMember
         if (!m) return ''
         return m.contacts ? `${m.supplier} ${m.contacts}` : m.supplier
       },
-      // 找零 = 收款金额 - 单据金额（不足时为 0）
+      // 找零 = 实收 - 单据金额（不足时为 0）
       changeAmount () {
         const diff = (this.billForm.payAmount - 0) - (this.cartTotal - 0)
         return diff > 0 ? diff.toFixed(2) : '0.00'
@@ -919,6 +946,11 @@
         if (item.commodityDecimal != null) return item.commodityDecimal
         return '-'
       },
+      // 结算明细：单个商品金额 = 单价 x 数量（与 cartTotal 的取价逻辑一致）
+      itemAmount (item) {
+        const price = item.unitPrice - 0 || item.commodityDecimal - 0 || 0
+        return (price * (item.operNumber - 0 || 1)).toFixed(2)
+      },
       // 修改数量
       changeQty (index, delta) {
         const item = this.cartList[index]
@@ -995,8 +1027,9 @@
         this.memberKeyword = ''
         this.loadMembers()
       },
-      // 打开结算弹窗
+      // 打开结算弹窗：实收默认填单据金额，找零为 0
       openSettle () {
+        this.billForm.payAmount = this.cartTotal - 0
         this.settleVisible = true
       },
       // 提交订单：复用零售出库弹窗逻辑
@@ -1021,7 +1054,9 @@
               organId: this.billForm.organId,
               operTime: this.billForm.operTime,
               number: this.billForm.number,
-              payType: this.billForm.payType
+              payType: this.billForm.payType,
+              // 实收金额：移动端结算弹窗中录入的实际成交金额（如 2000 议价到 1800）
+              realAmount: this.billForm.payAmount
             })
           }
         })
@@ -1041,6 +1076,7 @@
 }
 // 结算弹窗内的单据信息：单列对齐
 .rso-billinfo {
+  flex-shrink: 0;
   background: #fff;
   padding: 4px 12px;
   .rso-billinfo-row {
@@ -1159,14 +1195,8 @@
     font-weight: 600;
     line-height: 24px;
   }
-  .rso-bottom-input {
-    width: 90%;
-    margin-top: 2px;
-    /deep/ .ant-input-number-input {
-      text-align: center;
-      font-size: 16px;
-      font-weight: 600;
-    }
+  .rso-bottom-amount {
+    color: #f5222d;
   }
   // 结算按钮固定在金额栏右侧
   .rso-bottom-settle {
@@ -1184,8 +1214,119 @@
     }
   }
 }
+// 结算弹窗：宽度全屏；内容高度随商品数量变化，上限为屏幕高度（超出后商品明细内部滚动）
+.rso-settle-modal {
+  /deep/ .ant-modal {
+    max-width: 100vw;
+    margin: 0 auto;
+  }
+  /deep/ .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 100vh;
+  }
+  /deep/ .ant-modal-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+// 商品明细列表：随商品数量增长，空间不足时内部滚动
+.rso-settle-items {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rso-settle-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f5f5f5;
+  .rso-settle-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .rso-settle-item-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.85);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rso-settle-item-amount {
+    flex-shrink: 0;
+    margin-left: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #f5222d;
+  }
+  .rso-settle-item-spec {
+    flex: 1;
+    min-width: 0;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rso-settle-item-qty {
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-top: 2px;
+    font-size: 12px;
+    color: #666;
+  }
+}
+.rso-settle-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+// 合计 + 实收 + 找零
+.rso-settle-summary {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+  .rso-settle-summary-row {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+  }
+  .rso-settle-label {
+    flex: 0 0 76px;
+    width: 76px;
+    color: #333;
+    font-size: 14px;
+  }
+  .rso-settle-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f5222d;
+  }
+  .rso-settle-pay-input {
+    width: 110px;
+    /deep/ .ant-input-number-input {
+      text-align: center;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  }
+  .rso-settle-change {
+    margin-left: 12px;
+    font-size: 13px;
+    color: #666;
+  }
+}
 // 结算弹窗底部按钮
 .rso-settle-footer {
+  flex-shrink: 0;
   display: flex;
   gap: 10px;
   padding: 10px 12px;

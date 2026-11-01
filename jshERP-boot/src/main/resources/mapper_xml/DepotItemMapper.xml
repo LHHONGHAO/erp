@@ -11,9 +11,11 @@
     <result column="oper_number" jdbcType="DECIMAL" property="operNumber" />
     <result column="basic_number" jdbcType="DECIMAL" property="basicNumber" />
     <result column="unit_price" jdbcType="DECIMAL" property="unitPrice" />
+    <result column="real_unit_price" jdbcType="DECIMAL" property="realUnitPrice" />
     <result column="purchase_unit_price" jdbcType="DECIMAL" property="purchaseUnitPrice" />
     <result column="tax_unit_price" jdbcType="DECIMAL" property="taxUnitPrice" />
     <result column="all_price" jdbcType="DECIMAL" property="allPrice" />
+    <result column="real_amount" jdbcType="DECIMAL" property="realAmount" />
     <result column="remark" jdbcType="VARCHAR" property="remark" />
     <result column="depot_id" jdbcType="BIGINT" property="depotId" />
     <result column="another_depot_id" jdbcType="BIGINT" property="anotherDepotId" />
@@ -88,7 +90,7 @@
   </sql>
   <sql id="Base_Column_List">
     id, header_id, material_id, material_extend_id, material_unit, sku, oper_number, 
-    basic_number, unit_price, purchase_unit_price, tax_unit_price, all_price, remark, 
+    basic_number, unit_price, real_unit_price, purchase_unit_price, tax_unit_price, all_price, real_amount, remark, 
     depot_id, another_depot_id, tax_rate, tax_money, tax_last_money, material_type, sn_list, 
     batch_number, expiration_date, link_id, tenant_id, delete_flag
   </sql>
@@ -125,8 +127,8 @@
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.DepotItem">
     insert into jsh_depot_item (id, header_id, material_id, 
       material_extend_id, material_unit, sku, 
-      oper_number, basic_number, unit_price, 
-      purchase_unit_price, tax_unit_price, all_price, 
+      oper_number, basic_number, unit_price, real_unit_price, 
+      purchase_unit_price, tax_unit_price, all_price, real_amount, 
       remark, depot_id, another_depot_id, 
       tax_rate, tax_money, tax_last_money, 
       material_type, sn_list, batch_number, 
@@ -134,8 +136,8 @@
       delete_flag)
     values (#{id,jdbcType=BIGINT}, #{headerId,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, 
       #{materialExtendId,jdbcType=BIGINT}, #{materialUnit,jdbcType=VARCHAR}, #{sku,jdbcType=VARCHAR}, 
-      #{operNumber,jdbcType=DECIMAL}, #{basicNumber,jdbcType=DECIMAL}, #{unitPrice,jdbcType=DECIMAL}, 
-      #{purchaseUnitPrice,jdbcType=DECIMAL}, #{taxUnitPrice,jdbcType=DECIMAL}, #{allPrice,jdbcType=DECIMAL}, 
+      #{operNumber,jdbcType=DECIMAL}, #{basicNumber,jdbcType=DECIMAL}, #{unitPrice,jdbcType=DECIMAL}, #{realUnitPrice,jdbcType=DECIMAL}, 
+      #{purchaseUnitPrice,jdbcType=DECIMAL}, #{taxUnitPrice,jdbcType=DECIMAL}, #{allPrice,jdbcType=DECIMAL}, #{realAmount,jdbcType=DECIMAL}, 
       #{remark,jdbcType=VARCHAR}, #{depotId,jdbcType=BIGINT}, #{anotherDepotId,jdbcType=BIGINT}, 
       #{taxRate,jdbcType=DECIMAL}, #{taxMoney,jdbcType=DECIMAL}, #{taxLastMoney,jdbcType=DECIMAL}, 
       #{materialType,jdbcType=VARCHAR}, #{snList,jdbcType=VARCHAR}, #{batchNumber,jdbcType=VARCHAR}, 
@@ -172,6 +174,9 @@
       <if test="unitPrice != null">
         unit_price,
       </if>
+      <if test="realUnitPrice != null">
+        real_unit_price,
+      </if>
       <if test="purchaseUnitPrice != null">
         purchase_unit_price,
       </if>
@@ -180,6 +185,9 @@
       </if>
       <if test="allPrice != null">
         all_price,
+      </if>
+      <if test="realAmount != null">
+        real_amount,
       </if>
       <if test="remark != null">
         remark,
@@ -249,6 +257,9 @@
       <if test="unitPrice != null">
         #{unitPrice,jdbcType=DECIMAL},
       </if>
+      <if test="realUnitPrice != null">
+        #{realUnitPrice,jdbcType=DECIMAL},
+      </if>
       <if test="purchaseUnitPrice != null">
         #{purchaseUnitPrice,jdbcType=DECIMAL},
       </if>
@@ -257,6 +268,9 @@
       </if>
       <if test="allPrice != null">
         #{allPrice,jdbcType=DECIMAL},
+      </if>
+      <if test="realAmount != null">
+        #{realAmount,jdbcType=DECIMAL},
       </if>
       <if test="remark != null">
         #{remark,jdbcType=VARCHAR},
@@ -335,6 +349,9 @@
       <if test="record.unitPrice != null">
         unit_price = #{record.unitPrice,jdbcType=DECIMAL},
       </if>
+      <if test="record.realUnitPrice != null">
+        real_unit_price = #{record.realUnitPrice,jdbcType=DECIMAL},
+      </if>
       <if test="record.purchaseUnitPrice != null">
         purchase_unit_price = #{record.purchaseUnitPrice,jdbcType=DECIMAL},
       </if>
@@ -343,6 +360,9 @@
       </if>
       <if test="record.allPrice != null">
         all_price = #{record.allPrice,jdbcType=DECIMAL},
+      </if>
+      <if test="record.realAmount != null">
+        real_amount = #{record.realAmount,jdbcType=DECIMAL},
       </if>
       <if test="record.remark != null">
         remark = #{record.remark,jdbcType=VARCHAR},
@@ -399,9 +419,11 @@
       oper_number = #{record.operNumber,jdbcType=DECIMAL},
       basic_number = #{record.basicNumber,jdbcType=DECIMAL},
       unit_price = #{record.unitPrice,jdbcType=DECIMAL},
+      real_unit_price = #{record.realUnitPrice,jdbcType=DECIMAL},
       purchase_unit_price = #{record.purchaseUnitPrice,jdbcType=DECIMAL},
       tax_unit_price = #{record.taxUnitPrice,jdbcType=DECIMAL},
       all_price = #{record.allPrice,jdbcType=DECIMAL},
+      real_amount = #{record.realAmount,jdbcType=DECIMAL},
       remark = #{record.remark,jdbcType=VARCHAR},
       depot_id = #{record.depotId,jdbcType=BIGINT},
       another_depot_id = #{record.anotherDepotId,jdbcType=BIGINT},
@@ -446,6 +468,9 @@
       <if test="unitPrice != null">
         unit_price = #{unitPrice,jdbcType=DECIMAL},
       </if>
+      <if test="realUnitPrice != null">
+        real_unit_price = #{realUnitPrice,jdbcType=DECIMAL},
+      </if>
       <if test="purchaseUnitPrice != null">
         purchase_unit_price = #{purchaseUnitPrice,jdbcType=DECIMAL},
       </if>
@@ -454,6 +479,9 @@
       </if>
       <if test="allPrice != null">
         all_price = #{allPrice,jdbcType=DECIMAL},
+      </if>
+      <if test="realAmount != null">
+        real_amount = #{realAmount,jdbcType=DECIMAL},
       </if>
       <if test="remark != null">
         remark = #{remark,jdbcType=VARCHAR},
@@ -507,9 +535,11 @@
       oper_number = #{operNumber,jdbcType=DECIMAL},
       basic_number = #{basicNumber,jdbcType=DECIMAL},
       unit_price = #{unitPrice,jdbcType=DECIMAL},
+      real_unit_price = #{realUnitPrice,jdbcType=DECIMAL},
       purchase_unit_price = #{purchaseUnitPrice,jdbcType=DECIMAL},
       tax_unit_price = #{taxUnitPrice,jdbcType=DECIMAL},
       all_price = #{allPrice,jdbcType=DECIMAL},
+      real_amount = #{realAmount,jdbcType=DECIMAL},
       remark = #{remark,jdbcType=VARCHAR},
       depot_id = #{depotId,jdbcType=BIGINT},
       another_depot_id = #{anotherDepotId,jdbcType=BIGINT},

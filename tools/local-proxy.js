@@ -80,6 +80,8 @@ const server = https.createServer({
   pfx: fs.readFileSync(TLS_PFX),
   passphrase: TLS_PASS
 }, (req, res) => {
+  // 访问日志：用于确认手机端请求是否真正到达本机
+  console.log(new Date().toISOString(), req.method, req.url, req.headers['user-agent'] || '');
   if (serveCertRoute(req, res)) return;
   const target = normalize(req.url);
   const options = {
@@ -93,12 +95,28 @@ const server = https.createServer({
     const headers = Object.assign({}, proxyRes.headers);
     // HTML 入口禁止缓存，避免手机浏览器一直加载旧版本页面
     const contentType = headers['content-type'] || '';
-    if (contentType.indexOf('text/html') !== -1) {
+    const isHtml = contentType.indexOf('text/html') !== -1;
+    if (isHtml) {
       headers['cache-control'] = 'no-store, no-cache, must-revalidate';
       headers['pragma'] = 'no-cache';
       headers['expires'] = '0';
       delete headers['etag'];
       delete headers['last-modified'];
+    }
+    // 对未压缩的 HTML 注入版本角标，便于确认手机上打开的确实是本机新部署页面
+    if (isHtml && !headers['content-encoding']) {
+      const chunks = [];
+      proxyRes.on('data', c => chunks.push(c));
+      proxyRes.on('end', () => {
+        let body = Buffer.concat(chunks).toString('utf8');
+        const badge = '<div id="build-badge" style="position:fixed;bottom:0;right:0;z-index:2147483647;background:rgba(0,0,0,.75);color:#7CFC00;font-size:11px;padding:2px 6px;pointer-events:none;">v269de558/fc81a044</div>';
+        if (body.indexOf('</body>') !== -1) body = body.replace('</body>', badge + '</body>');
+        else body += badge;
+        delete headers['content-length'];
+        res.writeHead(proxyRes.statusCode, headers);
+        res.end(body);
+      });
+      return;
     }
     res.writeHead(proxyRes.statusCode, headers);
     proxyRes.pipe(res);

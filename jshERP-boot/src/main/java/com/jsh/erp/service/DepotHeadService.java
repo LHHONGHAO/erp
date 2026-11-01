@@ -30,6 +30,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -1273,6 +1274,8 @@ public class DepotHeadService {
         if(list!=null) {
             Long headId = list.get(0).getId();
             /**入库和出库处理单据子表信息*/
+            //实收金额按行金额占比分摊到明细行
+            rows = buildRowsWithRealAmount(rows, depotHead.getTotalPrice(), depotHead.getRealAmount());
             depotItemService.saveDetials(rows,headId, "add", null, request);
             /**更新最终欠款*/
             updateLastDebtByBillId(depotHead.getDebt(), headId);
@@ -1281,6 +1284,47 @@ public class DepotHeadService {
         logService.insertLog("单据",
                 new StringBuffer(BusinessConstants.LOG_OPERATION_TYPE_ADD).append(depotHead.getNumber()).append(statusStr).toString(),
                 ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest());
+    }
+
+    /**
+     * 实收金额按行金额占比分摊到明细行（末行兜底消除分位误差）
+     * @param rows 明细行JSON
+     * @param totalPrice 单据金额
+     * @param realAmount 实收金额
+     * @return 分摊后的明细行JSON
+     */
+    private String buildRowsWithRealAmount(String rows, BigDecimal totalPrice, BigDecimal realAmount) {
+        if (realAmount == null || totalPrice == null
+                || totalPrice.compareTo(BigDecimal.ZERO) <= 0 || StringUtil.isEmpty(rows)) {
+            return rows;
+        }
+        JSONArray arr = JSONArray.parseArray(rows);
+        if (arr == null || arr.isEmpty()) {
+            return rows;
+        }
+        BigDecimal ratio = realAmount.divide(totalPrice, 6, RoundingMode.HALF_UP);
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i = 0; i < arr.size(); i++) {
+            JSONObject row = arr.getJSONObject(i);
+            BigDecimal allPrice = row.getBigDecimal("allPrice");
+            if (allPrice == null) {
+                allPrice = BigDecimal.ZERO;
+            }
+            BigDecimal rowReal;
+            if (i == arr.size() - 1) {
+                //末行兜底：消除分位误差
+                rowReal = realAmount.subtract(allocated);
+            } else {
+                rowReal = allPrice.multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+                allocated = allocated.add(rowReal);
+            }
+            row.put("realAmount", rowReal);
+            BigDecimal unitPrice = row.getBigDecimal("unitPrice");
+            if (unitPrice != null) {
+                row.put("realUnitPrice", unitPrice.multiply(ratio).setScale(2, RoundingMode.HALF_UP));
+            }
+        }
+        return arr.toJSONString();
     }
 
     /**
@@ -1383,6 +1427,8 @@ public class DepotHeadService {
             }
         }
         /**入库和出库处理单据子表信息*/
+        //实收金额按行金额占比分摊到明细行
+        rows = buildRowsWithRealAmount(rows, depotHead.getTotalPrice(), depotHead.getRealAmount());
         depotItemService.saveDetials(rows,depotHead.getId(), "update", preDepotHead, request);
         /**更新最终欠款*/
         updateLastDebtByBillId(depotHead.getDebt(), depotHead.getId());

@@ -62,6 +62,18 @@ export const constantRouterMap = [
     component: () => import(/* webpackChunkName: "fail" */ '@/views/exception/404')
   },
   {
+    path: '/mobile-preview',
+    component: BlankLayout,
+    children: [
+      {
+        path: '',
+        name: 'MobilePreview',
+        meta: { title: '手机端预览' },
+        component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePreview')
+      }
+    ]
+  },
+  {
     path: '/material/edit',
     component: TabLayout,
     children: [

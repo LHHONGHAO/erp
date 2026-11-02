@@ -104,6 +104,15 @@
           <a-input v-model="billForm.number" placeholder="请输入单据编号" class="rso-billinfo-field" />
         </div>
         <div class="rso-billinfo-row">
+          <span class="rso-billinfo-label">仓库</span>
+          <a-select v-model="billForm.depotId" placeholder="请选择仓库" class="rso-billinfo-field"
+                    :dropdownMatchSelectWidth="false" allowClear>
+            <a-select-option v-for="item in depotList" :key="item.id" :value="String(item.id)">
+              {{ item.depotName }}
+            </a-select-option>
+          </a-select>
+        </div>
+        <div class="rso-billinfo-row">
           <span class="rso-billinfo-label">收款类型</span>
           <a-select v-model="billForm.payType" class="rso-billinfo-field">
             <a-select-option value="现付">现付</a-select-option>
@@ -124,7 +133,7 @@
       </div>
       <div class="rso-settle-footer">
         <a-button @click="settleVisible = false">关闭</a-button>
-        <a-button type="primary" @click="submitOrder">提交订单</a-button>
+        <a-button type="primary" :loading="saving" @click="submitOrder">提交订单</a-button>
       </div>
     </a-modal>
 
@@ -268,9 +277,14 @@
           organId: undefined,
           operTime: null,
           number: '',
+          depotId: undefined,
           payType: '现付',
           payAmount: 0
         },
+        // 仓库列表（默认仓库在打开结算时自动带出）
+        depotList: [],
+        // 提交订单保存中
+        saving: false,
         // 会员选择：弹窗、搜索关键字、会员列表、已选会员
         memberPickerVisible: false,
         memberKeyword: '',
@@ -864,6 +878,7 @@
             commodityDecimal: mInfo.commodityDecimal,
             operNumber: 1,
             skuCode: mInfo.skuCode,
+            sku: mInfo.sku,
             barCode: mInfo.barCode,
             depotId: mInfo.depotId,
             stock: mInfo.stock,
@@ -914,6 +929,7 @@
               commodityDecimal: item.commodityDecimal,
               operNumber: qty,
               skuCode: item.skuCode,
+              sku: item.sku,
               barCode: item.mBarCode || item.barCode,
               unit: item.unit,
               stock: item.stock,
@@ -1022,45 +1038,127 @@
         ref.title = '新增会员'
         ref.add()
       },
-      // 新增会员保存后重新加载列表，便于立即选择
-      onMemberAdded () {
+      // 新增会员保存后，将刚新增的会员回填到会员卡号输入框
+      onMemberAdded (member) {
         this.memberKeyword = ''
-        this.loadMembers()
+        const supplierNo = member && member.supplier
+        if (!supplierNo) {
+          this.loadMembers()
+          return
+        }
+        // 先用新增表单数据展示卡号与姓名，再用接口结果补全会员id（绑定单据organId）
+        this.selectedMember = {
+          supplier: supplierNo,
+          contacts: member.contacts,
+          telephone: member.telephone
+        }
+        findBySelectRetail({ key: supplierNo, limit: 1 }).then(res => {
+          const list = Array.isArray(res) ? res : []
+          const hit = list.find(item => String(item.supplier) === String(supplierNo)) || list[0]
+          if (hit) {
+            this.selectedMember = hit
+            this.billForm.organId = hit.id
+          }
+          if (list.length > 0) {
+            this.memberOptions = list
+          } else {
+            this.loadMembers()
+          }
+        })
       },
-      // 打开结算弹窗：实收默认填单据金额，找零为 0
+      // 打开结算弹窗：自动带出默认仓库，实收默认填单据金额，找零为 0
       openSettle () {
+        if (!this.billForm.depotId) {
+          const depots = this.depotList || []
+          if (this.defaultDepotId) {
+            this.billForm.depotId = String(this.defaultDepotId)
+          } else if (depots.length > 0) {
+            this.billForm.depotId = String(depots[0].id)
+          }
+        }
         this.billForm.payAmount = this.cartTotal - 0
         this.settleVisible = true
       },
-      // 提交订单：复用零售出库弹窗逻辑
+      // 提交订单：直接调用后端保存接口写库（等同网页版「保存」）
       submitOrder () {
+        if (this.saving) return
         if (this.cartList.length === 0) {
           this.$message.warning('请先添加商品')
           return
         }
-        this.settleVisible = false
-        this.$refs.modalForm.action = "add"
-        if (this.btnEnableList.indexOf(2) === -1) {
-          this.$refs.modalForm.isCanCheck = false
+        if (!this.billForm.depotId) {
+          this.$message.warning('请选择仓库')
+          return
         }
-        this.$refs.modalForm.add()
-        this.$refs.modalForm.title = "销售开单"
-        this.$refs.modalForm.disableSubmit = false
-        // 将手机端录入的单据信息带入弹窗
-        this.$nextTick(() => {
-          const form = this.$refs.modalForm && this.$refs.modalForm.form
-          if (form) {
-            form.setFieldsValue({
-              organId: this.billForm.organId,
-              operTime: this.billForm.operTime,
-              number: this.billForm.number,
-              payType: this.billForm.payType,
-              // 实收金额：移动端结算弹窗中录入的实际成交金额（如 2000 议价到 1800）
-              realAmount: this.billForm.payAmount
-            })
+        if (!this.billForm.number) {
+          this.$message.warning('请填写单据编号')
+          return
+        }
+        const total = this.cartTotal - 0
+        const getAmount = this.billForm.payAmount - 0
+        // 找零：收款金额超出单据金额的部分
+        const backAmount = Math.max(getAmount - total, 0)
+        // 欠款：收款金额不足单据金额的部分
+        const debt = Math.max(total - getAmount, 0)
+        // 实收金额：不超过单据金额，用于按行金额占比分摊到明细
+        const realAmount = Math.min(getAmount, total)
+        const rows = this.cartList.map(item => {
+          const price = (item.unitPrice - 0) || (item.commodityDecimal - 0) || 0
+          const qty = item.operNumber - 0 || 1
+          return {
+            barCode: item.barCode,
+            skuCode: item.skuCode,
+            sku: item.sku,
+            unit: item.unit,
+            depotId: this.billForm.depotId,
+            operNumber: qty,
+            unitPrice: price,
+            allPrice: (price * qty).toFixed(2)
           }
         })
-        // 后续完善：将 cartList 注入到弹窗明细
+        const info = {
+          type: '出库',
+          subType: '零售',
+          number: this.billForm.number,
+          operTime: moment(this.billForm.operTime).format('YYYY-MM-DD HH:mm:ss'),
+          organId: this.billForm.organId,
+          payType: this.billForm.payType,
+          totalPrice: total.toFixed(2),
+          changeAmount: total.toFixed(2),
+          getAmount: getAmount.toFixed(2),
+          backAmount: backAmount.toFixed(2),
+          debt: debt.toFixed(2),
+          realAmount: realAmount.toFixed(2),
+          discount: 0,
+          discountMoney: 0,
+          discountLastMoney: total.toFixed(2),
+          otherMoney: 0,
+          remark: '',
+          status: '0'
+        }
+        this.saving = true
+        postAction('/depotHead/addDepotHeadAndDetail', {
+          info: JSON.stringify(info),
+          rows: JSON.stringify(rows)
+        }).then(res => {
+          this.saving = false
+          if (res && res.code === 200) {
+            this.$message.success('销售单保存成功：' + info.number)
+            this.settleVisible = false
+            this.cartList = []
+            this.selectedMember = null
+            this.billForm.organId = undefined
+            this.billForm.payAmount = 0
+            this.billForm.number = ''
+            this.initBillForm()
+          } else {
+            this.$message.warning((res && res.data && res.data.message) || '保存失败')
+          }
+        }).catch(err => {
+          this.saving = false
+          const msg = err && err.response && err.response.data && err.response.data.message
+          this.$message.error(msg || '保存失败，请查看系统日志')
+        })
       },
       tableAddTotalRow () {}
     }

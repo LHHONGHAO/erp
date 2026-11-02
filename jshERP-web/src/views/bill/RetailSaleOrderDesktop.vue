@@ -1,8 +1,8 @@
 <template>
   <!-- 固定高度容器，内容超出时页面内滚动（与商品类别等列表页一致的显示方式） -->
   <div class="sale-order-page" :style="cardStyle">
-    <!-- 页面头部：标题 + 操作按钮，滚动时固定在顶部 -->
-    <div class="so-header">
+    <!-- 页面头部：标题 + 操作按钮，滚动时固定在顶部；手机端由全局蓝底顶栏承载（返回+标题+顶部按钮） -->
+    <div class="so-header" v-if="device !== 'mobile'">
       <span class="so-title">销售开单</span>
       <div class="so-actions">
         <a-button icon="import" @click="handleImport">导入明细</a-button>
@@ -20,12 +20,14 @@
 
 <script>
   import RetailOutModal from './modules/RetailOutModal'
+  import { mixinDevice } from '@/utils/mixin.js'
 
   export default {
     name: 'RetailSaleOrderDesktop',
     components: {
       RetailOutModal
     },
+    mixins: [mixinDevice],
     data () {
       return {
         // 容器高度，页面内容超出时出现滚动条

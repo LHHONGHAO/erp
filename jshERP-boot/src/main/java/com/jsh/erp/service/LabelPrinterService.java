@@ -186,7 +186,12 @@ public class LabelPrinterService {
         int x = toDots(item.getIntValue("x"));
         int y = toDots(item.getIntValue("y"));
         int height = Math.max(20, toDots(item.getIntValue("height")));
-        int narrow = barcodeNarrowWidth(content.trim(), toDots(item.getIntValue("width")));
+        int narrow = item.getIntValue("narrow");
+        if (narrow <= 0) {
+            // 旧版前端未传窄条宽度，按元素宽度反算（可能与预览取整不一致）
+            narrow = barcodeNarrowWidth(content.trim(), toDots(item.getIntValue("width")));
+        }
+        narrow = Math.max(1, Math.min(4, narrow));
         // 第 5 个参数为是否打印可读字符，置 0 避免条码下方多出一行属性值
         writeLine(out, "BARCODE " + x + "," + y + ",\"128\"," + height + ",0,0," + narrow + "," + (narrow * 2)
                 + ",\"" + escape(content.trim()) + "\"");
@@ -224,7 +229,12 @@ public class LabelPrinterService {
         int width = toDots(item.getIntValue("width"));
         int height = toDots(item.getIntValue("height"));
         int side = (width > 0 && height > 0) ? Math.min(width, height) : Math.max(width, height);
-        int cell = qrCellWidth(content, side);
+        int cell = item.getIntValue("cell");
+        if (cell <= 0) {
+            // 旧版前端未传单元宽度，按目标边长反算（可能与预览取整不一致）
+            cell = qrCellWidth(content, side);
+        }
+        cell = Math.max(1, Math.min(10, cell));
         writeLine(out, "QRCODE " + x + "," + y + ",M," + cell + ",A,0,\"" + escape(content) + "\"");
     }
 

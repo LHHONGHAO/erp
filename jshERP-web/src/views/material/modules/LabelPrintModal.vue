@@ -35,20 +35,17 @@
           <div class="lp-preview-wrap">
             <div class="lp-preview" :style="{ width: labelWidth + 'px', height: labelHeight + 'px' }">
               <div
-                v-for="attr in selectedAttrList"
-                :key="attr.key"
+                v-for="item in renderItems"
+                :key="item.key"
                 class="lp-item"
-                :class="{ 'is-multiline': attr.value != null && String(attr.value).indexOf('\n') > -1, 'is-code': isCodeItem(attr.key) }"
-                :style="itemStyle(attr.key)"
+                :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                :style="itemStyle(item.key)"
               >
-                <template v-if="isCodeItem(attr.key)">
-                  <div class="lp-code-box">
-                    <div class="lp-code-text" :style="codeTextStyle(attr)">{{ codeText(attr) }}</div>
-                    <img v-if="codeImages[attr.key]" :src="codeImages[attr.key]" class="lp-code-img" :style="codeImgStyle(attr)" />
-                  </div>
+                <template v-if="item.isCode">
+                  <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
                 </template>
                 <template v-else>
-                  <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>{{ attr.value }}
+                  <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
                 </template>
               </div>
             </div>
@@ -196,7 +193,7 @@
 <script>
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { printLabel } from '@/views/material/utils/labelPrint'
-  import { fitCodeSize, renderCodeDataUrl } from '@/views/material/utils/labelCode'
+  import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { getAction, postAction } from '@/api/manage'
   import {
@@ -282,12 +279,24 @@
       labelHeightMm() {
         return Math.round(this.labelHeight / PX_PER_MM)
       },
+      // 渲染条目：属性文字元素 + 独立的条码/二维码元素
+      renderItems() {
+        var items = []
+        var styles = this.attrStyles
+        this.selectedAttrList.forEach(function(attr) {
+          items.push({ key: attr.key, attr: attr, isCode: false })
+          if (styles[CODE_KEY_PREFIX + attr.key]) {
+            items.push({ key: CODE_KEY_PREFIX + attr.key, attr: attr, isCode: true })
+          }
+        })
+        return items
+      },
       // 编码内容签名：属性值、编码类型、尺寸变化时重新生成条码/二维码图片
       codeSignature() {
         var self = this
-        return this.selectedAttrList.map(function(attr) {
-          var s = self.attrStyles[attr.key] || {}
-          return [attr.key, s.codeType || '', attr.value == null ? '' : attr.value, s.width || '', s.height || ''].join('|')
+        return this.renderItems.filter(function(item) { return item.isCode }).map(function(item) {
+          var s = self.attrStyles[item.key] || {}
+          return [item.key, s.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
         }).join(';')
       }
     },
@@ -316,65 +325,45 @@
       }
     },
     methods: {
-      // 该属性是否渲染为条码/二维码
+      // 是否为独立编码元素
       isCodeItem(key) {
-        var s = this.attrStyles[key]
-        return !!(s && s.codeType)
+        return isCodeKey(key)
       },
-      // 条码/二维码上方的文字：属性名 + 属性值（属性名留空时只显示值）
-      codeText(attr) {
-        var label = Object.prototype.hasOwnProperty.call(this.attrLabels, attr.key)
-          ? this.attrLabels[attr.key]
-          : (attr.label || '')
-        var value = attr.value == null ? '' : String(attr.value)
-        return label ? (label + ': ' + value) : value
-      },
-      // 编码元素布局：文字高度、盒宽、图形尺寸
-      codeLayout(attr) {
-        var s = this.attrStyles[attr.key] || {}
+      // 编码元素的图形布局：尺寸取元素自身宽高，按打印机能力换算
+      codeLayout(codeKey) {
+        var s = this.attrStyles[codeKey] || {}
         var isQr = s.codeType === 'qrcode'
-        var text = this.codeText(attr)
-        var lines = text ? text.split('\n').length : 0
-        var fontSize = s.fontSize || 14
-        var lineHeight = s.lineHeight || 1.3
-        // 文字框固定为文本实际长高 + 2px
-        var textBoxHeight = lines ? Math.round(lines * fontSize) + 2 : 0
-        // 文字与图形之间的间距取原行距留白的三分之一
-        var textGap = lines ? Math.round((lines * fontSize * (lineHeight - 1)) / 3) : 0
-        var textHeight = textBoxHeight + textGap
+        var sourceKey = codeSourceKey(codeKey)
+        var attr = this.allAttrs.find(function(a) { return a.key === sourceKey })
+        var value = attr && attr.value != null ? attr.value : ''
         var boxWidth = s.width || (isQr ? 80 : 160)
-        var imgHeight = s.height ? Math.max(20, s.height - textHeight) : (isQr ? 80 : 50)
-        // 按打印机硬件能力换算实际可打印尺寸，预览与打印保持一致
-        var fitted = fitCodeSize(s.codeType, attr.value, boxWidth, imgHeight)
+        var boxHeight = s.height || (isQr ? 80 : 50)
+        var fitted = fitCodeSize(s.codeType, value, boxWidth, boxHeight)
         return {
-          text: text,
-          textHeight: textHeight,
-          textBoxHeight: textBoxHeight,
-          boxWidth: boxWidth,
+          value: value,
           imgWidth: fitted.width,
-          imgHeight: fitted.height
+          imgHeight: fitted.height,
+          // 硬件参数随布局一起下发：窄条宽度（条码）/ 单元宽度（二维码）
+          narrow: fitted.narrow,
+          cell: fitted.cell
         }
       },
-      // 编码元素上方的文字框：严格贴合文字高度
-      codeTextStyle(attr) {
-        var layout = this.codeLayout(attr)
-        return { height: layout.textBoxHeight + 'px', lineHeight: '1' }
-      },
-      codeImgStyle(attr) {
-        var layout = this.codeLayout(attr)
+      codeImgStyle(codeKey) {
+        var layout = this.codeLayout(codeKey)
         return { width: layout.imgWidth + 'px', height: layout.imgHeight + 'px' }
       },
-      // 为所有设置为条码/二维码的属性生成图片
+      // 为所有独立编码元素生成图片
       refreshCodeImages() {
         var self = this
         var alive = {}
-        this.selectedAttrList.forEach(function(attr) {
-          var s = self.attrStyles[attr.key]
-          if (!s || !s.codeType) return
-          alive[attr.key] = true
-          var layout = self.codeLayout(attr)
-          renderCodeDataUrl(s.codeType, attr.value, layout.imgWidth, layout.imgHeight).then(function(url) {
-            self.$set(self.codeImages, attr.key, url)
+        this.renderItems.forEach(function(item) {
+          if (!item.isCode) return
+          var s = self.attrStyles[item.key]
+          if (!s) return
+          alive[item.key] = true
+          var layout = self.codeLayout(item.key)
+          renderCodeDataUrl(s.codeType, layout.value, layout.imgWidth, layout.imgHeight).then(function(url) {
+            self.$set(self.codeImages, item.key, url)
           })
         })
         Object.keys(this.codeImages).forEach(function(key) {
@@ -571,6 +560,11 @@
               delete copy.height
             }
             self.$set(self.attrStyles, key, copy)
+            // 恢复该属性对应的独立编码元素
+            var codeKey = CODE_KEY_PREFIX + key
+            if (tpl.attrStyles[codeKey]) {
+              self.$set(self.attrStyles, codeKey, JSON.parse(JSON.stringify(tpl.attrStyles[codeKey])))
+            }
           } else {
             self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3 })
           }
@@ -584,10 +578,22 @@
         })
         this.labelWidth = tpl.labelWidth || 320
         this.labelHeight = tpl.labelHeight || 240
+        // 旧模板（文字与条码合在一个元素里）自动拆分为独立编码元素
+        this.attrStyles = migrateCodeStyles(this.attrStyles, this.allAttrs, this.attrLabels)
       },
       itemStyle(key) {
         var s = this.attrStyles[key]
         if (!s) return {}
+        // 独立编码元素：宽高即图形实际可打印尺寸
+        if (isCodeKey(key)) {
+          var codeSize = this.codeLayout(key)
+          return {
+            left: (s.x || 0) + 'px',
+            top: (s.y || 0) + 'px',
+            width: codeSize.imgWidth + 'px',
+            height: codeSize.imgHeight + 'px'
+          }
+        }
         var style = {
           left: s.x + 'px',
           top: s.y + 'px',
@@ -599,15 +605,6 @@
         // 未手动指定宽高时由文字撑开，保证多行规格完整显示
         if (s.width) style.width = s.width + 'px'
         if (s.height) style.height = s.height + 'px'
-        // 条码/二维码：宽度用设定值或默认 80/160，总高 = 文字高度 + 图形高度
-        if (s.codeType) {
-          var codeAttr = this.selectedAttrList.find(function(a) { return a.key === key })
-          if (codeAttr) {
-            var layout = this.codeLayout(codeAttr)
-            style.width = layout.boxWidth + 'px'
-            style.height = Math.round(layout.textHeight + layout.imgHeight) + 'px'
-          }
-        }
         return style
       },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
@@ -707,39 +704,7 @@
       },
       // 构造打印项数组（供 discovered 打印复用）
       buildPrintItems() {
-        var self = this
-        var items = []
-        this.selectedAttrList.forEach(function(attr) {
-          var style = self.attrStyles[attr.key]
-          if (!style) return
-          if (style.codeType) {
-            var layout = self.codeLayout(attr)
-            var codeUrl = self.codeImages[attr.key] || ''
-            items.push({
-              x: style.x, y: style.y, width: layout.boxWidth, height: null,
-              fontSize: style.fontSize, fontWeight: style.fontWeight,
-              letterSpacing: style.letterSpacing || 0, lineHeight: style.lineHeight || 1.3,
-              text: layout.text
-            })
-            items.push({
-              x: style.x, y: style.y + layout.textHeight,
-              width: layout.imgWidth, height: layout.imgHeight,
-              codeType: style.codeType, codeText: attr.value == null ? '' : String(attr.value),
-              image: codeUrl, text: ''
-            })
-            return
-          }
-          var labelText = self.attrLabels[attr.key] || ''
-          var displayText = labelText ? labelText + ': ' + attr.value : attr.value
-          items.push({
-            x: style.x, y: style.y,
-            width: style.width || null, height: style.height || null,
-            fontSize: style.fontSize, fontWeight: style.fontWeight,
-            letterSpacing: style.letterSpacing || 0, lineHeight: style.lineHeight || 1.3,
-            text: displayText
-          })
-        })
-        return items
+        return this.buildLayoutItems()
       },
       // 打印：直接发送到所选打印机（后端执行），后端不可用时回退浏览器打印
       handlePrint() {
@@ -762,10 +727,10 @@
         var items = this.buildLayoutItems()
         this.printing = true
         postAction('/print/label', {
-          printerName: this.selectedPrinter,
-          copies: this.copies,
-          width: this.labelWidth,
-          height: this.labelHeight,
+          printerName: self.selectedPrinter,
+          copies: self.copies,
+          width: self.labelWidth,
+          height: self.labelHeight,
           items: items
         }).then(function(res) {
           self.printing = false
@@ -782,45 +747,39 @@
         })
       },
       // 组装标签打印项（后端打印机与网络打印机共用同一份布局数据）
+      // 按界面元素 1:1 输出：文字项与独立编码项各用自身 x/y/宽高，不再做二次拆分
       buildLayoutItems() {
         var self = this
         var items = []
-        this.selectedAttrList.forEach(function(attr) {
-          var style = self.attrStyles[attr.key]
+        this.renderItems.forEach(function(item) {
+          var style = self.attrStyles[item.key]
           if (!style) return
-          // 条码/二维码：文字照常打印，图形打印在文字下方
-          if (style.codeType) {
-            var layout = self.codeLayout(attr)
-            var codeUrl = self.codeImages[attr.key] || ''
+          if (item.isCode) {
+            // 编码元素：宽高取与预览一致的可打印尺寸
+            var layout = self.codeLayout(item.key)
             items.push({
-              x: style.x,
-              y: style.y,
-              width: layout.boxWidth,
-              height: null,
-              fontSize: style.fontSize,
-              fontWeight: style.fontWeight,
-              letterSpacing: style.letterSpacing || 0,
-              lineHeight: style.lineHeight || 1.3,
-              text: layout.text
-            })
-            items.push({
-              x: style.x,
-              y: style.y + layout.textHeight,
+              x: style.x || 0,
+              y: style.y || 0,
               width: layout.imgWidth,
               height: layout.imgHeight,
               codeType: style.codeType,
-              codeText: attr.value == null ? '' : String(attr.value),
+              codeText: layout.value,
+              // 硬件取整参数：后端直接使用，不能自行按宽度重算
+              narrow: layout.narrow,
+              cell: layout.cell,
               // image 仅用于浏览器兜底打印，后端按 codeType + codeText 下发硬件指令
-              image: codeUrl,
+              image: self.codeImages[item.key] || '',
               text: ''
             })
             return
           }
+          var attr = item.attr
           var labelText = self.attrLabels[attr.key] || ''
-          var displayText = labelText ? labelText + ': ' + attr.value : attr.value
+          var value = attr.value == null ? '' : attr.value
+          var displayText = labelText ? labelText + ': ' + value : value
           items.push({
-            x: style.x,
-            y: style.y,
+            x: style.x || 0,
+            y: style.y || 0,
             width: style.width || null,
             height: style.height || null,
             fontSize: style.fontSize,
@@ -842,9 +801,9 @@
         }
         this.printing = true
         printToWifiPrinter(printer, {
-          copies: this.copies,
-          width: this.labelWidth,
-          height: this.labelHeight,
+          copies: self.copies,
+          width: self.labelWidth,
+          height: self.labelHeight,
           items: this.buildLayoutItems()
         }).then(function(res) {
           self.printing = false
@@ -977,18 +936,7 @@
     overflow: visible;
     white-space: normal;
   }
-  /* 条码 / 二维码：上方文字、下方图形 */
-  .lp-code-box {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
-  .lp-code-text {
-    white-space: pre-line;
-    word-break: break-word;
-    text-align: left;
-  }
+  /* 条码 / 二维码：独立元素，只渲染图形 */
   .lp-code-img {
     display: block;
     object-fit: contain;

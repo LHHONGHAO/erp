@@ -109,5 +109,5 @@ Write-Host '==> 重建远端 app 容器 ...'
 Invoke-Plink "cd $RemoteDir && docker compose up -d --force-recreate app 2>&1 | tail -1"
 Write-Host '==> 等待服务启动 (50s) ...'
 Start-Sleep 50
-Invoke-Plink "curl -s -o /dev/null -w 'app  HTTP %{http_code}\n' http://127.0.0.1:9998/jshERP-boot/user/randomImage; curl -s -o /dev/null -w 'nginx HTTP %{http_code}\n' http://127.0.0.1:9999/"
+Invoke-Plink "curl -s -o /dev/null -w 'app  HTTP %{http_code}\n' http://127.0.0.1:9998/user/randomImage; curl -s -o /dev/null -w 'nginx HTTP %{http_code}\n' http://127.0.0.1:9999/"
 Write-Host "`n完成。访问地址: http://${Server}:9999"

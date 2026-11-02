@@ -105,7 +105,7 @@ REMOTE
 # 4. 验证
 echo "==> 等待服务启动 ($WAIT_SEC s) ..."
 sleep "$WAIT_SEC"
-run_remote "curl -s -o /dev/null -w 'app  HTTP %{http_code}\n' --max-time 10 http://127.0.0.1:$APP_PORT/jshERP-boot/user/randomImage; curl -s -o /dev/null -w 'web  HTTP %{http_code}\n' --max-time 10 http://127.0.0.1:$WEB_PORT/"
+run_remote "curl -s -o /dev/null -w 'app  HTTP %{http_code}\n' --max-time 10 http://127.0.0.1:$APP_PORT/user/randomImage; curl -s -o /dev/null -w 'web  HTTP %{http_code}\n' --max-time 10 http://127.0.0.1:$WEB_PORT/"
 
 echo ""
 echo "完成。访问地址: http://${SERVER}:${WEB_PORT}"

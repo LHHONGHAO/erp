@@ -15,8 +15,21 @@
       <span v-if="device === 'mobile'" class="mobile-title">{{ mobileTitle }}</span>
       <span v-if="device === 'desktop'" class="company-name">{{ companyName }}</span>
       <span v-else-if="device !== 'mobile'">{{ systemTitle }}</span>
+      <!-- 手机端页面级顶部按钮（由各页面注册，如设置图标、保存等），主页不注册即为默认按钮 -->
+      <div v-if="device === 'mobile' && mobileHeaderActions.length > 0" class="mobile-header-actions">
+        <span
+          v-for="act in mobileHeaderActions"
+          :key="act.key"
+          class="mha-btn"
+          :class="{ 'mha-primary': act.type === 'primary' }"
+          @click="act.handler && act.handler()">
+          <a-icon v-if="act.icon" :type="act.icon" />
+          <span v-if="act.text" class="mha-text">{{ act.text }}</span>
+        </span>
+      </div>
       <jump-info ref="jumpModal"></jump-info>
-      <user-menu :theme="theme" @searchGlobalHeader="searchGlobalHeader" />
+      <!-- 手机端标准功能页不渲染 UserMenu（搜索/主页/提醒/退出登录），仅主页保留；桌面端不受影响 -->
+      <user-menu v-if="device !== 'mobile' || isHomePage" :theme="theme" @searchGlobalHeader="searchGlobalHeader" />
     </div>
     <!-- 顶部导航栏模式 -->
     <div v-else :class="['top-nav-header-index', theme]">
@@ -35,7 +48,7 @@
             type="arrow-left"
             @click="back"></a-icon>
         </div>
-        <user-menu class="header-index-right" :theme="theme" :style="topMenuStyle.headerIndexRight"/>
+        <user-menu v-if="device !== 'mobile' || isHomePage" class="header-index-right" :theme="theme" :style="topMenuStyle.headerIndexRight"/>
       </div>
     </div>
 
@@ -49,6 +62,7 @@
   import Logo from '../tools/Logo'
   import { getCurrentSystemConfig } from '@/api/api'
   import { mixin } from '@/utils/mixin.js'
+  import { mobilePageHeader } from '@/utils/mobilePageHeader'
 
   export default {
     name: 'GlobalHeader',
@@ -103,8 +117,16 @@
       showBack() {
         return this.$route.path !== '/dashboard/analysis'
       },
+      // 是否为主页（手机端主页保留 UserMenu 顶部按钮）
+      isHomePage() {
+        return this.$route.path === '/dashboard/analysis'
+      },
       mobileTitle() {
         return (this.$route.meta && this.$route.meta.title) || this.systemTitle
+      },
+      // 当前页面注册的手机端顶部按钮
+      mobileHeaderActions() {
+        return mobilePageHeader.actions
       }
     },
     watch: {
@@ -274,6 +296,38 @@
       font-weight: 400;
       color: #fff;
       padding-left: 2px;
+    }
+
+    /* 页面级顶部按钮（右侧，位于默认按钮左侧） */
+    .mobile-header-actions {
+      float: right;
+      height: @height;
+      display: flex;
+      align-items: center;
+
+      .mha-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 0 12px;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+
+        .anticon {
+          font-size: 20px;
+        }
+        .mha-text {
+          margin-left: 4px;
+        }
+        &.mha-primary {
+          font-weight: 500;
+        }
+        &:active {
+          background: rgba(255, 255, 255, 0.2);
+        }
+      }
     }
   }
 

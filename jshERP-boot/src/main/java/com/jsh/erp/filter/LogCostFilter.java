@@ -13,9 +13,10 @@ import java.io.IOException;
 
 @WebFilter(filterName = "LogCostFilter", urlPatterns = {"/*"},
         initParams = {@WebInitParam(name = "filterPath",
-                      value = "/jshERP-boot/platformConfig/getPlatform#/jshERP-boot/v2/api-docs#/jshERP-boot/webjars#" +
-                              "/jshERP-boot/systemConfig/static#/jshERP-boot/api/plugin/wechat/weChat/share#" +
-                              "/jshERP-boot/api/plugin/general-ledger/pdf/voucher#/jshERP-boot/api/plugin/tenant-statistics/tenantClean")})
+                      value = "/platformConfig/getPlatform#/v2/api-docs#/webjars#" +
+                              "/systemConfig/static#/api/plugin/wechat/weChat/share#" +
+                              "/api/plugin/general-ledger/pdf/voucher#/api/plugin/tenant-statistics/tenantClean#" +
+                              "/cert")})
 public class LogCostFilter implements Filter {
 
     private static final String FILTER_PATH = "filterPath";
@@ -38,6 +39,8 @@ public class LogCostFilter implements Filter {
         HttpServletRequest servletRequest = (HttpServletRequest) request;
         HttpServletResponse servletResponse = (HttpServletResponse) response;
         String requestUrl = servletRequest.getRequestURI();
+        String contextPath = servletRequest.getContextPath();
+        String path = requestUrl.startsWith(contextPath) ? requestUrl.substring(contextPath.length()) : requestUrl;
         if(requestUrl.contains("..") || requestUrl.contains("%2e") || requestUrl.contains("%2E")) {
             servletResponse.setStatus(500);
             servletResponse.getWriter().write("loginOut");
@@ -49,16 +52,16 @@ public class LogCostFilter implements Filter {
             chain.doFilter(request, response);
             return;
         }
-        if (requestUrl.equals("/jshERP-boot/doc.html") || requestUrl.equals("/jshERP-boot/user/login")
-                || requestUrl.equals("/jshERP-boot/user/register") || requestUrl.equals("/jshERP-boot/user/weixinLogin")
-                || requestUrl.equals("/jshERP-boot/user/weixinBind") || requestUrl.equals("/jshERP-boot/user/registerUser")
-                || requestUrl.equals("/jshERP-boot/user/randomImage")) {
+        if (path.equals("/doc.html") || path.equals("/user/login")
+                || path.equals("/user/register") || path.equals("/user/weixinLogin")
+                || path.equals("/user/weixinBind") || path.equals("/user/registerUser")
+                || path.equals("/user/randomImage")) {
             chain.doFilter(request, response);
             return;
         }
         if (null != allowUrls && allowUrls.length > 0) {
             for (String url : allowUrls) {
-                if (requestUrl.startsWith(url)) {
+                if (path.startsWith(url)) {
                     chain.doFilter(request, response);
                     return;
                 }
@@ -70,7 +73,7 @@ public class LogCostFilter implements Filter {
             return;
         }
         servletResponse.setStatus(500);
-        if(!requestUrl.equals("/jshERP-boot/user/logout") && !requestUrl.equals("/jshERP-boot/function/findMenuByPNumber")) {
+        if(!path.equals("/user/logout") && !path.equals("/function/findMenuByPNumber")) {
             servletResponse.getWriter().write("loginOut");
         }
     }

@@ -374,7 +374,7 @@
             }
             obj.then((res)=>{
               if(res.code === 200){
-                that.$emit('ok');
+                that.$emit('ok', formData);
               }else{
                 that.$message.warning(res.data.message);
               }

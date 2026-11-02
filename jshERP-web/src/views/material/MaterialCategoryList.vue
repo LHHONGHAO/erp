@@ -3,8 +3,8 @@
   <a-row :gutter="10">
     <a-col :md="12" :sm="24">
       <a-card :bordered="false">
-        <!-- 按钮操作区域 -->
-        <a-row style="margin-left: 14px">
+        <!-- 按钮操作区域；手机端由全局蓝底顶栏承载（添加/刷新），批量删除仅桌面端 -->
+        <a-row style="margin-left: 14px" v-if="device !== 'mobile'">
           <a-button v-if="btnEnableList.indexOf(1)>-1" @click="handleAdd()" type="primary">添加类别</a-button>
           <a-button v-if="btnEnableList.indexOf(1)>-1" title="删除多条数据" @click="batchDel" type="default">批量删除</a-button>
           <a-button @click="refresh" type="default" icon="reload">刷新</a-button>
@@ -122,9 +122,11 @@ import pick from 'lodash.pick'
 import {queryMaterialCategoryTreeList,queryMaterialCategoryById,checkMaterialCategory} from '@/api/api'
 import {httpAction, deleteAction} from '@/api/manage'
 import {JeecgListMixin} from '@/mixins/JeecgListMixin'
+import {mixinDevice} from '@/utils/mixin.js'
+import {setMobileHeaderActions, clearMobileHeaderActions} from '@/utils/mobilePageHeader'
 export default {
   name: 'MaterialCategoryList',
-  mixins: [JeecgListMixin],
+  mixins: [JeecgListMixin, mixinDevice],
   components: {
     MaterialCategoryModal
   },
@@ -191,7 +193,29 @@ export default {
       return this.currSelected && this.currSelected.id != null
     }
   },
+  mounted() {
+    this.registerHeaderActions()
+  },
+  // keep-alive 激活时重新注册手机端顶部按钮
+  activated() {
+    this.registerHeaderActions()
+  },
+  deactivated() {
+    clearMobileHeaderActions()
+  },
+  beforeDestroy() {
+    clearMobileHeaderActions()
+  },
   methods: {
+    // 注册手机端顶部按钮：添加类别（需有按钮权限）、刷新；批量删除仅桌面端
+    registerHeaderActions() {
+      const actions = []
+      if (this.btnEnableList.indexOf(1) > -1) {
+        actions.push({ key: 'add', icon: 'plus', handler: this.handleAdd })
+      }
+      actions.push({ key: 'refresh', icon: 'reload', handler: this.refresh })
+      setMobileHeaderActions(actions)
+    },
     loadData() {
       this.refresh();
     },

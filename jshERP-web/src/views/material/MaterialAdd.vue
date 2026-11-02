@@ -1,8 +1,8 @@
 <template>
   <!-- 固定高度容器，内容超出时页面内滚动 -->
   <div class="material-add-page" :style="cardStyle">
-    <!-- 页面头部：操作按钮一行并列，滚动时固定在顶部 -->
-    <div class="ma-header">
+    <!-- 桌面端页头：操作按钮一行并列，滚动时固定在顶部；手机端由全局蓝底顶栏承载（返回+标题+顶部按钮） -->
+    <div class="ma-header" v-if="device !== 'mobile'">
       <a-button icon="left" class="ma-back-btn" @click="handleBack">返回</a-button>
       <div class="ma-actions">
         <a-button icon="setting" @click="handlePropertyConfig">属性设置</a-button>
@@ -19,12 +19,15 @@
 
 <script>
   import MaterialModal from './modules/MaterialModal'
+  import { mixinDevice } from '@/utils/mixin.js'
+  import { setMobileHeaderActions, clearMobileHeaderActions } from '@/utils/mobilePageHeader'
 
   export default {
     name: 'MaterialAdd',
     components: {
       MaterialModal
     },
+    mixins: [mixinDevice],
     data () {
       return {
         // 容器高度，页面内容超出时出现纵向滚动条
@@ -36,18 +39,32 @@
     mounted () {
       this.setHeight()
       window.addEventListener('resize', this.setHeight)
+      this.registerHeaderActions()
       this.$nextTick(() => {
         this.loadRecordFromStorage()
       })
     },
     // keep-alive 激活时重新读取 sessionStorage 中的编辑数据，避免残留上一次编辑的商品
     activated () {
+      this.registerHeaderActions()
       this.loadRecordFromStorage()
+    },
+    deactivated () {
+      clearMobileHeaderActions()
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.setHeight)
+      clearMobileHeaderActions()
     },
     methods: {
+      // 注册手机端顶部按钮：设置（属性设置）、重置、保存
+      registerHeaderActions () {
+        setMobileHeaderActions([
+          { key: 'setting', icon: 'setting', handler: this.handlePropertyConfig },
+          { key: 'reset', icon: 'reload', handler: this.handleReset },
+          { key: 'save', text: '保存', type: 'primary', handler: this.handleOk }
+        ])
+      },
       // 从 sessionStorage 读取商品数据并加载到表单（编辑模式），否则打开新增表单
       loadRecordFromStorage () {
         const recordStr = sessionStorage.getItem('materialEditRecord')

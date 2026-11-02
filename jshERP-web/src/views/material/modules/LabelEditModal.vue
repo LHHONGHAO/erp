@@ -133,41 +133,38 @@
                   ></div>
                   <div v-if="selectedAttrList.length === 0" class="label-preview-empty">请先勾选属性</div>
                   <div
-                    v-for="attr in selectedAttrList"
-                    :key="attr.key"
-                    :data-key="attr.key"
+                    v-for="item in renderItems"
+                    :key="item.key"
+                    :data-key="item.key"
                     class="label-preview-item"
-                    :class="{ active: selectedKeys.indexOf(attr.key) > -1, 'is-multiline': isMultilineValue(attr.value), 'is-code': isCodeItem(attr.key) }"
-                    :style="getItemStyle(attr.key)"
-                    @mousedown="onItemMouseDown($event, attr.key)"
-                    @dblclick="onItemDoubleClick($event, attr)"
+                    :class="{ active: selectedKeys.indexOf(item.key) > -1, 'is-multiline': !item.isCode && isMultilineValue(item.attr.value), 'is-code': item.isCode }"
+                    :style="getItemStyle(item.key)"
+                    @mousedown="onItemMouseDown($event, item.key)"
+                    @dblclick="!item.isCode && onItemDoubleClick($event, item.attr)"
                   >
-                    <template v-if="!isCodeItem(attr.key)">
-                      <template v-if="attrLabels[attr.key]">{{ attrLabels[attr.key] }}: </template>
+                    <template v-if="!item.isCode">
+                      <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>
                       <input
-                        v-if="editingKey === attr.key"
-                        :value="attr.value"
-                        @input="updateCustomValue(attr.key, $event.target.value)"
+                        v-if="editingKey === item.key"
+                        :value="item.attr.value"
+                        @input="updateCustomValue(item.attr.key, $event.target.value)"
                         @blur="editingKey = null"
                         @keyup.enter="editingKey = null"
                         @mousedown.stop
                         class="label-edit-input"
                       />
-                      <template v-else>{{ attr.value }}</template>
+                      <template v-else>{{ item.attr.value }}</template>
                     </template>
-                    <!-- 条码/二维码：文字（属性名+属性值）照常显示，下方生成图形 -->
+                    <!-- 条码/二维码：独立元素，可单独选中、拖动、调整宽高 -->
                     <template v-else>
-                      <div class="label-code-box">
-                        <div class="label-code-text" :style="codeTextStyle(attr)">{{ codeText(attr) }}</div>
-                        <img v-if="codeImages[attr.key]" :src="codeImages[attr.key]" class="label-code-img" :style="codeImgStyle(attr)" />
-                        <span v-else class="label-code-fallback">{{ attr.value }}</span>
-                      </div>
+                      <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="label-code-img" :style="codeImgStyle(item.key)" />
+                      <span v-else class="label-code-fallback">{{ item.attr.value }}</span>
                     </template>
                     <!-- resize 手柄 -->
                     <div
-                      v-if="selectedKeys.length === 1 && currentAttrKey === attr.key && editingKey !== attr.key"
+                      v-if="selectedKeys.length === 1 && currentAttrKey === item.key && editingKey !== item.key"
                       class="resize-handle"
-                      @mousedown.stop.prevent="onResizeMouseDown($event, attr.key)"
+                      @mousedown.stop.prevent="onResizeMouseDown($event, item.key)"
                     ></div>
                   </div>
                   <!-- 拖拽对齐参考线 -->
@@ -186,6 +183,11 @@
         <!-- 右栏：标签尺寸 + 样式编辑（固定宽度） -->
         <a-col class="le-side" style="width:340px;flex:none">
           <div class="label-edit-panel">
+            <!-- 编辑模式：当前模板标识（通用模板显示「类型/模板名」，普通模板只显示模板名） -->
+            <div v-if="currentTemplateTitle" class="label-current-template">
+              <span class="label-current-template-text">{{ currentTemplateTitle }}</span>
+              <a class="label-current-template-del" @click="handleDeleteCurrentTemplate">删除</a>
+            </div>
             <!-- 标签宽高（毫米）：固定最顶端 -->
             <div class="label-size-editor" style="margin-bottom:10px">
               <div class="label-edit-section-title">标签尺寸（毫米）</div>
@@ -219,8 +221,8 @@
             </div>
             <div v-if="!selectedKeys.length" class="label-edit-empty">请点击预览中的属性（Shift + 点击可多选）</div>
             <div v-else>
-              <!-- 属性名编辑：可输入可快速选择，留空则不显示属性名 -->
-              <div style="margin-bottom:8px">
+              <!-- 属性名编辑：可输入可快速选择，留空则不显示属性名（编码元素不适用） -->
+              <div style="margin-bottom:8px" v-if="!currentIsCode">
                 <span class="style-label">属性名编辑</span>
                 <a-auto-complete
                   v-model="currentLabelEdit"
@@ -229,30 +231,31 @@
                   style="width:100%"
                 />
               </div>
-              <!-- 条码 / 二维码：勾选后按该属性的值生成图形 -->
+              <!-- 条码 / 二维码：作为独立元素添加到标签中，可单独拖动和调整宽高 -->
               <div style="margin-bottom:8px">
                 <span class="style-label">编码</span>
                 <a-checkbox :checked="currentCodeType === 'barcode'" @change="e => setCodeType('barcode', e.target.checked)">条码</a-checkbox>
                 <a-checkbox :checked="currentCodeType === 'qrcode'" @change="e => setCodeType('qrcode', e.target.checked)">二维码</a-checkbox>
+                <div v-if="currentIsCode" style="font-size:12px;color:#999;margin-top:2px">编码为独立元素，可单独拖动和调整宽高</div>
               </div>
 
-              <!-- 字体属性：单列排列，数值项带数字调节按钮；多选时不一致的项显示为空 -->
-              <div class="style-field">
+              <!-- 字体属性：单列排列，数值项带数字调节按钮；多选时不一致的项显示为空（编码元素不适用） -->
+              <div class="style-field" v-if="!currentIsCode">
                 <span class="style-label">字号</span>
                 <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" style="width:100%" placeholder="多个值" />
               </div>
-              <div class="style-field">
+              <div class="style-field" v-if="!currentIsCode">
                 <span class="style-label">粗细</span>
                 <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" style="width:100%" placeholder="多个值">
                   <a-select-option value="normal">正常</a-select-option>
                   <a-select-option value="bold">粗体</a-select-option>
                 </a-select>
               </div>
-              <div class="style-field">
+              <div class="style-field" v-if="!currentIsCode">
                 <span class="style-label">字间距(px)</span>
                 <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" style="width:100%" placeholder="多个值" />
               </div>
-              <div class="style-field">
+              <div class="style-field" v-if="!currentIsCode">
                 <span class="style-label">行距(倍)</span>
                 <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" style="width:100%" placeholder="多个值" />
               </div>
@@ -296,22 +299,26 @@
         <div class="label-edit-section-title" style="margin-bottom:6px">模板名称</div>
         <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
       </div>
-      <div>
-        <div class="label-edit-section-title" style="margin-bottom:6px">商品类型</div>
-        <a-select
-          v-model="templateCategoryId"
-          style="width:100%"
-          placeholder="不选择则保存为普通模板"
-          allowClear
-          showSearch
-          :filterOption="filterCategory"
-          :getPopupContainer="getBodyContainer"
-          :dropdownStyle="{ zIndex: 3200 }"
-        >
-          <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
-        </a-select>
-        <div style="margin-top:6px;font-size:12px;color:#999">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
-      </div>
+        <div>
+          <div class="label-edit-section-title" style="margin-bottom:6px">商品类型</div>
+          <a-select
+            v-model="templateCategoryId"
+            style="width:100%"
+            placeholder="不选择则保存为普通模板"
+            allowClear
+            showSearch
+            :filterOption="filterCategory"
+            :getPopupContainer="getBodyContainer"
+            :dropdownStyle="{ zIndex: 3200 }"
+          >
+            <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
+          </a-select>
+          <div style="margin-top:6px;font-size:12px;color:#999">仅二级类目可作为模板类型（一级类目不可保存模板）；一个类目只保留一个模板</div>
+          <div v-if="conflictTemplate" style="margin-top:4px;font-size:12px;color:#fa8c16">
+            该类型已有模板「{{ conflictTemplate.name }}」，保存后将覆盖
+          </div>
+          <div style="margin-top:4px;font-size:12px;color:#999">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
+        </div>
     </a-modal>
   </div>
 </template>
@@ -319,7 +326,7 @@
 <script>
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
-  import { fitCodeSize, renderCodeDataUrl } from '@/views/material/utils/labelCode'
+  import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates, saveLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import LabelPrintModal from './LabelPrintModal'
 
@@ -391,16 +398,55 @@
       selectedAttrList() {
         return this.allAttrs.filter(attr => this.selectedAttrs.indexOf(attr.key) > -1)
       },
-      // 选中项的编码类型（条码/二维码），多选时不一致返回空
+      // 当前正在编辑的模板（未选中模板时为 null）
+      currentTemplate() {
+        var id = this.selectedTemplateId
+        if (!id) return null
+        return this.templates.find(function(t) { return t.id === id }) || null
+      },
+      // 编辑模式下的模板标识：通用模板显示「类型/模板名」，普通模板只显示模板名
+      currentTemplateTitle() {
+        var tpl = this.currentTemplate
+        if (!tpl) return ''
+        if (tpl.type === 'default') {
+          var typeName = tpl.categoryName || this.getCategoryName(tpl.categoryId) || '通用模板'
+          return typeName + ' / ' + tpl.name
+        }
+        return tpl.name
+      },
+      // 渲染条目：属性文字元素 + 独立的条码/二维码元素
+      renderItems() {
+        var items = []
+        var styles = this.attrStyles
+        this.selectedAttrList.forEach(function(attr) {
+          items.push({ key: attr.key, attr: attr, isCode: false })
+          if (styles[CODE_KEY_PREFIX + attr.key]) {
+            items.push({ key: CODE_KEY_PREFIX + attr.key, attr: attr, isCode: true })
+          }
+        })
+        return items
+      },
+      // 当前选中的是否为独立编码元素
+      currentIsCode() {
+        return isCodeKey(this.currentAttrKey)
+      },
+      // 当前选中项关联的编码类型（条码/二维码），未关联时返回空
       currentCodeType() {
-        return this.getMultiStyle('codeType') || ''
+        var key = this.currentAttrKey
+        if (!key) return ''
+        if (isCodeKey(key)) {
+          var s = this.attrStyles[key]
+          return (s && s.codeType) || ''
+        }
+        var codeStyle = this.attrStyles[CODE_KEY_PREFIX + key]
+        return (codeStyle && codeStyle.codeType) || ''
       },
       // 编码内容签名：属性值、编码类型、尺寸变化时重新生成图片
       codeSignature() {
         var self = this
-        return this.selectedAttrList.map(function(attr) {
-          var s = self.attrStyles[attr.key] || {}
-          return [attr.key, s.codeType || '', attr.value == null ? '' : attr.value, s.width || '', s.height || ''].join('|')
+        return this.renderItems.filter(function(item) { return item.isCode }).map(function(item) {
+          var s = self.attrStyles[item.key] || {}
+          return [item.key, s.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
         }).join(';')
       },
       // 标签中所有文字，按预览顺序逐行输出「属性名: 值」，属性名留空时只输出值
@@ -465,7 +511,20 @@
         set(val) { this.labelHeight = Math.round(val * PX_PER_MM) }
       },
       categoryList() {
+        // 仅二级类目可作为模板类型：一级类目不允许保存模板
+        return this.flattenCategoryTree(this.categoryTree, 2)
+      },
+      // 全部类目（仅用于类目名称回显，包含一级类目）
+      allCategoryList() {
         return this.flattenCategoryTree(this.categoryTree)
+      },
+      // 所选类目下已存在的模板：一个类目只保留一个模板，保存时覆盖
+      conflictTemplate() {
+        var id = this.templateCategoryId
+        if (!id) return null
+        return this.templates.find(function(t) {
+          return t.type === 'default' && String(t.categoryId) === String(id)
+        }) || null
       },
       normalTemplates() {
         var mid = this.record.id
@@ -555,17 +614,21 @@
         // 与打印标签预览页共用同一套属性来源（商品信息表格全部列 + 旧模板兼容键）
         return buildLabelAttrs(this.record, this.sku)
       },
-      flattenCategoryTree(tree) {
+      // onlyLevel 指定时只保留该级类目（1=一级，2=二级），未返回 categoryLevel 时按树深度判断
+      flattenCategoryTree(tree, onlyLevel) {
         var result = []
-        function traverse(nodes, prefix) {
+        function traverse(nodes, prefix, depth) {
           if (!nodes) return
           nodes.forEach(function(node) {
             var label = prefix ? prefix + ' / ' + (node.title || node.label) : (node.title || node.label)
-            result.push({ value: node.value || node.id, label: label })
-            if (node.children) traverse(node.children, label)
+            var level = node.categoryLevel != null ? Number(node.categoryLevel) : depth
+            if (!onlyLevel || level === onlyLevel) {
+              result.push({ value: node.value || node.id, label: label })
+            }
+            if (node.children) traverse(node.children, label, depth + 1)
           })
         }
-        traverse(tree, '')
+        traverse(tree, '', 1)
         return result
       },
       filterCategory(input, option) {
@@ -577,12 +640,22 @@
       },
       getCategoryName(categoryId) {
         if (!categoryId) return ''
-        var cat = this.categoryList.find(function(c) { return String(c.value) === String(categoryId) })
+        var cat = this.allCategoryList.find(function(c) { return String(c.value) === String(categoryId) })
         return cat ? cat.label : ''
       },
       getItemStyle(key) {
         var s = this.attrStyles[key]
         if (!s) return {}
+        // 独立编码元素：宽高即图形实际可打印尺寸
+        if (isCodeKey(key)) {
+          var codeSize = this.codeLayout(key)
+          return {
+            left: (s.x || 0) + 'px',
+            top: (s.y || 0) + 'px',
+            width: codeSize.imgWidth + 'px',
+            height: Math.round(codeSize.imgHeight) + 'px'
+          }
+        }
         var style = {
           left: s.x + 'px',
           top: s.y + 'px',
@@ -594,64 +667,32 @@
         // 未手动指定宽高时边框随文字自适应，字号/行距/字距变化时自动跟随
         if (s.width) style.width = s.width + 'px'
         if (s.height) style.height = s.height + 'px'
-        // 条码/二维码：宽度用设定值或默认 80/160，总高 = 文字高度 + 图形高度
-        if (s.codeType) {
-          var codeAttr = this.selectedAttrList.find(function(a) { return a.key === key })
-          if (codeAttr) {
-            var layout = this.codeLayout(codeAttr)
-            style.width = layout.boxWidth + 'px'
-            style.height = Math.round(layout.textHeight + layout.imgHeight) + 'px'
-          }
-        }
         return style
       },
-      // 该属性是否渲染为条码/二维码
+      // 是否为独立编码元素
       isCodeItem(key) {
-        var s = this.attrStyles[key]
-        return !!(s && s.codeType)
+        return isCodeKey(key)
       },
-      // 条码/二维码上方的文字：属性名 + 属性值（属性名留空时只显示值）
-      codeText(attr) {
-        var label = Object.prototype.hasOwnProperty.call(this.attrLabels, attr.key)
-          ? this.attrLabels[attr.key]
-          : (attr.label || '')
-        var value = attr.value == null ? '' : String(attr.value)
-        return label ? (label + ': ' + value) : value
-      },
-      // 编码元素布局：文字高度、盒宽、图形宽高
-      codeLayout(attr) {
-        var s = this.attrStyles[attr.key] || {}
+      // 编码元素的图形布局：按属性值生成图形，尺寸取元素自身宽高
+      codeLayout(codeKey) {
+        var s = this.attrStyles[codeKey] || {}
         var isQr = s.codeType === 'qrcode'
-        var text = this.codeText(attr)
-        var lines = text ? String(text).split('\n').length : 0
-        var fontSize = s.fontSize || 14
-        var lineHeight = s.lineHeight || 1.3
-        // 文字框固定为文本实际长高 + 2px
-        var textBoxHeight = lines ? Math.round(lines * fontSize) + 2 : 0
-        // 文字与图形之间的间距取原行距留白的三分之一，避免文字和条码之间出现大空隙
-        var textGap = lines ? Math.round((lines * fontSize * (lineHeight - 1)) / 3) : 0
-        var textHeight = textBoxHeight + textGap
+        var sourceKey = codeSourceKey(codeKey)
+        var attr = this.allAttrs.find(function(a) { return a.key === sourceKey })
+        var value = attr && attr.value != null ? attr.value : ''
         var boxWidth = s.width || (isQr ? 80 : 160)
-        var imgHeight = s.height ? Math.max(20, s.height - textHeight) : (isQr ? 80 : 50)
+        var boxHeight = s.height || (isQr ? 80 : 50)
         // 按打印机硬件能力换算实际可打印尺寸，预览与打印保持一致
-        var fitted = fitCodeSize(s.codeType, attr.value, boxWidth, imgHeight)
+        var fitted = fitCodeSize(s.codeType, value, boxWidth, boxHeight)
         return {
-          text: text,
-          textHeight: textHeight,
-          textBoxHeight: textBoxHeight,
-          boxWidth: boxWidth,
+          value: value,
           imgWidth: fitted.width,
           imgHeight: fitted.height
         }
       },
-      // 编码元素上方的文字框：严格贴合文字高度
-      codeTextStyle(attr) {
-        var layout = this.codeLayout(attr)
-        return { height: layout.textBoxHeight + 'px', lineHeight: '1' }
-      },
       // 编码图片尺寸
-      codeImgStyle(attr) {
-        var layout = this.codeLayout(attr)
+      codeImgStyle(codeKey) {
+        var layout = this.codeLayout(codeKey)
         return {
           width: layout.imgWidth + 'px',
           height: Math.round(layout.imgHeight) + 'px'
@@ -673,15 +714,21 @@
             self.$set(self.attrLabels, key, attrItem ? attrItem.label : '')
           }
         })
-        if (this.currentAttrKey && this.selectedAttrs.indexOf(this.currentAttrKey) === -1) {
-          this.currentAttrKey = null
-          this.selectedKeys = []
-        }
-        // 已取消勾选的属性同时移出多选集合
-        var selfKeys = this
+        // 已取消勾选的属性：同时清理其独立编码元素与多选状态
         this.selectedKeys = this.selectedKeys.filter(function(k) {
-          return selfKeys.selectedAttrs.indexOf(k) > -1
+          var sourceKey = isCodeKey(k) ? codeSourceKey(k) : k
+          return self.selectedAttrs.indexOf(sourceKey) > -1
         })
+        Object.keys(this.attrStyles).forEach(function(k) {
+          if (!isCodeKey(k)) return
+          if (self.selectedAttrs.indexOf(codeSourceKey(k)) === -1) {
+            self.$delete(self.attrStyles, k)
+            self.$delete(self.codeImages, k)
+          }
+        })
+        if (this.currentAttrKey && this.selectedKeys.indexOf(this.currentAttrKey) === -1) {
+          this.currentAttrKey = null
+        }
       },
       // 值是否为多行（规格：子规格名：子规格值 逐行）
       isMultilineValue(value) {
@@ -716,6 +763,9 @@
         if (kIdx > -1) this.selectedKeys.splice(kIdx, 1)
         delete this.attrStyles[key]
         delete this.attrLabels[key]
+        // 同步删除该属性对应的独立编码元素
+        this.$delete(this.attrStyles, CODE_KEY_PREFIX + key)
+        this.$delete(this.codeImages, CODE_KEY_PREFIX + key)
       },
       updateCustomValue(key, value) {
         var attr = this.allAttrs.find(function(a) { return a.key === key })
@@ -777,30 +827,68 @@
           y: (e.clientY - rect.top) / this.zoom
         }
       },
-      // 切换编码类型：'barcode' 条码 / 'qrcode' 二维码 / '' 文本（两种编码互斥）
+      // 切换编码：选中文字元素时为该属性添加/移除独立编码元素；选中编码元素时直接切换类型
       setCodeType(type, checked) {
-        var self = this
-        this.selectedKeys.forEach(function(key) {
-          var s = self.attrStyles[key]
-          if (!s) return
+        var key = this.currentAttrKey
+        if (!key) return
+        if (isCodeKey(key)) {
+          var codeStyle = this.attrStyles[key]
+          if (!codeStyle) return
           if (checked) {
-            self.$set(s, 'codeType', type)
-          } else if (s.codeType === type) {
-            self.$delete(s, 'codeType')
+            this.$set(codeStyle, 'codeType', type)
+          } else if (codeStyle.codeType === type) {
+            this.removeCodeItem(key)
           }
-        })
+          return
+        }
+        var codeKey = CODE_KEY_PREFIX + key
+        if (checked) {
+          if (this.attrStyles[codeKey]) {
+            this.$set(this.attrStyles[codeKey], 'codeType', type)
+          } else {
+            this.createCodeItem(key, type)
+          }
+        } else if (this.attrStyles[codeKey] && this.attrStyles[codeKey].codeType === type) {
+          this.removeCodeItem(codeKey)
+        }
       },
-      // 为所有设置为条码/二维码的属性生成图片
+      // 在属性文字下方创建独立的条码/二维码元素
+      createCodeItem(attrKey, type) {
+        var textStyle = this.attrStyles[attrKey] || {}
+        var el = document.querySelector('.label-preview-item[data-key="' + attrKey + '"]')
+        var textHeight = el ? el.offsetHeight : 18
+        var isQr = type === 'qrcode'
+        var codeKey = CODE_KEY_PREFIX + attrKey
+        this.$set(this.attrStyles, codeKey, {
+          x: textStyle.x || 0,
+          y: (textStyle.y || 0) + textHeight + 4,
+          width: isQr ? 80 : 160,
+          height: isQr ? 80 : 50,
+          codeType: type
+        })
+        this.selectedKeys = [codeKey]
+        this.currentAttrKey = codeKey
+      },
+      // 删除独立编码元素
+      removeCodeItem(codeKey) {
+        if (this.currentAttrKey === codeKey) this.currentAttrKey = null
+        var idx = this.selectedKeys.indexOf(codeKey)
+        if (idx > -1) this.selectedKeys.splice(idx, 1)
+        this.$delete(this.codeImages, codeKey)
+        this.$delete(this.attrStyles, codeKey)
+      },
+      // 为所有独立编码元素生成图片
       refreshCodeImages() {
         var self = this
         var alive = {}
-        this.selectedAttrList.forEach(function(attr) {
-          var s = self.attrStyles[attr.key]
-          if (!s || !s.codeType) return
-          alive[attr.key] = true
-          var layout = self.codeLayout(attr)
-          renderCodeDataUrl(s.codeType, attr.value, layout.imgWidth, layout.imgHeight).then(function(url) {
-            self.$set(self.codeImages, attr.key, url)
+        this.renderItems.forEach(function(item) {
+          if (!item.isCode) return
+          var s = self.attrStyles[item.key]
+          if (!s) return
+          alive[item.key] = true
+          var layout = self.codeLayout(item.key)
+          renderCodeDataUrl(s.codeType, layout.value, layout.imgWidth, layout.imgHeight).then(function(url) {
+            self.$set(self.codeImages, item.key, url)
           })
         })
         Object.keys(this.codeImages).forEach(function(key) {
@@ -1151,6 +1239,11 @@
           if (self.attrStyles[key]) {
             cleanStyles[key] = JSON.parse(JSON.stringify(self.attrStyles[key]))
           }
+          // 独立编码元素（条码/二维码）样式一并保存
+          var codeKey = CODE_KEY_PREFIX + key
+          if (self.attrStyles[codeKey]) {
+            cleanStyles[codeKey] = JSON.parse(JSON.stringify(self.attrStyles[codeKey]))
+          }
           // 属性名允许留空（留空表示只显示规格值），空字符串也要保存
           if (Object.prototype.hasOwnProperty.call(self.attrLabels, key)) {
             cleanLabels[key] = self.attrLabels[key]
@@ -1198,6 +1291,12 @@
       },
       // 另存为：无论是否已有模板，都弹保存弹层存为新模板
       saveAsTemplate() {
+        // 类目回填：沿用当前模板的类目，但仅限二级类目（旧模板可能是一级类目）
+        var self = this
+        var tpl = this.currentTemplate
+        var catId = tpl && tpl.type === 'default' ? tpl.categoryId : null
+        var valid = catId && this.categoryList.some(function(c) { return String(c.value) === String(catId) })
+        this.templateCategoryId = valid ? catId : null
         this.saveModalVisible = true
       },
       // 保存弹层确认：不选商品类型=普通模板，选了=该类型的通用模板
@@ -1256,6 +1355,11 @@
               delete style.height
             }
             self.$set(self.attrStyles, key, style)
+            // 恢复该属性对应的独立编码元素
+            var codeKey = CODE_KEY_PREFIX + key
+            if (tpl.attrStyles[codeKey]) {
+              self.$set(self.attrStyles, codeKey, JSON.parse(JSON.stringify(tpl.attrStyles[codeKey])))
+            }
           } else {
             var idx = tpl.selectedAttrs.indexOf(key)
             self.$set(self.attrStyles, key, { fontSize: 14, x: 10, y: 10 + idx * 30, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.3 })
@@ -1268,12 +1372,31 @@
             self.$set(self.attrLabels, key, attr ? attr.label : '')
           }
         })
+        // 旧模板兼容：文字与条码合并在同一个元素里的，拆成独立的编码元素
+        this.attrStyles = migrateCodeStyles(this.attrStyles, this.allAttrs, this.attrLabels)
         if (tpl.labelWidth) this.labelWidth = tpl.labelWidth
         if (tpl.labelHeight) this.labelHeight = tpl.labelHeight
         this.currentAttrKey = null
         // 打开模板后视为干净状态，关闭时不再提示保存
         var that = this
         this.$nextTick(function() { that.markClean() })
+      },
+      // 删除当前正在编辑的模板（需确认，避免误删）
+      handleDeleteCurrentTemplate() {
+        var self = this
+        var tpl = this.currentTemplate
+        if (!tpl) return
+        this.$confirm({
+          title: '删除模板',
+          content: '确定删除模板「' + tpl.name + '」吗？删除后不可恢复。',
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          zIndex: 3100,
+          onOk: function() {
+            self.deleteTemplate()
+          }
+        })
       },
       deleteTemplate() {
         if (!this.selectedTemplateId) return
@@ -1367,6 +1490,27 @@
     padding: 8px;
     margin-bottom: 8px;
   }
+  .label-current-template {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2px;
+    margin-bottom: 8px;
+    color: #333;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .label-current-template-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .label-current-template-del {
+    flex: none;
+    margin-left: 8px;
+    font-weight: normal;
+    color: #ff4d4f;
+  }
   .style-label {
     font-size: 12px;
     color: #666;
@@ -1451,22 +1595,12 @@
     text-align: center;
     line-height: 200px;
   }
-  /* 条码 / 二维码：上方文字、下方图形 */
+  /* 条码 / 二维码：独立元素，只渲染图形 */
   .label-preview-item.is-code {
     align-items: flex-start;
     overflow: visible;
     white-space: normal;
-  }
-  .label-code-box {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
-  .label-code-text {
-    white-space: pre-line;
-    word-break: break-word;
-    text-align: left;
+    padding: 0;
   }
   .label-code-img {
     display: block;

@@ -15,8 +15,8 @@
             <div class="cert-guide-step-main">
               <b>下载证书并按说明安装</b>
               <div class="cert-guide-actions">
-                <a class="cert-guide-btn" href="/cert/jsh-erp.cer" download="jsh-erp.cer">下载证书</a>
-                <a class="cert-guide-btn secondary" href="/cert/install.html" target="_blank" rel="noopener">查看安装说明</a>
+                <a class="cert-guide-btn" href="/cert/jsh-root-ca.crt" download="jsh-root-ca.crt">下载证书</a>
+                <a class="cert-guide-btn secondary" :href="certHome" target="_blank" rel="noopener">查看安装说明</a>
               </div>
             </div>
           </li>
@@ -55,9 +55,13 @@
       reasonText () {
         return window.isSecureContext ? '当前浏览器未授权摄像头。' : '当前页面不是 HTTPS 安全连接。'
       },
-      // 统一约定的 HTTPS 访问地址（端口固定为本地部署的 9999）
+      // 统一约定的 HTTPS 访问地址（本机部署 HTTPS 端口固定为 9443）
       httpsUrl () {
-        return 'https://' + window.location.hostname + ':9999'
+        return 'https://' + window.location.hostname + ':9443'
+      },
+      // 证书安装引导页走 HTTP 端口，未登录也可访问
+      certHome () {
+        return 'http://' + window.location.hostname + ':9999/cert'
       }
     }
   }

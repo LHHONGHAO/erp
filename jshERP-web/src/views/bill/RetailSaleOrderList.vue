@@ -1,9 +1,8 @@
 <template>
   <div class="retail-sale-order">
-    <!-- 操作按钮区：扫码添加 + 选择商品 -->
-    <div class="rso-actions">
-      <a-button type="primary" icon="scan" size="large" block @click="openScanner">扫码添加</a-button>
-      <a-button icon="appstore" size="large" block @click="openMaterialSelect">选择商品</a-button>
+    <!-- 扫码入口：悬浮图标，中心点位于屏幕下方三分之一处 -->
+    <div class="rso-scan-fab" @click="openScanner">
+      <a-icon type="scan" />
     </div>
     <!-- 欲售商品列表 -->
     <div class="rso-cart">
@@ -24,6 +23,12 @@
               <div class="rso-cart-item-name">{{ item.name }}</div>
               <div class="rso-cart-item-spec">{{ cartSpec(item) }}</div>
             </div>
+            <!-- 数量调节：紧挨卡片右侧边框，垂直居中 -->
+            <div class="rso-cart-item-qty">
+              <a-button size="small" icon="minus" @click="changeQty(index, -1)" />
+              <span class="rso-cart-qty-num">{{ item.operNumber }}</span>
+              <a-button size="small" icon="plus" @click="changeQty(index, 1)" />
+            </div>
             <a-icon type="close" class="rso-cart-item-del" @click="removeCartItem(index)" />
           </div>
           <!-- SKU码 / 库存 / 零售价：与商品信息页卡片保持一致 -->
@@ -31,11 +36,6 @@
             <span class="rso-cart-item-sku">SKU码 {{ item.skuCode || '-' }}</span>
             <span>库存 {{ item.stock == null ? '-' : item.stock }}</span>
             <span>零售价 {{ cartPrice(item) }}</span>
-          </div>
-          <div class="rso-cart-item-qty">
-            <a-button size="small" icon="minus" @click="changeQty(index, -1)" />
-            <span class="rso-cart-qty-num">{{ item.operNumber }}</span>
-            <a-button size="small" icon="plus" @click="changeQty(index, 1)" />
           </div>
         </div>
       </div>
@@ -414,7 +414,7 @@
       // 打开全屏扫码界面并立即启动摄像头
       openScanner () {
         this.scanVisible = true
-        // 点击「扫码添加」即解锁音频，保证后续扫描反馈提示音可播放
+        // 点击扫码图标即解锁音频，保证后续扫描反馈提示音可播放
         this.unlockAudio()
         this.scanResult = null
         this.scanError = ''
@@ -845,8 +845,8 @@
             this.scanResult = Object.assign({}, this.scanResult, { name: result.rows[0].name })
             this.scanState = SCANNER_STATE.SUCCESS
             this.playFeedbackSound(true)
-            // 提示只停留在扫码页，2 秒后自动收起，继续扫下一件
-            this.scheduleScanReset(2000)
+            // 识别成功：短暂展示成功提示后退出扫码页面
+            this.scheduleScanClose(600)
             return
           }
           this.scanState = SCANNER_STATE.SUCCESS
@@ -893,15 +893,12 @@
           })
         }
       },
-      // 成功提示在扫码页停留一段时间后自动收起
-      scheduleScanReset (delay) {
+      // 识别成功后延时退出扫码页面
+      scheduleScanClose (delay) {
         if (this.successTimer) clearTimeout(this.successTimer)
         this.successTimer = setTimeout(() => {
           this.successTimer = null
-          if (!this.scanVisible || this.scanState !== SCANNER_STATE.SUCCESS) return
-          this.scanResult = null
-          this.scanError = ''
-          this.scanState = this.scanStream ? SCANNER_STATE.SCANNING : SCANNER_STATE.STOPPED
+          this.closeScanner()
         }, delay)
       },
       // 打开商品选择页面（共用页面）
@@ -1433,14 +1430,24 @@
     flex: 1;
   }
 }
-.rso-actions {
+// 扫码悬浮图标：中心点对齐屏幕下方三分之一处
+.rso-scan-fab {
+  position: fixed;
+  left: 50%;
+  bottom: 33.333vh;
+  transform: translate(-50%, 50%);
+  z-index: 101;
   display: flex;
-  gap: 10px;
-  padding: 12px;
-  background: #fff;
-  /deep/ .ant-btn {
-    flex: 1;
-  }
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #1890ff;
+  color: #fff;
+  font-size: 28px;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+  cursor: pointer;
 }
 .rso-cart {
   margin: 10px 12px;
@@ -1480,6 +1487,7 @@
     overflow-y: auto;
   }
   .rso-cart-item {
+    position: relative;
     display: flex;
     flex-direction: column;
     padding: 8px;
@@ -1510,6 +1518,8 @@
     .rso-cart-item-info {
       flex: 1;
       min-width: 0;
+      // 预留右侧数量组件的空间，避免规格文字被遮挡
+      padding-right: 96px;
       .rso-cart-item-name {
         font-size: 14px;
         font-weight: 500;
@@ -1538,11 +1548,14 @@
       white-space: nowrap;
       overflow: hidden;
     }
+    /* 数量调节：紧挨卡片右侧边框，垂直居中 */
     .rso-cart-item-qty {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      margin-top: 8px;
       .rso-cart-qty-num {
         display: inline-block;
         min-width: 28px;

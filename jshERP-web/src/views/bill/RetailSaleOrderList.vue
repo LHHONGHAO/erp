@@ -156,7 +156,7 @@
     </a-modal>
 
     <!-- 新增会员 -->
-    <member-modal ref="memberModalForm" @ok="onMemberAdded"></member-modal>
+    <member-modal ref="memberModalForm" attach-to-body full-screen :z-index="1200" @ok="onMemberAdded"></member-modal>
 
     <!-- 全屏扫码界面 -->
     <div v-if="scanVisible" class="rso-scan-fullscreen">

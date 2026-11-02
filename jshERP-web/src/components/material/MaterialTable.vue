@@ -54,30 +54,36 @@
   <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
   <div v-if="isMobileView" class="mt-mobile-list">
     <div v-for="row in mobileList" :key="row.skuRowKey || row.id" class="mt-mobile-card">
-      <div class="mt-mobile-top">
-        <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
-        <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
-        <div class="mt-mobile-body">
-          <div class="mt-mobile-title">
-            {{ row.name }}
-            <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
-            <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
+      <div class="mt-mobile-main">
+        <div class="mt-mobile-top">
+          <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
+          <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
+          <div class="mt-mobile-body">
+            <div class="mt-mobile-title">
+              {{ row.name }}
+              <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
+              <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
+            </div>
+            <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
           </div>
-          <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
         </div>
-      </div>
-      <!-- SKU码 / 库存 / 零售价：一行排列，左对齐图片框左边 -->
-      <div class="mt-mobile-meta">
-        <span class="mt-mobile-sku">SKU码 {{ row.skuCode || '-' }}</span>
-        <span>库存 {{ row.stock == null ? '-' : row.stock }}</span>
-        <span>零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}</span>
+        <!-- SKU码 / 库存 / 零售价：一行排列，左对齐图片框左边 -->
+        <div class="mt-mobile-meta">
+          <span class="mt-mobile-sku">SKU码 {{ row.skuCode || '-' }}</span>
+          <span>库存 {{ row.stock == null ? '-' : row.stock }}</span>
+          <span>零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}</span>
+        </div>
       </div>
       <div v-if="visibleActions(row).length > 0" class="mt-mobile-actions">
         <a-button
           v-for="(act, i) in visibleActions(row)"
           :key="'mact-' + i"
+          class="mt-action-icon-btn"
+          shape="circle"
           size="small"
-          @click="onAction(act, row)">{{ act.title }}</a-button>
+          :icon="act.icon"
+          :title="act.title"
+          @click="onAction(act, row)"></a-button>
       </div>
     </div>
     <div v-if="mobileList.length === 0 && !mobileLoading" class="mt-mobile-empty">暂无数据</div>
@@ -374,12 +380,19 @@
   }
   .mt-mobile-card {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: stretch;
     background: #fff;
     border: 1px solid #F0F2F5;
     border-radius: 8px;
     padding: 8px;
     margin-bottom: 8px;
+  }
+  .mt-mobile-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
   /* 上部：图片 + 名称规格 */
   .mt-mobile-top {
@@ -443,15 +456,29 @@
       flex-shrink: 0;
     }
   }
-  /* 操作按钮：全部一行排列，左对齐图片框左边 */
+  /* 操作按钮：右侧一列垂直排列的图标按钮 */
   .mt-mobile-actions {
     display: flex;
-    flex-wrap: nowrap;
-    gap: 8px;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px dashed #F0F2F5;
-    overflow-x: auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    margin-left: 8px;
+    padding-left: 8px;
+    border-left: 1px dashed #F0F2F5;
+    flex-shrink: 0;
+  }
+  .mt-action-icon-btn {
+    color: #595959;
+    border-color: #d9d9d9;
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 20px !important;
+  }
+  .mt-action-icon-btn:hover,
+  .mt-action-icon-btn:focus {
+    color: #1890ff;
+    border-color: #1890ff;
   }
   .mt-mobile-empty {
     text-align: center;

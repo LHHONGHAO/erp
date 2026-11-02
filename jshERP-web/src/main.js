@@ -9,6 +9,7 @@ import { VueAxios } from "@/utils/request"
 import Antd from 'ant-design-vue'
 import Viser from 'viser-vue'
 import 'ant-design-vue/dist/antd.less';  // or 'ant-design-vue/dist/antd.less'
+import '@/assets/less/common.less' // 全局通用样式（含移动端表单无边框统一风格）
 
 import '@/permission' // permission control
 import '@/utils/filter' // base filter

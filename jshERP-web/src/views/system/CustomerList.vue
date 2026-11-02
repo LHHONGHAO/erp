@@ -55,7 +55,7 @@
           <a-button v-if="btnEnableList.indexOf(3)>-1" @click="handleExportXls('客户信息')" icon="download">导出</a-button>
         </div>
         <!-- table区域-begin -->
-        <div>
+        <div v-if="!isMobileView">
           <a-table
             ref="table"
             size="middle"
@@ -83,6 +83,34 @@
               <a-tag v-if="!enabled" color="orange">禁用</a-tag>
             </template>
           </a-table>
+        </div>
+        <!-- 手机端卡片列表 -->
+        <div v-if="isMobileView" class="cust-mobile-list">
+          <div v-if="loading" class="cust-mobile-loading">加载中...</div>
+          <div v-for="record in dataSource" :key="record.id" class="cust-card">
+            <div class="cust-card-info">
+              <div class="cust-card-row1">
+                <span class="cust-value">{{ record.id || '-' }}</span>
+                <span class="cust-value">{{ record.supplier || '-' }}</span>
+                <span class="cust-value">{{ record.telephone || '-' }}</span>
+                <span class="cust-value">-</span>
+              </div>
+              <div class="cust-card-row2">
+                <span class="cust-addr">{{ record.address || '-' }}</span>
+              </div>
+            </div>
+            <div class="cust-card-actions">
+              <a-button size="small" icon="edit" @click="handleEdit(record)">编辑</a-button>
+            </div>
+          </div>
+          <a-pagination
+            v-if="ipagination.total > 0"
+            class="cust-mobile-pagination"
+            :current="ipagination.current"
+            :total="ipagination.total"
+            :pageSize="ipagination.pageSize"
+            size="small"
+            @change="onMobilePageChange" />
         </div>
         <!-- table区域-end -->
         <!-- 表单区域 -->
@@ -113,6 +141,7 @@
     },
     data () {
       return {
+        isMobileView: window.innerWidth <= 768,
         labelCol: {
           span: 5
         },
@@ -187,7 +216,20 @@
       this.getSystemConfig()
       this.initQuickBtn()
     },
+    mounted() {
+      window.addEventListener('resize', this.handleResize)
+    },
+    beforeDestroy() {
+      window.removeEventListener('resize', this.handleResize)
+    },
     methods: {
+      handleResize() {
+        this.isMobileView = window.innerWidth <= 768
+      },
+      onMobilePageChange(page) {
+        this.ipagination.current = page
+        this.loadData(page)
+      },
       getSystemConfig() {
         getCurrentSystemConfig().then((res) => {
           if(res.code === 200 && res.data){
@@ -242,4 +284,60 @@
 </script>
 <style scoped>
   @import '~@assets/less/common.less'
+
+  /* 手机端客户卡片列表 */
+  .cust-mobile-list {
+    padding: 8px 0;
+  }
+  .cust-mobile-loading {
+    text-align: center;
+    padding: 30px 0;
+    color: #999;
+    font-size: 14px;
+  }
+  .cust-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+  }
+  .cust-card-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .cust-card-row1 {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 8px;
+  }
+  .cust-value {
+    color: #1D2129;
+    font-weight: 500;
+    font-size: 14px;
+    word-break: break-all;
+  }
+  .cust-card-row2 {
+    font-size: 14px;
+  }
+  .cust-addr {
+    display: block;
+    color: #595959;
+    font-weight: 400;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .cust-card-actions {
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+  .cust-mobile-pagination {
+    text-align: center;
+    margin-top: 16px;
+  }
 </style>

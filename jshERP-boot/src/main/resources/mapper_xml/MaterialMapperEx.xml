@@ -1245,6 +1245,27 @@
         select count(1) from jsh_material where code = #{code}
     </select>
 
+    <select id="getMaterialIdByCode" resultType="java.lang.Long">
+        select id from jsh_material
+        where code = #{code} and delete_flag != '1'
+        <if test="excludeId != null">
+            and id != #{excludeId}
+        </if>
+        limit 1
+    </select>
+
+    <select id="getExistingBarCodes" resultType="java.lang.String">
+        select distinct bar_code from jsh_material_extend
+        where delete_flag != '1'
+        and bar_code in
+        <foreach collection="barCodes" item="bc" open="(" separator="," close=")">
+            #{bc}
+        </foreach>
+        <if test="materialId != null">
+            and material_id != #{materialId}
+        </if>
+    </select>
+
     <!-- 回填商品码 -->
     <update id="updateMaterialCodeById">
         update jsh_material set code = #{code} where id = #{id}

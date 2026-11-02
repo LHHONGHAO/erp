@@ -258,7 +258,7 @@ public class MaterialService {
             // 同步 sku / sku_spec 新模型（生成展示名、规格JSON，写入创建时间）
             skuService.syncFromMaterialExtend(mId);
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, mId, false);
-            if(!hasSkuOpeningStock && obj.get("stock")!=null) {
+            if(!hasSkuOpeningStock && obj.get("stock") instanceof JSONArray) {
                 JSONArray stockArr = obj.getJSONArray("stock");
                 for (int i = 0; i < stockArr.size(); i++) {
                     JSONObject jsonObj = stockArr.getJSONObject(i);
@@ -327,7 +327,7 @@ public class MaterialService {
             skuService.syncFromMaterialExtend(material.getId());
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, material.getId(), true);
             BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(material.getId());
-            if(!hasSkuOpeningStock && obj.get("stock")!=null) {
+            if(!hasSkuOpeningStock && obj.get("stock") instanceof JSONArray) {
                 JSONArray stockArr = obj.getJSONArray("stock");
                 for (int i = 0; i < stockArr.size(); i++) {
                     JSONObject jsonObj = stockArr.getJSONObject(i);
@@ -571,6 +571,47 @@ public class MaterialService {
                             String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String unit, Long unitId)throws Exception {
         return materialMapperEx.checkIsExist(id, name, model, color, standard, mfrs, otherField1,
                 otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, unit, unitId);
+    }
+
+    /**
+     * 根据商品编码查询商品是否存在（精确匹配，排除已删除）
+     * @return 存在的商品数量
+     */
+    public int countMaterialByCode(String code) throws Exception {
+        if (code == null || code.trim().isEmpty()) {
+            return 0;
+        }
+        return materialMapperEx.countMaterialByCode(code.trim());
+    }
+
+    /**
+     * 根据商品编码查询商品ID
+     */
+    public Long getMaterialIdByCode(String code, Long excludeId) throws Exception {
+        if (code == null || code.trim().isEmpty()) {
+            return null;
+        }
+        return materialMapperEx.getMaterialIdByCode(code.trim(), excludeId);
+    }
+
+    /**
+     * 检查条码列表中已存在于其他商品的条码
+     */
+    public List<String> getExistingBarCodes(List<String> barCodes, Long materialId) throws Exception {
+        if (barCodes == null || barCodes.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+        // 过滤空条码
+        List<String> cleaned = new java.util.ArrayList<>();
+        for (String bc : barCodes) {
+            if (bc != null && !bc.trim().isEmpty()) {
+                cleaned.add(bc.trim());
+            }
+        }
+        if (cleaned.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+        return materialMapperEx.getExistingBarCodes(cleaned, materialId);
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)

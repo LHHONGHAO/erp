@@ -105,3 +105,89 @@
   padding: 4px 8px;
   cursor: pointer;
 }
+
+/* ========== 移动端全局表单样式：输入框无边框，靠行分隔线区分 ========== */
+@media (max-width: 768px) {
+  /* 去除所有输入类控件的边框，统一靠行底部分隔线区分 */
+  .ant-input,
+  .ant-input-affix-wrapper,
+  .ant-input-number,
+  .ant-input-number-handler-wrap,
+  .ant-select,
+  .ant-select-selection,
+  .ant-select-selection--multiple,
+  .ant-input-group-wrapper,
+  .ant-input-group,
+  .ant-input-group-addon,
+  .ant-calendar-picker,
+  .ant-calendar-picker-input,
+  .ant-time-picker-input,
+  .ant-cascader-picker,
+  .ant-cascader-picker-label,
+  .ant-tree-select .ant-select-selection {
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  /* 去除聚焦态的高亮边框，无放大特效 */
+  .ant-input:focus,
+  .ant-input:hover,
+  .ant-input-affix-wrapper:focus,
+  .ant-input-affix-wrapper:hover,
+  .ant-input-affix-wrapper-focused,
+  .ant-select-focused .ant-select-selection,
+  .ant-select-selection:focus,
+  .ant-select-selection:hover,
+  .ant-input-number:focus,
+  .ant-input-number:hover,
+  .ant-input-number-focused {
+    box-shadow: none !important;
+    border-color: transparent !important;
+    outline: none !important;
+    -webkit-transform: none !important;
+    transform: none !important;
+  }
+
+  /* 输入框内容左对齐（光标左起）；字号≥16px 防 iOS 聚焦缩放 */
+  .ant-input,
+  .ant-input-number-input,
+  .ant-calendar-picker-input,
+  .ant-time-picker-input {
+    text-align: left !important;
+    font-size: 16px !important;
+  }
+  .ant-input::placeholder,
+  .ant-input-number-input::placeholder,
+  .ant-calendar-picker-input::placeholder {
+    text-align: left;
+    color: #bfbfbf;
+  }
+  .ant-select-selection-selected-value,
+  .ant-select-selection__placeholder,
+  .ant-select-selection-placeholder,
+  .ant-cascader-picker-label {
+    text-align: left !important;
+    font-size: 16px !important;
+  }
+
+  /* 表单项：底部分隔线 + 标签右对齐不换行 */
+  .ant-form-item {
+    border-bottom: 1px solid #e8e8e8;
+    margin-bottom: 0 !important;
+    padding: 10px 0;
+  }
+  .ant-form-item-label {
+    text-align: right !important;
+    white-space: nowrap;
+  }
+  .ant-form-item-label > label {
+    color: #333;
+    white-space: nowrap;
+  }
+
+  textarea.ant-input {
+    background: transparent !important;
+    border: none !important;
+  }
+}

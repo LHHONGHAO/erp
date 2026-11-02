@@ -57,6 +57,8 @@ const checkMaterialCategory = (params)=>getAction("/materialCategory/checkIsName
 const addMaterial = (params)=>postAction("/material/add",params);
 const editMaterial = (params)=>putAction("/material/update",params);
 const checkMaterial = (params)=>getAction("/material/checkIsExist",params);
+const checkMaterialCode = (params)=>getAction("/material/checkCodeExist",params);
+const checkSkuBarCodes = (params)=>postAction("/material/checkSkuBarCodes",params);
 const getMaterialBySelect = (params)=>getAction("/material/findBySelect",params);
 const getSerialMaterialBySelect = (params)=>getAction("/material/getMaterialEnableSerialNumberList",params);
 const getMaterialByParam = (params)=>getAction("/material/getMaterialByParam",params);
@@ -164,6 +166,8 @@ export {
   addMaterial,
   editMaterial,
   checkMaterial,
+  checkMaterialCode,
+  checkSkuBarCodes,
   getMaterialBySelect,
   getSerialMaterialBySelect,
   getMaterialByParam,

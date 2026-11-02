@@ -1,54 +1,15 @@
 <template>
   <a-layout class="layout" :class="[device]">
 
-    <template v-if="layoutMode === 'sidemenu'">
-      <a-drawer
-        v-if="device === 'mobile'"
-        :wrapClassName="'drawer-sider ' + navTheme"
-        placement="left"
-        @close="() => this.collapsed = false"
-        :closable="false"
-        :visible="collapsed"
-        width="150px"
-      >
-        <side-menu
-          mode="inline"
-          :menus="menus"
-          @menuSelect="myMenuSelect"
-          :theme="navTheme"
-          :collapsed="false"
-          :collapsible="true"></side-menu>
-      </a-drawer>
-
-      <side-menu
-        v-else
-        mode="inline"
-        :menus="menus"
-        @menuSelect="myMenuSelect"
-        :theme="navTheme"
-        :collapsed="collapsed"
-        :collapsible="true"></side-menu>
-    </template>
-    <!-- 下次优化这些代码 -->
-    <template v-else>
-      <a-drawer
-        v-if="device === 'mobile'"
-        :wrapClassName="'drawer-sider ' + navTheme"
-        placement="left"
-        @close="() => this.collapsed = false"
-        :closable="false"
-        :visible="collapsed"
-        width="150px"
-      >
-        <side-menu
-          mode="inline"
-          :menus="menus"
-          @menuSelect="myMenuSelect"
-          :theme="navTheme"
-          :collapsed="false"
-          :collapsible="true"></side-menu>
-      </a-drawer>
-    </template>
+    <!-- 手机端不显示侧边栏，页面全屏显示 -->
+    <side-menu
+      v-if="device !== 'mobile' && layoutMode === 'sidemenu'"
+      mode="inline"
+      :menus="menus"
+      @menuSelect="myMenuSelect"
+      :theme="navTheme"
+      :collapsed="collapsed"
+      :collapsible="true"></side-menu>
 
     <a-layout
       :class="[layoutMode, `content-width-${contentWidth}`]"
@@ -61,11 +22,12 @@
         :collapsed="collapsed"
         :device="device"
         @toggle="toggle"
+        @back="goBack"
         @searchGlobalLayout="searchGlobalLayout"
       />
 
       <!-- layout content -->
-      <a-layout-content :style="{ height: '100%', paddingTop: fixedHeader ? '49px' : '0' }">
+      <a-layout-content :style="{ height: '100%', paddingTop: (device === 'mobile' || fixedHeader) ? '49px' : '0' }">
         <slot></slot>
       </a-layout-content>
 
@@ -112,7 +74,11 @@
       return {
         collapsed: false,
         activeMenu:{},
-        menus: []
+        menus: [],
+        touchStart: null,
+        backNavigating: false,
+        mobileNavStack: [],
+        mobileInited: false
       }
     },
     computed: {
@@ -126,6 +92,23 @@
     watch: {
       sidebarOpened(val) {
         this.collapsed = !val
+      },
+      device() {
+        this.initMobileNav()
+      },
+      $route(to) {
+        if (!this.isMobile()) {
+          return
+        }
+        if (this.backNavigating) {
+          this.backNavigating = false
+          return
+        }
+        let last = this.mobileNavStack[this.mobileNavStack.length - 1]
+        if (last !== to.fullPath) {
+          this.mobileNavStack.push(to.fullPath)
+          this.saveNavStack()
+        }
       }
     },
     created() {
@@ -138,6 +121,13 @@
       //console.log(this.permissionMenuList)
       //console.log('----navTheme------'+this.navTheme)
       //--update-end----author:scott---date:20190320------for:根据后台菜单配置，判断是否路由菜单字段，动态选择是否生成路由（为了支持参数URL菜单）------
+    },
+    mounted() {
+      this.initMobileNav()
+    },
+    beforeDestroy() {
+      document.removeEventListener('touchstart', this.handleTouchStart)
+      document.removeEventListener('touchend', this.handleTouchEnd)
     },
     methods: {
       ...mapActions(['setSidebar']),
@@ -169,8 +159,89 @@
       },
       searchGlobalLayout(key, id, title, component){
         this.$emit("dynamicRouterShow", key, id, title, component)
-      }
+      },
       //update-end-author:taoyan date:20190430 for:动态路由title显示配置的菜单title而不是其对应路由的title
+
+      // 手机端：页面导航栈，用于「退回上一级」
+      initMobileNav() {
+        if (this.mobileInited || !this.isMobile()) {
+          return
+        }
+        this.mobileInited = true
+        let stack = []
+        try {
+          stack = JSON.parse(sessionStorage.getItem('mobileNavStack') || '[]')
+        } catch (e) {
+          stack = []
+        }
+        if (!Array.isArray(stack)) {
+          stack = []
+        }
+        let last = stack[stack.length - 1]
+        if (last !== this.$route.fullPath) {
+          stack.push(this.$route.fullPath)
+        }
+        this.mobileNavStack = stack
+        this.saveNavStack()
+        document.addEventListener('touchstart', this.handleTouchStart, { passive: true })
+        document.addEventListener('touchend', this.handleTouchEnd, { passive: true })
+      },
+      saveNavStack() {
+        sessionStorage.setItem('mobileNavStack', JSON.stringify(this.mobileNavStack))
+      },
+      goBack() {
+        if (!this.isMobile()) {
+          return
+        }
+        if (this.$route.path === '/dashboard/analysis') {
+          return
+        }
+        // 移除当前页，回到导航栈中的上一页；栈为空时回首页
+        let current = this.$route.fullPath
+        while (this.mobileNavStack.length > 0 && this.mobileNavStack[this.mobileNavStack.length - 1] === current) {
+          this.mobileNavStack.pop()
+        }
+        let target = this.mobileNavStack[this.mobileNavStack.length - 1]
+        if (!target) {
+          target = '/dashboard/analysis'
+          this.mobileNavStack = [target]
+        }
+        this.backNavigating = true
+        this.$router.push(target).catch(() => {
+          this.backNavigating = false
+        })
+        this.saveNavStack()
+      },
+      handleTouchStart(e) {
+        if (!this.isMobile() || e.touches.length !== 1) {
+          this.touchStart = null
+          return
+        }
+        let target = e.target
+        if (target && target.closest && target.closest('.ant-table-content, .ant-table-body, .ant-modal-root, .ant-drawer, .ant-select-dropdown, .ant-calendar-picker-container')) {
+          this.touchStart = null
+          return
+        }
+        this.touchStart = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          time: Date.now()
+        }
+      },
+      handleTouchEnd(e) {
+        if (!this.isMobile() || !this.touchStart) {
+          return
+        }
+        let touch = e.changedTouches[0]
+        let dx = touch.clientX - this.touchStart.x
+        let dy = touch.clientY - this.touchStart.y
+        let duration = Date.now() - this.touchStart.time
+        this.touchStart = null
+        // 页面右滑退回上一级菜单
+        if (dx >= 100 && Math.abs(dy) <= 60 && duration <= 800) {
+          this.goBack()
+        }
+      }
     }
   }
 

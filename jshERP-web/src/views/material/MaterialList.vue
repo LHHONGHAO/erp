@@ -285,10 +285,8 @@
       rowActions() {
         const canEdit = this.btnEnableList.indexOf(1) > -1
         return [
-          { title: '编辑', click: record => this.handleEdit(record) },
-          { title: '复制', click: record => this.handleCopyAdd(record), show: () => canEdit },
-          { title: '添加规格', click: record => this.handleAddSpec(record) },
-          { title: '打印标签', click: record => this.handlePrintSkuLabel(record) }
+          { title: '编辑', icon: 'edit', click: record => this.handleEdit(record) },
+          { title: '打印标签', icon: 'printer', click: record => this.handlePrintSkuLabel(record) }
         ]
       },
       // SKU维度行数据：为每个SKU行生成唯一key
@@ -444,29 +442,17 @@
         this.$refs.modalForm.disableSubmit = false;
       },
       handleEdit: function (record) {
-        this.$refs.modalForm.action = "edit";
-        this.$refs.modalForm.edit(record);
-        this.$refs.modalForm.title = "编辑";
-        this.$refs.modalForm.disableSubmit = false;
-        if(this.btnEnableList.indexOf(1)===-1) {
-          this.$refs.modalForm.showOkFlag = false
-        }
+        // 手机端：跳转到商品编辑页，加载当前商品及其所有SKU
+        sessionStorage.setItem('materialEditRecord', JSON.stringify(record))
+        // 记录来源页面，编辑页返回按钮可回到商品列表
+        sessionStorage.setItem('materialEditFrom', this.$route.fullPath)
+        this.$router.push('/material/edit')
       },
       handleCopyAdd(record) {
         this.$refs.modalForm.action = "copyAdd";
         this.$refs.modalForm.edit(record);
         this.$refs.modalForm.title = "复制新增";
         this.$refs.modalForm.disableSubmit = false;
-      },
-      handleAddSpec(record) {
-        this.$refs.modalForm.action = "edit";
-        this.$refs.modalForm.autoAddSpec = true;
-        this.$refs.modalForm.edit(record);
-        this.$refs.modalForm.title = "添加规格";
-        this.$refs.modalForm.disableSubmit = false;
-        if(this.btnEnableList.indexOf(1)===-1) {
-          this.$refs.modalForm.showOkFlag = false
-        }
       },
       // 打印SKU标签：先按模板实际尺寸预览，预览内可选择「打印」或「编辑」
       handlePrintLabel(record, sku) {

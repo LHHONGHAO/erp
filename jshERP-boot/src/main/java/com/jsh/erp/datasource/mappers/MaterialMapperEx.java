@@ -254,5 +254,12 @@ public interface MaterialMapperEx {
 
     int countMaterialByCode(@Param("code") String code);
 
+    Long getMaterialIdByCode(@Param("code") String code, @Param("excludeId") Long excludeId);
+
+    /**
+     * 根据条码列表查询已存在的条码（排除当前商品下的SKU）
+     */
+    List<String> getExistingBarCodes(@Param("barCodes") List<String> barCodes, @Param("materialId") Long materialId);
+
     int updateMaterialCodeById(@Param("id") Long id, @Param("code") String code);
 }

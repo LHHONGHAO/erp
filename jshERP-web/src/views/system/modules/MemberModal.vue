@@ -1,20 +1,28 @@
 <template>
   <div ref="container">
     <a-modal
-      :title="title"
-      :width="800"
+      :width="modalWidth"
       :visible="visible"
       :confirmLoading="confirmLoading"
-      :getContainer="() => $refs.container"
+      :closable="!fullScreen"
+      :getContainer="containerFn"
+      :zIndex="zIndex"
       :maskStyle="{'top':'93px','left':'154px'}"
-      :wrapClassName="wrapClassNameInfo()"
+      :wrapClassName="wrapClass"
       :mask="isDesktop()"
       :maskClosable="false"
       @ok="handleOk"
       @cancel="handleCancel"
       cancelText="取消"
       okText="保存"
-      :style="modalStyle" style="top:15%;height: 60%;">
+      :style="modalStyle"
+      :bodyStyle="modalBodyStyle">
+      <template slot="title">
+        <div class="member-modal-title">
+          <a-icon v-if="fullScreen" type="arrow-left" class="member-modal-back" @click="handleCancel" />
+          <span class="member-modal-title__text">{{ title }}</span>
+        </div>
+      </template>
       <template slot="footer">
         <a-button key="back" v-if="isReadOnly" @click="handleCancel">取消</a-button>
         <a-button key="back" @click="handleCancel" v-if="!isReadOnly">取消</a-button>
@@ -88,10 +96,7 @@
           </a-row>
           <a-row class="form-row" :gutter="24">
             <a-col :span="24">
-              <a-form-item :labelCol="labelCol" :wrapperCol="{
-                xs: { span: 24 },
-                sm: { span: 20 },
-              }" label="联系地址">
+              <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="联系地址">
                 <div v-for="(addr, idx) in addressList" :key="idx" style="display:flex;margin-bottom:4px">
                   <a-input v-model="addressList[idx]" placeholder="请输入联系地址" style="flex:1;margin-right:4px" />
                   <a-button v-if="idx === addressList.length - 1" size="small" icon="plus" @click="addAddress" />
@@ -106,6 +111,7 @@
       <!-- 地址识别弹层 -->
       <ocr-member-recognize-modal
         :visible="ocrVisible"
+        :z-index="fullScreen ? 1300 : undefined"
         @cancel="ocrVisible = false"
         @ok="handleOcrResult" />
 
@@ -113,6 +119,7 @@
       <a-modal
         :visible="duplicateVisible"
         :width="400"
+        :zIndex="fullScreen ? 1300 : undefined"
         :footer="null"
         :maskClosable="false"
         @cancel="duplicateVisible = false">
@@ -142,6 +149,13 @@
   export default {
     name: "MemberModal",
     mixins: [mixinDevice],
+    props: {
+      // 挂载到 body 并提高层级，避免被子弹窗/结算弹窗遮挡
+      attachToBody: { type: Boolean, default: false },
+      zIndex: { type: Number, default: undefined },
+      // 以整页样式展示（移动端）
+      fullScreen: { type: Boolean, default: false }
+    },
     components: {
       OcrMemberRecognizeModal
     },
@@ -158,11 +172,11 @@
         phoneList: [''],
         addressList: [''],
         labelCol: {
-          xs: { span: 24 },
+          xs: { span: 7 },
           sm: { span: 4 },
         },
         wrapperCol: {
-          xs: { span: 24 },
+          xs: { span: 17 },
           sm: { span: 20 },
         },
         confirmLoading: false,
@@ -176,6 +190,44 @@
             ]
           }
         },
+      }
+    },
+    computed: {
+      containerFn () {
+        if (this.attachToBody) {
+          return () => document.body
+        }
+        return () => this.$refs.container
+      },
+      modalWidth () {
+        return this.fullScreen ? '100%' : 800
+      },
+      modalStyle () {
+        if (this.fullScreen) {
+          return {
+            top: 0,
+            height: '100%',
+            maxWidth: '100%',
+            margin: 0,
+            paddingBottom: 0,
+            borderRadius: 0
+          }
+        }
+        return { top: '15%', height: '60%' }
+      },
+      modalBodyStyle () {
+        if (this.fullScreen) {
+          return {
+            flex: '1 1 auto',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            padding: '12px 14px'
+          }
+        }
+        return {}
+      },
+      wrapClass () {
+        return this.wrapClassNameInfo() + (this.fullScreen ? ' member-modal-mobile' : '')
       }
     },
     methods: {
@@ -405,6 +457,169 @@
     }
   }
 </script>
-<style scoped>
+<style lang="less">
+  /* 移动端整页样式（class 唯一，避免影响其他页面） */
+  .member-modal-mobile {
+    .ant-modal {
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
 
+    .ant-modal-content {
+      height: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      border-radius: 0;
+      box-shadow: none;
+    }
+
+    .ant-modal-header {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      min-height: 49px;
+      padding: 0 16px 0 0;
+      background: #1890ff;
+      border-bottom: none;
+      border-radius: 0;
+    }
+
+    .ant-modal-title {
+      width: 100%;
+    }
+
+    .member-modal-title {
+      display: flex;
+      align-items: center;
+      height: 49px;
+    }
+
+    .member-modal-back {
+      flex: 0 0 auto;
+      height: 49px;
+      line-height: 49px;
+      padding: 0 14px;
+      font-size: 22px;
+      color: #fff;
+    }
+
+    .member-modal-title__text {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 16px;
+      font-weight: 400;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ant-modal-body {
+      flex: 1 1 auto;
+      background: #f4f6fb;
+    }
+
+    .ant-modal-footer {
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+      background: #fff;
+      border-top: 1px solid #eef1f6;
+      display: flex;
+      gap: 10px;
+
+      .ant-btn {
+        flex: 1 1 0;
+        height: 44px;
+        line-height: 44px;
+        border-radius: 12px;
+        padding: 0 16px;
+        font-size: 15px;
+      }
+    }
+
+    /* 表单项改为单列、标签在上 */
+    .ant-row {
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+
+    .ant-col-12 {
+      width: 100% !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+
+    .ant-form-item {
+      margin-bottom: 0;
+      padding: 10px 0;
+      border-bottom: 1px solid #e8e8e8;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .ant-form-item-label {
+      flex: 0 0 auto;
+      text-align: right;
+      padding: 0 8px 0 0;
+      line-height: 20px;
+      white-space: nowrap;
+
+      > label {
+        color: #64748b;
+        font-size: 13px;
+      }
+    }
+
+    .ant-form-item-control-wrapper {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .ant-input,
+    .ant-input-number,
+    .ant-select-selection,
+    .ant-select-selection__rendered {
+      border-radius: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .ant-input {
+      height: 40px;
+      padding: 8px 12px;
+      font-size: 14px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    textarea.ant-input {
+      height: auto;
+      min-height: 64px;
+      padding: 10px 12px;
+      background: transparent;
+      border: none;
+    }
+
+    .ant-btn {
+      border-radius: 10px;
+
+      &.ant-btn-sm {
+        height: 40px;
+      }
+    }
+
+    .form-row {
+      margin-bottom: 0;
+    }
+  }
 </style>

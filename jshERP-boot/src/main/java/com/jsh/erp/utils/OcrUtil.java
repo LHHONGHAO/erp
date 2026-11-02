@@ -74,10 +74,13 @@ public class OcrUtil {
                 try (FileInputStream fis = new FileInputStream(path.toString())) {
                     props.load(fis);
                 }
-                String enabledStr = props.getProperty("ocr.baidu.enabled", "false");
+                String enabledStr = props.getProperty("ocr.baidu.enabled", "");
                 String apiKey = props.getProperty("ocr.baidu.apiKey", "");
                 String secretKey = props.getProperty("ocr.baidu.secretKey", "");
-                runtimeEnabled = Boolean.parseBoolean(enabledStr);
+                // 仅当配置文件中显式存在 ocr.baidu.enabled 时才覆盖，否则沿用 application.yml 的配置
+                if (enabledStr != null && !enabledStr.isEmpty()) {
+                    runtimeEnabled = Boolean.parseBoolean(enabledStr);
+                }
                 if (apiKey != null && !apiKey.isEmpty()) {
                     runtimeApiKey = apiKey;
                 }
@@ -220,8 +223,15 @@ public class OcrUtil {
         if (!isAddressEnabled()) {
             throw new RuntimeException("地址识别未启用，请先配置地址识别的API Key和Secret Key");
         }
-        String accessToken = getAddressAccessToken();
-        String ocrUrl = config.getOcrUrl() + "?access_token=" + accessToken;
+        // OCR 识图步骤：地址识别应用通常只开通了 NLP 地址服务，未开通 OCR 服务。
+        // 因此优先使用主 OCR 配置的令牌调用 general_basic，主 OCR 未启用时回退到地址令牌。
+        String ocrAccessToken;
+        if (isEnabled()) {
+            ocrAccessToken = getAccessToken();
+        } else {
+            ocrAccessToken = getAddressAccessToken();
+        }
+        String ocrUrl = config.getOcrUrl() + "?access_token=" + ocrAccessToken;
 
         String encodedImage = URLEncoder.encode(imageBase64, "UTF-8");
         String params = "image=" + encodedImage + "&detect_direction=false&detect_language=false&paragraph=false&probability=false";

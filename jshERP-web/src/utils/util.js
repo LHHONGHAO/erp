@@ -725,12 +725,20 @@ export function handleIntroJs(module, cur_version) {
 
 /**
  * 回车后自动跳到下一个input
+ * 移动端不自动聚焦第一个输入框，避免页面加载时弹出键盘
  */
 export function autoJumpNextInput(domInfo) {
   let domIndex = 0
-  let inputs = document.getElementById(domInfo).getElementsByTagName('input')
-  inputs[domIndex].focus()
-  document.getElementById(domInfo).addEventListener('keydown',function(e){
+  let container = document.getElementById(domInfo)
+  if (!container) return
+  let inputs = container.getElementsByTagName('input')
+  if (!inputs || inputs.length === 0) return
+  // 移动端：不自动聚焦，仅注册回车跳转逻辑
+  const isMobile = window.innerWidth <= 768
+  if (!isMobile) {
+    inputs[domIndex].focus()
+  }
+  container.addEventListener('keydown',function(e){
     if(e.keyCode === 13){
       domIndex++
       if(domIndex === inputs.length) {

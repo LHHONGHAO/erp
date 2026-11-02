@@ -18,7 +18,8 @@ param(
     [string]$Server    = 'www.innas.xyz',
     [int]   $Port      = 22,
     [string]$SshUser   = 'root',
-    [string]$SshPass   = 'password',
+    [string]$SshPass   = $env:INNAS_SSH_PASS,
+    [string]$PwFile    = '',
     [string]$RemoteDir = '/root/jsherp',
     [string]$HostKey   = '',
     [int]   $WebPort   = 9999,
@@ -27,6 +28,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($PwFile) -and [string]::IsNullOrWhiteSpace($SshPass)) {
+    throw '请通过 -PwFile 指定受保护的密码文件，或通过 -SshPass / 环境变量 INNAS_SSH_PASS 提供 SSH 密码（脚本不再内置明文密码）。'
+}
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
 $root      = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -62,7 +66,9 @@ function Ensure-Tools {
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
-            $out = "y`n" | & $plink -ssh -P $Port "$SshUser@$Server" -pw $SshPass "exit" 2>&1
+            $firstArgs = @('-ssh', '-P', $Port, "$SshUser@$Server")
+            if ($script:PwFile) { $firstArgs += @('-pwfile', $script:PwFile) } else { $firstArgs += @('-pw', $SshPass) }
+            $out = "y`n" | & $plink @firstArgs "exit" 2>&1
             $code = $LASTEXITCODE
         } finally { $ErrorActionPreference = $prev }
         if ($code -ne 0) {
@@ -78,7 +84,8 @@ plink 输出: $($out -join ' ')
     }
 }
 function Invoke-Plink([string]$RemoteCmd) {
-    $argList = @('-ssh', '-P', $Port, "$SshUser@$Server", '-pw', $SshPass, '-batch')
+    $argList = @('-ssh', '-P', $Port, "$SshUser@$Server", '-batch')
+    if ($script:PwFile) { $argList += @('-pwfile', $script:PwFile) } else { $argList += @('-pw', $SshPass) }
     if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
     $argList += $RemoteCmd
     $prev = $ErrorActionPreference
@@ -88,7 +95,8 @@ function Invoke-Plink([string]$RemoteCmd) {
     if ($code -ne 0) { throw "远程命令执行失败（退出码 $code）: $RemoteCmd" }
 }
 function Invoke-Pscp([string[]]$Local, [string]$Remote) {
-    $argList = @('-batch', '-P', $Port, '-pw', $SshPass)
+    $argList = @('-batch', '-P', $Port)
+    if ($script:PwFile) { $argList += @('-pwfile', $script:PwFile) } else { $argList += @('-pw', $SshPass) }
     if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
     $argList += $Local
     $argList += "$SshUser@$Server`:$Remote"

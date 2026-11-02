@@ -455,7 +455,7 @@
   import OcrRecognizeModal from './OcrRecognizeModal'
   import JEditableTable from '@/components/jeecg/JEditableTable'
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
-  import { changeNameToPinYin, checkMaterial, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
+  import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
   import { autoJumpNextInput, handleIntroJs, removeByVal, addBigNumbers } from '@/utils/util'
   import { getAction, httpAction, postAction } from '@/api/manage'
   import JImageUpload from '@/components/jeecg/JImageUpload'
@@ -532,14 +532,6 @@
         model: {},
         showOkFlag: true,
         setTimeFlag: null,
-        labelCol: {
-          xs: { span: 24 },
-          sm: { span: 6 },
-        },
-        wrapperCol: {
-          xs: { span: 24 },
-          sm: { span: 18 },
-        },
         basePropertyList: [
           { nativeName: '名称', field: 'name', visible: true, sort: 0, anotherName: '名称', fixed: true },
           { nativeName: '单位', field: 'unit', visible: true, sort: 1, anotherName: '单位', fixed: true },
@@ -650,6 +642,16 @@
       }
     },
     computed: {
+      labelCol() {
+        return this.isMobileView
+          ? { xs: { span: 7 }, sm: { span: 6 } }
+          : { xs: { span: 24 }, sm: { span: 6 } }
+      },
+      wrapperCol() {
+        return this.isMobileView
+          ? { xs: { span: 17 }, sm: { span: 18 } }
+          : { xs: { span: 24 }, sm: { span: 18 } }
+      },
       // 弹窗模式下透传给 JModal 的属性集合
       modalProps() {
         return {
@@ -896,10 +898,7 @@
           }
         }
         this.$nextTick(() => {
-          this.form.setFieldsValue(pick(this.model, 'name', 'unit', 'brand', 'mnemonic',
-            'categoryId','enableSerialNumber','barCode','weight','remark','mfrs',
-            'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7',
-            'fabric','safetyCategory','executiveStandard','grade','inspection','filler'))
+          this.applyEditFormValuesWhenReady()
           autoJumpNextInput('materialHeadModal')
           autoJumpNextInput('materialDetailModal')
           // 从列表页"添加规格"按钮触发：自动添加一个规格模块
@@ -923,6 +922,25 @@
           }
         } else {
           this.switchDisabled = false
+        }
+      },
+      /**
+       * 等待基础属性配置加载完成后再回填表单值。
+       * 移动端编辑页是新打开的页面，loadBasePropertyConfig 异步加载属性配置，
+       * 若配置未就绪时调用 setFieldsValue，由于 v-decorator 字段尚未注册，值会丢失。
+       */
+      applyEditFormValuesWhenReady(retryCount) {
+        const count = retryCount || 0
+        const maxRetry = 100 // 最多等待约 5 秒（50ms * 100）
+        if (this.basePropertyRows && this.basePropertyRows.length > 0) {
+          this.$nextTick(() => {
+            this.form.setFieldsValue(pick(this.model, 'name', 'unit', 'brand', 'mnemonic',
+              'categoryId','enableSerialNumber','barCode','weight','remark','mfrs',
+              'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7',
+              'fabric','safetyCategory','executiveStandard','grade','inspection','filler'))
+          })
+        } else if (count < maxRetry) {
+          setTimeout(() => this.applyEditFormValuesWhenReady(count + 1), 50)
         }
       },
       /** 查询条码tab的数据 */
@@ -1150,6 +1168,9 @@
       /** 整理成formData */
       classifyIntoFormData(allValues) {
         let materialMain = Object.assign(this.model, allValues.formValue)
+        // 顶层 stock 仅用于按仓库批量录入期初库存（数组），当前流程库存按 SKU 存在 meList 中。
+        // 列表记录带入的 stock 是汇总数值，会导致后端 getJSONArray("stock") 抛类型转换异常，需移除。
+        delete materialMain.stock
         // 序列化 specModules 到 attribute 字段
         let cleanSpecModules = this.specModules.map(function(m) {
           return {
@@ -1186,6 +1207,13 @@
             if (dsRow.image && !meList[i].image) {
               meList[i].image = dsRow.image
             }
+            // 兜底：barCode/skuCode 不是可编辑列，JEditableTable 不会采集，需从 dataSource 补齐，否则保存时 SKU 条码核对会漏判
+            if ((meList[i].barCode === undefined || meList[i].barCode === null || meList[i].barCode === '') && dsRow.barCode !== undefined && dsRow.barCode !== null) {
+              meList[i].barCode = dsRow.barCode
+            }
+            if ((meList[i].skuCode === undefined || meList[i].skuCode === null || meList[i].skuCode === '') && dsRow.skuCode !== undefined && dsRow.skuCode !== null) {
+              meList[i].skuCode = dsRow.skuCode
+            }
             // 兜底：预警阈值/仓库等字段若表格值丢失则从 dataSource 补齐
             if ((meList[i].lowSafeStock === undefined || meList[i].lowSafeStock === null || meList[i].lowSafeStock === '') && dsRow.lowSafeStock !== undefined) {
               meList[i].lowSafeStock = dsRow.lowSafeStock
@@ -1209,7 +1237,7 @@
         //复制新增商品-初始化id和租户id
         if(this.action === 'copyAdd') {
           this.model.id = ''
-          this.model.tenantId = ''
+          this.tenantId = ''
           formData.id = ''
           formData.tenantId = ''
         }
@@ -1217,6 +1245,100 @@
           this.$message.warning('抱歉，请添加商品规格信息！');
           return;
         }
+        const that = this
+        const materialId = this.model.id || null
+        const materialCode = formData.code || this.model.code
+        // 收集所有 SKU 条码
+        const barCodes = []
+        for (let i = 0; i < formData.meList.length; i++) {
+          const bc = formData.meList[i].barCode
+          if (bc && String(bc).trim()) {
+            barCodes.push(String(bc).trim())
+          }
+        }
+        // 并发校验：商品码 + SKU条码
+        // 商品码核对不排除自身：只要库中存在该商品码就弹窗，由用户选择“更新商品”或“添加商品”
+        // SKU条码核对排除当前商品自身，避免自己的条码与自己冲突
+        const checks = []
+        if (materialCode) {
+          checks.push(checkMaterialCode({ code: materialCode }).then(res => ({
+            type: 'material',
+            res: res
+          })).catch(() => ({ type: 'material', res: null })))
+        }
+        if (barCodes.length > 0) {
+          checks.push(checkSkuBarCodes({ barCodes: barCodes, materialId: materialId }).then(res => ({
+            type: 'sku',
+            res: res
+          })).catch(() => ({ type: 'sku', res: null })))
+        }
+        // 无校验项，直接保存
+        if (checks.length === 0) {
+          this.doSaveMaterial(formData)
+          return
+        }
+        Promise.all(checks).then(results => {
+          let materialExist = false
+          let materialExistId = null
+          let skuConflictCodes = []
+          for (const r of results) {
+            if (r.type === 'material' && r.res && r.res.code === 200 && r.res.data) {
+              if (r.res.data.exist) {
+                materialExist = true
+                materialExistId = r.res.data.id
+              }
+            } else if (r.type === 'sku' && r.res && r.res.code === 200 && r.res.data) {
+              if (r.res.data.exist && Array.isArray(r.res.data.barCodes)) {
+                skuConflictCodes = r.res.data.barCodes
+              }
+            }
+          }
+          // SKU 条码冲突：仅提示，由用户决定是否继续
+          if (skuConflictCodes.length > 0) {
+            that.$confirm({
+              title: 'SKU条码已存在',
+              content: `以下条码已被其他商品使用：\n${skuConflictCodes.join('、')}\n是否仍要保存？`,
+              okText: '继续保存',
+              cancelText: '取消',
+              onOk: () => {
+                that.handleMaterialCodeCheck(formData, materialExist, materialExistId)
+              }
+            })
+          } else {
+            that.handleMaterialCodeCheck(formData, materialExist, materialExistId)
+          }
+        }).catch(() => {
+          this.doSaveMaterial(formData)
+        })
+      },
+      /** 商品码冲突处理 */
+      handleMaterialCodeCheck(formData, materialExist, materialExistId) {
+        if (materialExist) {
+          const materialCode = formData.code || this.model.code
+          this.$confirm({
+            title: '商品已存在',
+            content: `商品码「${materialCode}」已存在，是否更新现有商品信息？`,
+            okText: '更新商品',
+            cancelText: '添加商品',
+            onOk: () => {
+              formData.id = materialExistId
+              this.model.id = materialExistId
+              this.doSaveMaterial(formData)
+            },
+            onCancel: () => {
+              formData.id = ''
+              this.model.id = ''
+              formData.code = ''
+              this.model.code = ''
+              this.doSaveMaterial(formData)
+            }
+          })
+        } else {
+          this.doSaveMaterial(formData)
+        }
+      },
+      /** 执行商品保存（校验名称重复 + 调用接口） */
+      doSaveMaterial(formData) {
         //校验商品是否存在，通过校验商品的名称、型号、规格、颜色、单位、制造商等
         let param = {
           id: this.model.id?this.model.id:0,
@@ -2741,8 +2863,10 @@
   /* 手机端：属性标题与输入框同行显示 */
   .mm-pages.is-mobile ::v-deep .ant-form-item {
     display: flex;
-    align-items: flex-start;
-    margin-bottom: 10px;
+    align-items: center;
+    margin-bottom: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid #e8e8e8;
   }
   .mm-pages.is-mobile ::v-deep .ant-form-item-label {
     flex: 0 0 88px;
@@ -2750,10 +2874,17 @@
     max-width: 88px;
     padding-right: 8px;
     text-align: right;
+    white-space: nowrap;
   }
   .mm-pages.is-mobile ::v-deep .ant-form-item-label > label {
-    white-space: normal;
+    white-space: nowrap;
     line-height: 1.3;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-input-group-addon {
+    white-space: nowrap;
+    text-align: right;
+    border: none;
+    background: transparent;
   }
   .mm-pages.is-mobile ::v-deep .ant-form-item-control-wrapper {
     flex: 1 1 auto;
@@ -2831,14 +2962,37 @@
     margin-bottom: 4px;
   }
   .mm-sku-card-label {
-    flex: 0 0 76px;
-    width: 76px;
+    flex: 0 0 96px;
+    width: 96px;
     color: #666;
     font-size: 13px;
+    text-align: right;
+    white-space: nowrap;
+    padding-right: 8px;
   }
   .mm-sku-card-control {
     flex: 1 1 auto;
     min-width: 0;
+  }
+  /* 手机端：SKU 卡片输入框无边框，输入内容左对齐（光标左起） */
+  .mm-sku-card-control ::v-deep .ant-input,
+  .mm-sku-card-control ::v-deep .ant-input-number,
+  .mm-sku-card-control ::v-deep .ant-input-number-input,
+  .mm-sku-card-control ::v-deep .ant-select-selection {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left !important;
+  }
+  .mm-sku-card-control ::v-deep .ant-input::placeholder,
+  .mm-sku-card-control ::v-deep .ant-input-number-input::placeholder {
+    text-align: left;
+    color: #bfbfbf;
+  }
+  .mm-sku-card-control ::v-deep .ant-select-selection-selected-value,
+  .mm-sku-card-control ::v-deep .ant-select-selection__placeholder,
+  .mm-sku-card-control ::v-deep .ant-select-selection-placeholder {
+    text-align: left !important;
   }
   .mm-sku-card-text {
     color: #333;
@@ -2937,10 +3091,55 @@
     min-height: 32px;
     flex: 0 0 auto;
     margin: 0;
+    position: relative;
+  }
+  /* 行间分割线：用伪元素实现，避免被 ant-input-group-wrapper 的 border:none 覆盖 */
+  .mm-pages.is-mobile .price-setting-batch-row > *:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: #d9d9d9;
   }
   .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-input,
   .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-select-selection {
     height: 32px;
     line-height: 30px;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: left !important;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-input::placeholder,
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-input-number-input::placeholder {
+    text-align: left;
+    color: #bfbfbf;
+  }
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-select-selection-selected-value,
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-select-selection__placeholder,
+  .mm-pages.is-mobile .price-setting-batch-row ::v-deep .ant-select-selection-placeholder {
+    text-align: left !important;
+  }
+  /* 左侧标题（addonBefore）右对齐且不换行 */
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-input-group-addon:first-child {
+    text-align: right !important;
+    white-space: nowrap;
+    width: 96px;
+    min-width: 96px;
+  }
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-input-group-addon:last-child {
+    white-space: nowrap;
+  }
+  /* 去除输入框外框，仅靠伪元素分割线区分行 */
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-input-group-wrapper,
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-input-group,
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-input-group-addon,
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-select,
+  .mm-pages.is-mobile .price-setting-batch-bar ::v-deep .ant-select-selection {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 </style>

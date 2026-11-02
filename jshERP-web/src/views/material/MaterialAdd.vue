@@ -3,6 +3,7 @@
   <div class="material-add-page" :style="cardStyle">
     <!-- 页面头部：操作按钮一行并列，滚动时固定在顶部 -->
     <div class="ma-header">
+      <a-button icon="left" class="ma-back-btn" @click="handleBack">返回</a-button>
       <div class="ma-actions">
         <a-button icon="setting" @click="handlePropertyConfig">属性设置</a-button>
         <a-button @click="handleReset">重置</a-button>
@@ -27,21 +28,42 @@
     data () {
       return {
         // 容器高度，页面内容超出时出现纵向滚动条
-        cardStyle: ''
+        cardStyle: '',
+        // 是否为编辑模式
+        isEdit: false
       }
     },
     mounted () {
       this.setHeight()
       window.addEventListener('resize', this.setHeight)
-      // 进入页面后初始化新增表单
       this.$nextTick(() => {
-        this.openForm()
+        this.loadRecordFromStorage()
       })
+    },
+    // keep-alive 激活时重新读取 sessionStorage 中的编辑数据，避免残留上一次编辑的商品
+    activated () {
+      this.loadRecordFromStorage()
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.setHeight)
     },
     methods: {
+      // 从 sessionStorage 读取商品数据并加载到表单（编辑模式），否则打开新增表单
+      loadRecordFromStorage () {
+        const recordStr = sessionStorage.getItem('materialEditRecord')
+        if (recordStr) {
+          try {
+            const record = JSON.parse(recordStr)
+            sessionStorage.removeItem('materialEditRecord')
+            this.isEdit = true
+            this.openEditForm(record)
+          } catch (e) {
+            this.openForm()
+          }
+        } else {
+          this.openForm()
+        }
+      },
       // 按窗口高度计算内容区高度（仅桌面端固定高度；手机端改为页面自然滚动，避免底部内容被裁剪）
       setHeight () {
         if (document.documentElement.clientWidth <= 768) {
@@ -58,6 +80,25 @@
         form.disableSubmit = false
         form.showOkFlag = true
         form.add()
+      },
+      // 编辑模式：加载商品数据及其所有SKU
+      openEditForm (record) {
+        const form = this.$refs.form
+        if (!form) return
+        form.action = 'edit'
+        form.disableSubmit = false
+        form.showOkFlag = true
+        form.edit(record)
+      },
+      // 返回加载编辑页面的页面（商品列表）
+      handleBack () {
+        const from = sessionStorage.getItem('materialEditFrom')
+        if (from) {
+          sessionStorage.removeItem('materialEditFrom')
+          this.$router.push(from)
+        } else {
+          this.$router.back()
+        }
       },
       // 保存
       handleOk () {
@@ -98,7 +139,7 @@
   }
   .ma-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-start;
     padding: 12px 0;
     margin-bottom: 8px;
@@ -107,12 +148,17 @@
     position: sticky;
     top: 0;
     z-index: 2;
+    gap: 10px;
+  }
+  .ma-back-btn {
+    flex-shrink: 0;
   }
   .ma-actions {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     flex-wrap: nowrap;
     gap: 8px;
+    margin-left: auto;
   }
   .ma-body {
     padding-bottom: 24px;

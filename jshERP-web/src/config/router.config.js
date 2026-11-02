@@ -61,5 +61,17 @@ export const constantRouterMap = [
     path: '/404',
     component: () => import(/* webpackChunkName: "fail" */ '@/views/exception/404')
   },
+  {
+    path: '/material/edit',
+    component: TabLayout,
+    children: [
+      {
+        path: '',
+        name: 'MaterialEdit',
+        component: () => import(/* webpackChunkName: "material" */ '@/views/material/MaterialAdd'),
+        meta: { title: '编辑商品' }
+      }
+    ]
+  },
 
 ]

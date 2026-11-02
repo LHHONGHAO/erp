@@ -7,13 +7,14 @@
 
     <div v-if="mode === 'sidemenu'" class="header" :class="theme">
       <a-icon
-        v-if="device==='mobile'"
-        class="trigger"
-        :type="collapsed ? 'menu-fold' : 'menu-unfold'"
-        @click="toggle"></a-icon>
+        v-if="device==='mobile' && showBack"
+        class="trigger back-trigger"
+        type="arrow-left"
+        @click="back"></a-icon>
 
+      <span v-if="device === 'mobile'" class="mobile-title">{{ mobileTitle }}</span>
       <span v-if="device === 'desktop'" class="company-name">{{ companyName }}</span>
-      <span v-else>{{ systemTitle }}</span>
+      <span v-else-if="device !== 'mobile'">{{ systemTitle }}</span>
       <jump-info ref="jumpModal"></jump-info>
       <user-menu :theme="theme" @searchGlobalHeader="searchGlobalHeader" />
     </div>
@@ -29,10 +30,10 @@
               :theme="theme"></s-menu>
           </div>
           <a-icon
-            v-else
-            class="trigger"
-            :type="collapsed ? 'menu-fold' : 'menu-unfold'"
-            @click="toggle"></a-icon>
+            v-else-if="showBack"
+            class="trigger back-trigger"
+            type="arrow-left"
+            @click="back"></a-icon>
         </div>
         <user-menu class="header-index-right" :theme="theme" :style="topMenuStyle.headerIndexRight"/>
       </div>
@@ -97,6 +98,15 @@
         }
       }
     },
+    computed: {
+      // 手机端首页不显示退回按钮
+      showBack() {
+        return this.$route.path !== '/dashboard/analysis'
+      },
+      mobileTitle() {
+        return (this.$route.meta && this.$route.meta.title) || this.systemTitle
+      }
+    },
     watch: {
       /** 监听设备变化 */
       device() {
@@ -141,6 +151,9 @@
       },
       toggle() {
         this.$emit('toggle')
+      },
+      back() {
+        this.$emit('back')
       },
       buildTopMenuStyle() {
         if (this.mode === 'topmenu') {
@@ -224,9 +237,60 @@
     line-height: @height;
   }
 
+  /* 手机端统一页面顶栏：蓝底、固定、左侧返回、标题 16px */
+  .layout.mobile {
+    .ant-layout-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: @height;
+      line-height: @height;
+      z-index: 10;
+      padding: 0;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+
+    .header,
+    .header.dark {
+      height: @height;
+      line-height: @height;
+      background-color: @primary-color !important;
+      color: #fff !important;
+      box-shadow: none;
+    }
+
+    .trigger.back-trigger {
+      font-size: 22px;
+      line-height: @height;
+      height: @height;
+      padding: 0 14px;
+      color: #fff;
+    }
+
+    .mobile-title {
+      font-size: 16px;
+      font-weight: 400;
+      color: #fff;
+      padding-left: 2px;
+    }
+  }
+
   .company-name {
     font-size:16px;
     padding-left:16px
+  }
+
+  .mobile-title {
+    display: inline-block;
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+    font-size: 16px;
+    padding-left: 4px;
   }
 
   .change-title {

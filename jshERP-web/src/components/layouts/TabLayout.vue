@@ -3,7 +3,7 @@
     <contextmenu :itemList="menuItemList" :visible.sync="menuVisible" style="z-index: 9999;" @select="onMenuSelect"/>
     <a-tabs
       @contextmenu.native="e => onContextmenu(e)"
-      v-if="multipage"
+      v-if="multipage && !isMobile()"
       :active-key="activePage"
       class="tab-layout-tabs"
       :hide-add="true"
@@ -15,7 +15,7 @@
         <span slot="tab" :pagekey="page.fullPath">{{ page.meta.title }}</span>
       </a-tab-pane>
     </a-tabs>
-    <div style="margin: 4px 4px 0;">
+    <div :style="isMobile() ? { margin: '0' } : { margin: '4px 4px 0' }">
       <transition name="page-toggle">
         <keep-alive v-if="multipage" :include="includedComponents">
           <router-view />

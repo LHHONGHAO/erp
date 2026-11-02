@@ -252,6 +252,56 @@ public class MaterialController extends BaseController {
     }
 
     /**
+     * 根据商品编码检查商品是否存在
+     * @param code 商品编码
+     * @param request
+     * @return
+     * @throws Exception
+     */
+    @GetMapping(value = "/checkCodeExist")
+    @ApiOperation(value = "根据商品编码检查商品是否存在")
+    public BaseResponseInfo checkCodeExist(@RequestParam("code") String code,
+                                           @RequestParam(value = "id", required = false) Long id,
+                                           HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            Long existId = materialService.getMaterialIdByCode(code, id);
+            Map<String, Object> data = new HashMap<>();
+            data.put("exist", existId != null);
+            data.put("id", existId);
+            res.code = 200;
+            res.data = data;
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "查询失败";
+        }
+        return res;
+    }
+
+    @PostMapping(value = "/checkSkuBarCodes")
+    @ApiOperation(value = "检查SKU条码是否已存在于其他商品")
+    public BaseResponseInfo checkSkuBarCodes(@RequestBody Map<String, Object> body, HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            @SuppressWarnings("unchecked")
+            List<String> barCodes = (List<String>) body.get("barCodes");
+            Long materialId = body.get("materialId") != null ? Long.valueOf(body.get("materialId").toString()) : null;
+            List<String> existing = materialService.getExistingBarCodes(barCodes, materialId);
+            Map<String, Object> data = new HashMap<>();
+            data.put("exist", existing != null && !existing.isEmpty());
+            data.put("barCodes", existing);
+            res.code = 200;
+            res.data = data;
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "查询失败";
+        }
+        return res;
+    }
+
+    /**
      * 批量设置状态-启用或者禁用
      * @param jsonObject
      * @param request

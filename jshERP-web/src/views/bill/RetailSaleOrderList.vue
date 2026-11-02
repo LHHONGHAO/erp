@@ -1,9 +1,5 @@
 <template>
   <div class="retail-sale-order">
-    <!-- 扫码入口：悬浮图标，中心点位于屏幕下方三分之一处 -->
-    <div class="rso-scan-fab" @click="openScanner">
-      <a-icon type="scan" />
-    </div>
     <!-- 欲售商品列表 -->
     <div class="rso-cart">
       <div class="rso-cart-header">
@@ -40,102 +36,115 @@
         </div>
       </div>
     </div>
-    <!-- 底部栏：数量（所有商品累加）/ 金额（商品累加金额）+ 结算按钮 -->
-    <div class="rso-bottom-bar">
-      <div class="rso-bottom-item">
-        <span class="rso-bottom-label">数量</span>
-        <span class="rso-bottom-value">{{ cartCount }}</span>
+    <!-- 底部栏（标准手机底栏）：数量/金额左对齐 + 居中扫码 + 右侧结算按钮 -->
+    <mobile-bottom-bar>
+      <template #left>
+        <div class="rso-bottom-item">
+          <span class="rso-bottom-label">数量</span>
+          <span class="rso-bottom-value">{{ cartCount }}</span>
+        </div>
+        <div class="rso-bottom-item">
+          <span class="rso-bottom-label">金额</span>
+          <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
+        </div>
+      </template>
+      <div class="rso-bottom-scan" @click="openScanner">
+        <a-icon type="scan" />
       </div>
-      <div class="rso-bottom-item">
-        <span class="rso-bottom-label">金额</span>
-        <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
-      </div>
-      <div class="rso-bottom-settle">
+      <template #right>
         <a-button type="primary" @click="openSettle">结算</a-button>
-      </div>
-    </div>
+      </template>
+    </mobile-bottom-bar>
 
-    <!-- 结算弹窗：宽度全屏；分割线下方为商品明细（名称/规格/数量/金额）+ 实收，高度随商品数量变化（上限为屏幕高度） -->
-    <a-modal
-      :visible="settleVisible"
-      title="结算"
-      @cancel="settleVisible = false"
-      :footer="null"
-      width="100%"
-      centered
-      :bodyStyle="{ padding: 0 }"
-      class="rso-settle-modal"
-    >
-      <!-- 商品明细：名称 / 规格 / 数量 / 金额，随商品数量增长，超出后内部滚动 -->
-      <div class="rso-settle-items">
-        <div v-for="(item, index) in cartList" :key="item.id || index" class="rso-settle-item">
-          <div class="rso-settle-item-row">
-            <span class="rso-settle-item-name">{{ item.name }}</span>
-            <span class="rso-settle-item-amount">¥{{ itemAmount(item) }}</span>
-          </div>
-          <div class="rso-settle-item-row">
-            <span class="rso-settle-item-spec">{{ cartSpec(item) || '-' }}</span>
-            <span class="rso-settle-item-qty">x{{ item.operNumber }}</span>
-          </div>
-        </div>
-        <div v-if="cartList.length === 0" class="rso-settle-empty">暂无商品</div>
+    <!-- 结算页面：标准手机全屏页面（顶栏返回/标题 + 单据信息置顶 + 商品明细 + 合计实收 + 底部提交） -->
+    <div v-if="settleVisible" class="rso-settle-page">
+      <div class="rso-settle-header">
+        <a-icon type="left" class="rso-settle-back" @click="settleVisible = false" />
+        <span class="rso-settle-title">结算</span>
       </div>
-      <!-- 合计 + 实收输入框 + 找零 -->
-      <div class="rso-settle-summary">
-        <div class="rso-settle-summary-row">
-          <span class="rso-settle-label">合计</span>
-          <span class="rso-settle-value">共 {{ cartCount }} 件，¥{{ cartTotal }}</span>
-        </div>
-        <div class="rso-settle-summary-row">
-          <span class="rso-settle-label">实收</span>
-          <a-input-number v-model="billForm.payAmount" :min="0" :precision="2" :controls="false"
-                          class="rso-settle-pay-input" />
-          <span class="rso-settle-change">找零 ¥{{ changeAmount }}</span>
-        </div>
-      </div>
-      <div class="rso-billinfo">
-        <div class="rso-billinfo-row">
-          <span class="rso-billinfo-label">单据日期</span>
-          <a-date-picker v-model="billForm.operTime" showTime format="YYYY-MM-DD HH:mm:ss"
-                         class="rso-billinfo-field" />
-        </div>
-        <div class="rso-billinfo-row">
-          <span class="rso-billinfo-label">单据编号</span>
-          <a-input v-model="billForm.number" placeholder="请输入单据编号" class="rso-billinfo-field" />
-        </div>
-        <div class="rso-billinfo-row">
-          <span class="rso-billinfo-label">仓库</span>
-          <a-select v-model="billForm.depotId" placeholder="请选择仓库" class="rso-billinfo-field"
-                    :dropdownMatchSelectWidth="false" allowClear>
-            <a-select-option v-for="item in depotList" :key="item.id" :value="String(item.id)">
-              {{ item.depotName }}
-            </a-select-option>
-          </a-select>
-        </div>
-        <div class="rso-billinfo-row">
-          <span class="rso-billinfo-label">收款类型</span>
-          <a-select v-model="billForm.payType" class="rso-billinfo-field">
-            <a-select-option value="现付">现付</a-select-option>
-            <a-select-option value="预付款">预付款</a-select-option>
-          </a-select>
-        </div>
-        <!-- 会员卡号：点击输入框或下拉箭头加载会员列表；右侧按钮新增会员 -->
-        <div class="rso-billinfo-row">
-          <span class="rso-billinfo-label">会员卡号</span>
-          <div class="rso-member-field">
-            <a-input ref="memberInput" :value="memberDisplay" readOnly placeholder="请选择会员卡号"
-                     class="rso-member-input" @click="openMemberPicker">
-              <a-icon slot="suffix" type="down" class="rso-member-arrow" />
-            </a-input>
-            <a-button icon="user-add" class="rso-member-add" @click="addMember" />
+      <div class="rso-settle-body">
+        <!-- 单据信息：单号/日期、仓库/收款类型按两列并排置于页面最顶端 -->
+        <div class="rso-billinfo">
+          <div class="rso-billinfo-grid-row">
+            <div class="rso-billinfo-cell">
+              <span class="rso-billinfo-label">单号</span>
+              <a-input v-model="billForm.number" placeholder="请输入单号" class="rso-billinfo-field" />
+            </div>
+            <div class="rso-billinfo-cell">
+              <span class="rso-billinfo-label">日期</span>
+              <a-date-picker v-model="billForm.operTime" showTime format="YYYY-MM-DD HH:mm:ss"
+                             class="rso-billinfo-field" />
+            </div>
+          </div>
+          <div class="rso-billinfo-grid-row">
+            <div class="rso-billinfo-cell">
+              <span class="rso-billinfo-label">仓库</span>
+              <a-select v-model="billForm.depotId" placeholder="请选择仓库" class="rso-billinfo-field"
+                        :dropdownMatchSelectWidth="false" allowClear>
+                <a-select-option v-for="item in depotList" :key="item.id" :value="String(item.id)">
+                  {{ item.depotName }}
+                </a-select-option>
+              </a-select>
+            </div>
+            <div class="rso-billinfo-cell">
+              <span class="rso-billinfo-label">收款类型</span>
+              <a-select v-model="billForm.payType" class="rso-billinfo-field">
+                <a-select-option value="现付">现付</a-select-option>
+                <a-select-option value="预付款">预付款</a-select-option>
+              </a-select>
+            </div>
+          </div>
+          <!-- 会员信息：点击输入框或下拉箭头加载会员列表；右侧按钮新增会员 -->
+          <div class="rso-billinfo-row">
+            <span class="rso-billinfo-label">会员信息</span>
+            <div class="rso-member-field">
+              <a-input ref="memberInput" :value="memberDisplay" readOnly placeholder="请选择会员"
+                       class="rso-member-input" @click="openMemberPicker">
+                <a-icon slot="suffix" type="down" class="rso-member-arrow" />
+              </a-input>
+              <a-button icon="user-add" class="rso-member-add" @click="addMember" />
+            </div>
           </div>
         </div>
+        <!-- 商品明细：名称 / 规格 / 数量 / 金额 -->
+        <div class="rso-settle-items">
+          <div v-for="(item, index) in cartList" :key="item.id || index" class="rso-settle-item">
+            <div class="rso-settle-item-row">
+              <span class="rso-settle-item-name">{{ item.name }}</span>
+              <span class="rso-settle-item-amount">¥{{ itemAmount(item) }}</span>
+            </div>
+            <div class="rso-settle-item-row">
+              <span class="rso-settle-item-spec">{{ cartSpec(item) || '-' }}</span>
+              <span class="rso-settle-item-qty">x{{ item.operNumber }}</span>
+            </div>
+          </div>
+          <div v-if="cartList.length === 0" class="rso-settle-empty">暂无商品</div>
+        </div>
       </div>
-      <div class="rso-settle-footer">
-        <a-button @click="settleVisible = false">关闭</a-button>
-        <a-button type="primary" :loading="saving" @click="submitOrder">提交订单</a-button>
-      </div>
-    </a-modal>
+      <!-- 底部栏（标准手机底栏）：数量/金额/实收 竖排指标 + 右侧提交订单 -->
+      <mobile-bottom-bar>
+        <template #left>
+          <div class="rso-settle-metrics">
+            <div class="rso-bottom-item">
+              <span class="rso-bottom-label">数量</span>
+              <span class="rso-bottom-value">{{ cartCount }}</span>
+            </div>
+            <div class="rso-bottom-item">
+              <span class="rso-bottom-label">金额</span>
+              <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
+            </div>
+            <div class="rso-bottom-item">
+              <span class="rso-bottom-label">实收</span>
+              <a-input :value="payAmountDisplay" inputmode="decimal" class="rso-bottom-pay-input"
+                       @change="onPayAmountChange" />
+            </div>
+          </div>
+        </template>
+        <template #right>
+          <a-button type="primary" :loading="saving" @click="submitOrder">提交订单</a-button>
+        </template>
+      </mobile-bottom-bar>
+    </div>
 
     <!-- 选择会员：顶部按手机号搜索，列表可下滑 -->
     <a-modal
@@ -176,6 +185,13 @@
         <canvas ref="scanOverlay" class="rso-scan-overlay"></canvas>
       </div>
       <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
+      <!-- 手动输入条码搜索：取景框下方 -->
+      <div v-if="!multiScanMode" class="rso-scan-manual" :class="{ 'rso-scan-manual-focused': manualFocused }">
+        <a-input v-model="manualCode" placeholder="手动输入条码搜索" allowClear
+                 class="rso-scan-manual-input" @focus="manualFocused = true" @blur="manualFocused = false"
+                 @pressEnter="submitManualCode" />
+        <a-button type="primary" @click="submitManualCode">搜索</a-button>
+      </div>
       <!-- 页面内文字提示：识别结果、商品是否存在、异常都在这里显示，不再弹框 -->
       <div class="rso-scan-tip" :class="scanTipClass">{{ scanTip }}</div>
       <!-- 拍照识别：只分析取景框内的图像 -->
@@ -222,6 +238,7 @@
   import { findBySelectRetail } from '@/api/api'
   import { getFormatDate } from '@/utils/util'
   import DataTable from '@/components/DataTable'
+  import MobileBottomBar from '@/components/mobile/MobileBottomBar'
   import moment from 'moment'
   import { searchContentByCode } from '@/services/search/contentSearch'
   import { SCANNER_STATE } from '@/types/scanner'
@@ -236,7 +253,8 @@
       MaterialSelectPage,
       MemberModal,
       CertInstallGuide,
-      DataTable
+      DataTable,
+      MobileBottomBar
     },
     data () {
       return {
@@ -323,6 +341,9 @@
         // 商品选择
         materialVisible: false,
         scanBarCode: '',
+        // 扫码页手动输入条码
+        manualCode: '',
+        manualFocused: false,
         // 结算弹窗（单据信息）
         settleVisible: false
       }
@@ -338,16 +359,16 @@
       cartCount () {
         return this.cartList.reduce((sum, item) => sum + (item.operNumber - 0 || 0), 0)
       },
-      // 会员输入框显示：卡号 + 姓名
+      // 会员输入框显示：会员名 + 电话号码（不再显示会员卡号）
       memberDisplay () {
         const m = this.selectedMember
         if (!m) return ''
-        return m.contacts ? `${m.supplier} ${m.contacts}` : m.supplier
+        return [m.contacts, m.telephone].filter(Boolean).join(' ')
       },
-      // 找零 = 实收 - 单据金额（不足时为 0）
-      changeAmount () {
-        const diff = (this.billForm.payAmount - 0) - (this.cartTotal - 0)
-        return diff > 0 ? diff.toFixed(2) : '0.00'
+      // 实收输入框显示：保留两位小数
+      payAmountDisplay () {
+        const n = Number(this.billForm.payAmount)
+        return Number.isFinite(n) ? (Math.max(n, 0)).toFixed(2) : '0.00'
       },
       // 扫码提示语：所有扫码反馈（识别结果、商品是否存在、异常）只在页面内文字提示
       scanTip () {
@@ -799,6 +820,17 @@
         this.stopScan(SCANNER_STATE.STOPPED)
         this.scanVisible = false
         this.certGuideVisible = false
+        this.manualCode = ''
+      },
+      // 手动输入条码搜索：与扫码识别走同一套搜索逻辑
+      submitManualCode () {
+        const code = (this.manualCode || '').trim()
+        if (!code) {
+          this.scanError = '请输入条码'
+          this.scanState = SCANNER_STATE.ERROR
+          return
+        }
+        this.handleScannedContent(code, 'MANUAL', 'MANUAL')
       },
       // 关闭证书安装说明
       closeCertGuide () {
@@ -1063,7 +1095,7 @@
           }
         })
       },
-      // 打开结算弹窗：自动带出默认仓库，实收默认填单据金额，找零为 0
+      // 打开结算页面：自动带出默认仓库，实收默认填单据金额
       openSettle () {
         if (!this.billForm.depotId) {
           const depots = this.depotList || []
@@ -1075,6 +1107,13 @@
         }
         this.billForm.payAmount = this.cartTotal - 0
         this.settleVisible = true
+      },
+      // 实收输入：只保留数字和小数点，失焦时回写金额并格式化为两位小数
+      onPayAmountChange (e) {
+        const raw = (e.target.value || '').replace(/[^\d.]/g, '')
+        const num = Math.max(parseFloat(raw) || 0, 0)
+        this.billForm.payAmount = Math.round(num * 100) / 100
+        e.target.value = this.billForm.payAmount.toFixed(2)
       },
       // 提交订单：直接调用后端保存接口写库（等同网页版「保存」）
       submitOrder () {
@@ -1169,11 +1208,13 @@
   // 给底部固定金额栏留出空间
   padding-bottom: 92px;
 }
-// 结算弹窗内的单据信息：单列对齐
+// 结算页面顶部单据信息：单列对齐（卡片）
 .rso-billinfo {
   flex-shrink: 0;
-  background: #fff;
+  margin: 10px 12px 0;
   padding: 4px 12px;
+  background: #fff;
+  border-radius: 8px;
   .rso-billinfo-row {
     display: flex;
     align-items: center;
@@ -1181,6 +1222,71 @@
     border-bottom: 1px solid #f0f0f0;
     &:last-child {
       border-bottom: none;
+    }
+  }
+  // 两列并排的单据字段：标题与组件同行并列，两条竖列等宽
+  .rso-billinfo-grid-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+  .rso-billinfo-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    .rso-billinfo-label {
+      flex: 0 0 auto;
+      width: auto;
+      margin-right: 4px;
+      color: #999;
+      font-size: 12px;
+      line-height: 16px;
+      white-space: nowrap;
+    }
+    .rso-billinfo-field {
+      flex: 1 1 0;
+      width: auto;
+      min-width: 0;
+    }
+    // 两列内空间有限：组件强制占满剩余宽度并允许收缩，缩小字号和内边距，保证单号、日期完整显示
+    /deep/ .ant-input,
+    /deep/ .ant-select,
+    /deep/ .ant-calendar-picker {
+      flex: 1 1 0;
+      width: auto;
+      min-width: 0;
+    }
+    /deep/ .ant-calendar-picker {
+      flex: 1 1 0 !important;
+      width: 0 !important;
+      min-width: 0 !important;
+    }
+    /deep/ .ant-input {
+      padding-left: 2px;
+      padding-right: 2px;
+      font-size: 13px !important;
+    }
+    /deep/ .ant-calendar-picker-input {
+      width: 100%;
+      padding-right: 18px !important;
+      font-size: 13px !important;
+    }
+    /deep/ .ant-calendar-picker-icon {
+      right: 4px;
+    }
+    /deep/ .ant-select-selection__rendered {
+      margin-left: 2px;
+      margin-right: 2px;
+    }
+    /deep/ .ant-select-selection-selected-value {
+      font-size: 13px !important;
     }
   }
   .rso-billinfo-label {
@@ -1258,85 +1364,129 @@
   text-align: center;
   color: #999;
 }
-// 底部固定金额栏
-.rso-bottom-bar {
+// 标准手机底栏内的指标：上面标题，下面数据（底栏高度与样式统一在 MobileBottomBar 组件）
+.rso-bottom-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.rso-bottom-label {
+  color: #999;
+  font-size: 12px;
+  line-height: 18px;
+}
+.rso-bottom-value {
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.rso-bottom-amount {
+  color: #f5222d;
+}
+// 实收输入框：与其它数据同高（24px）、同字号，保证标题与数据上下对齐；inputmode 拉起纯数字键盘
+.rso-bottom-pay-input {
+  width: 88px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+  &:focus {
+    border: none;
+    box-shadow: none;
+  }
+}
+// 结算底栏指标：三个指标在底栏空白处均分，标题底边对齐、数据顶边对齐且与标题居中对齐
+.rso-settle-metrics {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  .rso-bottom-item {
+    flex: 1 1 0;
+    align-items: center;
+  }
+}
+// 扫码入口：固定在底栏中间，直径与底栏高度一致
+.rso-bottom-scan {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #1890ff;
+  color: #fff;
+  font-size: 26px;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.35);
+  cursor: pointer;
+}
+// 结算页面：固定全屏，顶栏与全局手机页面顶栏一致（49px 蓝底）
+.rso-settle-page {
   position: fixed;
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: 500;
   display: flex;
-  align-items: flex-start;
-  padding: 8px 12px;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom));
-  background: #fff;
-  border-top: 1px solid #eee;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
-  .rso-bottom-item {
-    flex: 1;
+  flex-direction: column;
+  background: #f5f5f5;
+  .rso-settle-header {
+    flex-shrink: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    min-width: 0;
+    height: 49px;
+    background: #1890ff;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
-  .rso-bottom-label {
-    color: #999;
-    font-size: 12px;
-    line-height: 18px;
+  .rso-settle-back {
+    padding: 0 14px;
+    height: 49px;
+    line-height: 49px;
+    font-size: 22px;
+    color: #fff;
   }
-  .rso-bottom-value {
-    color: #333;
+  .rso-settle-title {
+    padding-left: 2px;
     font-size: 16px;
-    font-weight: 600;
-    line-height: 24px;
+    color: #fff;
   }
-  .rso-bottom-amount {
-    color: #f5222d;
-  }
-  // 结算按钮固定在金额栏右侧
-  .rso-bottom-settle {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    align-self: stretch;
-    padding-left: 8px;
-    /deep/ .ant-btn {
-      height: 100%;
-      min-height: 40px;
-      padding: 0 18px;
-      font-size: 15px;
-      font-weight: 600;
-    }
+  // 页面主体：可滚动；底部标准底栏固定，留出与底栏等高的空间
+  .rso-settle-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
   }
 }
-// 结算弹窗：宽度全屏；内容高度随商品数量变化，上限为屏幕高度（超出后商品明细内部滚动）
-.rso-settle-modal {
-  /deep/ .ant-modal {
-    max-width: 100vw;
-    margin: 0 auto;
-  }
-  /deep/ .ant-modal-content {
-    display: flex;
-    flex-direction: column;
-    max-height: 100vh;
-  }
-  /deep/ .ant-modal-body {
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-}
-// 商品明细列表：随商品数量增长，空间不足时内部滚动
+// 商品明细列表：卡片样式，随商品数量增长
 .rso-settle-items {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  margin: 10px 12px;
+  background: #fff;
+  border-radius: 8px;
 }
 .rso-settle-item {
   padding: 8px 12px;
   border-bottom: 1px solid #f5f5f5;
+  &:last-child {
+    border-bottom: none;
+  }
   .rso-settle-item-row {
     display: flex;
     align-items: center;
@@ -1382,72 +1532,6 @@
   text-align: center;
   color: #999;
   font-size: 13px;
-}
-// 合计 + 实收 + 找零
-.rso-settle-summary {
-  flex-shrink: 0;
-  padding: 4px 12px;
-  border-top: 1px solid #f0f0f0;
-  background: #fafafa;
-  .rso-settle-summary-row {
-    display: flex;
-    align-items: center;
-    min-height: 38px;
-  }
-  .rso-settle-label {
-    flex: 0 0 76px;
-    width: 76px;
-    color: #333;
-    font-size: 14px;
-  }
-  .rso-settle-value {
-    font-size: 15px;
-    font-weight: 600;
-    color: #f5222d;
-  }
-  .rso-settle-pay-input {
-    width: 110px;
-    /deep/ .ant-input-number-input {
-      text-align: center;
-      font-size: 16px;
-      font-weight: 600;
-    }
-  }
-  .rso-settle-change {
-    margin-left: 12px;
-    font-size: 13px;
-    color: #666;
-  }
-}
-// 结算弹窗底部按钮
-.rso-settle-footer {
-  flex-shrink: 0;
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  border-top: 1px solid #f0f0f0;
-  /deep/ .ant-btn {
-    flex: 1;
-  }
-}
-// 扫码悬浮图标：中心点对齐屏幕下方三分之一处
-.rso-scan-fab {
-  position: fixed;
-  left: 50%;
-  bottom: 33.333vh;
-  transform: translate(-50%, 50%);
-  z-index: 101;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #1890ff;
-  color: #fff;
-  font-size: 28px;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
-  cursor: pointer;
 }
 .rso-cart {
   margin: 10px 12px;
@@ -1666,6 +1750,32 @@
       text-align: center;
       font-size: 12px;
       color: #fff;
+    }
+  }
+  /* 手动输入条码搜索：取景框下方，输入时自动上移避开软键盘 */
+  .rso-scan-manual {
+    position: absolute;
+    left: 50%;
+    bottom: 210px;
+    transform: translateX(-50%);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    width: 86%;
+    gap: 8px;
+    transition: bottom 0.2s;
+    .rso-scan-manual-input {
+      flex: 1;
+      height: 36px !important;
+      padding: 0 10px !important;
+      border: 1px solid rgba(255, 255, 255, 0.6) !important;
+      border-radius: 6px !important;
+      background: #fff !important;
+      box-shadow: none !important;
+      color: #333;
+    }
+    &.rso-scan-manual-focused {
+      bottom: 45%;
     }
   }
   /* 拍照识别按钮：页面底部居中 */

@@ -6,6 +6,23 @@ import 'nprogress/nprogress.css' // progress bar style
 import { USER_ID,INDEX_MAIN_PAGE_PATH } from '@/store/mutation-types'
 import { generateIndexRouter } from "@/utils/util"
 
+// 将未在后台菜单中配置的移动端页面挂到对应菜单分组下，
+// 与商品页共用同一个 TabLayout，避免切换顶层路由时 keep-alive 缓存被销毁导致表单数据丢失
+function injectMobilePageRoutes(routes) {
+  if (!Array.isArray(routes)) return
+  const materialRoute = routes.find(route => (route.path || '').replace(/\/$/, '') === '/material')
+  if (!materialRoute || !Array.isArray(materialRoute.children)) return
+  const exists = materialRoute.children.some(route => route.path === '/material/category_add')
+  if (!exists) {
+    materialRoute.children.push({
+      path: '/material/category_add',
+      name: 'MaterialCategoryAdd',
+      meta: { title: '新增品类', keepAlive: true },
+      component: () => import('@/views/material/MaterialCategoryAdd')
+    })
+  }
+}
+
 NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
@@ -30,6 +47,7 @@ router.beforeEach((to, from, next) => {
           })
           let constRoutes = [];
           constRoutes = generateIndexRouter(menuData);
+          injectMobilePageRoutes(constRoutes)
           // 添加主界面路由
           store.dispatch('UpdateAppRouter',  { constRoutes }).then(() => {
             // 根据roles权限生成可访问的路由表

@@ -199,6 +199,10 @@ export default {
   // keep-alive 激活时重新注册手机端顶部按钮
   activated() {
     this.registerHeaderActions()
+    // 手机端从新增品类页面返回时刷新列表
+    if (this.isMobile()) {
+      this.loadData()
+    }
   },
   deactivated() {
     clearMobileHeaderActions()
@@ -476,6 +480,11 @@ export default {
       });
     },
     handleAdd() {
+      // 手机端：改为标准路由页面
+      if (this.isMobile()) {
+        this.$router.push('/material/category_add')
+        return
+      }
       this.$refs.materialCategoryModal.add()
       this.$refs.materialCategoryModal.title = '新增'
     },

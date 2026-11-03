@@ -47,6 +47,15 @@
     // keep-alive 激活时重新读取 sessionStorage 中的编辑数据，避免残留上一次编辑的商品
     activated () {
       this.registerHeaderActions()
+      // 从「新增品类」路由页返回：保留当前商品录入内容，仅刷新类别树
+      if (sessionStorage.getItem('materialCategoryAddReturn')) {
+        sessionStorage.removeItem('materialCategoryAddReturn')
+        const modal = this.$refs.form
+        if (modal && modal.loadTreeData) {
+          modal.loadTreeData()
+        }
+        return
+      }
       this.loadRecordFromStorage()
     },
     deactivated () {

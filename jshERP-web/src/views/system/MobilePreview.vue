@@ -41,6 +41,7 @@
           { width: 768, height: 1024, label: '平板 768×1024' }
         ],
         pages: [
+          { name: '标准页面模版', path: '/mobile-page-demo' },
           { name: '首页', path: '/dashboard/analysis' },
           { name: '新增商品', path: '/material/material_add' },
           { name: '商品类别', path: '/material/material_category' },

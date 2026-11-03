@@ -74,6 +74,18 @@ export const constantRouterMap = [
     ]
   },
   {
+    path: '/mobile-page-demo',
+    component: BlankLayout,
+    children: [
+      {
+        path: '',
+        name: 'MobilePageDemo',
+        meta: { title: '标准手机页面模版' },
+        component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePageDemo')
+      }
+    ]
+  },
+  {
     path: '/material/edit',
     component: TabLayout,
     children: [

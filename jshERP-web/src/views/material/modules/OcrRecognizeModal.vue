@@ -4,16 +4,27 @@
     :width="modalWidth"
     :footer="null"
     :maskClosable="false"
+    :mask="!isMobileView"
+    :closable="!isMobileView"
+    :wrapClassName="isMobileView ? 'ocr-mobile-modal' : ''"
     @cancel="handleCancel">
-    <!-- 自定义标题栏 -->
+    <!-- 自定义标题栏：手机端为标准页面顶栏，桌面端保留按钮 -->
     <template slot="title">
-      <span>{{ extractOnly ? '图片文字提取' : '图片识别' }}</span>
-      <a-button v-if="!extractOnly" size="small" style="margin-left:12px" @click="apiConfigVisible=true">
-        <a-icon type="setting" />API 配置
-      </a-button>
-      <a-button v-if="!extractOnly" size="small" style="margin-left:8px" @click="openPropertyConfig">
-        <a-icon type="control" />属性显示设置
-      </a-button>
+      <div v-if="isMobileView" class="ocr-mobile-header">
+        <a-icon type="arrow-left" class="ocr-mobile-back" @click="handleCancel" />
+        <span class="ocr-mobile-title">{{ extractOnly ? '图片文字提取' : '图片识别' }}</span>
+        <a-icon v-if="!extractOnly" type="setting" class="ocr-mobile-action" @click="apiConfigVisible=true" />
+        <a-icon v-if="!extractOnly" type="control" class="ocr-mobile-action ocr-mobile-action-last" @click="openPropertyConfig" />
+      </div>
+      <div v-else>
+        <span>{{ extractOnly ? '图片文字提取' : '图片识别' }}</span>
+        <a-button v-if="!extractOnly" size="small" style="margin-left:12px" @click="apiConfigVisible=true">
+          <a-icon type="setting" />API 配置
+        </a-button>
+        <a-button v-if="!extractOnly" size="small" style="margin-left:8px" @click="openPropertyConfig">
+          <a-icon type="control" />属性显示设置
+        </a-button>
+      </div>
     </template>
 
     <!-- 文字编辑框 + 底部操作栏（不再显示图片预览框） -->
@@ -41,14 +52,14 @@
       </div>
     </div>
 
-    <!-- 属性框（始终显示） -->
+    <!-- 属性框（始终显示）：手机端每行一项，标题与值并列 -->
     <div v-if="!extractOnly" style="margin-top:4px">
       <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">属性信息</a-divider>
-      <a-row :gutter="8">
+      <a-row :gutter="isMobileView ? 0 : 8">
         <a-col :span="isMobileView ? 24 : 12" v-for="prop in visibleOcrProps" :key="prop.field">
-          <div class="ocr-prop-item">
-            <div style="font-size:13px;color:rgba(0,0,0,0.85);line-height:20px;margin-bottom:0px">{{ prop.anotherName }}</div>
-            <a-input v-model="ocrFields[prop.field]" :placeholder="ocrLoading ? '识别中...' : ''" size="small" />
+          <div class="ocr-prop-item" :class="{ 'ocr-prop-item-mobile': isMobileView }">
+            <div class="ocr-prop-label" style="font-size:13px;color:rgba(0,0,0,0.85);line-height:20px;margin-bottom:0px">{{ prop.anotherName }}</div>
+            <a-input v-model="ocrFields[prop.field]" :placeholder="ocrLoading ? '识别中...' : ''" size="small" :class="{ 'ocr-prop-input': isMobileView }" />
           </div>
         </a-col>
       </a-row>
@@ -99,7 +110,7 @@
 
 <script>
 import Vue from 'vue'
-import { postAction } from '@/api/manage'
+import { postAction, getAction } from '@/api/manage'
 import { axios as uploadHttp } from '@/utils/request'
 import OcrApiConfigModal from './OcrApiConfigModal'
 
@@ -172,7 +183,8 @@ export default {
   computed: {
     // 手机端弹窗宽度占满可视区，桌面端保持原宽度
     modalWidth() {
-      if (this.isMobileView) return '94%'
+      // 手机端改为全屏标准页面，不再保留左右边距
+      if (this.isMobileView) return '100%'
       return this.extractOnly ? 480 : 453
     },
     visibleOcrProps() {
@@ -224,8 +236,37 @@ export default {
         this.$emit('cancel')
       }
     },
+    // 兼容本地缓存/后端返回的多种结构，统一取出属性配置数组
+    parsePropertyConfig(raw) {
+      if (!raw) return null
+      var data = raw
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data) } catch (e) { return null }
+      }
+      if (data && !Array.isArray(data)) {
+        if (Array.isArray(data.value)) data = data.value
+        else if (Array.isArray(data.config)) data = data.config
+        else return null
+      }
+      return Array.isArray(data) ? data : null
+    },
+    // 把配置中的 visible 应用到属性列表，返回是否有命中
+    applyOcrVisibleConfig(list, config) {
+      if (!config || !config.length) return false
+      var hit = false
+      for (var i = 0; i < list.length; i++) {
+        var item = list[i]
+        var cfg = config.find(function(c) { return c.field === item.field })
+        if (cfg) {
+          item.visible = cfg.visible !== false
+          hit = true
+        }
+      }
+      return hit
+    },
     loadOcrPropertyList() {
-      var baseConfig = Vue.ls.get('material_base_property_config')
+      var that = this
+      var baseConfig = this.parsePropertyConfig(Vue.ls.get('material_base_property_config'))
       var allProps = BASE_PROPERTIES.map(function(p) { return Object.assign({}, p) })
       // 属性名称跟随「基础属性设置」中的别名，保证两处显示一致
       if (baseConfig && baseConfig.length) {
@@ -236,18 +277,22 @@ export default {
           }
         }
       }
-      // 可选属性与「基础属性设置」的可选项完全一致，不按基础信息里的显示状态过滤
-      // OCR 侧只覆盖“是否显示”，名称始终沿用基础属性设置
-      var ocrConfig = Vue.ls.get('ocrPropertyList')
-      if (ocrConfig && ocrConfig.length) {
-        for (var j = 0; j < allProps.length; j++) {
-          var ocrCfg = ocrConfig.find(function(c) { return c.field === allProps[j].field })
-          if (ocrCfg) {
-            allProps[j].visible = ocrCfg.visible !== false
-          }
-        }
-      }
+      // 本地缓存先渲染，保证打开弹层立即有内容
+      this.applyOcrVisibleConfig(allProps, this.parsePropertyConfig(Vue.ls.get('ocrPropertyList')))
       this.ocrPropertyList = allProps
+      // 再读后端共享配置（与「基础属性设置」同一套存储方式），保证换设备、远端重新登录后仍生效
+      getAction('/platformConfig/getUiConfig', { key: 'ocr_property_setting' }).then(function(res) {
+        if (!(res && res.code === 200 && res.data)) return
+        var decoded = res.data
+        if (typeof decoded === 'string') {
+          try { decoded = JSON.parse(decoded) } catch (e) { decoded = null }
+        }
+        var remoteConfig = decoded && Array.isArray(decoded.config) ? decoded.config : that.parsePropertyConfig(decoded)
+        if (remoteConfig && remoteConfig.length && that.applyOcrVisibleConfig(that.ocrPropertyList, remoteConfig)) {
+          that.ocrPropertyList = that.ocrPropertyList.slice()
+          Vue.ls.set('ocrPropertyList', remoteConfig, 365 * 24 * 60 * 60 * 1000)
+        }
+      }).catch(function() {})
     },
     openPropertyConfig() {
       this.propertyConfigData = this.ocrPropertyList.map(function(p) { return Object.assign({}, p) })
@@ -260,9 +305,16 @@ export default {
           item.visible = cfg.visible
         }
       }.bind(this))
-      Vue.ls.set('ocrPropertyList', this.ocrPropertyList.map(function(p) {
+      var snapshot = this.ocrPropertyList.map(function(p) {
         return { field: p.field, nativeName: p.nativeName, visible: p.visible, anotherName: p.anotherName }
-      }), 365 * 24 * 60 * 60 * 1000)
+      })
+      // 本地缓存 + 后端共享配置双写，避免重开弹层、换设备或远端重新登录后失效
+      Vue.ls.set('ocrPropertyList', snapshot, 365 * 24 * 60 * 60 * 1000)
+      postAction('/platformConfig/saveUiConfig', {
+        key: 'ocr_property_setting',
+        value: JSON.stringify({ config: snapshot })
+      }).catch(function() {})
+      this.ocrPropertyList = this.ocrPropertyList.slice()
       this.propertyConfigVisible = false
     },
     triggerCamera() {
@@ -431,26 +483,70 @@ export default {
         this.$message.error(msg)
         return false
       }
-      this.ocrFields.rawText = res.data.rawText || this.ocrFields.rawText || ''
+      var data = res.data || {}
+      // 识别后的文字原文完整回填到文本框
+      var rawText = typeof data.rawText === 'string' ? data.rawText : ''
+      if (rawText) {
+        this.ocrFields.rawText = rawText
+      }
       if (this.extractOnly) {
         this.hasOcrResult = !!this.ocrFields.rawText
         return true
       }
-      var visibleProps = this.visibleOcrProps
-      for (var i = 0; i < visibleProps.length; i++) {
-        var prop = visibleProps[i]
+      // 提取到的值回填到对应属性输入框：不区分是否勾选显示，避免隐藏属性丢值
+      var props = this.ocrPropertyList.length ? this.ocrPropertyList : BASE_PROPERTIES
+      for (var i = 0; i < props.length; i++) {
+        var prop = props[i]
         var value = ''
-        if (res.data[prop.field] !== undefined && res.data[prop.field] !== null && res.data[prop.field] !== '') {
-          value = res.data[prop.field]
-        } else if (res.data[prop.nativeName] !== undefined && res.data[prop.nativeName] !== null && res.data[prop.nativeName] !== '') {
-          value = res.data[prop.nativeName]
-        } else if (res.data[prop.anotherName] !== undefined && res.data[prop.anotherName] !== null && res.data[prop.anotherName] !== '') {
-          value = res.data[prop.anotherName]
+        if (this.hasDataValue(data, prop.field)) {
+          value = data[prop.field]
+        } else if (this.hasDataValue(data, prop.nativeName)) {
+          value = data[prop.nativeName]
+        } else if (this.hasDataValue(data, prop.anotherName)) {
+          value = data[prop.anotherName]
         }
-        this.$set(this.ocrFields, prop.field, value)
+        this.$set(this.ocrFields, prop.field, value === null || value === undefined ? '' : String(value).trim())
       }
+      // 后端未解析出的属性，用原文逐行的「标题+值」补充（兼容各类分隔符）
+      this.fillPropsFromRawText(this.ocrFields.rawText, props)
       this.hasOcrResult = true
       return true
+    },
+    hasDataValue(data, key) {
+      if (!key) return false
+      var value = data[key]
+      return value !== undefined && value !== null && value !== ''
+    },
+    /** 逐行匹配「属性名称 + 分隔符 + 值」，如「名称：儿童T恤」→ 名称输入框填 儿童T恤 */
+    fillPropsFromRawText(rawText, props) {
+      var text = rawText || ''
+      if (!text) return
+      var lines = text.split(/\r?\n/)
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim()
+        if (!line) continue
+        for (var j = 0; j < props.length; j++) {
+          var prop = props[j]
+          if (this.ocrFields[prop.field]) continue
+          var value = this.matchLabelValue(line, prop)
+          if (value) {
+            this.$set(this.ocrFields, prop.field, value)
+          }
+        }
+      }
+    },
+    matchLabelValue(line, prop) {
+      var labels = [prop.nativeName, prop.anotherName]
+      for (var i = 0; i < labels.length; i++) {
+        var label = (labels[i] || '').trim()
+        if (!label || line.indexOf(label) !== 0) continue
+        var rest = line.substring(label.length)
+        // 标题后必须紧跟分隔符（冒号、等号、竖线、横杠、顿号、空格等），避免误匹配
+        if (!/^[\s:：=＝|｜\-–—、，,.;；。]/.test(rest)) continue
+        var value = rest.replace(/^[\s:：=＝|｜\-–—、，,.;；。]+/, '').trim()
+        if (value) return value
+      }
+      return ''
     },
     copyRawText() {
       this.copyText(this.ocrFields.rawText || '')
@@ -600,5 +696,88 @@ export default {
   .ocr-prop-item .ant-input {
     font-size: 16px;
   }
+  /* 手机端属性行：标题与值并列，输入框无边框 */
+  .ocr-prop-item-mobile {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .ocr-prop-item-mobile .ocr-prop-label {
+    width: 88px;
+    flex: none;
+    margin-bottom: 0 !important;
+  }
+  .ocr-prop-item-mobile .ant-input {
+    flex: 1;
+    min-width: 0;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding-left: 0;
+    font-size: 14px;
+  }
+  .ocr-prop-item-mobile .ant-input:focus {
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+/* 手机端标准页面顶栏 */
+.ocr-mobile-header {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  color: #fff;
+}
+.ocr-mobile-back {
+  font-size: 20px;
+  color: #fff;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.ocr-mobile-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 500;
+  color: #fff;
+}
+.ocr-mobile-action {
+  font-size: 18px;
+  color: #fff;
+  cursor: pointer;
+  padding: 6px;
+}
+.ocr-mobile-action-last {
+  margin-left: 12px;
+}
+</style>
+<style>
+/* 手机端把弹窗变成标准全屏页面（antd 弹窗挂载在 body，需非 scoped 样式） */
+.ocr-mobile-modal .ant-modal {
+  top: 0;
+  margin: 0;
+  padding-bottom: 0;
+  width: 100% !important;
+  max-width: 100%;
+}
+.ocr-mobile-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  border-radius: 0;
+}
+.ocr-mobile-modal .ant-modal-header {
+  flex: none;
+  padding: 0 12px;
+  background: #1890ff;
+  border-radius: 0;
+}
+.ocr-mobile-modal .ant-modal-title {
+  color: #fff;
+}
+.ocr-mobile-modal .ant-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
 }
 </style>

@@ -51,18 +51,21 @@ module.exports = {
         port: 3000,
         // 允许通过局域网 IP（手机）访问开发服务器
         disableHostCheck: true,
-        proxy: [{
-            // 后端已取消 context-path，接口挂在根路径；
-            // 仅代理接口请求，页面导航与前端构建资源仍由开发服务器处理
-            context: function (pathname, req) {
+        proxy: {
+            '/': {
+            // 页面导航与前端静态资源不代理，交给开发服务器
+            bypass: function (req) {
                 const accept = (req.headers && req.headers.accept) || ''
-                if (accept.indexOf('text/html') !== -1) { return false }
-                return !/^\/(js|css|img|fonts|media|static|sockjs-node|__webpack|favicon\.ico)/.test(pathname)
+                if (accept.indexOf('text/html') !== -1) { return '/index.html' }
+                if (/^\/(js|css|img|fonts|media|static|sockjs-node|__webpack|favicon\.ico)/.test(req.url)) { return req.url }
+                return null
             },
-            target: 'http://localhost:9999',
+            // 本地开发默认代理到本机 nginx(9999)；本地后端直连时用 VUE_APP_API_TARGET=http://localhost:9998
+            target: process.env.VUE_APP_API_TARGET || 'http://localhost:9999',
             changeOrigin: true,
             ws: false
-        }]
+            }
+        }
     },
     lintOnSave: undefined
 }

@@ -441,17 +441,69 @@ public class OcrUtil {
         // 记录上一行通用兜底的 key，用于多行值合并
         // 只有通用兜底（未匹配到标准字段）的 key 才允许后续行追加值
         String lastGenericKey = null;
+        // 单独成行的属性标题（如「名称」「名称：」），等待下一行作为其值
+        String pendingLabel = null;
 
         for (String line : lines) {
             line = line.trim();
             if (line.isEmpty()) continue;
 
-            // 优先按冒号分割：key：value 或 key:value
+            // 0. 上一行是单独标题：本行不是标题、也不是 key:value 时，本行即该标题的值
+            if (pendingLabel != null) {
+                String labelOnly = line.replaceFirst("[\\s:：=＝|｜\\-—–、，,.;；。]+$", "");
+                boolean isLabelLine = keyMapping.containsKey(labelOnly);
+                boolean isKeyValueLine = line.contains("：") || line.contains(":");
+                if (!isLabelLine && !isKeyValueLine) {
+                    String field = keyMapping.get(pendingLabel);
+                    if (field != null) {
+                        if (!result.containsKey(field)) {
+                            result.put(field, line);
+                        }
+                    } else {
+                        result.put(pendingLabel, line);
+                    }
+                    pendingLabel = null;
+                    lastGenericKey = null;
+                    continue;
+                }
+                pendingLabel = null;
+            }
+
+            // 1. 行首为已知属性标题：标题后跟随任意分隔符（： : = ｜ - 、 ， 空格等）都提取为值
+            String knownKey = matchKnownKeyPrefix(line, keyMapping);
+            if (knownKey != null) {
+                String value = line.substring(knownKey.length())
+                        .replaceFirst("^[\\s:：=＝|｜\\-—–、，,.;；。]+", "").trim();
+                if (!value.isEmpty()) {
+                    String field = keyMapping.get(knownKey);
+                    if (field != null) {
+                        if (!result.containsKey(field)) {
+                            result.put(field, value);
+                        }
+                    } else {
+                        result.put(knownKey, value);
+                    }
+                    lastGenericKey = null;
+                    continue;
+                }
+            }
+
+            // 1.5 整行只有属性标题（如「名称」「名称：」）：记录标题，下一行作为它的值
+            String labelOnly = line.replaceFirst("[\\s:：=＝|｜\\-—–、，,.;；。]+$", "");
+            if (keyMapping.containsKey(labelOnly)) {
+                pendingLabel = labelOnly;
+                continue;
+            }
+
+            // 2. 优先按冒号分割：key：value 或 key:value
             String[] parts = null;
             if (line.contains("：")) {
                 parts = line.split("：", 2);
             } else if (line.contains(":")) {
                 parts = line.split(":", 2);
+            } else {
+                // 3. 其它分隔符：key=value、key-value、key｜value、key value 等
+                parts = splitByOtherSeparator(line);
             }
 
             if (parts != null && parts.length == 2) {
@@ -509,6 +561,40 @@ public class OcrUtil {
         if (nameBuilder.length() > 0 && !result.containsKey("name")) {
             result.put("name", nameBuilder.toString().trim());
         }
+    }
+
+    /** 非冒号分隔符的行解析：短标题 + 分隔符 + 内容（标题不能以数字开头） */
+    private static final Pattern OTHER_SEPARATOR_PATTERN = Pattern.compile(
+            "^([^0-9\\s:：=＝|｜\\-—–、，,.;；。][^\\s:：=＝|｜\\-—–、，,.;；。]{0,11})[\\s:：=＝|｜\\-—–、，,.;；。]+(.+)$");
+
+    /**
+     * 行首是否为已知属性标题，且标题后紧跟分隔符或空白。
+     * 例如“名称：xxx”“名称=xxx”“名称|xxx”“名称 xxx”都视为该标题的值。
+     */
+    private static String matchKnownKeyPrefix(String line, Map<String, String> keyMapping) {
+        String matched = null;
+        for (String key : keyMapping.keySet()) {
+            if (line.startsWith(key) && (matched == null || key.length() > matched.length())) {
+                matched = key;
+            }
+        }
+        if (matched == null || line.length() <= matched.length()) {
+            return null;
+        }
+        String rest = line.substring(matched.length());
+        if (!rest.matches("^[\\s:：=＝|｜\\-—–、，,.;；]。*")) {
+            return null;
+        }
+        return matched;
+    }
+
+    /** 非冒号分隔符分割：用于映射表中没有的标题，结果供前端按属性别名匹配 */
+    private static String[] splitByOtherSeparator(String line) {
+        Matcher m = OTHER_SEPARATOR_PATTERN.matcher(line);
+        if (m.matches()) {
+            return new String[]{m.group(1), m.group(2)};
+        }
+        return null;
     }
 
     /** 精确匹配：key 与映射表的 key 完全一致 */

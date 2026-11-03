@@ -2,21 +2,30 @@
   <div ref="container">
     <a-modal
       :title="title"
-      :width="800"
+      :width="isMobile() ? '100%' : 800"
       :ok=false
       :visible="visible"
+      :closable="!isMobile()"
       :confirmLoading="confirmLoading"
       :okButtonProps="{ props: {disabled: disableSubmit} }"
       :getContainer="() => $refs.container"
       :maskStyle="{'top':'93px','left':'154px'}"
-      :wrapClassName="wrapClassNameInfo()"
+      :wrapClassName="wrapClassNameInfo() + (isMobile() ? ' mcm-mobile-modal' : '')"
       :mask="isDesktop()"
       :maskClosable="false"
+      :style="isMobile() ? { top: '0', height: '100%' } : { top: '100px', height: '50%' }"
       @ok="handleOk"
       @cancel="handleCancel"
-      style="top:100px;height: 50%;"
       cancelText="取消"
       okText="保存">
+      <template slot="title">
+        <div v-if="isMobile()" class="mcm-mobile-header">
+          <a-icon type="arrow-left" class="mcm-mobile-back" @click="handleCancel" />
+          <span class="mcm-mobile-title">{{ title }}</span>
+          <a-button type="link" class="mcm-mobile-save" :loading="confirmLoading" @click="handleOk">保存</a-button>
+        </div>
+        <span v-else>{{ title }}</span>
+      </template>
       <a-spin :spinning="confirmLoading">
         <a-form :form="form">
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="名称">
@@ -38,7 +47,7 @@
             <a-textarea placeholder="请输入备注":rows="2" v-decorator.trim="[ 'remark' ]" />
           </a-form-item>
           <!-- 类别规格配置 -->
-          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="规格配置" v-show="isFirstLevel">
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="规格配置" v-show="isFirstLevel" class="mcm-spec-item">
             <div v-for="(module, mIndex) in specModules" :key="mIndex" style="border:1px solid #eee;border-radius:4px;padding:10px;margin-top:10px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 <a-input v-model="module.name" style="width:220px" placeholder="请输入规格名称" />
@@ -233,6 +242,88 @@
   }
 </script>
 
-<style scoped>
-
+<style>
+  /* 手机端：品类新增改为标准页面（全屏 + 蓝色顶栏），输入框沿用全局无边框样式 */
+  .mcm-mobile-modal .ant-modal {
+    top: 0 !important;
+    padding-bottom: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .mcm-mobile-modal .ant-modal-content {
+    height: 100vh;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mcm-mobile-modal .ant-modal-header {
+    background: #1890ff;
+    padding: 0 12px;
+    border-bottom: none;
+  }
+  .mcm-mobile-modal .ant-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .mcm-mobile-modal .ant-modal-footer,
+  .mcm-mobile-modal .ant-modal-close {
+    display: none;
+  }
+  .mcm-mobile-header {
+    display: flex;
+    align-items: center;
+    height: 44px;
+    color: #fff;
+  }
+  .mcm-mobile-back,
+  .mcm-mobile-save {
+    color: #fff;
+    font-size: 16px;
+  }
+  .mcm-mobile-title {
+    flex: 1;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 500;
+  }
+  /* 手机端：属性标题与输入框同行显示 */
+  .mcm-mobile-modal .ant-form-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid #e8e8e8;
+  }
+  .mcm-mobile-modal .ant-form-item-label {
+    flex: 0 0 80px;
+    width: 80px !important;
+    max-width: 80px;
+    padding-right: 8px;
+    text-align: right;
+  }
+  .mcm-mobile-modal .ant-form-item-label > label {
+    color: #333;
+    white-space: nowrap;
+  }
+  .mcm-mobile-modal .ant-form-item-control-wrapper {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+  }
+  /* 规格配置内容较多，单独占一行完整展示 */
+  .mcm-mobile-modal .ant-form-item.mcm-spec-item {
+    display: block;
+  }
+  .mcm-mobile-modal .ant-form-item.mcm-spec-item .ant-form-item-label {
+    width: auto !important;
+    max-width: none;
+    flex: none;
+    text-align: left;
+  }
+  .mcm-mobile-modal .mcm-spec-item .ant-input {
+    width: 100% !important;
+  }
 </style>
+

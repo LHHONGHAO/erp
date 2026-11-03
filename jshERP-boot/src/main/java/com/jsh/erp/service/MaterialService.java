@@ -287,6 +287,12 @@ public class MaterialService {
         catch (BusinessRunTimeException ex) {
             throw new BusinessRunTimeException(ex.getCode(), ex.getMessage());
         }
+        catch (IllegalStateException ex) {
+            // 业务校验失败：把具体原因返回给前端，避免统一提示“数据写入异常”
+            logger.error("异常码[{}],异常提示[{}],异常[{}]",
+                    ExceptionConstants.DATA_WRITE_FAIL_CODE, ex.getMessage(), ex);
+            throw new BusinessRunTimeException(ExceptionConstants.DATA_WRITE_FAIL_CODE, ex.getMessage());
+        }
         catch(Exception e){
             JshException.writeFail(logger, e);
             return 0;
@@ -357,6 +363,11 @@ public class MaterialService {
             logService.insertLog("商品",
                     new StringBuffer(BusinessConstants.LOG_OPERATION_TYPE_EDIT).append(material.getName()).toString(), request);
             return 1;
+        }catch (IllegalStateException e){
+            // 业务校验失败：把具体原因返回给前端，避免统一提示“数据写入异常”
+            logger.error("异常码[{}],异常提示[{}],异常[{}]",
+                    ExceptionConstants.DATA_WRITE_FAIL_CODE, e.getMessage(), e);
+            throw new BusinessRunTimeException(ExceptionConstants.DATA_WRITE_FAIL_CODE, e.getMessage());
         }catch(Exception e){
             JshException.writeFail(logger, e);
             return 0;

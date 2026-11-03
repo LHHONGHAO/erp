@@ -23,6 +23,10 @@
 param(
     [string]$DataDir = '',
     [string]$JavaHome = '',
+    # 额外写入证书的域名（如远程访问域名 www.innas.xyz）
+    [string[]]$Dns = @(),
+    # 额外写入证书的 IP（如服务器公网 IP）
+    [string[]]$Ip = @(),
     [switch]$RenewServer,
     [switch]$RenewRoot
 )
@@ -75,7 +79,10 @@ function Get-SanList {
         Select-Object -ExpandProperty IPAddress
     foreach ($ip in $ips) { $parts += "ip:$ip" }
     if ($env:COMPUTERNAME) { $parts += "dns:$($env:COMPUTERNAME)" }
-    return ($parts -join ',')
+    foreach ($d in $Dns) { if ($d) { $parts += "dns:$d" } }
+    foreach ($i in $Ip) { if ($i) { $parts += "ip:$i" } }
+    # 去重，避免重复扩展项导致签发失败
+    return (($parts | Select-Object -Unique) -join ',')
 }
 
 $keytool = Find-Keytool -Hint $JavaHome

@@ -107,6 +107,8 @@ export function saveWifiPrinter (printer) {
     name: String(printer.name || '').trim() || ip,
     ip: ip,
     port: port,
+    brand: String(printer.brand || ''),
+    cmdSet: String(printer.cmdSet || 'TSPL'),
     type: 'wifi'
   }
   const idx = list.findIndex(p => p.id === id)
@@ -138,10 +140,15 @@ export function testWifiPrinter (ip, port) {
   return postAction('/print/networkTest', {
     ip: ip,
     port: Number(port) || DEFAULT_PRINTER_PORT
-  }).then(res => ({
-    connected: !!(res && res.code === 200),
-    message: (res && res.data) || '连接失败'
-  }))
+  }).then(res => {
+    // 后端把提示放在 data.message 中，不能直接当作字符串使用
+    var data = (res && res.data) || {}
+    var message = (typeof data === 'string' ? data : data.message) || '连接失败'
+    return {
+      connected: !!(data.connected || (res && res.code === 200)),
+      message: message
+    }
+  })
 }
 
 /**

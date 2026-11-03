@@ -50,7 +50,8 @@
                   </a-form-item>
                   <!-- 类别 -->
                   <a-form-item v-else-if="prop.field==='categoryId'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
+                    <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
+                                   dropdownClassName="mm-category-dropdown" allow-clear
                                    :treeData="categoryTreeFiltered" :treeDefaultExpandAll="true"
                                    v-decorator="[ 'categoryId', validatorRules.categoryId ]"
                                    :placeholder="'请选择'+prop.anotherName+'（须选二级类目，一级类目不可选）'" @change="handleCategoryChange">
@@ -440,6 +441,8 @@
         <a-button @click="handlePropertyConfigReset" type="link" size="small">恢复默认</a-button>
       </div>
     </a-modal>
+    <!-- 类别新增弹窗：由类别下拉中的「+ 新增品类」打开 -->
+    <material-category-modal ref="categoryModal" @ok="handleCategoryAdded" />
     <!-- 图片识别弹窗 -->
     <ocr-recognize-modal :visible="ocrVisible" @ok="handleOcrResult" @cancel="ocrVisible=false" />
     <ocr-recognize-modal
@@ -453,6 +456,7 @@
   import pick from 'lodash.pick'
   import BatchSetPriceModal from './BatchSetPriceModal'
   import OcrRecognizeModal from './OcrRecognizeModal'
+  import MaterialCategoryModal from './MaterialCategoryModal'
   import JEditableTable from '@/components/jeecg/JEditableTable'
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
   import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
@@ -463,11 +467,15 @@
   import JModal from '@/components/jeecg/JModal'
   import Vue from 'vue'
 
+  // 类别下拉中「新增品类」入口的动作值
+  const CATEGORY_ADD_VALUE = '__category_add__'
+
   export default {
     name: "MaterialModal",
     components: {
       BatchSetPriceModal,
       OcrRecognizeModal,
+      MaterialCategoryModal,
       JImageUpload,
       JDate,
       JModal,
@@ -502,6 +510,7 @@
         switchDisabled: false, //开关的启用状态
         barCodeSwitch: false, //生成条码开关
         categorySelected: false, // 是否已选择类别
+        lastCategoryId: undefined, // 上一次有效的类别值（点击「新增品类」后用于还原）
         specLocked: false, // 规格是否锁定（从类别配置加载后禁止修改规格名称及增删）
         maxBarCodeInfo: '', //最大条码
         meDeleteIdList: [], //删除条码信息的id数组
@@ -669,10 +678,14 @@
       propertyConfigBaseColumns() {
         return this.basePropertyList.filter(p => this.basePropertyFields.includes(p.field))
       },
-      // 类别树：一级节点禁用，仅可选二级类目
+      // 类别树：一级节点禁用，仅可选二级类目；末尾追加「新增品类」入口
       categoryTreeFiltered() {
-        if (!this.categoryTree || this.categoryTree.length === 0) return []
-        return this.disableLevelOneNodes(this.categoryTree)
+        let nodes = []
+        if (this.categoryTree && this.categoryTree.length > 0) {
+          nodes = this.disableLevelOneNodes(this.categoryTree)
+        }
+        nodes.push({ title: '＋ 新增品类', value: CATEGORY_ADD_VALUE, key: CATEGORY_ADD_VALUE })
+        return nodes
       },
       // 表单每列的 span（24 / 每行列数）
       formColSpan() {
@@ -842,6 +855,7 @@
         })
         this.edit({})
         this.categorySelected = false
+        this.lastCategoryId = undefined
         this.suppressSpecSync = true
         this.specModules = []
         // 新增时清空上一次编辑残留的规格列
@@ -880,6 +894,7 @@
         }
         // 编辑时：有类别则标记已选择类别，有规格则锁定
         this.categorySelected = !!(record.categoryId)
+        this.lastCategoryId = record.categoryId
         this.specLocked = !!(this.specModules.length > 0 && this.specModules[0].name)
         this.activeKey = '1'
         this.barCodeSwitch = false
@@ -1481,6 +1496,22 @@
           }
         })
       },
+      // 打开类别新增弹窗（手机端改为标准路由页面，返回时保留当前商品录入内容）
+      openCategoryAdd() {
+        if (this.isMobileView) {
+          sessionStorage.setItem('materialCategoryAddReturn', '1')
+          this.$router.push('/material/category_add')
+          return
+        }
+        const modal = this.$refs.categoryModal
+        if (!modal) return
+        modal.title = '新增品类'
+        modal.add()
+      },
+      // 类别新增成功后刷新类别树
+      handleCategoryAdded() {
+        this.loadTreeData()
+      },
       // 递归禁用一级类目节点
       disableLevelOneNodes(nodes) {
         const result = []
@@ -1498,6 +1529,16 @@
       },
       // 类别变更：自动加载父级类目规格配置
       handleCategoryChange(value) {
+        // 点击下拉中的「＋ 新增品类」：打开类别新增弹窗，并还原原来的类别选择
+        if (value === CATEGORY_ADD_VALUE) {
+          this.openCategoryAdd()
+          const previous = this.lastCategoryId
+          this.$nextTick(() => {
+            this.form.setFieldsValue({ categoryId: previous })
+          })
+          return
+        }
+        this.lastCategoryId = value
         if (!value) {
           // 清除类别，重置规格
           this.categorySelected = false
@@ -3141,5 +3182,17 @@
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
+  }
+</style>
+<style>
+  /* 类别下拉：末尾「＋ 新增品类」入口高亮并加分隔线 */
+  .mm-category-dropdown .ant-select-tree-treenode:last-child {
+    border-top: 1px solid #f0f0f0;
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+  .mm-category-dropdown .ant-select-tree-treenode:last-child .ant-select-tree-node-content-wrapper {
+    color: #1890ff;
+    font-weight: 600;
   }
 </style>

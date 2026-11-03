@@ -6,7 +6,171 @@
  *   - 编辑：交给标签编辑弹层（LabelEditModal）修改模板/样式
  */
 <template>
+  <!-- 手机端：全屏标准页面（自定义顶栏 + 内容 + 底部打印按钮） -->
+  <template v-if="isMobile">
+    <div v-if="visible" class="lp-mobile-page">
+      <!-- 顶栏：返回 + 标题 + 设置 -->
+      <div class="lmp-header">
+        <a-icon class="lmp-back" type="arrow-left" @click="handleCancel" />
+        <div class="lmp-title-block">
+          <div class="lmp-title">{{ mobileTitle }}</div>
+          <div class="lmp-subtitle">{{ mobileSubtitle }}</div>
+        </div>
+        <a-icon v-if="template" class="lmp-settings" type="setting" @click="handleEdit" />
+        <span v-else class="lmp-settings placeholder" />
+      </div>
+
+      <!-- 主内容（可滚动） -->
+      <div class="lmp-content" :class="{ 'lmp-empty': !template }">
+        <template v-if="!template">
+          <a-alert type="info" show-icon message="该商品暂无可用标签模板" description="可点击右上角设置图标创建标签模板" />
+        </template>
+        <template v-else>
+          <!-- 预览卡 -->
+          <div class="lmp-preview-card">
+            <div class="lmp-preview" :style="{ width: labelWidth + 'px', height: labelHeight + 'px', transform: 'rotate(' + printRotation + 'deg)' }">
+              <div
+                v-for="item in renderItems"
+                :key="item.key"
+                class="lp-item"
+                :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                :style="itemStyle(item.key)"
+              >
+                <template v-if="item.isCode">
+                  <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                </template>
+                <template v-else>
+                  <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- 设备状态行 -->
+          <div class="lmp-card lmp-device-row" @click="showMobilePrinterSheet">
+            <div class="lmp-device-label">设备状态</div>
+            <div class="lmp-device-value">
+              <template v-if="mobileDeviceLabel">
+                <span :class="{ 'online': mobileDeviceOnline, 'offline': !mobileDeviceOnline }">{{ mobileDeviceLabel }}</span>
+              </template>
+              <template v-else><span class="offline">设备未连接</span></template>
+              <a-icon type="right" class="lmp-row-arrow" />
+            </div>
+          </div>
+
+          <!-- 打印方向 -->
+          <div class="lmp-card lmp-row">
+            <div class="lmp-row-label">打印方向</div>
+            <div class="lmp-row-value">
+              <div class="lmp-rotation-tabs">
+                <div
+                  v-for="r in rotationOptions"
+                  :key="r.value"
+                  class="lmp-rot-tab"
+                  :class="{ active: printRotation === r.value }"
+                  @click="printRotation = r.value"
+                >
+                  <a-icon :type="r.icon" :style="{ transform: 'rotate(' + r.value + 'deg)' }" />
+                  <span>{{ r.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 打印份数 -->
+          <div class="lmp-card lmp-row">
+            <div class="lmp-row-label">打印份数</div>
+            <div class="lmp-row-value">
+              <div class="lmp-qty">
+                <span class="lmp-qty-btn" :class="{ disabled: copies <= 1 }" @click="copies = Math.max(1, copies - 1)">
+                  <a-icon type="minus" />
+                </span>
+                <span class="lmp-qty-num">{{ copies }} 份</span>
+                <span class="lmp-qty-btn" @click="copies = Math.min(99, copies + 1)">
+                  <a-icon type="plus" />
+                </span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 底部打印按钮 -->
+      <div class="lmp-footer">
+        <a-button
+          type="primary"
+          block
+          size="large"
+          class="lmp-print-btn"
+          :disabled="!template || !canPrintMobile"
+          :loading="printing"
+          @click="handlePrint"
+        >打印</a-button>
+      </div>
+    </div>
+  </template>
+
+  <!-- 打印机选择弹层（仅手机端） -->
+  <a-action-sheet
+    v-if="isMobile && showPrinterSheet"
+    :visible="showPrinterSheet"
+    :maskClosable="true"
+    @cancel="showPrinterSheet = false"
+    @close="showPrinterSheet = false"
+  >
+    <a-spin :spinning="loadingPrinters" tip="加载中...">
+      <div class="lmp-sheet-title">选择打印机</div>
+      <!-- 打印机类型切换 -->
+      <div class="lmp-sheet-tabs">
+        <span
+          v-for="t in printerTabList"
+          :key="t.key"
+          class="lmp-sheet-tab"
+          :class="{ active: printerType === t.key, disabled: !printerCaps[t.key] }"
+          @click="switchPrinterType(t.key); if (printerType === t.key) loadPrinters()"
+        >
+          <a-icon :type="t.icon" /> {{ t.label }}
+        </span>
+      </div>
+      <!-- 后端打印机 -->
+      <template v-if="printerType === 'backend'">
+        <div v-if="printers.length === 0" class="lmp-sheet-empty">暂无可用打印机，请刷新或在后端机器安装打印机</div>
+        <div v-for="p in printers" :key="p.name" class="lmp-sheet-item" :class="{ active: selectedPrinter === p.name }" @click="selectPrinterAndClose(p.name)">
+          <a-icon type="printer" /> {{ p.name }}<span v-if="p.isDefault" class="lmp-default-tag">（默认）</span>
+          <a-icon v-if="selectedPrinter === p.name" type="check-circle" theme="filled" />
+        </div>
+      </template>
+      <!-- 蓝牙 -->
+      <template v-else-if="printerType === 'bluetooth'">
+        <div v-if="!btDevice" class="lmp-sheet-empty">
+          <a-button icon="scan" type="primary" block :loading="btSearching" @click="handleBluetoothSearch">{{ btSearching ? '搜索中...' : '搜索蓝牙打印机' }}</a-button>
+        </div>
+        <div v-else class="lmp-sheet-item active" @click="selectPrinterAndClose(btDevice.id)">
+          <a-icon type="bluetooth" /> {{ btDevice.name }} <a-icon type="check-circle" theme="filled" />
+        </div>
+      </template>
+      <!-- Wi-Fi -->
+      <template v-else-if="printerType === 'wifi'">
+        <div v-for="p in wifiPrinters" :key="p.id" class="lmp-sheet-item" :class="{ active: selectedPrinter === p.id }" @click="selectPrinterAndClose(p.id)">
+          <a-icon type="wifi" /> {{ p.name }} <span class="lmp-sub">{{ p.ip }}:{{ p.port }}</span>
+          <a-tag v-if="wifiStatus[p.id]" color="green" class="lmp-status">已连接</a-tag>
+          <a-tag v-else class="lmp-status">未连接</a-tag>
+          <a-icon v-if="selectedPrinter === p.id" type="check-circle" theme="filled" />
+        </div>
+        <a-button type="primary" ghost icon="plus" block style="margin-top:12px" @click="openAddWifiPrinter">添加 Wi-Fi 打印机</a-button>
+      </template>
+      <!-- 云打印机 -->
+      <template v-else-if="printerType === 'cloud'">
+        <div class="lmp-sheet-item" :class="{ active: discoveredPrinter && discoveredPrinter.type === 'cloud' }" @click="selectCloudPrinter(); showPrinterSheet = false">
+          <a-icon type="cloud" /> 云打印机 / 系统打印机 <a-icon v-if="discoveredPrinter && discoveredPrinter.type === 'cloud'" type="check-circle" theme="filled" />
+        </div>
+      </template>
+    </a-spin>
+  </a-action-sheet>
+
+  <!-- 桌面端：保留原有 modal 布局 -->
   <a-modal
+    v-if="!isMobile"
     title="打印标签"
     :width="modalWidth"
     :visible="visible"
@@ -58,20 +222,7 @@
             </div>
             <div class="lp-field">
               <div class="lp-field-label">打印机</div>
-              <!-- 打印机类型切换（手机端展示） -->
-              <div v-if="isMobile" class="lp-printer-tabs">
-                <span
-                  v-for="t in printerTabList"
-                  :key="t.key"
-                  class="lp-tab"
-                  :class="{ active: printerType === t.key, disabled: !printerCaps[t.key] }"
-                  @click="switchPrinterType(t.key)"
-                >
-                  <a-icon :type="t.icon" /> {{ t.label }}
-                </span>
-              </div>
               <a-select
-                v-if="!isMobile || printerType === 'backend'"
                 v-model="selectedPrinter"
                 :loading="loadingPrinters"
                 placeholder="请选择打印机"
@@ -82,62 +233,8 @@
                   {{ p.name }}<span v-if="p.isDefault" class="lp-default-tag">（默认）</span>
                 </a-select-option>
               </a-select>
-              <div v-if="!loadingPrinters && printers.length === 0 && (!isMobile || printerType === 'backend')" class="lp-tip">
+              <div v-if="!loadingPrinters && printers.length === 0" class="lp-tip">
                 未获取到打印机，请确认后端所在机器已安装打印机后点击「刷新」
-              </div>
-
-              <!-- 蓝牙打印机搜索 -->
-              <div v-if="isMobile && printerType === 'bluetooth'" class="lp-printer-search">
-                <a-button
-                  icon="scan"
-                  type="primary"
-                  block
-                  :loading="btSearching"
-                  @click="handleBluetoothSearch"
-                >{{ btDevice ? '已连接：' + btDevice.name : '搜索蓝牙打印机' }}</a-button>
-                <div v-if="btDevice" class="lp-device-info">
-                  <a-icon type="check-circle" theme="twoTone" two-tone-color="#52c41a" />
-                  {{ btDevice.name }}
-                </div>
-              </div>
-
-              <!-- Wi-Fi / 网络打印机：设备列表 + 手动添加（名称/IP/端口） -->
-              <div v-if="isMobile && printerType === 'wifi'" class="lp-printer-search">
-                <div v-if="wifiPrinters.length > 0" class="lp-device-list">
-                  <div
-                    v-for="p in wifiPrinters"
-                    :key="p.id"
-                    class="lp-device-item"
-                    :class="{ selected: activeWifiId === p.id }"
-                    @click="selectWifiPrinter(p)"
-                  >
-                    <a-icon type="printer" />
-                    <div class="lp-device-main">
-                      <div class="lp-device-name">{{ p.name }}</div>
-                      <div class="lp-device-sub">TSPL · {{ p.ip }}:{{ p.port }}</div>
-                    </div>
-                    <a-tag v-if="wifiStatus[p.id]" color="green" class="lp-device-status">已连接</a-tag>
-                    <a-tag v-else class="lp-device-status">未连接</a-tag>
-                    <a-icon type="delete" class="lp-device-del" @click.stop="handleRemoveWifiPrinter(p)" />
-                  </div>
-                </div>
-                <div v-else class="lp-tip" style="margin:8px 0">
-                  还没有配置打印机，点击下方「添加打印机」填写名称、IP 地址和端口号
-                </div>
-                <a-button type="primary" block icon="plus" @click="openAddWifiPrinter">添加打印机</a-button>
-              </div>
-
-              <!-- 云打印机 -->
-              <div v-if="isMobile && printerType === 'cloud'" class="lp-printer-search">
-                <a-button
-                  icon="cloud"
-                  type="primary"
-                  block
-                  @click="selectCloudPrinter"
-                >使用云打印机 / 系统打印机</a-button>
-                <div class="lp-tip" style="margin-top:8px">
-                  打印时将弹出浏览器打印对话框，可从中选择已配置的云打印机。
-                </div>
               </div>
             </div>
             <div class="lp-field">
@@ -248,7 +345,11 @@
         // 添加打印机弹窗
         addWifiVisible: false,
         addWifiTesting: false,
-        addWifiForm: { name: '', ip: '', port: DEFAULT_PRINTER_PORT }
+        addWifiForm: { name: '', ip: '', port: DEFAULT_PRINTER_PORT },
+        // 手机端：打印方向（0 / 90 / 180）
+        printRotation: 0,
+        // 手机端：打印机选择弹层
+        showPrinterSheet: false
       }
     },
     computed: {
@@ -263,6 +364,49 @@
         ].filter(function(t) {
           return t.key === 'backend' || caps[t.key]
         })
+      },
+      rotationOptions() {
+        return [
+          { value: 0, label: '0°', icon: 'edit' },
+          { value: 90, label: '90°', icon: 'edit' },
+          { value: 180, label: '180°', icon: 'edit' }
+        ]
+      },
+      // 手机端顶栏标题：模板名，无模板时取 SKU 名称
+      mobileTitle() {
+        if (this.template) return this.template.name || '标签打印'
+        return '标签打印'
+      },
+      // 手机端顶栏副标题：尺寸 + 列数
+      mobileSubtitle() {
+        if (!this.template) return ''
+        return this.labelWidthMm + 'mm × ' + this.labelHeightMm + 'mm' + (this.template.columns ? ', ' + this.template.columns + '列' : '')
+      },
+      // 手机端：当前打印机显示名
+      mobileDeviceLabel() {
+        if (this.printerType === 'backend') {
+          if (this.selectedPrinter) return this.selectedPrinter
+          return ''
+        }
+        if (this.printerType === 'wifi' && this.activeWifiId) {
+          var p = this.wifiPrinters.find(function(x) { return x.id === this.activeWifiId }.bind(this))
+          if (p) return p.name
+          return ''
+        }
+        if (this.printerType === 'bluetooth' && this.btDevice) return this.btDevice.name
+        if (this.printerType === 'cloud') return '系统打印机'
+        return ''
+      },
+      mobileDeviceOnline() {
+        if (this.printerType === 'wifi' && this.activeWifiId) {
+          return !!this.wifiStatus[this.activeWifiId]
+        }
+        return !!this.mobileDeviceLabel
+      },
+      canPrintMobile() {
+        if (this.printerType === 'cloud') return true
+        if (this.printerType === 'bluetooth') return !!this.btDevice
+        return !!this.selectedPrinter
       },
       modalWidth() {
         return this.isMobile ? '100%' : 820
@@ -384,14 +528,36 @@
         }
         this.selectedPrinter = undefined
         this.copies = 1
+        this.printRotation = 0
         // 重置打印机状态
         this.printerType = 'backend'
         this.discoveredPrinter = null
         this.btDevice = null
         this.activeWifiId = null
+        this.showPrinterSheet = false
         this.loadPrinters()
         this.loadWifiPrinters()
         this.visible = true
+      },
+      // 手机端：打开打印机选择弹层
+      showMobilePrinterSheet() {
+        this.loadPrinters()
+        this.showPrinterSheet = true
+      },
+      // 手机端：选中打印机后关闭弹层
+      selectPrinterAndClose(name) {
+        if (this.printerType === 'bluetooth') {
+          var dev = this.btDevice
+          this.selectedPrinter = dev ? dev.id : undefined
+          this.discoveredPrinter = dev || null
+        } else if (this.printerType === 'wifi') {
+          this.activeWifiId = name
+          this.selectedPrinter = name
+        } else {
+          this.selectedPrinter = name
+          this.discoveredPrinter = null
+        }
+        this.showPrinterSheet = false
       },
       // 加载本机打印机列表（后端枚举），默认选中默认打印机
       loadPrinters() {
@@ -1074,6 +1240,293 @@
     &:hover {
       background: #fafafa;
     }
+  }
+
+  /* ===== 手机端标准页面 ===== */
+  .lp-mobile-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    z-index: 2900;
+  }
+  /* 顶栏：返回 + 标题 + 设置（对齐 GlobalHeader 标准） */
+  .lmp-header {
+    flex: none;
+    height: 56px;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+  }
+  .lmp-back,
+  .lmp-settings {
+    font-size: 22px;
+    color: #333;
+    cursor: pointer;
+    width: 32px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lmp-settings.placeholder {
+    visibility: hidden;
+  }
+  .lmp-title-block {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .lmp-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #262626;
+    max-width: 60vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lmp-subtitle {
+    font-size: 11px;
+    color: #999;
+    margin-top: 1px;
+  }
+  /* 可滚动主内容 */
+  .lmp-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 12px 140px 12px;
+  }
+  .lmp-content.lmp-empty {
+    display: flex;
+    align-items: flex-start;
+  }
+  /* 预览卡 */
+  .lmp-preview-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  .lmp-preview {
+    position: relative;
+    background: #fff;
+    overflow: visible;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    transform-origin: center center;
+    transition: transform 0.2s ease;
+  }
+  /* 通用卡片 */
+  .lmp-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  .lmp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .lmp-row-label {
+    font-size: 14px;
+    color: #333;
+  }
+  .lmp-row-value {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
+  /* 设备状态行 */
+  .lmp-device-row {
+    cursor: pointer;
+  }
+  .lmp-device-label {
+    font-size: 14px;
+    color: #333;
+  }
+  .lmp-device-value {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: #999;
+  }
+  .lmp-device-value .online {
+    color: #1890ff;
+    margin-right: 4px;
+  }
+  .lmp-device-value .offline {
+    color: #bfbfbf;
+    margin-right: 4px;
+  }
+  .lmp-row-arrow {
+    color: #ccc;
+    font-size: 14px;
+  }
+  /* 打印方向选项 */
+  .lmp-rotation-tabs {
+    display: flex;
+    gap: 8px;
+  }
+  .lmp-rot-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border-radius: 18px;
+    border: 1px solid #e0e0e0;
+    font-size: 13px;
+    color: #666;
+    cursor: pointer;
+    background: #fafafa;
+    transition: all 0.15s;
+    .anticon {
+      font-size: 14px;
+    }
+    &.active {
+      background: #1890ff;
+      border-color: #1890ff;
+      color: #fff;
+    }
+  }
+  /* 打印份数 */
+  .lmp-qty {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lmp-qty-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    cursor: pointer;
+    background: #fff;
+    &:active {
+      background: #f0f0f0;
+    }
+    &.disabled {
+      color: #ddd;
+      cursor: not-allowed;
+    }
+  }
+  .lmp-qty-num {
+    font-size: 15px;
+    color: #262626;
+    min-width: 52px;
+    text-align: center;
+  }
+  /* 底部打印按钮 */
+  .lmp-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid #eee;
+    z-index: 3001;
+  }
+  .lmp-print-btn {
+    height: 46px;
+    font-size: 16px;
+    border-radius: 23px;
+    background: #1890ff;
+    border-color: #1890ff;
+    font-weight: 500;
+  }
+  /* ActionSheet 打印机选择弹层样式 */
+  .lmp-sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    padding: 16px 0 12px;
+    color: #262626;
+  }
+  .lmp-sheet-tabs {
+    display: flex;
+    padding: 0 16px 12px;
+    gap: 8px;
+    overflow-x: auto;
+  }
+  .lmp-sheet-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    background: #f5f5f5;
+    color: #666;
+    white-space: nowrap;
+    &.active {
+      background: #1890ff;
+      color: #fff;
+    }
+    &.disabled {
+      opacity: 0.4;
+    }
+  }
+  .lmp-sheet-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: #333;
+    border-top: 1px solid #f0f0f0;
+    cursor: pointer;
+    .anticon {
+      margin-right: 8px;
+      color: #1890ff;
+    }
+    &.active {
+      background: #e6f7ff;
+      color: #1890ff;
+      .anticon.check-circle {
+        margin-left: auto;
+        margin-right: 0;
+        color: #1890ff;
+      }
+    }
+  }
+  .lmp-sheet-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+  }
+  .lmp-sub {
+    font-size: 11px;
+    color: #999;
+    margin-left: 6px;
+  }
+  .lmp-status {
+    margin-left: auto;
+    margin-right: 8px;
+  }
+  .lmp-default-tag {
+    font-size: 11px;
+    color: #999;
+    margin-left: 4px;
   }
 </style>
 

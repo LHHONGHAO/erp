@@ -150,30 +150,9 @@ if ($Frontend) {
 }
 
 # 3. 重启（自动探测运行时）
+# 注意：plink 逐行下发远程命令，多行 if/elif 会被拆开执行导致语法错误，这里压成单行
 Write-Host '==> 重启远端服务 ...'
-$restart = @'
-cd REMOTE_DIR || exit 1
-if command -v docker >/dev/null 2>&1 && [ -f docker-compose.yml ] && docker compose version >/dev/null 2>&1; then
-  echo "MODE=docker"
-  docker compose up -d --force-recreate app 2>&1 | tail -2
-elif command -v docker-compose >/dev/null 2>&1 && [ -f docker-compose.yml ]; then
-  echo "MODE=docker-compose"
-  docker-compose up -d --force-recreate app 2>&1 | tail -2
-elif systemctl list-unit-files 2>/dev/null | grep -q '^jsherp'; then
-  echo "MODE=systemd"
-  systemctl restart jsherp && systemctl is-active jsherp
-elif [ -f jshERP.jar ]; then
-  echo "MODE=java"
-  pkill -f 'jshERP.jar' 2>/dev/null
-  sleep 2
-  nohup java -jar jshERP.jar > app.log 2>&1 &
-  sleep 3
-  pgrep -f 'jshERP.jar' >/dev/null && echo "java started pid=$(pgrep -f 'jshERP.jar' | head -1)"
-else
-  echo "MODE=unknown"
-  echo "未在 $RemoteDir 找到 docker-compose.yml / jsherp 服务 / jshERP.jar"
-fi
-'@
+$restart = 'cd REMOTE_DIR && if [ -f docker-compose.yml ] && docker compose version >/dev/null 2>&1; then docker compose up -d --force-recreate app 2>&1 | tail -3; elif [ -f docker-compose.yml ] && command -v docker-compose >/dev/null 2>&1; then docker-compose up -d --force-recreate app 2>&1 | tail -3; elif systemctl list-unit-files 2>/dev/null | grep -q "^jsherp"; then systemctl restart jsherp; elif [ -f jshERP.jar ]; then pkill -f "jshERP.jar"; sleep 2; nohup java -jar jshERP.jar > app.log 2>&1 & sleep 3; pgrep -f "jshERP.jar" >/dev/null && echo "java started"; else echo "MODE=unknown"; fi'
 Invoke-Plink ($restart -replace 'REMOTE_DIR', $RemoteDir)
 
 # 4. 验证

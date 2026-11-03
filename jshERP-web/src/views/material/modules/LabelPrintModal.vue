@@ -1380,7 +1380,8 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 5px 10px 6px 10px;
+    /* 底部 padding 必须 >= footer 高度(70px + safe-area) + 1px 间距，否则最后一张卡片被遮挡 */
+    padding: 5px 10px calc(71px + env(safe-area-inset-bottom)) 10px;
     display: flex;
     flex-direction: column;
   }

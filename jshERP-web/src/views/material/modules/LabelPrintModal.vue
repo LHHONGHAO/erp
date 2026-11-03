@@ -494,7 +494,7 @@
       window.removeEventListener('resize', this._onResize)
     },
     methods: {
-      // 手机端：根据预览区容器尺寸计算标签缩放因子，让标签填满空白
+      // 手机端：根据预览区容器尺寸计算标签缩放因子，让标签四周各留 5px 空隙
       updatePreviewScale() {
         var self = this
         this.$nextTick(function() {
@@ -502,10 +502,10 @@
           if (!area) { self.previewScale = 1; return }
           var rect = area.getBoundingClientRect()
           if (rect.width <= 0 || rect.height <= 0) { self.previewScale = 1; return }
-          var scaleW = rect.width / self.labelWidth
-          var scaleH = rect.height / self.labelHeight
-          // 取较小值（完整显示），留 8% margin 防溢出
-          self.previewScale = Math.min(scaleW, scaleH) * 0.92
+          // 每侧留 5px 空白
+          var scaleW = (rect.width - 10) / self.labelWidth
+          var scaleH = (rect.height - 10) / self.labelHeight
+          self.previewScale = Math.min(scaleW, scaleH)
         })
       },
       // 是否为独立编码元素
@@ -1380,7 +1380,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 10px 10px 140px 10px;
+    padding: 5px 10px 6px 10px;
     display: flex;
     flex-direction: column;
   }
@@ -1388,13 +1388,14 @@
     display: flex;
     align-items: flex-start;
   }
-  /* 预览区：flex 撑满剩余空间 */
+  /* 预览区：flex 撑满剩余空间，padding 决定标签离上下组件的距离 */
   .lmp-preview-area {
     flex: 1;
-    min-height: 120px;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
   }
   /* 预览标签（直接在灰色背景上，无白色卡片包裹） */
   .lmp-preview {
@@ -1408,10 +1409,10 @@
   /* 底部单列纵向控制区 */
   .lmp-bottom-wrap {
     flex: none;
-    margin-top: 6px;
+    margin-top: 5px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 1px;
   }
   /* 统一控制行：左标签 + 右值 */
   .lmp-control-row {

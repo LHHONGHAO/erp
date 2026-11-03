@@ -9,8 +9,8 @@
   <!-- 手机端：全屏标准页面（自定义顶栏 + 内容 + 底部打印按钮） -->
   <template v-if="isMobile">
     <div v-if="visible" class="lp-mobile-page">
-      <!-- 顶栏：返回 + 标题 + 设置 -->
-      <div class="lmp-header">
+      <!-- 顶栏：蓝底 + 白色返回 + 标题 + 设置 -->
+      <div class="lmp-header lmp-header-blue">
         <a-icon class="lmp-back" type="arrow-left" @click="handleCancel" />
         <div class="lmp-title-block">
           <div class="lmp-title">{{ mobileTitle }}</div>
@@ -20,75 +20,82 @@
         <span v-else class="lmp-settings placeholder" />
       </div>
 
-      <!-- 主内容（可滚动） -->
+      <!-- 主内容 -->
       <div class="lmp-content" :class="{ 'lmp-empty': !template }">
         <template v-if="!template">
           <a-alert type="info" show-icon message="该商品暂无可用标签模板" description="可点击右上角设置图标创建标签模板" />
         </template>
         <template v-else>
-          <!-- 预览卡 -->
-          <div class="lmp-preview-card">
-            <div class="lmp-preview" :style="{ width: labelWidth + 'px', height: labelHeight + 'px', transform: 'rotate(' + printRotation + 'deg)' }">
-              <div
-                v-for="item in renderItems"
-                :key="item.key"
-                class="lp-item"
-                :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
-                :style="itemStyle(item.key)"
-              >
-                <template v-if="item.isCode">
-                  <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
-                </template>
-                <template v-else>
-                  <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <!-- 设备状态行 -->
-          <div class="lmp-card lmp-device-row" @click="showMobilePrinterSheet">
-            <div class="lmp-device-label">设备状态</div>
-            <div class="lmp-device-value">
-              <template v-if="mobileDeviceLabel">
-                <span :class="{ 'online': mobileDeviceOnline, 'offline': !mobileDeviceOnline }">{{ mobileDeviceLabel }}</span>
-              </template>
-              <template v-else><span class="offline">设备未连接</span></template>
-              <a-icon type="right" class="lmp-row-arrow" />
-            </div>
-          </div>
-
-          <!-- 打印方向 -->
-          <div class="lmp-card lmp-row">
-            <div class="lmp-row-label">打印方向</div>
-            <div class="lmp-row-value">
-              <div class="lmp-rotation-tabs">
+          <!-- 预览区（撑满） -->
+          <div class="lmp-preview-area">
+            <div class="lmp-preview-card">
+              <div class="lmp-preview" :style="{ width: labelWidth + 'px', height: labelHeight + 'px', transform: 'rotate(' + printRotation + 'deg)' }">
                 <div
-                  v-for="r in rotationOptions"
-                  :key="r.value"
-                  class="lmp-rot-tab"
-                  :class="{ active: printRotation === r.value }"
-                  @click="printRotation = r.value"
+                  v-for="item in renderItems"
+                  :key="item.key"
+                  class="lp-item"
+                  :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                  :style="itemStyle(item.key)"
                 >
-                  <a-icon :type="r.icon" :style="{ transform: 'rotate(' + r.value + 'deg)' }" />
-                  <span>{{ r.label }}</span>
+                  <template v-if="item.isCode">
+                    <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                  </template>
+                  <template v-else>
+                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                  </template>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 打印份数 -->
-          <div class="lmp-card lmp-row">
-            <div class="lmp-row-label">打印份数</div>
-            <div class="lmp-row-value">
-              <div class="lmp-qty">
-                <span class="lmp-qty-btn" :class="{ disabled: copies <= 1 }" @click="copies = Math.max(1, copies - 1)">
-                  <a-icon type="minus" />
-                </span>
-                <span class="lmp-qty-num">{{ copies }} 份</span>
-                <span class="lmp-qty-btn" @click="copies = Math.min(99, copies + 1)">
-                  <a-icon type="plus" />
-                </span>
+          <!-- 底部紧凑控制区 -->
+          <div class="lmp-bottom-wrap">
+            <!-- 设备状态：标题 + 类型下拉并列 / 中间显示设备名 -->
+            <div class="lmp-card lmp-device-compact" @click="showMobilePrinterSheet">
+              <div class="lmp-device-left">
+                <span class="lmp-device-title">设备状态</span>
+                <span class="lmp-device-type-tag">{{ printerTypeLabel }}</span>
+              </div>
+              <div class="lmp-device-mid">
+                <template v-if="mobileDeviceLabel">
+                  <span class="lmp-device-name" :class="{ 'online': mobileDeviceOnline }">{{ mobileDeviceLabel }}</span>
+                </template>
+                <template v-else><span class="lmp-device-name offline">设备未连接</span></template>
+              </div>
+              <a-icon type="right" class="lmp-row-arrow" />
+            </div>
+
+            <!-- 打印方向 + 打印份数（紧凑一行） -->
+            <div class="lmp-cards-row">
+              <div class="lmp-card lmp-row lmp-row-tight">
+                <div class="lmp-row-label">方向</div>
+                <div class="lmp-row-value">
+                  <div class="lmp-rotation-tabs">
+                    <div
+                      v-for="r in rotationOptions"
+                      :key="r.value"
+                      class="lmp-rot-tab"
+                      :class="{ active: printRotation === r.value }"
+                      @click="printRotation = r.value"
+                    >
+                      <a-icon type="edit" />{{ r.label }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="lmp-card lmp-row lmp-row-tight">
+                <div class="lmp-row-label">份数</div>
+                <div class="lmp-row-value">
+                  <div class="lmp-qty">
+                    <span class="lmp-qty-btn" :class="{ disabled: copies <= 1 }" @click="copies = Math.max(1, copies - 1)">
+                      <a-icon type="minus" />
+                    </span>
+                    <span class="lmp-qty-num">{{ copies }}</span>
+                    <span class="lmp-qty-btn" @click="copies = Math.min(99, copies + 1)">
+                      <a-icon type="plus" />
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -408,6 +415,10 @@
         if (this.printerType === 'bluetooth') return !!this.btDevice
         return !!this.selectedPrinter
       },
+      printerTypeLabel() {
+        var map = { backend: '后端', bluetooth: '蓝牙', wifi: 'Wi-Fi', cloud: '云打印' }
+        return map[this.printerType] || '后端'
+      },
       modalWidth() {
         return this.isMobile ? '100%' : 820
       },
@@ -526,18 +537,35 @@
         } else {
           this.loadTemplate()
         }
-        this.selectedPrinter = undefined
         this.copies = 1
         this.printRotation = 0
-        // 重置打印机状态
-        this.printerType = 'backend'
         this.discoveredPrinter = null
         this.btDevice = null
         this.activeWifiId = null
         this.showPrinterSheet = false
+        // 恢复上次使用的打印机（localStorage）
+        var last = null
+        try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e) { last = null }
+        if (last && last.type) {
+          this.printerType = last.type
+          if (last.type === 'backend') this.selectedPrinter = last.name || undefined
+          else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
+          else if (last.type === 'cloud') { this.selectedPrinter = undefined }
+          else { this.selectedPrinter = undefined }
+        } else {
+          this.printerType = 'backend'
+          this.selectedPrinter = undefined
+        }
         this.loadPrinters()
         this.loadWifiPrinters()
         this.visible = true
+      },
+      // 保存当前打印机选择到 localStorage
+      persistLastPrinter() {
+        var payload = { type: this.printerType, name: null }
+        if (this.printerType === 'backend') payload.name = this.selectedPrinter || null
+        else if (this.printerType === 'wifi') payload.name = this.activeWifiId || this.selectedPrinter || null
+        try { localStorage.setItem('jsh.lastLabelPrinter', JSON.stringify(payload)) } catch (e) {}
       },
       // 手机端：打开打印机选择弹层
       showMobilePrinterSheet() {
@@ -557,6 +585,7 @@
           this.selectedPrinter = name
           this.discoveredPrinter = null
         }
+        this.persistLastPrinter()
         this.showPrinterSheet = false
       },
       // 加载本机打印机列表（后端枚举），默认选中默认打印机
@@ -1249,24 +1278,35 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: #f5f5f5;
+    background: #f0f2f5;
     display: flex;
     flex-direction: column;
     z-index: 2900;
   }
-  /* 顶栏：返回 + 标题 + 设置（对齐 GlobalHeader 标准） */
+  /* 顶栏：蓝底 + 白色图标文字 */
   .lmp-header {
     flex: none;
-    height: 56px;
+    height: 50px;
     background: #fff;
-    border-bottom: 1px solid #eee;
     display: flex;
     align-items: center;
-    padding: 0 16px;
+    padding: 0 12px;
+  }
+  .lmp-header-blue {
+    background: #1890ff;
+    border-bottom: none;
+  }
+  .lmp-header-blue .lmp-title,
+  .lmp-header-blue .lmp-back,
+  .lmp-header-blue .lmp-settings {
+    color: #fff;
+  }
+  .lmp-header-blue .lmp-subtitle {
+    color: rgba(255, 255, 255, 0.75);
   }
   .lmp-back,
   .lmp-settings {
-    font-size: 22px;
+    font-size: 20px;
     color: #333;
     cursor: pointer;
     width: 32px;
@@ -1293,34 +1333,43 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.2;
   }
   .lmp-subtitle {
     font-size: 11px;
     color: #999;
     margin-top: 1px;
   }
-  /* 可滚动主内容 */
+  /* 主内容：中间空白全部为预览区域 */
   .lmp-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 12px 12px 140px 12px;
+    padding: 10px 10px 140px 10px;
+    display: flex;
+    flex-direction: column;
   }
   .lmp-content.lmp-empty {
     display: flex;
     align-items: flex-start;
   }
-  /* 预览卡 */
-  .lmp-preview-card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 12px;
+  /* 预览区：flex 撑满剩余空间 */
+  .lmp-preview-area {
+    flex: 1;
+    min-height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 180px;
+  }
+  .lmp-preview-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    width: 100%;
   }
   .lmp-preview {
     position: relative;
@@ -1330,73 +1379,114 @@
     transform-origin: center center;
     transition: transform 0.2s ease;
   }
+  /* 底部紧凑控制区 */
+  .lmp-bottom-wrap {
+    flex: none;
+    margin-top: 6px;
+  }
   /* 通用卡片 */
   .lmp-card {
     background: #fff;
     border-radius: 10px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  /* 设备状态：紧凑一行 */
+  .lmp-device-compact {
+    display: flex;
+    align-items: center;
+    padding: 9px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .lmp-device-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+  .lmp-device-title {
+    font-size: 13px;
+    color: #262626;
+    font-weight: 500;
+  }
+  .lmp-device-type-tag {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: #e6f7ff;
+    color: #1890ff;
+    line-height: 14px;
+  }
+  .lmp-device-mid {
+    flex: 1;
+    min-width: 0;
+    padding: 0 8px;
+    text-align: center;
+    overflow: hidden;
+  }
+  .lmp-device-name {
+    font-size: 13px;
+    color: #333;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    &.online { color: #1890ff; }
+    &.offline { color: #bfbfbf; }
+  }
+  .lmp-row-arrow {
+    color: #ccc;
+    font-size: 13px;
+    flex: none;
+  }
+  /* 方向+份数并排 */
+  .lmp-cards-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .lmp-cards-row > .lmp-card {
+    flex: 1;
   }
   .lmp-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
+  .lmp-row-tight {
+    padding: 8px 10px;
+    margin-bottom: 0;
+  }
   .lmp-row-label {
-    font-size: 14px;
-    color: #333;
+    font-size: 12px;
+    color: #888;
+    flex: none;
   }
   .lmp-row-value {
     flex: 1;
     display: flex;
     justify-content: flex-end;
   }
-  /* 设备状态行 */
-  .lmp-device-row {
-    cursor: pointer;
-  }
-  .lmp-device-label {
-    font-size: 14px;
-    color: #333;
-  }
-  .lmp-device-value {
-    display: flex;
-    align-items: center;
-    font-size: 13px;
-    color: #999;
-  }
-  .lmp-device-value .online {
-    color: #1890ff;
-    margin-right: 4px;
-  }
-  .lmp-device-value .offline {
-    color: #bfbfbf;
-    margin-right: 4px;
-  }
-  .lmp-row-arrow {
-    color: #ccc;
-    font-size: 14px;
-  }
   /* 打印方向选项 */
   .lmp-rotation-tabs {
     display: flex;
-    gap: 8px;
+    gap: 5px;
   }
   .lmp-rot-tab {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px 14px;
-    border-radius: 18px;
+    gap: 2px;
+    padding: 4px 10px;
+    border-radius: 14px;
     border: 1px solid #e0e0e0;
-    font-size: 13px;
+    font-size: 12px;
     color: #666;
     cursor: pointer;
     background: #fafafa;
     transition: all 0.15s;
     .anticon {
-      font-size: 14px;
+      font-size: 12px;
     }
     &.active {
       background: #1890ff;
@@ -1408,11 +1498,11 @@
   .lmp-qty {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
   }
   .lmp-qty-btn {
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     border: 1px solid #e0e0e0;
     display: flex;
@@ -1421,19 +1511,16 @@
     color: #666;
     cursor: pointer;
     background: #fff;
-    &:active {
-      background: #f0f0f0;
-    }
-    &.disabled {
-      color: #ddd;
-      cursor: not-allowed;
-    }
+    font-size: 12px;
+    &:active { background: #f0f0f0; }
+    &.disabled { color: #ddd; cursor: not-allowed; }
   }
   .lmp-qty-num {
-    font-size: 15px;
+    font-size: 14px;
     color: #262626;
-    min-width: 52px;
+    min-width: 28px;
     text-align: center;
+    font-weight: 500;
   }
   /* 底部打印按钮 */
   .lmp-footer {

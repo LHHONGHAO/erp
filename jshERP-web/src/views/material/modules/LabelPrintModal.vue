@@ -6,9 +6,10 @@
  *   - 编辑：交给标签编辑弹层（LabelEditModal）修改模板/样式
  */
 <template>
-  <!-- 手机端：全屏标准页面（自定义顶栏 + 内容 + 底部打印按钮） -->
+  <!-- 手机端：两个全屏页面（打印标签页 / 设备列表页） -->
   <template v-if="isMobile">
-    <div v-if="visible" class="lp-mobile-page">
+    <!-- 页面 1：打印标签预览 -->
+    <div v-if="visible && !showPrinterSheet" class="lp-mobile-page">
       <!-- 顶栏：蓝底 + 白色返回 + 标题 + 设置 -->
       <div class="lmp-header lmp-header-blue">
         <a-icon class="lmp-back" type="arrow-left" @click="handleCancel" />
@@ -108,65 +109,131 @@
         >打印</a-button>
       </div>
     </div>
-  </template>
 
-  <!-- 打印机选择弹层（仅手机端） -->
-  <a-action-sheet
-    v-if="isMobile && showPrinterSheet"
-    :visible="showPrinterSheet"
-    :maskClosable="true"
-    @cancel="showPrinterSheet = false"
-    @close="showPrinterSheet = false"
-  >
-    <a-spin :spinning="loadingPrinters" tip="加载中...">
-      <div class="lmp-sheet-title">选择打印机</div>
-      <!-- 打印机类型切换 -->
-      <div class="lmp-sheet-tabs">
-        <span
+    <!-- 页面 2：设备列表（蓝顶栏 + 下划线 tab + 打印机列表） -->
+    <div v-if="visible && showPrinterSheet" class="lp-mobile-page">
+      <!-- 顶栏：蓝底 + 白色返回 + 标题 -->
+      <div class="lmp-header lmp-header-blue">
+        <a-icon class="lmp-back" type="arrow-left" @click="showPrinterSheet = false" />
+        <div class="lmp-title-block">
+          <div class="lmp-title">设备列表</div>
+        </div>
+        <span class="lmp-settings placeholder" />
+      </div>
+
+      <!-- 类型 Tab：下划线风格 -->
+      <div class="lmpl-tabs-bar">
+        <div
           v-for="t in printerTabList"
           :key="t.key"
-          class="lmp-sheet-tab"
-          :class="{ active: printerType === t.key, disabled: !printerCaps[t.key] }"
+          class="lmpl-tab"
+          :class="{ active: printerType === t.key }"
           @click="switchPrinterType(t.key); if (printerType === t.key) loadPrinters()"
-        >
-          <a-icon :type="t.icon" /> {{ t.label }}
-        </span>
+        >{{ t.label }}</div>
       </div>
-      <!-- 后端打印机 -->
-      <template v-if="printerType === 'backend'">
-        <div v-if="printers.length === 0" class="lmp-sheet-empty">暂无可用打印机，请刷新或在后端机器安装打印机</div>
-        <div v-for="p in printers" :key="p.name" class="lmp-sheet-item" :class="{ active: selectedPrinter === p.name }" @click="selectPrinterAndClose(p.name)">
-          <a-icon type="printer" /> {{ p.name }}<span v-if="p.isDefault" class="lmp-default-tag">（默认）</span>
-          <a-icon v-if="selectedPrinter === p.name" type="check-circle" theme="filled" />
+
+      <!-- 列表区 -->
+      <a-spin :spinning="loadingPrinters" tip="加载中...">
+        <div class="lmpl-list">
+          <!-- 后端打印机 -->
+          <template v-if="printerType === 'backend'">
+            <template v-if="printers.length > 0">
+              <div
+                v-for="p in printers"
+                :key="p.name"
+                class="lmpl-item"
+                :class="{ active: selectedPrinter === p.name }"
+                @click="selectPrinterAndClose(p.name)"
+              >
+                <div class="lmpl-item-left">
+                  <a-icon type="printer" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ p.name }}</div>
+                    <div v-if="p.isDefault" class="lmpl-item-sub">默认打印机</div>
+                  </div>
+                </div>
+                <a-icon v-if="selectedPrinter === p.name" type="check-circle" theme="filled" class="lmpl-check" />
+              </div>
+            </template>
+            <div v-else class="lmpl-empty">
+              <div class="lmpl-empty-icon"><a-icon type="printer" /></div>
+              <div class="lmpl-empty-text">暂无可用打印机</div>
+              <div class="lmpl-empty-sub">请在后端电脑安装打印机后刷新</div>
+            </div>
+          </template>
+
+          <!-- 蓝牙 -->
+          <template v-else-if="printerType === 'bluetooth'">
+            <template v-if="btDevice">
+              <div class="lmpl-item active" @click="selectPrinterAndClose(btDevice.id)">
+                <div class="lmpl-item-left">
+                  <a-icon type="bluetooth" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ btDevice.name }}</div>
+                    <div class="lmpl-item-sub">已连接</div>
+                  </div>
+                </div>
+                <a-icon type="check-circle" theme="filled" class="lmpl-check" />
+              </div>
+            </template>
+            <div v-else class="lmpl-empty">
+              <div class="lmpl-empty-icon"><a-icon type="bluetooth" /></div>
+              <div class="lmpl-empty-text">未连接过你的设备</div>
+              <a-button type="primary" block :loading="btSearching" class="lmpl-primary-btn" @click="handleBluetoothSearch">
+                {{ btSearching ? '搜索中...' : '搜索蓝牙打印机' }}
+              </a-button>
+            </div>
+          </template>
+
+          <!-- Wi-Fi -->
+          <template v-else-if="printerType === 'wifi'">
+            <template v-if="wifiPrinters.length > 0">
+              <div
+                v-for="p in wifiPrinters"
+                :key="p.id"
+                class="lmpl-item"
+                :class="{ active: activeWifiId === p.id }"
+                @click="selectPrinterAndClose(p.id)"
+              >
+                <div class="lmpl-item-left">
+                  <a-icon type="wifi" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ p.name }}</div>
+                    <div class="lmpl-item-sub">{{ p.ip }}:{{ p.port }}</div>
+                  </div>
+                </div>
+                <template v-if="activeWifiId === p.id">
+                  <a-tag v-if="wifiStatus[p.id]" color="green" class="lmpl-tag">已连接</a-tag>
+                  <a-tag v-else class="lmpl-tag">未连接</a-tag>
+                </template>
+                <a-icon v-if="selectedPrinter === p.id" type="check-circle" theme="filled" class="lmpl-check" />
+              </div>
+              <a-button type="primary" ghost block icon="plus" class="lmpl-add-btn" @click="openAddWifiPrinter">添加 Wi-Fi 打印机</a-button>
+            </template>
+            <div v-else class="lmpl-empty">
+              <div class="lmpl-empty-icon"><a-icon type="wifi" /></div>
+              <div class="lmpl-empty-text">未连接过你的设备</div>
+              <a-button type="primary" block class="lmpl-primary-btn" @click="openAddWifiPrinter">添加打印机</a-button>
+            </div>
+          </template>
+
+          <!-- 云打印 -->
+          <template v-else-if="printerType === 'cloud'">
+            <div class="lmpl-item" :class="{ active: discoveredPrinter && discoveredPrinter.type === 'cloud' }" @click="selectCloudPrinter(); showPrinterSheet = false">
+              <div class="lmpl-item-left">
+                <a-icon type="cloud" class="lmpl-item-icon" />
+                <div class="lmpl-item-text">
+                  <div class="lmpl-item-title">系统打印机</div>
+                  <div class="lmpl-item-sub">通过浏览器打印</div>
+                </div>
+              </div>
+              <a-icon v-if="discoveredPrinter && discoveredPrinter.type === 'cloud'" type="check-circle" theme="filled" class="lmpl-check" />
+            </div>
+          </template>
         </div>
-      </template>
-      <!-- 蓝牙 -->
-      <template v-else-if="printerType === 'bluetooth'">
-        <div v-if="!btDevice" class="lmp-sheet-empty">
-          <a-button icon="scan" type="primary" block :loading="btSearching" @click="handleBluetoothSearch">{{ btSearching ? '搜索中...' : '搜索蓝牙打印机' }}</a-button>
-        </div>
-        <div v-else class="lmp-sheet-item active" @click="selectPrinterAndClose(btDevice.id)">
-          <a-icon type="bluetooth" /> {{ btDevice.name }} <a-icon type="check-circle" theme="filled" />
-        </div>
-      </template>
-      <!-- Wi-Fi -->
-      <template v-else-if="printerType === 'wifi'">
-        <div v-for="p in wifiPrinters" :key="p.id" class="lmp-sheet-item" :class="{ active: selectedPrinter === p.id }" @click="selectPrinterAndClose(p.id)">
-          <a-icon type="wifi" /> {{ p.name }} <span class="lmp-sub">{{ p.ip }}:{{ p.port }}</span>
-          <a-tag v-if="wifiStatus[p.id]" color="green" class="lmp-status">已连接</a-tag>
-          <a-tag v-else class="lmp-status">未连接</a-tag>
-          <a-icon v-if="selectedPrinter === p.id" type="check-circle" theme="filled" />
-        </div>
-        <a-button type="primary" ghost icon="plus" block style="margin-top:12px" @click="openAddWifiPrinter">添加 Wi-Fi 打印机</a-button>
-      </template>
-      <!-- 云打印机 -->
-      <template v-else-if="printerType === 'cloud'">
-        <div class="lmp-sheet-item" :class="{ active: discoveredPrinter && discoveredPrinter.type === 'cloud' }" @click="selectCloudPrinter(); showPrinterSheet = false">
-          <a-icon type="cloud" /> 云打印机 / 系统打印机 <a-icon v-if="discoveredPrinter && discoveredPrinter.type === 'cloud'" type="check-circle" theme="filled" />
-        </div>
-      </template>
-    </a-spin>
-  </a-action-sheet>
+      </a-spin>
+    </div>
+  </template>
 
   <!-- 桌面端：保留原有 modal 布局 -->
   <a-modal
@@ -1538,79 +1605,140 @@
     border-color: #1890ff;
     font-weight: 500;
   }
-  /* ActionSheet 打印机选择弹层样式 */
-  .lmp-sheet-title {
+  /* ===== 设备列表页（lmpl = label mobile printer list） ===== */
+  .lmpl-tabs-bar {
+    flex: none;
+    display: flex;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    padding: 0 4px;
+  }
+  .lmpl-tab {
+    flex: 1;
+    text-align: center;
+    padding: 14px 0 12px;
     font-size: 15px;
-    font-weight: 600;
-    text-align: center;
-    padding: 16px 0 12px;
-    color: #262626;
-  }
-  .lmp-sheet-tabs {
-    display: flex;
-    padding: 0 16px 12px;
-    gap: 8px;
-    overflow-x: auto;
-  }
-  .lmp-sheet-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 5px 12px;
-    border-radius: 16px;
-    font-size: 13px;
-    background: #f5f5f5;
-    color: #666;
-    white-space: nowrap;
-    &.active {
-      background: #1890ff;
-      color: #fff;
-    }
-    &.disabled {
-      opacity: 0.4;
-    }
-  }
-  .lmp-sheet-item {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    font-size: 14px;
-    color: #333;
-    border-top: 1px solid #f0f0f0;
+    color: #888;
+    position: relative;
     cursor: pointer;
-    .anticon {
-      margin-right: 8px;
-      color: #1890ff;
-    }
-    &.active {
-      background: #e6f7ff;
-      color: #1890ff;
-      .anticon.check-circle {
-        margin-left: auto;
-        margin-right: 0;
-        color: #1890ff;
-      }
-    }
+    transition: color 0.15s;
   }
-  .lmp-sheet-empty {
-    padding: 24px 16px;
-    text-align: center;
+  .lmpl-tab.active {
+    color: #1890ff;
+    font-weight: 600;
+  }
+  .lmpl-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 3px;
+    background: #1890ff;
+    border-radius: 2px;
+  }
+  .lmpl-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  .lmpl-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    background: #fff;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+  }
+  .lmpl-item.active {
+    background: #e6f7ff;
+  }
+  .lmpl-item-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .lmpl-item-icon {
+    font-size: 22px;
+    color: #1890ff;
+    flex: none;
+  }
+  .lmpl-item-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .lmpl-item-title {
+    font-size: 15px;
+    color: #262626;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lmpl-item-sub {
+    font-size: 12px;
     color: #999;
-    font-size: 13px;
+    margin-top: 2px;
   }
-  .lmp-sub {
-    font-size: 11px;
-    color: #999;
-    margin-left: 6px;
+  .lmpl-check {
+    color: #1890ff;
+    font-size: 18px;
+    flex: none;
+    margin-left: 8px;
   }
-  .lmp-status {
-    margin-left: auto;
+  .lmpl-tag {
     margin-right: 8px;
-  }
-  .lmp-default-tag {
     font-size: 11px;
+    padding: 0 6px;
+  }
+  /* 空状态 */
+  .lmpl-empty {
+    padding: 60px 20px 40px;
+    text-align: center;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+  .lmpl-empty-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    background: #f0f5ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    color: #1890ff;
+    opacity: 0.7;
+  }
+  .lmpl-empty-text {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 6px;
+  }
+  .lmpl-empty-sub {
+    font-size: 13px;
     color: #999;
-    margin-left: 4px;
+    margin-bottom: 20px;
+  }
+  .lmpl-primary-btn {
+    max-width: 280px;
+    margin: 16px auto 0;
+    height: 44px;
+    font-size: 15px;
+    border-radius: 22px;
+  }
+  .lmpl-add-btn {
+    margin-top: 12px;
+    height: 40px;
+    font-size: 14px;
+    border-radius: 20px;
   }
 </style>
 

@@ -6,6 +6,7 @@
  *   - 编辑：交给标签编辑弹层（LabelEditModal）修改模板/样式
  */
 <template>
+  <div>
   <!-- 手机端：两个全屏页面（打印标签页 / 设备列表页） -->
   <template v-if="isMobile">
     <!-- 页面 1：打印标签预览 -->
@@ -352,6 +353,7 @@
       </div>
     </div>
   </a-modal>
+  </div>
 </template>
 
 <script>

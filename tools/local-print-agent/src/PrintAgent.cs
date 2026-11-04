@@ -1113,6 +1113,8 @@ namespace JshPrintAgent
             try
             {
                 Directory.CreateDirectory(AppPaths.DataDir);
+                // 升级场景：旧版本可能正在运行并占用安装目录里的 exe，先结束它
+                StopInstalledInstance(target);
                 File.Copy(current, target, true);
                 AutoStart.Enable(target);
                 Logger.Log("已安装到 " + target + "，启动副本");
@@ -1125,6 +1127,34 @@ namespace JshPrintAgent
                 Logger.Log("自动安装失败，改用当前目录运行：" + ex.Message);
                 try { AutoStart.Enable(current); } catch (Exception) { }
                 return true;
+            }
+        }
+
+        /// <summary>结束正在运行的已安装实例，便于覆盖升级</summary>
+        private static void StopInstalledInstance(string target)
+        {
+            try
+            {
+                System.Diagnostics.Process[] processes = System.Diagnostics.Process.GetProcessesByName("print-agent");
+                for (int i = 0; i < processes.Length; i++)
+                {
+                    try
+                    {
+                        string path = processes[i].MainModule.FileName;
+                        if (string.Equals(Path.GetFullPath(path), target, StringComparison.OrdinalIgnoreCase))
+                        {
+                            processes[i].Kill();
+                            processes[i].WaitForExit(3000);
+                            Logger.Log("已结束旧实例：" + path);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
             }
         }
     }

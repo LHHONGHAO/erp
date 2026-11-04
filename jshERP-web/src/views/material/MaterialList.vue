@@ -92,17 +92,21 @@
         <a-button size="small" icon="filter" @click="filterDrawerVisible = true">筛选</a-button>
       </template>
       <div class="ml-search-bar">
-        <a-input
-          v-model="mobileSearchKeyword"
-          placeholder="条码/名称/助记码"
-          class="ml-search-input"
-          @keyup.enter.native="mobileSearch">
-          <a-icon slot="suffix" type="scan" class="ml-scan-icon" @click="openScanner" />
-        </a-input>
+        <div class="ml-search-box">
+          <a-icon type="scan" class="ml-search-scan" @click="openScanner" />
+          <a-input
+            placeholder="搜索商品 / 条码"
+            v-model="mobileSearchKeyword"
+            class="ml-search-input"
+            @pressEnter="mobileSearch"
+          />
+          <span class="ml-search-camera" @click="ocrVisible = true">
+            <a-icon type="camera" />
+            <span class="ml-search-ai-tag">AI</span>
+          </span>
+        </div>
+        <span class="ml-search-btn" @click="mobileSearch">搜索</span>
       </div>
-      <template #right>
-        <a-button type="primary" size="small" @click="mobileSearch">搜索</a-button>
-      </template>
     </mobile-bottom-bar>
 
     <!-- 弹窗组件（手机端也复用） -->
@@ -110,6 +114,12 @@
     <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
     <label-edit-modal ref="labelEditModal"></label-edit-modal>
     <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+    <ocr-recognize-modal
+      :visible="ocrVisible"
+      :extractOnly="true"
+      @ok="onOcrOk"
+      @cancel="ocrVisible = false"
+    />
   </div>
 
   <!-- ==================== 电脑端布局（保持原样） ==================== -->
@@ -295,6 +305,7 @@
   import ImportFileModal from '@/components/tools/ImportFileModal'
   import LabelEditModal from './modules/LabelEditModal'
   import LabelPrintModal from './modules/LabelPrintModal'
+  import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { postAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
@@ -314,6 +325,7 @@
       ImportFileModal,
       LabelEditModal,
       LabelPrintModal,
+      OcrRecognizeModal,
       MaterialTable,
       MobileBottomBar,
       CertInstallGuide
@@ -405,6 +417,8 @@
         scanStream: null,
         /** 扫码循环定时器 */
         scanTimer: null,
+        /** OCR 文字提取弹层 */
+        ocrVisible: false,
       }
     },
     created() {
@@ -628,6 +642,18 @@
         this.queryParam.materialParam = this.mobileSearchKeyword
         this.loadData(1)
       },
+      /** OCR 文字提取完成：把识别到的文字填入搜索框并自动搜索 */
+      onOcrOk(res) {
+        this.ocrVisible = false
+        var text = (res && res.rawText || '').trim()
+        if (!text) {
+          this.$message.warning('未识别到有效文字')
+          return
+        }
+        this.mobileSearchKeyword = text
+        this.queryParam.materialParam = text
+        this.loadData(1)
+      },
       /** 筛选抽屉确定 */
       applyMobileFilter() {
         this.filterDrawerVisible = false
@@ -838,23 +864,90 @@
     margin-top: 24px;
   }
 
-  /* 底边栏搜索框 */
+  /* 底边栏搜索区：胶囊输入框 + 内嵌相机 AI + 搜索文字按钮 */
   .ml-search-bar {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
+    gap: 8px;
+  }
+  .ml-search-box {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    background: #f5f6f8;
+    border-radius: 20px;
+    padding: 0 10px;
+    height: 40px;
+  }
+  .ml-search-scan {
+    font-size: 20px;
+    color: #e94d4d;
+    cursor: pointer;
+    flex-shrink: 0;
   }
   .ml-search-input {
-    width: 100%;
-    height: 36px;
-    border-radius: 4px;
+    flex: 1;
+    min-width: 0;
+    margin: 0 6px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    font-size: 14px;
+    height: auto;
+    border-radius: 0;
   }
-  .ml-scan-icon {
-    font-size: 18px;
-    color: #1890ff;
+  .ml-search-input .ant-input,
+  .ml-search-input .ant-input-group-wrapper {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    font-size: 14px;
+  }
+  .ml-search-input .ant-input:focus,
+  .ml-search-input .ant-input-group-wrapper .ant-input:focus {
+    box-shadow: none;
+  }
+  .ml-search-camera {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #999;
     cursor: pointer;
-    padding: 4px 0;
+    flex-shrink: 0;
+  }
+  .ml-search-camera .anticon {
+    font-size: 18px;
+  }
+  .ml-search-ai-tag {
+    position: absolute;
+    top: -4px;
+    right: -6px;
+    font-size: 9px;
+    line-height: 1;
+    padding: 1px 3px;
+    background: linear-gradient(135deg, #ff6b6b, #ffb347);
+    color: #fff;
+    border-radius: 6px;
+    font-weight: 700;
+  }
+  .ml-search-btn {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: #e94d4d;
+    font-weight: 500;
+    padding: 0 2px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ml-search-btn:active {
+    opacity: .7;
   }
 
   /* 全屏扫码界面 */

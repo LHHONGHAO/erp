@@ -1,37 +1,43 @@
 <template>
   <div class="material-select-page">
-    <!-- 顶部导航栏 -->
-    <div class="msp-header">
-      <a-icon type="left" class="msp-back" @click="handleBack" />
-      <span class="msp-title">选择商品</span>
-      <a-icon type="search" class="msp-search-icon" @click="showSearch = !showSearch" />
-    </div>
-
-    <!-- 搜索栏 -->
-    <div v-if="showSearch" class="msp-search-bar">
-      <a-input
-        placeholder="请输入条码、名称、助记码、规格、型号"
-        v-model="searchKeyword"
-        @pressEnter="handleSearch"
-      >
-        <a-icon slot="prefix" type="search" />
-      </a-input>
-    </div>
-
-    <!-- 商品分类（横向滚动） -->
-    <div class="msp-category">
-      <span
-        class="msp-cat-item"
+    <!-- 顶部 Tab（选中带下划线） -->
+    <div class="msp-tabs">
+      <div
+        class="msp-tab-item"
         :class="{ active: !currentCategory }"
         @click="selectCategory(null)"
-      >全部</span>
-      <span
+      >
+        <span>全部</span>
+        <i class="msp-tab-bar" />
+      </div>
+      <div
         v-for="cat in categoryList"
         :key="cat.id"
-        class="msp-cat-item"
+        class="msp-tab-item"
         :class="{ active: currentCategory === cat.id }"
         @click="selectCategory(cat)"
-      >{{ cat.name }}</span>
+      >
+        <span>{{ cat.name }}</span>
+        <i class="msp-tab-bar" />
+      </div>
+    </div>
+
+    <!-- 搜索栏：左扫码 + 输入框 + 内嵌相机 + 右侧搜索按钮 -->
+    <div class="msp-search-bar">
+      <div class="msp-search-box">
+        <a-icon type="scan" class="msp-search-scan" @click="$emit('scan')" />
+        <a-input
+          placeholder="搜索商品 / 条码"
+          v-model="searchKeyword"
+          class="msp-search-input"
+          @pressEnter="handleSearch"
+        />
+        <span class="msp-search-camera" @click="$emit('ocr')">
+          <a-icon type="camera" />
+          <span class="msp-search-ai-tag">AI</span>
+        </span>
+      </div>
+      <span class="msp-search-btn" @click="handleSearch">搜索</span>
     </div>
 
     <!-- 商品卡片列表 -->
@@ -119,7 +125,6 @@
     },
     data () {
       return {
-        showSearch: false,
         searchKeyword: '',
         categoryList: [],
         currentCategory: '',
@@ -258,56 +263,137 @@
   min-height: 0;
   background: #f5f5f5;
 }
-.msp-header {
+
+/* 顶部 Tab：选中带下划线 */
+.msp-tabs {
   display: flex;
-  align-items: center;
-  height: 44px;
-  padding: 0 12px;
+  padding: 0 14px;
   background: #fff;
-  border-bottom: 1px solid #eee;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  .msp-back {
-    font-size: 20px;
-    cursor: pointer;
-  }
-  .msp-title {
-    flex: 1;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-  }
-  .msp-search-icon {
-    font-size: 20px;
-    cursor: pointer;
-  }
-}
-.msp-search-bar {
-  padding: 8px 12px;
-  background: #fff;
-}
-.msp-category {
-  display: flex;
+  border-bottom: 1px solid #f0f0f0;
   overflow-x: auto;
-  padding: 8px 12px;
-  background: #fff;
-  border-bottom: 1px solid #eee;
-  .msp-cat-item {
+  flex-shrink: 0;
+  .msp-tab-item {
+    position: relative;
     flex-shrink: 0;
-    padding: 4px 12px;
-    margin-right: 8px;
-    font-size: 13px;
-    border-radius: 12px;
-    background: #f0f0f0;
+    padding: 10px 14px;
+    font-size: 15px;
+    color: #666;
     cursor: pointer;
-    white-space: nowrap;
     &.active {
-      background: #1890ff;
-      color: #fff;
+      color: #e94d4d;
+      font-weight: 600;
+    }
+    .msp-tab-bar {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 0;
+      height: 2px;
+      background: #e94d4d;
+      border-radius: 2px;
+      transform: scaleX(0);
+      transition: transform .2s ease;
+    }
+    &.active .msp-tab-bar {
+      transform: scaleX(1);
     }
   }
 }
+
+/* 搜索栏：左扫码 + 输入框 + 内嵌相机 + 右侧文字搜索按钮 */
+.msp-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+
+  .msp-search-box {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    background: #f5f6f8;
+    border-radius: 22px;
+    padding: 0 10px;
+    height: 40px;
+  }
+
+  .msp-search-scan {
+    font-size: 20px;
+    color: #e94d4d;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .msp-search-input {
+    flex: 1;
+    min-width: 0;
+    margin: 0 8px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    font-size: 14px;
+    // 覆盖 ant-input 样式
+    ::v-deep .ant-input {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      font-size: 14px;
+      &:focus {
+        box-shadow: none;
+      }
+    }
+    // ant-input-group-wrapper 在 a-input 默认带的
+    &::v-deep .ant-input-group-wrapper {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+  }
+
+  .msp-search-camera {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #999;
+    cursor: pointer;
+    flex-shrink: 0;
+    .anticon {
+      font-size: 18px;
+    }
+    .msp-search-ai-tag {
+      position: absolute;
+      top: -4px;
+      right: -6px;
+      font-size: 9px;
+      line-height: 1;
+      padding: 1px 3px;
+      background: linear-gradient(135deg, #ff6b6b, #ffb347);
+      color: #fff;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+  }
+
+  .msp-search-btn {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: #e94d4d;
+    font-weight: 500;
+    padding: 0 4px;
+    cursor: pointer;
+    user-select: none;
+    &:active { opacity: .7; }
+  }
+}
+
 .msp-list {
   flex: 1;
   overflow-y: auto;

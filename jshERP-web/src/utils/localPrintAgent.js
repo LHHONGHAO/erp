@@ -38,6 +38,12 @@ function once(base, path, options, ms) {
   })
 }
 
+/** 判断 /ping 响应是否来自本地打印助手（兼容旧版助手不返回 app 字段） */
+function isAgentResponse(res) {
+  if (!res || res.code !== 200) return false
+  return res.app === 'jsh-print-agent' || res.data === 'ok'
+}
+
 /**
  * 依次探测端口，返回第一个可用的助手地址。
  * 全部不可用时返回 null。
@@ -46,7 +52,7 @@ export function detectLocalAgent(timeout) {
   const ms = timeout || 1500
   if (resolvedBase) {
     return once(resolvedBase, '/ping', { method: 'GET' }, ms)
-      .then(res => (res && res.code === 200 && res.app === 'jsh-print-agent') ? resolvedBase : null)
+      .then(res => isAgentResponse(res) ? resolvedBase : null)
       .catch(() => { resolvedBase = null; return null })
   }
   const tryPort = (idx) => {
@@ -54,7 +60,7 @@ export function detectLocalAgent(timeout) {
     const base = 'http://127.0.0.1:' + LOCAL_AGENT_PORT_RANGE[idx]
     return once(base, '/ping', { method: 'GET' }, ms)
       .then(res => {
-        if (res && res.code === 200 && res.app === 'jsh-print-agent') {
+        if (isAgentResponse(res)) {
           resolvedBase = base
           return base
         }

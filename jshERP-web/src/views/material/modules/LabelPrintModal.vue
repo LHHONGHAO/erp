@@ -386,7 +386,13 @@
               <a class="lp-refresh" @click="loadPrinters">刷新</a>
             </div>
             <div class="lp-field">
-              <div class="lp-field-label">打印机</div>
+              <div class="lp-field-label">
+                打印机
+                <span v-if="!loadingPrinters && !localAgentOnline" class="lp-agent-hint">
+                  打印组件未安装
+                  <a :href="agentDownloadUrl" target="_blank" rel="noopener" download="print-agent.exe">下载安装</a>
+                </span>
+              </div>
               <div class="lp-printer-picker">
                 <div class="lp-printer-current" :class="{ empty: !currentPrinterLabel }">
                   {{ currentPrinterLabel || '未选择打印机' }}
@@ -400,12 +406,7 @@
                   @click="openPrinterSettings"
                 >添加</a-button>
               </div>
-              <div v-if="!loadingPrinters && !localAgentOnline" class="lp-tip">
-                未检测到本地打印助手，无法列出本机打印机。
-                <a :href="agentDownloadUrl" target="_blank" rel="noopener" download="print-agent.exe">下载安装</a>
-                后双击运行，再点「刷新」。
-              </div>
-              <div v-else-if="!loadingPrinters && printers.length === 0 && wifiPrinters.length === 0" class="lp-tip">
+              <div v-if="localAgentOnline && !loadingPrinters && printers.length === 0 && wifiPrinters.length === 0" class="lp-tip">
                 后端未返回打印机（远程部署时后端运行在服务器上），可点击「添加」配置本机或网络打印机。
               </div>
             </div>
@@ -1058,36 +1059,44 @@
               return { online: true, list: list }
             })
           })
-        return Promise.all([getAction('/print/printers').catch(function() { return null }), localTask]).then(function(arr) {
-          var res = arr[0]
-          var local = arr[1] || { online: false, list: [] }
-          var locals = local.list || []
-          self.loadingPrinters = false
-          var data = (res && res.data) || {}
-          var list = data.printers || []
-          self.printers = list
-          self.localPrinters = locals
+        return localTask.then(function(local) {
+          self.localPrinters = local.list || []
           // 区分「助手未安装」和「助手在线但没有打印机」
           self.localAgentOnline = !!local.online
-          // 非后端类型（Wi-Fi / 蓝牙 / 云）的选中项不受枚举结果影响
-          if (self.printerType !== 'backend') return
-          // 已有有效选择则保留（实现「回显设置页选中的打印机」）
-          var keep = self.selectedPrinter
-          if (keep === '__browser__') return
-          if (keep && (isLocalPrinter(keep)
-            ? locals.indexOf(localPrinterName(keep)) >= 0
-            : list.some(function(p) { return p.name === keep }))) {
+          // 电脑端未安装打印组件：后端打印机在服务器上，本机用不了，不再加载打印机
+          if (!self.isMobile && !self.localAgentOnline) {
+            self.printers = []
+            self.loadingPrinters = false
+            if (self.printerType === 'backend') self.selectedPrinter = undefined
             return
           }
-          if (locals.length > 0) {
-            // 优先使用本机打印机（直接调用本地电脑打印机，无打印对话框）
-            self.selectedPrinter = LOCAL_PRINTER_PREFIX + locals[0]
-          } else if (list.length > 0) {
-            var def = list.find(function(p) { return p.isDefault })
-            self.selectedPrinter = (def || list[0]).name
-          } else {
-            self.selectedPrinter = self.isMobile ? undefined : '__browser__'
-          }
+          return getAction('/print/printers').catch(function() { return null }).then(function(res) {
+            var data = (res && res.data) || {}
+            var list = data.printers || []
+            self.loadingPrinters = false
+            self.printers = list
+            // 非后端类型（Wi-Fi / 蓝牙 / 云）的选中项不受枚举结果影响
+            if (self.printerType !== 'backend') return
+            // 已有有效选择则保留（实现「回显设置页选中的打印机」）
+            var keep = self.selectedPrinter
+            if (keep === '__browser__') return
+            if (keep && (isLocalPrinter(keep)
+              ? self.localPrinters.indexOf(localPrinterName(keep)) >= 0
+              : list.some(function(p) { return p.name === keep }))) {
+              return
+            }
+            if (self.localPrinters.length > 0) {
+              // 优先使用本机打印机（直接调用本地电脑打印机，无打印对话框）
+              self.selectedPrinter = LOCAL_PRINTER_PREFIX + self.localPrinters[0]
+            } else if (list.length > 0) {
+              var def = list.find(function(p) { return p.isDefault })
+              self.selectedPrinter = (def || list[0]).name
+            } else {
+              // 后端枚举不到打印机且本机助手未运行（远程访问场景）：
+              // 不自动选中浏览器打印，保持未选择，点击打印时引导安装本地打印助手
+              self.selectedPrinter = undefined
+            }
+          })
         })
       },
       // 切换打印机类型
@@ -1548,11 +1557,14 @@
             self.$message.success('已发送到打印机：' + printer.name)
             self.$set(self.wifiStatus, printer.id, true)
           } else {
-            self.$message.error((res && res.data) || '打印失败')
+            // 后端把失败原因放在 data.message 中
+            var data = (res && res.data) || {}
+            var message = (typeof data === 'string' ? data : data.message) || '打印失败'
+            self.$message.error(message)
           }
-        }).catch(function() {
+        }).catch(function(err) {
           self.printing = false
-          self.$message.error('网络打印失败，请检查打印机与后端网络')
+          self.$message.error((err && err.message) || '网络打印失败，请检查打印机与后端网络')
         })
       },
       // 浏览器打印（后端打印不可用时兜底）
@@ -1743,6 +1755,16 @@
     font-size: 13px;
     color: #333;
     margin-bottom: 6px;
+  }
+  /* 「打印机」标题后的安装状态提示 */
+  .lp-agent-hint {
+    margin-left: 8px;
+    font-size: 12px;
+    color: #999;
+    font-weight: normal;
+  }
+  .lp-agent-hint a {
+    color: #1890ff;
   }
   .lp-tip {
     font-size: 12px;

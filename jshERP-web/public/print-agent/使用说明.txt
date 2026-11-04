@@ -1,0 +1,23 @@
+﻿JSH 通用打印组件（Windows）
+
+【安装】
+  1. 双击 print-agent.exe 即可。程序会自动安装到：
+     %LOCALAPPDATA%\JshPrintAgent\print-agent.exe
+  2. 安装后常驻任务栏右下角托盘（图标为默认应用程序图标）。
+  3. 默认开机自动启动，可在托盘右键菜单里取消。
+
+【使用】
+  服务地址：http://127.0.0.1:17890（被占用时自动顺延 17891 / 17892）
+  浏览器打开该地址可查看运行状态与本机打印机列表。
+
+【接口】
+  GET  /ping       健康检查
+  GET  /printers   本机打印机名称列表
+  POST /print      { printer, image(base64), widthMm, heightMm, copies }
+  POST /raw        { printer, data | dataBase64, encoding }
+
+【排障】
+  - 托盘图标右键 → 打开日志文件，可查看运行与打印记录。
+  - 若双击后无任何界面，请确认托盘区是否有图标；日志中会有启动记录。
+  - 退出：托盘右键 → 退出打印组件。
+  - 卸载：托盘退出后，删除目录 %LOCALAPPDATA%\JshPrintAgent 即可。

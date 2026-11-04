@@ -196,21 +196,26 @@
         if (this.$route.path === '/dashboard/analysis') {
           return
         }
-        // 移除当前页，回到导航栈中的上一页；栈为空时回首页
+        // 移除当前页在导航栈中的记录
         let current = this.$route.fullPath
         while (this.mobileNavStack.length > 0 && this.mobileNavStack[this.mobileNavStack.length - 1] === current) {
           this.mobileNavStack.pop()
+        }
+        this.saveNavStack()
+        this.backNavigating = true
+        // 优先回退浏览器历史，避免用 push 新增历史记录导致页面之间来回循环
+        if (window.history.length > 1) {
+          this.$router.back()
+          return
         }
         let target = this.mobileNavStack[this.mobileNavStack.length - 1]
         if (!target) {
           target = '/dashboard/analysis'
           this.mobileNavStack = [target]
         }
-        this.backNavigating = true
         this.$router.push(target).catch(() => {
           this.backNavigating = false
         })
-        this.saveNavStack()
       },
       handleTouchStart(e) {
         if (!this.isMobile() || e.touches.length !== 1) {

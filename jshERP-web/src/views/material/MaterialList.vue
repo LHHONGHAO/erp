@@ -7,7 +7,7 @@
       <a-icon type="left" class="ml-mobile-back" @click="$router.back()" />
       <span class="ml-mobile-title">商品信息</span>
       <div class="ml-mobile-header-actions">
-        <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" @click="handleAdd">新增</a-button>
+        <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" @click="handleMobileAdd">新增</a-button>
         <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="delete" @click="mobileBatchDel">删除</a-button>
         <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="check-square" @click="mobileBatchSetStatus(true)">启用</a-button>
         <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="close-square" @click="mobileBatchSetStatus(false)">禁用</a-button>
@@ -527,6 +527,12 @@
         this.$refs.modalForm.title = "新增";
         this.$refs.modalForm.disableSubmit = false;
       },
+      // 手机端新增：统一跳转商品编辑页（页内自动进入新增模式）
+      handleMobileAdd: function () {
+        sessionStorage.removeItem('materialEditRecord')
+        sessionStorage.removeItem('materialEditFrom')
+        this.$router.push('/material/edit')
+      },
       handleEdit: function (record) {
         // 手机端：跳转到商品编辑页，加载当前商品及其所有SKU
         sessionStorage.setItem('materialEditRecord', JSON.stringify(record))
@@ -864,6 +870,11 @@
     margin-top: 24px;
   }
 
+  /* 左侧筛选按钮只占自身宽度，搜索栏整体左移并加宽贴近筛选按钮 */
+  .mobile-bottom-bar /deep/ .mbb-left {
+    flex: 0 0 auto;
+    margin-right: 2px;
+  }
   /* 底边栏搜索区：胶囊输入框 + 内嵌相机 AI + 搜索文字按钮 */
   .ml-search-bar {
     flex: 1;
@@ -939,10 +950,12 @@
   }
   .ml-search-btn {
     flex-shrink: 0;
-    font-size: 14px;
+    font-size: 17px;
     color: #e94d4d;
-    font-weight: 500;
-    padding: 0 2px;
+    font-weight: 600;
+    padding: 0 8px;
+    line-height: 1;
+    white-space: nowrap;
     cursor: pointer;
     user-select: none;
   }

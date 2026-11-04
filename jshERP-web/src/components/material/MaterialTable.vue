@@ -54,11 +54,6 @@
   <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
   <div v-if="isMobileView" class="mt-mobile-list">
     <div v-for="row in mobileList" :key="row.skuRowKey || row.id" class="mt-mobile-card">
-      <!-- 右上角多选：勾选当前卡片，支持批量操作 -->
-      <a-checkbox
-        class="mt-mobile-checkbox"
-        :checked="mobileSelectedKeys.indexOf(row.skuRowKey || row.id) > -1"
-        @change="onPickMobileRow(row)" />
       <div class="mt-mobile-main">
         <div class="mt-mobile-top">
           <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
@@ -79,7 +74,14 @@
           <span>零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}</span>
         </div>
       </div>
-      <div v-if="visibleActions(row).length > 0" class="mt-mobile-actions">
+      <div class="mt-mobile-actions">
+        <!-- 多选：无外框，仅勾图标，未选灰色、选中变主题色 -->
+        <span
+          class="mt-mobile-check"
+          :class="{ 'is-checked': mobileSelectedKeys.indexOf(row.skuRowKey || row.id) > -1 }"
+          @click.stop="onPickMobileRow(row)">
+          <a-icon type="check" />
+        </span>
         <a-button
           v-for="(act, i) in visibleActions(row)"
           :key="'mact-' + i"
@@ -427,13 +429,21 @@
     padding: 8px;
     margin-bottom: 8px;
   }
-  /* 卡片右上角多选 checkbox */
-  .mt-mobile-checkbox {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 2;
-    transform: scale(1.2);
+  /* 多选：无外框，仅保留勾图标；未选灰色，选中主题色 */
+  .mt-mobile-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    font-size: 20px;
+    line-height: 1;
+    color: #c8c9cc;
+    cursor: pointer;
+    transition: color .2s;
+  }
+  .mt-mobile-check.is-checked {
+    color: #1890ff;
   }
   .mt-mobile-main {
     flex: 1;
@@ -503,17 +513,16 @@
       flex-shrink: 0;
     }
   }
-  /* 操作按钮：右侧一列垂直排列的图标按钮 */
+  /* 操作列：占满卡片高度，多选 / 编辑 / 打印 垂直等距、水平居中，上下留白与卡片内边距对称 */
   .mt-mobile-actions {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 24px;
-    margin-left: 8px;
-    padding-left: 8px;
-    /* 右上角留出单选框位置，按钮整体下移 */
-    padding-top: 26px;
+    justify-content: space-between;
+    align-self: stretch;
+    width: 40px;
+    margin-left: 6px;
+    padding-left: 6px;
     border-left: 1px dashed #F0F2F5;
     flex-shrink: 0;
   }

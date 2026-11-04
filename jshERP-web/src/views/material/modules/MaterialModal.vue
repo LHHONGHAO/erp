@@ -166,22 +166,23 @@
                       {{ attr.name }}
                     </a-select-option>
                   </a-select>
-                  <a-switch
-                    size="small"
-                    :checked="module.enableImage"
-                    :disabled="specLocked"
-                    @change="onToggleSpecImage(mIndex, $event)"
-                    style="margin: 0 8px 0 20px;" />
-                  <span class="spec-header-label">添加规格图片</span>
-                  <a-button
-                    v-if="!specLocked"
-                    type="link"
-                    @click="removeSpecModule(mIndex)"
-                    class="spec-header-delete"
-                    style="color: #1890ff; padding: 0;">
-                    <a-icon type="delete" style="color: #1890ff;" />
-                    <span style="font-size: 14px; color: #1890ff;">删除</span>
-                  </a-button>
+                  <div class="spec-header-right">
+                    <a-switch
+                      size="small"
+                      :checked="module.enableImage"
+                      :disabled="specLocked"
+                      @change="onToggleSpecImage(mIndex, $event)" />
+                    <span class="spec-header-label">添加规格图片</span>
+                    <a-button
+                      v-if="!specLocked"
+                      type="link"
+                      @click="removeSpecModule(mIndex)"
+                      class="spec-header-delete"
+                      style="color: #1890ff; padding: 0;">
+                      <a-icon type="delete" style="color: #1890ff;" />
+                      <span style="font-size: 14px; color: #1890ff;">删除</span>
+                    </a-button>
+                  </div>
                 </div>
                 <!-- 分割线 -->
                 <div class="spec-divide"></div>
@@ -191,7 +192,9 @@
                     <div v-for="(val, vIndex) in module.values" :key="vIndex" class="spec-value-row">
                       <!-- 普通规格值：输入框 → 图片方块 → 删除 -->
                       <template v-if="!module.childNames || module.childNames.length === 0">
+                        <span v-if="specLocked" class="spec-value-readonly">{{ val.text || '—' }}</span>
                         <a-input
+                          v-else
                           v-model="val.text"
                           placeholder="请输入"
                           style="width: 220px;"
@@ -206,6 +209,7 @@
                           </div>
                         </div>
                         <a-button
+                          v-if="!specLocked"
                           type="link"
                           size="small"
                           @click="removeSpecValue(mIndex, vIndex)"
@@ -240,13 +244,11 @@
                             <a-icon type="delete" style="color: #1890ff;" />
                           </a-button>
                         </div>
-                        <span class="spec-composite-preview" v-if="val.text">组合值：{{ val.text }}</span>
-                      </div>
                     </div>
                   </div>
                 </div>
-                <!-- 底部：添加规格值 -->
-                <div class="spec-bottom">
+                <!-- 底部：添加规格值（规格由类别锁定时只读，不提供新增入口） -->
+                <div class="spec-bottom" v-if="!specLocked">
                   <a-button type="link" @click="addSpecValue(mIndex)" class="spec-add-value-btn">
                     <a-icon type="plus" />
                     <span>添加规格值</span>
@@ -371,7 +373,6 @@
                 <div v-if="isMobileView" class="mm-sku-cards">
                   <div v-for="(row, rIndex) in meTable.dataSource" :key="rIndex" class="mm-sku-card">
                     <div class="mm-sku-card-head">
-                      <span class="mm-sku-card-title">规格块 {{ rIndex + 1 }}</span>
                       <span class="mm-sku-card-spec">{{ getSkuCardSpecText(row) }}</span>
                     </div>
                     <div v-for="col in meTable.columns" :key="col.key" class="mm-sku-card-field">
@@ -508,6 +509,7 @@
         categorySelected: false, // 是否已选择类别
         lastCategoryId: undefined, // 上一次有效的类别值（点击「新增品类」后用于还原）
         specLocked: false, // 规格是否锁定（从类别配置加载后禁止修改规格名称及增删）
+        categoryImageStatePending: false, // 编辑时待按类别配置同步“添加规格图片”开关状态
         maxBarCodeInfo: '', //最大条码
         meDeleteIdList: [], //删除条码信息的id数组
         prefixNo: 'material',
@@ -935,6 +937,8 @@
           }
         });
         this.initMaterialAttribute()
+        // 编辑商品：类别树加载完成后，按商品所属类别的规格配置同步图片按钮状态
+        this.categoryImageStatePending = !!this.model.id && !!this.model.categoryId
         this.loadTreeData()
         // 加载子表数据
         if (this.model.id) {
@@ -1658,6 +1662,44 @@
               let temp = res[i];
               that.categoryTree.push(temp);
             }
+            that.applyCategoryImageStateFromCategory();
+          }
+        })
+      },
+      /**
+       * 编辑商品时，按商品所属类别的规格配置同步「添加规格图片」按钮状态，
+       * 保证以编辑方式打开时开关状态与点击进入时的类别配置一致。
+       */
+      applyCategoryImageStateFromCategory() {
+        if (!this.categoryImageStatePending) return
+        this.categoryImageStatePending = false
+        if (!this.model || !this.model.categoryId || !this.specModules.length) return
+        const node = this.findNodeById(this.categoryTree, this.model.categoryId)
+        if (!node || !node.specConfig) return
+        let specs = []
+        try {
+          specs = JSON.parse(node.specConfig)
+        } catch (e) {
+          return
+        }
+        if (!Array.isArray(specs) || specs.length === 0) return
+        // 类别已配置规格：编辑商品时同样锁定规格名称与规格值（只读展示）
+        this.specLocked = true
+        // 商品尚未加载规格模块时，直接按类别配置补全
+        if (!this.specModules || this.specModules.length === 0) {
+          this.specModules = this.buildSpecModulesFromCategory(specs)
+        }
+        const imageMap = {}
+        specs.forEach(item => {
+          if (typeof item === 'string') {
+            imageMap[item] = false
+          } else if (item && item.name) {
+            imageMap[item.name] = !!item.enableImage
+          }
+        })
+        this.specModules.forEach(m => {
+          if (Object.prototype.hasOwnProperty.call(imageMap, m.name)) {
+            m.enableImage = imageMap[m.name]
           }
         })
       },
@@ -1692,6 +1734,32 @@
         }
         return result
       },
+      // 按类别规格配置构建只读规格模块（规格名与规格值均来自类别配置）
+      buildSpecModulesFromCategory(categorySpecs) {
+        return categorySpecs.map(function(item) {
+          if (typeof item === 'string') {
+            return { name: item, enableImage: false, childNames: [], values: [{ text: '', image: '', subValues: {} }] }
+          }
+          // 类别中的 childNames 存的是该规格的规格值，直接作为规格值行展示
+          let rawValues = Array.isArray(item.childNames) ? item.childNames : []
+          let categoryValues = rawValues
+            .map(function(v) {
+              if (typeof v === 'string') return v
+              return (v && (v.name || v.value || v.text)) || ''
+            })
+            .filter(function(v) { return !!v })
+          return {
+            name: item.name || '',
+            enableImage: !!item.enableImage,
+            childNames: [],
+            values: categoryValues.length
+              ? categoryValues.map(function(v) {
+                  return { text: v, image: '', subValues: {} }
+                })
+              : [{ text: '', image: '', subValues: {} }]
+          }
+        })
+      },
       // 类别变更：自动加载父级类目规格配置
       handleCategoryChange(value) {
         // 点击下拉中的「＋ 新增品类」：打开类别新增弹窗，并还原原来的类别选择
@@ -1723,18 +1791,8 @@
             categorySpecs = []
           }
           if (categorySpecs.length > 0) {
-            // Load category-defined cards, preserving configured values and images.
-            this.specModules = categorySpecs.map(function(item) {
-              if (typeof item === 'string') {
-                return { name: item, enableImage: false, childNames: [], values: [{ text: '', image: '', subValues: {} }] }
-              }
-              return {
-                name: item.name || '',
-                enableImage: !!item.enableImage,
-                childNames: Array.isArray(item.childNames) ? item.childNames.slice() : [],
-                values: [{ text: '', image: '', subValues: {} }]
-              }
-            })
+            // 类目已配置规格：规格名与规格值均直接取自类目配置，只读展示，不再提供选择/编辑
+            this.specModules = this.buildSpecModulesFromCategory(categorySpecs)
             this.categorySelected = true
             this.specLocked = true
             this.onSpecChange()
@@ -1751,8 +1809,10 @@
       },
       // 递归查找节点
       findNodeById(nodes, id) {
+        if (id === null || id === undefined) return null
+        const target = String(id)
         for (let i = 0; i < nodes.length; i++) {
-          if (nodes[i].id === id || nodes[i].key === id || nodes[i].value === id) {
+          if (String(nodes[i].id) === target || String(nodes[i].key) === target || String(nodes[i].value) === target) {
             return nodes[i]
           }
           if (nodes[i].children && nodes[i].children.length > 0) {
@@ -2485,6 +2545,7 @@
         Vue.ls.set('material_base_property_config', configSnapshot, 365 * 24 * 60 * 60 * 1000)
         Vue.ls.set('material_base_property_cols', this.propertyConfigCols, 365 * 24 * 60 * 60 * 1000)
         Vue.ls.set('material_base_property_order', this.propertyConfigSelected, 365 * 24 * 60 * 60 * 1000)
+        const self = this
         postAction('/platformConfig/saveUiConfig', {
           key: 'material_base_property_setting',
           value: JSON.stringify({
@@ -2492,7 +2553,15 @@
             cols: this.propertyConfigCols,
             order: this.propertyConfigSelected
           })
-        }).catch(() => {})
+        }).then(res => {
+          if (res && res.code === 200) {
+            self.$message.success('属性设置已同步到服务器')
+          } else {
+            self.$message.warning('属性设置仅保存在本机，同步服务器失败：' + ((res && res.data) || '未知原因'))
+          }
+        }).catch(() => {
+          self.$message.warning('属性设置仅保存在本机，同步服务器失败，请检查网络')
+        })
         this.propertyConfigVisible = false
       },
       handlePropertyConfigReset() {
@@ -2561,7 +2630,15 @@
   .spec-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding-bottom: 12px;
+  }
+  /* 添加图片按钮：位于卡片右侧，与标题上下居中对齐 */
+  .spec-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
   }
   .spec-header-name {
     display: inline-block;
@@ -2569,14 +2646,25 @@
     color: #333;
     font-weight: 500;
   }
+  /* 规格由类别锁定后：规格值只读展示 */
+  .spec-value-readonly {
+    display: inline-flex;
+    align-items: center;
+    width: 220px;
+    min-height: 32px;
+    color: #333;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .spec-header-label {
     font-size: 14px;
     color: #333;
-    margin-right: 20px;
     white-space: nowrap;
   }
   .spec-header-delete {
-    margin-left: auto;
+    margin-left: 8px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -2612,6 +2700,8 @@
     margin-bottom: 8px;
     width: 50%;
     padding-right: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #f0f0f0;
     box-sizing: border-box;
   }
   .spec-composite-value {
@@ -2632,12 +2722,6 @@
   .spec-composite-value ::v-deep .ant-input {
     width: 220px;
     flex: 0 0 220px;
-  }
-  .spec-composite-preview {
-    display: block;
-    color: #888;
-    font-size: 12px;
-    margin-top: 3px;
   }
   /* 图片上传方块 */
   .spec-value-img-upload {
@@ -3071,12 +3155,12 @@
   .mm-page-tab.active .mm-page-tab-bar {
     background: #1890ff;
   }
-  /* 手机端：属性标题与输入框同行显示 */
+  /* 手机端：属性标题与输入框同行显示，标题与内容底边对齐，输入框高度压缩 */
   .mm-pages.is-mobile ::v-deep .ant-form-item {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     margin-bottom: 0;
-    padding: 10px 0;
+    padding: 6px 0;
     border-bottom: 1px solid #e8e8e8;
   }
   .mm-pages.is-mobile ::v-deep .ant-form-item-label {
@@ -3089,7 +3173,32 @@
   }
   .mm-pages.is-mobile ::v-deep .ant-form-item-label > label {
     white-space: nowrap;
-    line-height: 1.3;
+    font-size: 16px;
+    line-height: 28px;
+    padding-bottom: 0;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-input:not(textarea) {
+    height: 28px;
+    line-height: 28px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-input-affix-wrapper {
+    height: 28px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-input-affix-wrapper .ant-input {
+    height: 26px;
+    line-height: 26px;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-select-selection {
+    height: 28px;
+  }
+  .mm-pages.is-mobile ::v-deep .ant-select-selection__rendered,
+  .mm-pages.is-mobile ::v-deep .ant-select-selection-selected-value,
+  .mm-pages.is-mobile ::v-deep .ant-select-selection__placeholder {
+    line-height: 28px;
   }
   .mm-pages.is-mobile ::v-deep .ant-input-group-addon {
     white-space: nowrap;
@@ -3102,21 +3211,29 @@
     width: auto !important;
     min-width: 0;
   }
-  /* 手机端：规格大类换行，规格值单列显示 */
+  /* 手机端：规格大类不换行，添加图片按钮居右并与标题垂直居中 */
   .mm-pages.is-mobile .spec-header {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .mm-pages.is-mobile .spec-header-name {
-    width: 100%;
-    margin-bottom: 8px;
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
   }
   .mm-pages.is-mobile .spec-header ::v-deep .ant-select {
-    width: 100% !important;
-    margin-bottom: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto !important;
+    margin-bottom: 0;
+  }
+  .mm-pages.is-mobile .spec-header-right {
+    flex: none;
+    gap: 6px;
   }
   .mm-pages.is-mobile .spec-header-label {
-    margin-right: 8px;
-    white-space: normal;
+    margin-right: 0;
+    white-space: nowrap;
   }
   .mm-pages.is-mobile .spec-value-row {
     width: 100%;
@@ -3153,30 +3270,33 @@
   .mm-sku-card-head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     padding-bottom: 6px;
     margin-bottom: 6px;
     border-bottom: 1px dashed #eee;
   }
-  .mm-sku-card-title {
-    font-weight: 600;
-    color: #333;
-  }
+  /* 规格组合：从卡片左起一行显示，不换行 */
   .mm-sku-card-spec {
-    font-size: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
     color: #1890ff;
-    text-align: right;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .mm-sku-card-field {
     display: flex;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
   .mm-sku-card-label {
-    flex: 0 0 96px;
-    width: 96px;
+    flex: 0 0 104px;
+    width: 104px;
     color: #666;
-    font-size: 13px;
+    font-size: 16px;
+    line-height: 24px;
     text-align: right;
     white-space: nowrap;
     padding-right: 8px;

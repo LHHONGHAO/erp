@@ -4,10 +4,18 @@ import org.apache.ibatis.annotations.Param;
 
 public interface SequenceMapperEx {
 
-    void updateBuildOnlyNumber();
+    /**
+     * 序列不存在时初始化一行（已存在则不做任何修改）
+     */
+    void insertSequenceIfAbsent(@Param("seqName") String seqName, @Param("remark") String remark);
 
     /**
-     * 获得一个全局唯一的数作为订单号的追加
-     * */
-    Long getBuildOnlyNumber(@Param("seq_name") String seq_name);
+     * 指定序列自增1
+     */
+    void updateBuildOnlyNumberBySeqName(@Param("seqName") String seqName);
+
+    /**
+     * 获取指定序列的当前值
+     */
+    Long getBuildOnlyNumberBySeqName(@Param("seqName") String seqName);
 }

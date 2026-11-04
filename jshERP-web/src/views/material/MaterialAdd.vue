@@ -20,7 +20,7 @@
 <script>
   import MaterialModal from './modules/MaterialModal'
   import { mixinDevice } from '@/utils/mixin.js'
-  import { setMobileHeaderActions, clearMobileHeaderActions } from '@/utils/mobilePageHeader'
+  import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
 
   export default {
     name: 'MaterialAdd',
@@ -63,11 +63,13 @@
     },
     deactivated () {
       clearMobileHeaderActions()
+      clearMobileHeaderTitle()
       document.body.classList.remove('mm-no-pull-refresh')
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.setHeight)
       clearMobileHeaderActions()
+      clearMobileHeaderTitle()
       document.body.classList.remove('mm-no-pull-refresh')
     },
     methods: {
@@ -78,6 +80,11 @@
           { key: 'reset', icon: 'reload', handler: this.handleReset },
           { key: 'save', text: '保存', type: 'primary', handler: this.handleOk }
         ])
+        this.updateHeaderTitle()
+      },
+      // 顶栏标题按当前模式显示（新增与编辑共用本页面）
+      updateHeaderTitle () {
+        setMobileHeaderTitle(this.isEdit ? '编辑商品' : '新增商品')
       },
       // 从 sessionStorage 读取商品数据并加载到表单（编辑模式），否则打开新增表单
       loadRecordFromStorage () {
@@ -107,6 +114,8 @@
       openForm () {
         const form = this.$refs.form
         if (!form) return
+        this.isEdit = false
+        this.updateHeaderTitle()
         form.action = 'add'
         form.disableSubmit = false
         form.showOkFlag = true
@@ -116,20 +125,18 @@
       openEditForm (record) {
         const form = this.$refs.form
         if (!form) return
+        this.isEdit = true
+        this.updateHeaderTitle()
         form.action = 'edit'
         form.disableSubmit = false
         form.showOkFlag = true
         form.edit(record)
       },
-      // 返回加载编辑页面的页面（商品列表）
+      // 返回上一页（商品列表）：直接回退历史记录，避免新增一条历史导致列表与编辑页来回循环
       handleBack () {
-        const from = sessionStorage.getItem('materialEditFrom')
-        if (from) {
-          sessionStorage.removeItem('materialEditFrom')
-          this.$router.push(from)
-        } else {
-          this.$router.back()
-        }
+        sessionStorage.removeItem('materialEditFrom')
+        sessionStorage.removeItem('materialEditRecord')
+        this.$router.back()
       },
       // 保存
       handleOk () {

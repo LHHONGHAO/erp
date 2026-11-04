@@ -1024,9 +1024,9 @@
       // 初始化单据信息：默认日期为当前时间，单据编号由后端序列生成
       initBillForm () {
         this.billForm.operTime = moment()
-        getAction('/sequence/buildNumber').then(res => {
+        getAction('/sequence/buildNumber', {prefixNo: this.prefixNo}).then(res => {
           if (res && res.code === 200) {
-            this.billForm.number = this.prefixNo + res.data.defaultNumber
+            this.billForm.number = res.data.defaultNumber
           }
         })
       },
@@ -1385,32 +1385,49 @@
 .rso-bottom-amount {
   color: #f5222d;
 }
-// 实收输入框：与其它数据同高（24px）、同字号，保证标题与数据上下对齐；inputmode 拉起纯数字键盘
+// 实收输入框：与其它数据同高、同字号，宽度占满所在列，保证标题与数据左右居中对齐
 .rso-bottom-pay-input {
-  width: 88px;
-  height: 24px;
+  width: 100%;
+  max-width: 100%;
+  height: 22px;
   margin: 0;
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 22px;
   text-align: center;
   &:focus {
     border: none;
     box-shadow: none;
   }
 }
-// 结算底栏指标：三个指标在底栏空白处均分，标题底边对齐、数据顶边对齐且与标题居中对齐
+// 结算底栏指标：数量/金额/实收三列等宽均分，标题与数据均按列居中对齐，字号适当缩小
 .rso-settle-metrics {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: stretch;
+  margin-left: -10px;
   .rso-bottom-item {
     flex: 1 1 0;
+    min-width: 0;
     align-items: center;
+    justify-content: center;
+  }
+  .rso-bottom-label {
+    width: 100%;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+  }
+  .rso-bottom-value {
+    width: 100%;
+    font-size: 14px;
+    line-height: 22px;
+    text-align: center;
   }
 }
 // 扫码入口：固定在底栏中间，直径与底栏高度一致

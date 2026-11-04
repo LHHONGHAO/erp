@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
@@ -29,16 +30,18 @@ public class SequenceController {
 
     /**
      * 单据编号生成接口
+     * @param prefixNo 单据类型前缀，如 LSCK
      * @param request
      * @return
      */
     @GetMapping(value = "/buildNumber")
     @ApiOperation(value = "单据编号生成接口")
-    public BaseResponseInfo buildNumber(HttpServletRequest request)throws Exception {
+    public BaseResponseInfo buildNumber(@RequestParam(value = "prefixNo", required = false) String prefixNo,
+                                        HttpServletRequest request)throws Exception {
         BaseResponseInfo res = new BaseResponseInfo();
         Map<String, Object> map = new HashMap<String, Object>();
         try {
-            String number = sequenceService.buildOnlyNumber();
+            String number = sequenceService.buildOnlyNumber(prefixNo);
             map.put("defaultNumber", number);
             res.code = 200;
             res.data = map;

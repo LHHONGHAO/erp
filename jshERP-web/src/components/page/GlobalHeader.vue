@@ -122,6 +122,10 @@
         return this.$route.path === '/dashboard/analysis'
       },
       mobileTitle() {
+        // 页面可通过 setMobileHeaderTitle 覆盖标题（如新增/编辑共用同一页面）
+        if (mobilePageHeader.title) {
+          return mobilePageHeader.title
+        }
         return (this.$route.meta && this.$route.meta.title) || this.systemTitle
       },
       // 当前页面注册的手机端顶部按钮

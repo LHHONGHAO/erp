@@ -1925,7 +1925,7 @@ public class DepotHeadService {
             }
             depotHead.setLinkNumber(oldNumber);
             //给单号重新赋值
-            String number = prefixNo + sequenceService.buildOnlyNumber();
+            String number = sequenceService.buildOnlyNumber(prefixNo);
             depotHead.setNumber(number);
             depotHead.setDefaultNumber(number);
             depotHead.setOperTime(new Date());

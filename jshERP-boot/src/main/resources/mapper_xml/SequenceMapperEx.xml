@@ -2,12 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.jsh.erp.datasource.mappers.SequenceMapperEx">
 
-    <update id="updateBuildOnlyNumber">
-        update jsh_sequence set current_val = current_val + 1 where seq_name = 'depot_number_seq'
+    <insert id="insertSequenceIfAbsent">
+        insert into jsh_sequence (seq_name, min_value, max_value, current_val, increment_val, remark)
+        values (#{seqName}, 1, 999999999999999999, 0, 1, #{remark})
+        on duplicate key update seq_name = seq_name
+    </insert>
+
+    <update id="updateBuildOnlyNumberBySeqName">
+        update jsh_sequence set current_val = current_val + 1 where seq_name = #{seqName}
     </update>
 
-    <select id="getBuildOnlyNumber" resultType="java.lang.Long">
-      select current_val from jsh_sequence where seq_name = 'depot_number_seq'
+    <select id="getBuildOnlyNumberBySeqName" resultType="java.lang.Long">
+        select current_val from jsh_sequence where seq_name = #{seqName}
     </select>
 
 </mapper>

@@ -13,7 +13,7 @@
       :wrapClassName="wrapClassNameInfo() + (isMobile() ? ' mcm-mobile-modal' : '')"
       :mask="isDesktop()"
       :maskClosable="false"
-      :style="isMobile() ? { top: '0', height: '100%' } : { top: '100px', height: '50%' }"
+      :style="isMobile() ? { top: '0', height: '100%' } : { top: '100px' }"
       @ok="handleOk"
       @cancel="handleCancel"
       cancelText="取消"
@@ -48,12 +48,14 @@
           </a-form-item>
           <!-- 类别规格配置 -->
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="规格配置" v-show="isFirstLevel" class="mcm-spec-item">
-            <div v-for="(module, mIndex) in specModules" :key="mIndex" style="border:1px solid #eee;border-radius:4px;padding:10px;margin-top:10px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <a-input v-model="module.name" style="width:220px" placeholder="请输入规格名称" />
-                <a-switch size="small" v-model="module.enableImage" />
-                <span>可添加规格图片</span>
-                <a-button type="link" size="small" @click="removeSpecModule(mIndex)"><a-icon type="delete" /></a-button>
+            <div v-for="(module, mIndex) in specModules" :key="mIndex" class="mcm-spec-card">
+              <div class="mcm-spec-card-head">
+                <a-input v-model="module.name" class="mcm-spec-name" placeholder="请输入规格名称" />
+                <div class="mcm-spec-card-head-right">
+                  <a-switch size="small" v-model="module.enableImage" />
+                  <span class="mcm-spec-switch-label">可添加规格图片</span>
+                  <a-button type="link" size="small" class="mcm-spec-card-del" @click="removeSpecModule(mIndex)"><a-icon type="delete" /></a-button>
+                </div>
               </div>
             </div>
             <div style="margin-top:8px;">
@@ -293,7 +295,7 @@
     display: flex;
     align-items: center;
     margin-bottom: 0;
-    padding: 10px 0;
+    padding: 8px 0;
     border-bottom: 1px solid #e8e8e8;
   }
   .mcm-mobile-modal .ant-form-item-label {
@@ -305,6 +307,8 @@
   }
   .mcm-mobile-modal .ant-form-item-label > label {
     color: #333;
+    font-size: 16px;
+    line-height: 24px;
     white-space: nowrap;
   }
   .mcm-mobile-modal .ant-form-item-control-wrapper {
@@ -324,6 +328,37 @@
   }
   .mcm-mobile-modal .mcm-spec-item .ant-input {
     width: 100% !important;
+  }
+  /* 规格卡片：名称在左，图片按钮与删除按钮位于右侧并与标题垂直居中 */
+  .mcm-spec-card {
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+  .mcm-spec-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .mcm-spec-card-head-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+  .mcm-spec-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .mcm-spec-switch-label {
+    font-size: 14px;
+    color: #333;
+    white-space: nowrap;
+  }
+  .mcm-spec-card-del {
+    padding: 0;
   }
 </style>
 

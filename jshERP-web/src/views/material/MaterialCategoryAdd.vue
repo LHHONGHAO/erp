@@ -30,9 +30,11 @@
           <div v-for="(module, mIndex) in specModules" :key="mIndex" class="mca-spec-card">
             <div class="mca-spec-card-head">
               <a-input v-model="module.name" class="mca-spec-name" placeholder="请输入规格名" />
-              <a-switch size="small" v-model="module.enableImage" />
-              <span class="mca-spec-switch-label">添加规格图片</span>
-              <a-icon type="delete" class="mca-spec-card-del" @click="removeSpecModule(mIndex)" />
+              <div class="mca-spec-card-head-right">
+                <a-switch size="small" v-model="module.enableImage" />
+                <span class="mca-spec-switch-label">添加规格图片</span>
+                <a-icon type="delete" class="mca-spec-card-del" @click="removeSpecModule(mIndex)" />
+              </div>
             </div>
             <div class="mca-spec-divider"></div>
             <div
@@ -246,7 +248,16 @@
   .mca-spec-card-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
+  }
+
+  /* 添加图片按钮：位于卡片右侧，与卡片标题上下居中对齐 */
+  .mca-spec-card-head-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
   }
 
   .mca-spec-name {
@@ -255,8 +266,8 @@
   }
 
   .mca-spec-switch-label {
-    font-size: 12px;
-    color: #666;
+    font-size: 14px;
+    color: #333;
     white-space: nowrap;
   }
 
@@ -277,11 +288,13 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #f0f0f0;
   }
 
   .mca-spec-value-label {
     flex: 0 0 auto;
-    font-size: 13px;
+    font-size: 16px;
     color: #333;
     white-space: nowrap;
   }
@@ -328,7 +341,7 @@
     display: flex;
     align-items: center;
     margin-bottom: 0;
-    padding: 10px 0;
+    padding: 8px 0;
     border-bottom: 1px solid #e8e8e8;
   }
   .mca-page .ant-form-item-label {
@@ -340,6 +353,8 @@
   }
   .mca-page .ant-form-item-label > label {
     color: #333;
+    font-size: 16px;
+    line-height: 24px;
     white-space: nowrap;
   }
   .mca-page .ant-form-item-control-wrapper {

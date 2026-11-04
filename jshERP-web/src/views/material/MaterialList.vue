@@ -1,6 +1,119 @@
 <!-- by 7527189 2 0 -->
 <template>
-  <a-row :gutter="24" class="material-list-page">
+  <!-- ==================== 手机端布局 ==================== -->
+  <div v-if="isMobile" class="ml-mobile-page">
+    <!-- 蓝色顶栏 49px -->
+    <div class="ml-mobile-header">
+      <a-icon type="left" class="ml-mobile-back" @click="$router.back()" />
+      <span class="ml-mobile-title">商品信息</span>
+      <div class="ml-mobile-header-actions">
+        <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" @click="handleAdd">新增</a-button>
+        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="delete" @click="mobileBatchDel">删除</a-button>
+        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="check-square" @click="mobileBatchSetStatus(true)">启用</a-button>
+        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="close-square" @click="mobileBatchSetStatus(false)">禁用</a-button>
+        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" @click="handleImportXls()">导入</a-button>
+        <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" @click="handleExportXls('商品信息')">导出</a-button>
+      </div>
+    </div>
+
+    <!-- 中间卡片列表区域，底部留出底边栏空间 -->
+    <div class="ml-mobile-body">
+      <material-table
+        ref="mobileTable"
+        table-key="material_list_mobile"
+        storage-key="columns_material_mobile"
+        :dimension="displayMode"
+        :actions="rowActions"
+        :data-source="tableRows"
+        :pagination="ipagination"
+        :scroll="scroll"
+        :loading="loading"
+        @row-selection-change="onMobileSelectionChange"
+        @change="handleTableChange">
+      </material-table>
+    </div>
+
+    <!-- 条件筛选抽屉 -->
+    <a-drawer
+      :visible="filterDrawerVisible"
+      placement="right"
+      title="条件筛选"
+      width="280"
+      @close="filterDrawerVisible = false">
+      <div class="ml-filter-item">
+        <span class="ml-filter-label">显示方式</span>
+        <a-radio-group v-model="displayMode" @change="onDisplayModeChange">
+          <a-radio-button value="spu">单类</a-radio-button>
+          <a-radio-button value="sku">单品</a-radio-button>
+        </a-radio-group>
+      </div>
+      <div class="ml-filter-item">
+        <span class="ml-filter-label">商品类别</span>
+        <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
+          :treeData="categoryTree" v-model="queryParam.categoryId" placeholder="请选择类别">
+        </a-tree-select>
+      </div>
+      <div class="ml-filter-item">
+        <span class="ml-filter-label">状态</span>
+        <a-select style="width:100%" placeholder="请选择状态" v-model="queryParam.enabled">
+          <a-select-option value="1">启用</a-select-option>
+          <a-select-option value="0">禁用</a-select-option>
+        </a-select>
+      </div>
+      <div class="ml-filter-footer">
+        <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
+      </div>
+    </a-drawer>
+
+    <!-- 全屏扫码界面 -->
+    <div v-if="scanVisible" class="ml-scan-fullscreen">
+      <cert-install-guide v-if="certGuideVisible" @close="closeCertGuide" @retry="retryScan" />
+      <div class="ml-scan-stage" @click="onScanTap">
+        <video ref="scanVideo" class="ml-scan-video" autoplay playsinline muted></video>
+        <canvas ref="scanOverlay" class="ml-scan-overlay"></canvas>
+        <!-- 取景框 -->
+        <div class="ml-scan-guide"></div>
+        <!-- 扫描线 -->
+        <div class="ml-scan-line"></div>
+      </div>
+      <div class="ml-scan-header">
+        <a-icon type="close" @click="closeScanner" />
+        <span>扫码识别</span>
+      </div>
+      <div class="ml-scan-footer">
+        <span v-if="scanError" class="ml-scan-error">{{ scanError }}</span>
+        <span v-else class="ml-scan-hint">将条码/二维码对准取景框</span>
+      </div>
+    </div>
+
+    <!-- 标准手机底边栏 -->
+    <mobile-bottom-bar>
+      <template #left>
+        <a-button size="small" icon="filter" @click="filterDrawerVisible = true">筛选</a-button>
+      </template>
+      <div class="ml-search-bar">
+        <a-input
+          v-model="mobileSearchKeyword"
+          placeholder="条码/名称/助记码"
+          class="ml-search-input"
+          @keyup.enter.native="mobileSearch">
+          <a-icon slot="suffix" type="scan" class="ml-scan-icon" @click="openScanner" />
+        </a-input>
+      </div>
+      <template #right>
+        <a-button type="primary" size="small" @click="mobileSearch">搜索</a-button>
+      </template>
+    </mobile-bottom-bar>
+
+    <!-- 弹窗组件（手机端也复用） -->
+    <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
+    <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
+    <label-edit-modal ref="labelEditModal"></label-edit-modal>
+    <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+  </div>
+
+  <!-- ==================== 电脑端布局（保持原样） ==================== -->
+  <a-row v-else :gutter="24" class="material-list-page">
     <a-col :md="24">
       <a-card :style="cardStyle" :bordered="false">
         <!-- 查询区域 -->
@@ -147,9 +260,6 @@
           <a-button v-if="btnEnableList.indexOf(1)>-1" @click="batchSetStatus(false)" icon="close-square">禁用</a-button>
           <a-button v-if="btnEnableList.indexOf(1)>-1" @click="handleImportXls()" icon="import">导入</a-button>
           <a-button v-if="btnEnableList.indexOf(3)>-1" @click="handleExportXls('商品信息')" icon="download">导出</a-button>
-          <a-button v-if="btnEnableList.indexOf(1)>-1" @click="batchEdit()" icon="edit">批量编辑</a-button>
-          <a-button v-if="btnEnableList.indexOf(1)>-1" @click="batchSetMaterialCurrentStock()" icon="stock">修正库存</a-button>
-          <a-button v-if="btnEnableList.indexOf(1)>-1" @click="batchSetMaterialCurrentUnitPrice()" icon="fund">修正成本</a-button>
         </div>
         <!-- table区域-begin -->
         <div>
@@ -176,7 +286,6 @@
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
         <label-edit-modal ref="labelEditModal"></label-edit-modal>
         <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
-        <batch-set-info-modal ref="batchSetInfoModalForm" @ok="modalFormOk"></batch-set-info-modal>
       </a-card>
     </a-col>
   </a-row>
@@ -184,7 +293,6 @@
 <script>
   import MaterialModal from './modules/MaterialModal'
   import ImportFileModal from '@/components/tools/ImportFileModal'
-  import BatchSetInfoModal from './modules/BatchSetInfoModal'
   import LabelEditModal from './modules/LabelEditModal'
   import LabelPrintModal from './modules/LabelPrintModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
@@ -192,6 +300,9 @@
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
+  import MobileBottomBar from '@/components/mobile/MobileBottomBar'
+  import CertInstallGuide from '@/views/bill/modules/CertInstallGuide'
+  import { SCANNER_STATE } from '@/types/scanner'
   import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
   import Vue from 'vue'
 
@@ -201,13 +312,16 @@
     components: {
       MaterialModal,
       ImportFileModal,
-      BatchSetInfoModal,
       LabelEditModal,
       LabelPrintModal,
-      MaterialTable
+      MaterialTable,
+      MobileBottomBar,
+      CertInstallGuide
     },
     data () {
       return {
+        /** 是否是手机浏览器（<=768px） */
+        isMobile: false,
         categoryTree:[],
         mPropertyListShort: '',
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
@@ -270,12 +384,43 @@
           batchSetStatusUrl: "/material/batchSetStatus",
           batchSetMaterialCurrentStockUrl: "/material/batchSetMaterialCurrentStock",
           batchSetMaterialCurrentUnitPriceUrl: "/material/batchSetMaterialCurrentUnitPrice",
-        }
+        },
+
+        // ============ 手机端专属数据 ============
+        /** 条件筛选抽屉是否可见 */
+        filterDrawerVisible: false,
+        /** 底边栏搜索框内的关键词（手机端用，实时同步到 queryParam.materialParam） */
+        mobileSearchKeyword: '',
+        /** 手机端多选的商品ID数组（去重后） */
+        mobileSelectedMaterialIds: [],
+        /** 全屏扫码界面 */
+        scanVisible: false,
+        /** 扫码状态机 */
+        scanState: SCANNER_STATE.INITIAL,
+        /** 摄像头权限获取失败时展示证书安装说明 */
+        certGuideVisible: false,
+        /** 扫码过程中的错误信息 */
+        scanError: '',
+        /** 摄像头流 */
+        scanStream: null,
+        /** 扫码循环定时器 */
+        scanTimer: null,
       }
     },
     created() {
       this.model = Object.assign({}, {});
       this.loadTreeData()
+    },
+    mounted() {
+      this.isMobile = window.innerWidth <= 768
+      this._onResize = () => {
+        this.isMobile = window.innerWidth <= 768
+      }
+      window.addEventListener('resize', this._onResize)
+    },
+    beforeDestroy() {
+      window.removeEventListener('resize', this._onResize)
+      this.closeScanner()
     },
     computed: {
       importExcelUrl: function () {
@@ -299,6 +444,7 @@
       }
     },
     methods: {
+      // ============ 通用方法（电脑端） ============
       // 选中行：转为商品ID（同一商品多个SKU行时去重）
       onSelectChange(selectedRowKeys, selectionRows) {
         this.selectedRowKeys = selectedRowKeys
@@ -361,80 +507,6 @@
           }
         })
       },
-      batchSetMaterialCurrentStock () {
-        if (this.selectedMaterialIds.length <= 0) {
-          this.$message.warning('请选择一条记录！');
-        } else {
-          let ids = "";
-          for (let a = 0; a < this.selectedMaterialIds.length; a++) {
-            ids += this.selectedMaterialIds[a] + ",";
-          }
-          let that = this;
-          this.$confirm({
-            title: "确认操作",
-            content: "是否操作选中数据?",
-            onOk: function () {
-              that.loading = true;
-              postAction(that.url.batchSetMaterialCurrentStockUrl, {ids: ids}).then((res) => {
-                if(res.code === 200){
-                  that.$message.info('修正库存成功！');
-                  that.loadData();
-                  that.onClearSelected();
-                } else {
-                  that.$message.warning(res.data.message);
-                }
-              }).finally(() => {
-                that.loading = false;
-              });
-            }
-          });
-        }
-      },
-      batchSetMaterialCurrentUnitPrice () {
-        if (this.selectedMaterialIds.length <= 0) {
-          this.$message.warning('请选择一条记录！');
-        } else {
-          let ids = "";
-          for (let a = 0; a < this.selectedMaterialIds.length; a++) {
-            ids += this.selectedMaterialIds[a] + ",";
-          }
-          let that = this;
-          this.$confirm({
-            title: "确认操作",
-            content: "是否操作选中数据?",
-            onOk: function () {
-              that.loading = true;
-              postAction(that.url.batchSetMaterialCurrentUnitPriceUrl, {ids: ids}).then((res) => {
-                if(res.code === 200){
-                  that.$message.info('修正成本成功！');
-                  that.loadData();
-                  that.onClearSelected();
-                } else {
-                  that.$message.warning(res.data.message);
-                }
-              }).finally(() => {
-                that.loading = false;
-              });
-            }
-          });
-        }
-      },
-      batchEdit() {
-        if (this.selectedMaterialIds.length <= 0) {
-          this.$message.warning('请选择一条记录！');
-        } else {
-          let ids = "";
-          for (let a = 0; a < this.selectedMaterialIds.length; a++) {
-            if(a === this.selectedMaterialIds.length-1) {
-              ids += this.selectedMaterialIds[a]
-            } else {
-              ids += this.selectedMaterialIds[a] + ','
-            }
-          }
-          this.$refs.batchSetInfoModalForm.edit(ids);
-          this.$refs.batchSetInfoModalForm.title = "批量编辑";
-        }
-      },
       handleAdd: function () {
         this.$refs.modalForm.action = "add";
         this.$refs.modalForm.add();
@@ -484,6 +556,196 @@
         }
         this.loadData(1);
       },
+
+      // ============ 手机端专属方法 ============
+      /** 手机端多选变化回调：MaterialTable 发出 */
+      onMobileSelectionChange(keys, rows) {
+        var ids = []
+        for (var i = 0; i < rows.length; i++) {
+          if (ids.indexOf(rows[i].id) === -1) ids.push(rows[i].id)
+        }
+        this.mobileSelectedMaterialIds = ids
+      },
+      /** 手机端批量删除 */
+      mobileBatchDel() {
+        if (this.mobileSelectedMaterialIds.length <= 0) {
+          this.$message.warning('请先勾选要删除的商品！')
+          return
+        }
+        let ids = this.mobileSelectedMaterialIds.join(',')
+        let that = this
+        this.$confirm({
+          title: "确认操作",
+          content: `确定删除选中的 ${this.mobileSelectedMaterialIds.length} 个商品？`,
+          onOk() {
+            that.loading = true
+            postAction(that.url.deleteBatch, { ids }).then((res) => {
+              if (res.code === 200) {
+                that.$message.info('删除成功！')
+                that.loadData()
+                that.clearMobileSelection()
+              } else {
+                that.$message.warning(res.data && res.data.message ? res.data.message : '删除失败')
+              }
+            }).finally(() => { that.loading = false })
+          }
+        })
+      },
+      /** 手机端批量启/禁用 */
+      mobileBatchSetStatus(status) {
+        if (this.mobileSelectedMaterialIds.length <= 0) {
+          this.$message.warning('请先勾选商品！')
+          return
+        }
+        let ids = this.mobileSelectedMaterialIds.join(',')
+        let that = this
+        this.$confirm({
+          title: "确认操作",
+          content: `确定${status ? '启用' : '禁用'}选中的 ${this.mobileSelectedMaterialIds.length} 个商品？`,
+          onOk() {
+            that.loading = true
+            postAction(that.url.batchSetStatusUrl, { ids, status }).then((res) => {
+              if (res.code === 200) {
+                that.$message.info((status ? '启用' : '禁用') + '成功！')
+                that.loadData()
+                that.clearMobileSelection()
+              } else {
+                that.$message.warning(res.data && res.data.message ? res.data.message : '操作失败')
+              }
+            }).finally(() => { that.loading = false })
+          }
+        })
+      },
+      /** 清空手机端选中 */
+      clearMobileSelection() {
+        this.mobileSelectedMaterialIds = []
+        if (this.$refs.mobileTable && this.$refs.mobileTable.clearMobileSelection) {
+          this.$refs.mobileTable.clearMobileSelection()
+        }
+      },
+      /** 底边栏搜索 */
+      mobileSearch() {
+        this.queryParam.materialParam = this.mobileSearchKeyword
+        this.loadData(1)
+      },
+      /** 筛选抽屉确定 */
+      applyMobileFilter() {
+        this.filterDrawerVisible = false
+        this.loadData(1)
+      },
+
+      // ============ 手机端扫码 ============
+      openScanner() {
+        this.scanVisible = true
+        this.scanError = ''
+        this.scanState = SCANNER_STATE.INITIAL
+        this.certGuideVisible = false
+        this.$nextTick(() => this.startScan())
+      },
+      closeScanner() {
+        this.stopScan()
+        this.scanVisible = false
+        this.certGuideVisible = false
+      },
+      closeCertGuide() {
+        this.certGuideVisible = false
+        this.closeScanner()
+      },
+      retryScan() {
+        this.certGuideVisible = false
+        this.$nextTick(() => this.startScan())
+      },
+      onScanTap() {
+        // 点击取景框不做操作
+      },
+      startScan() {
+        if (!this.cameraAvailable()) {
+          this.scanState = SCANNER_STATE.ERROR
+          this.scanError = '当前页面不是 HTTPS 安全连接，无法申请摄像头权限'
+          this.certGuideVisible = true
+          return
+        }
+        const video = this.$refs.scanVideo
+        if (!video) return
+        const constraints = {
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        }
+        navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+          if (!this.scanVisible) { this.stopStream(stream); return }
+          this.scanStream = stream
+          video.srcObject = stream
+          video.setAttribute('playsinline', 'true')
+          video.play().then(() => {
+            this.scanState = SCANNER_STATE.SCANNING
+            this.scanLoop()
+          }).catch(err => {
+            this.scanError = '视频播放失败'
+            this.stopScan()
+          })
+        }).catch(err => {
+          this.scanState = SCANNER_STATE.ERROR
+          this.scanError = '无法获取摄像头权限：' + (err && err.message ? err.message : '')
+          this.certGuideVisible = true
+        })
+      },
+      cameraAvailable() {
+        return location.protocol === 'https:' ||
+          location.hostname === 'localhost' ||
+          location.hostname === '127.0.0.1'
+      },
+      stopScan() {
+        if (this.scanTimer) {
+          clearTimeout(this.scanTimer)
+          this.scanTimer = null
+        }
+        if (this.scanStream) {
+          this.scanStream.getTracks().forEach(t => t.stop())
+          this.scanStream = null
+        }
+        const video = this.$refs.scanVideo
+        if (video) { video.srcObject = null; try { video.pause() } catch (e) {} }
+      },
+      stopStream(stream) {
+        stream.getTracks().forEach(t => t.stop())
+      },
+      scanLoop() {
+        if (!this.scanVisible || this.scanState !== SCANNER_STATE.SCANNING) return
+        this.scanTimer = setTimeout(() => this.scanOnce(), 200)
+      },
+      scanOnce() {
+        if (!this.scanVisible) return
+        const video = this.$refs.scanVideo
+        if (!video || video.readyState < 2) { this.scanLoop(); return }
+        try {
+          const w = video.videoWidth, h = video.videoHeight
+          if (!w || !h) { this.scanLoop(); return }
+          const canvas = document.createElement('canvas')
+          canvas.width = 640; canvas.height = 480
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const image = canvas.toDataURL('image/jpeg', 0.9)
+          postAction('/material/scanFrame', { image }).then(res => {
+            if (!this.scanVisible) return
+            const codes = (res && res.code === 200 && res.data && res.data.codes) || []
+            if (codes.length > 0) {
+              // 扫到码：填入搜索框并自动搜索
+              const code = codes[0].code
+              this.mobileSearchKeyword = code
+              this.queryParam.materialParam = code
+              this.closeScanner()
+              this.$message.success('识别到条码：' + code)
+              this.loadData(1)
+            } else {
+              this.scanLoop()
+            }
+          }).catch(() => {
+            this.scanLoop()
+          })
+        } catch (e) {
+          this.scanLoop()
+        }
+      },
     }
   }
 </script>
@@ -491,18 +753,189 @@
   @import '~@assets/less/common.less'
 </style>
 <style>
-  /* 手机浏览器：缩小页面左右边距，让商品卡片尽量占满屏宽 */
-  @media (max-width: 768px) {
-    .material-list-page .ant-card-body {
-      padding: 8px !important;
-    }
-    .material-list-page .table-operator {
-      margin-bottom: 8px !important;
-    }
-    .material-list-page .ant-form-item {
-      margin-bottom: 8px !important;
-    }
+  /* ==================== 手机端布局 ==================== */
+  .ml-mobile-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f5f6f7;
+    overflow: hidden;
+    z-index: 10;
   }
+  /* 蓝色顶栏 49px */
+  .ml-mobile-header {
+    flex-shrink: 0;
+    height: 49px;
+    background: #1890ff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 101;
+  }
+  .ml-mobile-back {
+    font-size: 22px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    margin-left: -4px;
+  }
+  .ml-mobile-title {
+    flex: 1;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 49px;
+  }
+  .ml-mobile-header-actions {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 55%;
+  }
+  .ml-mobile-header-actions .ant-btn {
+    padding: 0 6px;
+    font-size: 11px;
+    height: 24px;
+    line-height: 22px;
+  }
+  .ml-mobile-header-actions .ant-btn .anticon {
+    margin-right: 2px;
+    font-size: 12px;
+  }
+  /* 中间内容区 */
+  .ml-mobile-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    padding-bottom: calc(66px + env(safe-area-inset-bottom)); /* 底边栏 58px + 安全区 */
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 条件筛选抽屉样式 */
+  .ml-filter-item {
+    margin-bottom: 20px;
+  }
+  .ml-filter-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+  }
+  .ml-filter-footer {
+    margin-top: 24px;
+  }
+
+  /* 底边栏搜索框 */
+  .ml-search-bar {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .ml-search-input {
+    width: 100%;
+    height: 36px;
+    border-radius: 4px;
+  }
+  .ml-scan-icon {
+    font-size: 18px;
+    color: #1890ff;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  /* 全屏扫码界面 */
+  .ml-scan-fullscreen {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+  }
+  .ml-scan-stage {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ml-scan-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .ml-scan-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .ml-scan-guide {
+    position: absolute;
+    width: 240px;
+    height: 240px;
+    border: 2px solid #1890ff;
+    border-radius: 8px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
+  }
+  .ml-scan-line {
+    position: absolute;
+    width: 240px;
+    height: 2px;
+    background: #1890ff;
+    animation: ml-scan-move 2s ease-in-out infinite;
+  }
+  @keyframes ml-scan-move {
+    0%, 100% { transform: translateY(-100px) }
+    50% { transform: translateY(100px) }
+  }
+  .ml-scan-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    z-index: 10;
+  }
+  .ml-scan-header .anticon {
+    position: absolute;
+    left: 16px;
+    font-size: 22px;
+  }
+  .ml-scan-footer {
+    position: absolute;
+    bottom: 80px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: rgba(255,255,255,0.85);
+    font-size: 14px;
+    z-index: 10;
+  }
+  .ml-scan-error {
+    color: #ff6b6b;
+  }
+
+  /* ==================== 电脑端：删除查询条件后保持的原有样式 ==================== */
   .item-info {
     float:left;
     width:38px;
@@ -528,7 +961,6 @@
     font-size: 12px;
     color: #ccc;
   }
-  /* 规格显示：每个规格单独一行，单列左对齐 */
   .spec-display-cell {
     white-space: pre-line;
     line-height: 18px;
@@ -536,13 +968,7 @@
     text-align: left;
   }
 
-  /* ============================================================
-     抖音来客提券库存页风格（操作列不固定，无 fixed-right 同步逻辑）
-     主表表头 #F7F9FC / 展开行 #FAFBFD / SKU子表头 #F7F9FC / 数据行白底
-     分割线 #F0F2F5
-     ============================================================ */
-
-  /* 主表表头：抖音来客风格（浅灰蓝背景、无边框、14px/500） */
+  /* 主表表头：抖音来客风格 */
   .ant-table-thead > tr > th,
   .ant-table-header > table > .ant-table-thead > tr > th {
     background: #F7F9FC !important;
@@ -552,8 +978,6 @@
     padding: 9px 16px !important;
     border-bottom: 0 none !important;
   }
-
-  /* 展开行：背景 #FAFBFD，无 padding（SKU子表自控制间距） */
   .ant-table-tbody > tr.ant-table-expanded-row > td {
     padding: 0 !important;
     background: #FAFBFD !important;
@@ -565,8 +989,6 @@
     width: 100%;
     box-sizing: border-box;
   }
-
-  /* === SKU 列表样式（div flex布局，抖音来客风格） === */
   .sku-row {
     display: flex;
     align-items: center;
@@ -604,86 +1026,27 @@
     box-sizing: border-box;
     position: relative;
   }
-  .sku-cell-img {
-    width: 80px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-  .sku-cell-code {
-    width: 170px;
-    flex-shrink: 0;
-    text-align: center;
-    font-family: Consolas, Monaco, monospace;
-  }
-  .sku-cell-spec {
-    flex: 1.5;
-    min-width: 100px;
-    text-align: center;
-  }
-  .sku-cell-stock {
-    width: 90px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-  .sku-cell-price {
-    width: 90px;
-    flex-shrink: 0;
-    text-align: center;
-  }
-  .sku-cell-action {
-    width: 180px;
-    flex-shrink: 0;
-    text-align: center;
-    margin-left: auto;
-  }
-  .sku-print-link {
-    color: #1890ff;
-    cursor: pointer;
-  }
-  .sku-print-link:hover {
-    color: #40a9ff;
-  }
-  .sku-img {
-    cursor: pointer;
-    width: 54px;
-    height: 54px;
-    object-fit: cover;
-    border-radius: 4px;
-    vertical-align: middle;
-  }
-  .sku-img-placeholder {
-    display: inline-block;
-    width: 54px;
-    height: 54px;
-    line-height: 54px;
-    text-align: center;
-    font-size: 12px;
-    color: #ccc;
-    background: #f5f5f5;
-    border-radius: 4px;
-  }
-  .sku-empty {
-    text-align: center;
-    padding: 16px;
-    color: #999;
-    font-size: 13px;
-    border-bottom: 1px solid #F0F2F5;
-  }
-  /* SKU列宽拖拽手柄 */
-  .sku-resize-handle {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 6px;
-    cursor: col-resize;
-    z-index: 1;
-  }
-  .sku-resize-handle:hover {
-    background: #1890ff;
-  }
-  .sku-row-header .sku-cell {
-    position: relative;
-    user-select: none;
+  .sku-cell-img { width: 80px; flex-shrink: 0; text-align: center; }
+  .sku-cell-code { width: 170px; flex-shrink: 0; text-align: center; font-family: Consolas, Monaco, monospace; }
+  .sku-cell-spec { flex: 1.5; min-width: 100px; text-align: center; }
+  .sku-cell-stock { width: 90px; flex-shrink: 0; text-align: center; }
+  .sku-cell-price { width: 90px; flex-shrink: 0; text-align: center; }
+  .sku-cell-action { width: 180px; flex-shrink: 0; text-align: center; margin-left: auto; }
+  .sku-print-link { color: #1890ff; cursor: pointer; }
+  .sku-print-link:hover { color: #40a9ff; }
+  .sku-img { cursor: pointer; width: 54px; height: 54px; object-fit: cover; border-radius: 4px; vertical-align: middle; }
+  .sku-img-placeholder { display: inline-block; width: 54px; height: 54px; line-height: 54px; text-align: center; font-size: 12px; color: #ccc; background: #f5f5f5; border-radius: 4px; }
+  .sku-empty { text-align: center; padding: 16px; color: #999; font-size: 13px; border-bottom: 1px solid #F0F2F5; }
+  .sku-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 1; }
+  .sku-resize-handle:hover { background: #1890ff; }
+  .sku-row-header .sku-cell { position: relative; user-select: none; }
+</style>
+<!-- 操作列：宽度已按「按钮总宽 + 20px」计算 -->
+<style>
+  .ant-table-header > table > .ant-table-thead > tr > th.mt-action-col,
+  .ant-table-thead > tr > th.mt-action-col.mt-action-col,
+  .ant-table-tbody > tr > td.mt-action-col.mt-action-col {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 </style>

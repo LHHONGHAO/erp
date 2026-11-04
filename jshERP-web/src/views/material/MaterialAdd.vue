@@ -40,6 +40,8 @@
       this.setHeight()
       window.addEventListener('resize', this.setHeight)
       this.registerHeaderActions()
+      // 录入页禁止下拉刷新，避免手势触发页面重新加载
+      document.body.classList.add('mm-no-pull-refresh')
       this.$nextTick(() => {
         this.loadRecordFromStorage()
       })
@@ -47,6 +49,7 @@
     // keep-alive 激活时重新读取 sessionStorage 中的编辑数据，避免残留上一次编辑的商品
     activated () {
       this.registerHeaderActions()
+      document.body.classList.add('mm-no-pull-refresh')
       // 从「新增品类」路由页返回：保留当前商品录入内容，仅刷新类别树
       if (sessionStorage.getItem('materialCategoryAddReturn')) {
         sessionStorage.removeItem('materialCategoryAddReturn')
@@ -60,10 +63,12 @@
     },
     deactivated () {
       clearMobileHeaderActions()
+      document.body.classList.remove('mm-no-pull-refresh')
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.setHeight)
       clearMobileHeaderActions()
+      document.body.classList.remove('mm-no-pull-refresh')
     },
     methods: {
       // 注册手机端顶部按钮：设置（属性设置）、重置、保存
@@ -146,11 +151,20 @@
         if (!form) return
         form.openPropertyConfig()
       },
-      // 重置表单
+      // 重置表单（有未保存数据时先确认）
       handleReset () {
         const form = this.$refs.form
         if (!form) return
-        form.close()
+        form.confirmIfDirty(() => form.close())
+      }
+    },
+    // 离开本页（顶栏返回、手势返回、路由跳转）前，若页面数据会丢失则确认
+    beforeRouteLeave (to, from, next) {
+      const form = this.$refs.form
+      if (form && form.hasUnsavedData()) {
+        form.confirmIfDirty(() => next(), () => next(false))
+      } else {
+        next()
       }
     }
   }
@@ -197,4 +211,11 @@
       padding-bottom: calc(96px + env(safe-area-inset-bottom));
     }
   }
+</style>
+
+<style>
+/* 商品录入页禁止下拉刷新（iOS 16+ / Android），避免手势刷新导致录入数据丢失 */
+body.mm-no-pull-refresh {
+  overscroll-behavior-y: contain;
+}
 </style>

@@ -35,6 +35,10 @@
         :rows="extractOnly ? 10 : 8"
         :placeholder="ocrLoading ? '正在识别图片文字...' : '识别结果会显示在这里，也可以直接输入或粘贴文字'"
         @input="onTextEdited" />
+      <div v-if="previewImage" class="ocr-image-preview">
+        <img :src="previewImage" @click="previewVisible = true" />
+        <span>图片已加载，点击图片可放大查看</span>
+      </div>
       <div class="ocr-text-toolbar">
         <div class="ocr-text-toolbar-left">
           <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onPickImage" />
@@ -46,11 +50,22 @@
             <a-icon type="picture" />图片识别
           </a-button>
           <a-button type="link" class="ocr-toolbar-btn ocr-toolbar-clear" :disabled="!ocrFields.rawText && !ocrLoading" @click="clearText">清除</a-button>
+          <a-button v-if="!extractOnly" type="primary" class="ocr-ai-btn" :loading="ocrLoading" :disabled="!ocrFields.rawText" @click="smartRecognize">智能识别</a-button>
+          <a-button v-else type="primary" class="ocr-ai-btn" :disabled="!ocrFields.rawText" @click="copyRawText">复制文字</a-button>
         </div>
-        <a-button v-if="!extractOnly" type="primary" class="ocr-ai-btn" :loading="ocrLoading" :disabled="!ocrFields.rawText" @click="smartRecognize">智能识别</a-button>
-        <a-button v-else type="primary" class="ocr-ai-btn" :disabled="!ocrFields.rawText" @click="copyRawText">复制文字</a-button>
       </div>
     </div>
+
+    <!-- 图片放大预览 -->
+    <a-modal
+      :visible="previewVisible"
+      :footer="null"
+      :width="'96%'"
+      :zIndex="1200"
+      wrapClassName="ocr-preview-modal"
+      @cancel="previewVisible = false">
+      <img :src="previewImage" class="ocr-preview-full" @click="previewVisible = false" />
+    </a-modal>
 
     <!-- 属性框（始终显示）：手机端每行一项，标题与值并列 -->
     <div v-if="!extractOnly" style="margin-top:4px">
@@ -167,6 +182,8 @@ export default {
       ocrLoading: false,
       hasOcrResult: false,
       ocrFields: { rawText: '' },
+      previewImage: '',
+      previewVisible: false,
       specImagePath: '',
       cameraVisible: false,
       cameraStream: null,
@@ -433,6 +450,7 @@ export default {
       var that = this
       // 使用 Base64 JSON 接口，避免 multipart 在部分代理/网关下出现 Network Error
       this.fileToBase64(file).then(function(imageBase64) {
+        that.previewImage = imageBase64
         return postAction('/ocr/recognizeProductByBase64', { imageBase64: imageBase64 })
       }).then(function(res) {
         that.ocrLoading = false
@@ -669,10 +687,34 @@ export default {
 }
 
 .ocr-ai-btn {
-  min-width: 120px;
-  height: 36px;
-  border-radius: 18px;
-  font-size: 15px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 12px;
+  margin-left: 8px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+.ocr-image-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 4px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+.ocr-image-preview img {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.ocr-preview-full {
+  display: block;
+  width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  cursor: zoom-out;
 }
 /* 手机端适配：工具栏换行、输入框字号防止聚焦放大 */
 @media (max-width: 768px) {
@@ -684,9 +726,10 @@ export default {
     width: 100%;
   }
   .ocr-ai-btn {
-    width: 100%;
-    min-width: 0;
-    margin-top: 8px;
+    height: 28px;
+    padding: 0 10px;
+    margin-left: 6px;
+    font-size: 12px;
   }
   .ocr-raw-text {
     font-size: 16px;

@@ -3,6 +3,8 @@
     :is="inline ? 'div' : 'JModal'"
     v-bind="inline ? {} : modalProps"
     :class="inline ? 'mm-inline-form' : ''"
+    @input.capture="markDirty"
+    @change.capture="markDirty"
     @cancel="handleCancel"
     :style="inline ? '' : modalStyle">
     <template v-if="!inline" slot="footer">
@@ -282,20 +284,14 @@
             <!-- 第 3 页：价格设置 -->
             <div class="mm-page">
             <div style="margin-top:8px;" id="materialDetailModal">
-              <div class="price-setting-wrapper" :class="{ 'price-setting-fullscreen': priceTableFullscreen }">
+              <div class="price-setting-wrapper">
                 <!-- 价格设置标题和进度 -->
                 <div class="price-setting-top-bar">
                   <div class="price-setting-top-bar-left">
                     <span class="price-setting-title"><span class="required-mark">*</span> 价格设置</span>
                     <span class="progress-label">价格填写进度</span>
-                    <a-progress :percent="priceFillProgress" :strokeWidth="6" strokeColor="#16a34a" style="width: 130px;" />
+                    <a-progress class="progress-bar" :percent="priceFillProgress" :strokeWidth="6" strokeColor="#16a34a" :showInfo="false" />
                     <span class="progress-percent">{{ priceFillProgress }}%</span>
-                  </div>
-                  <div class="price-setting-top-bar-right">
-                    <a-button type="link" size="small" @click="togglePriceTableFullscreen">
-                      <a-icon :type="priceTableFullscreen ? 'fullscreen-exit' : 'fullscreen'" />
-                      {{ priceTableFullscreen ? '退出全屏' : '全屏' }}
-                    </a-button>
                   </div>
                 </div>
                 <!-- 批量设置工具栏 -->
@@ -363,7 +359,7 @@
                   :columns="meTable.columns"
                   :dataSource="meTable.dataSource"
                   :minWidth="1300"
-                  :maxHeight="priceTableFullscreen ? 520 : skuTableBodyHeight"
+                  :maxHeight="skuTableBodyHeight"
                   :rowNumber="false"
                   :rowSelection="false"
                   :actionButton="false"
@@ -532,9 +528,16 @@
         batchMarketPrice: '',
         batchDepotId: undefined,
         batchStore: undefined,
+        // 是否有未保存的改动（用于关闭/刷新前提示）
+        formDirty: false,
+        // 打开表单时的数据快照，用于对比是否有未保存的内容
+        initialSnapshot: null,
+        // 草稿自动保存（防止 iOS 刷新/下拉重新加载导致数据丢失）
+        draftTimer: null,
+        draftWatchTimer: null,
+        draftRestored: false,
         // 门店下拉选项：门店主数据暂未接入，先保留空选项（允许为空）
         storeOptions: [],
-        priceTableFullscreen: false,
         depotList: [],
         selectedSpecFilter: -1,
         batchSpecFilters: {},
@@ -784,10 +787,18 @@
     mounted() {
       document.getElementById(this.prefixNo).addEventListener('keydown', this.handleOkKey)
       window.addEventListener('resize', this.onWindowResize)
+      window.addEventListener('beforeunload', this.handleBeforeUnload)
+      // iOS 无法拦截系统级刷新，定期自动保存草稿，刷新后可恢复
+      this.draftWatchTimer = setInterval(() => {
+        if (this.visible && this.hasUnsavedData()) this.saveDraft()
+      }, 2000)
     },
     beforeDestroy() {
       document.getElementById(this.prefixNo).removeEventListener('keydown', this.handleOkKey)
       window.removeEventListener('resize', this.onWindowResize)
+      window.removeEventListener('beforeunload', this.handleBeforeUnload)
+      if (this.draftWatchTimer) clearInterval(this.draftWatchTimer)
+      if (this.draftTimer) clearTimeout(this.draftTimer)
     },
     methods: {
       // 手机端适配：窗口宽度变化时切换分页模式并回到首页
@@ -868,6 +879,7 @@
       edit (record) {
         let that = this
         this.form.resetFields();
+        this.formDirty = false;
         this.model = Object.assign({}, record);
         // 初始化 specModules
         this.specModules = []
@@ -938,6 +950,8 @@
         } else {
           this.switchDisabled = false
         }
+        // 兜底：等规格/属性初始化完成后再记录一次初始快照
+        setTimeout(() => this.captureInitialSnapshot(), 300)
       },
       /**
        * 等待基础属性配置加载完成后再回填表单值。
@@ -953,6 +967,10 @@
               'categoryId','enableSerialNumber','barCode','weight','remark','mfrs',
               'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7',
               'fabric','safetyCategory','executiveStandard','grade','inspection','filler'))
+            // 回填完成后记录初始数据快照
+            this.captureInitialSnapshot()
+            // 若存在本地草稿（例如刷新前自动保存的），恢复它
+            this.tryRestoreDraft()
           })
         } else if (count < maxRetry) {
           setTimeout(() => this.applyEditFormValuesWhenReady(count + 1), 50)
@@ -999,6 +1017,8 @@
           }
         }).finally(() => {
           tab.loading = false
+          // 子表（规格/SKU）加载完成后刷新初始快照
+          this.$nextTick(() => this.captureInitialSnapshot())
         })
       },
       batchSetColumn() {
@@ -1055,9 +1075,6 @@
         }
         this.meTable.dataSource = [...allRows]
         if (hasValue) this.$message.success('批量设置成功，共设置 ' + rows.length + ' 行')
-      },
-      togglePriceTableFullscreen() {
-        this.priceTableFullscreen = !this.priceTableFullscreen
       },
       filterRowsBySpec(rows) {
         let filters = this.batchSpecFilters
@@ -1156,7 +1173,152 @@
         this.validateFields()
       },
       handleCancel () {
-        this.close()
+        this.confirmIfDirty(() => this.close())
+      },
+      /** 页面数据会丢失时弹窗确认，确认后执行 onConfirm，取消则执行 onCancel */
+      confirmIfDirty (onConfirm, onCancel) {
+        if (!this.hasUnsavedData()) {
+          if (onConfirm) onConfirm()
+          return
+        }
+        const that = this
+        this.$confirm({
+          title: '提示',
+          content: '当前有未提交的数据，离开后数据将丢失，确定离开？',
+          okText: '确定',
+          cancelText: '继续编辑',
+          onOk () {
+            that.formDirty = false
+            that.initialSnapshot = null
+            that.clearDraft()
+            if (onConfirm) onConfirm()
+          },
+          onCancel () {
+            if (onCancel) onCancel()
+          }
+        })
+      },
+      /** 表单有任何输入/变更时标记为脏，并防抖保存草稿 */
+      markDirty () {
+        this.formDirty = true
+        if (this.draftTimer) clearTimeout(this.draftTimer)
+        this.draftTimer = setTimeout(() => this.saveDraft(), 800)
+      },
+      /**
+       * 记录打开表单时的数据快照，用于后续对比是否有未保存的内容。
+       * 若用户已经开始输入（formDirty 已为 true），则不再覆盖快照。
+       */
+      captureInitialSnapshot () {
+        if (this.formDirty) return
+        this.initialSnapshot = this.collectSnapshot()
+      },
+      /**
+       * 采集当前表单数据用于对比。只取有值的字段，避免空串/undefined 造成误判。
+       */
+      collectSnapshot () {
+        let fields = {}
+        try {
+          fields = (this.form && this.form.getFieldsValue && this.form.getFieldsValue()) || {}
+        } catch (e) {
+          fields = {}
+        }
+        const cleaned = {}
+        Object.keys(fields).sort().forEach(key => {
+          const val = fields[key]
+          if (val !== undefined && val !== null && val !== '') {
+            cleaned[key] = val
+          }
+        })
+        let specs = []
+        try {
+          specs = JSON.parse(JSON.stringify(this.specModules || []))
+        } catch (e) {
+          specs = []
+        }
+        try {
+          return JSON.stringify({ fields: cleaned, specs: specs })
+        } catch (e) {
+          return ''
+        }
+      },
+      /**
+       * 判断页面是否存在会丢失的未保存数据。
+       * 优先用输入事件标记（响应快），再用数据快照兜底（覆盖下拉、规格表格等不触发原生事件的组件）。
+       */
+      hasUnsavedData () {
+        if (this.formDirty) return true
+        if (!this.initialSnapshot) return false
+        return this.collectSnapshot() !== this.initialSnapshot
+      },
+      /** 浏览器刷新/关闭页面时，只要页面数据会丢失就提示 */
+      handleBeforeUnload (e) {
+        if (this.visible && this.hasUnsavedData()) {
+          this.saveDraft()
+          e.preventDefault()
+          e.returnValue = '页面有未保存的数据，确定离开？'
+          return e.returnValue
+        }
+      },
+      /** 草稿存储键：新增和编辑分开，避免互相覆盖 */
+      draftStorageKey () {
+        const id = this.model && this.model.id ? this.model.id : 'new'
+        return 'jsh_material_draft_' + id
+      },
+      /** 把当前未保存数据写入本地草稿，供刷新后恢复 */
+      saveDraft () {
+        if (!this.form) return
+        let payload = null
+        try {
+          let fields = {}
+          try {
+            fields = this.form.getFieldsValue() || {}
+          } catch (e) {
+            fields = {}
+          }
+          payload = JSON.stringify({
+            fields: fields,
+            specs: this.specModules || [],
+            action: this.action,
+            materialId: (this.model && this.model.id) || null,
+            time: Date.now()
+          })
+          localStorage.setItem(this.draftStorageKey(), payload)
+        } catch (e) {
+          // 本地存储不可用时忽略，不影响正常录入
+        }
+      },
+      /** 清除本地草稿 */
+      clearDraft () {
+        try {
+          localStorage.removeItem(this.draftStorageKey())
+        } catch (e) {}
+        this.draftRestored = false
+      },
+      /** 读取并应用本地草稿（刷新/重新加载后自动恢复） */
+      tryRestoreDraft () {
+        if (this.draftRestored) return
+        let draft = null
+        try {
+          const raw = localStorage.getItem(this.draftStorageKey())
+          if (!raw) return
+          draft = JSON.parse(raw)
+        } catch (e) {
+          return
+        }
+        if (!draft || !draft.fields) return
+        this.draftRestored = true
+        this.$nextTick(() => {
+          try {
+            this.form.setFieldsValue(draft.fields)
+          } catch (e) {}
+          if (Array.isArray(draft.specs) && draft.specs.length > 0) {
+            this.specModules = draft.specs
+            this.updateSkuColumns()
+          }
+          // 恢复的数据属于"未保存"，必须置脏
+          this.formDirty = true
+          this.$message.info('已恢复上次未保存的数据')
+        })
       },
       /** 触发表单验证 */
       validateFields() {
@@ -1418,6 +1580,9 @@
               httpAction(url, formData, method).then((res) => {
                 if(res.code === 200){
                   that.$message.success('保存成功');
+                  that.formDirty = false;
+                  that.initialSnapshot = null;
+                  that.clearDraft();
                   that.$emit('ok');
                   that.confirmLoading = false
                   that.close();
@@ -2587,13 +2752,6 @@
     padding: 12px;
     background: #fff;
   }
-  .price-setting-fullscreen {
-    position: fixed;
-    inset: 12px;
-    z-index: 1200;
-    overflow: auto;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
-  }
   .price-setting-top-bar {
     display: flex;
     justify-content: space-between;
@@ -2604,21 +2762,21 @@
   .price-setting-top-bar-left {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-  .price-setting-top-bar-right {
-    display: flex;
-    align-items: center;
+    flex-wrap: nowrap;
     gap: 8px;
-    white-space: nowrap;
-    color: #555;
-    font-size: 13px;
+    min-width: 0;
+  }
+  .progress-bar {
+    width: 130px;
+    flex: 0 1 auto;
+    min-width: 56px;
+    margin: 0;
   }
   .price-setting-title {
     color: #333;
     font-size: 14px;
     margin-right: 8px;
+    white-space: nowrap;
   }
   .required-mark {
     color: #f5222d;
@@ -2631,6 +2789,7 @@
   .progress-percent {
     color: #16a34a;
     font-weight: 600;
+    white-space: nowrap;
   }
   .price-setting-batch-bar {
     margin-bottom: 8px;
@@ -2806,16 +2965,27 @@
   }
   @media (max-width: 768px) {
     .price-setting-top-bar {
-      align-items: flex-start;
-      flex-direction: column;
-      gap: 8px;
+      align-items: center;
+      flex-direction: row;
+      gap: 0;
+    }
+    .price-setting-title {
+      font-size: 13px;
+      margin-right: 4px;
+    }
+    .progress-label {
+      font-size: 13px;
+    }
+    .progress-bar {
+      width: 72px;
+      min-width: 44px;
+    }
+    .progress-percent {
+      font-size: 13px;
     }
     .price-setting-input {
       width: 100%;
       max-width: 360px;
-    }
-    .price-setting-fullscreen {
-      inset: 4px;
     }
   }
 

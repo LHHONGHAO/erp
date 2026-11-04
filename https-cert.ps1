@@ -160,7 +160,7 @@ try {
     Write-Host "==> 完成" -ForegroundColor Green
     Write-Host "    服务端密钥库: $p12File"
     Write-Host "    客户端授权文件: $rootCrt"
-    Write-Host "    客户端访问 http://<本机IP>:9999/cert 下载安装根证书后，HTTPS 将不再提示不安全" -ForegroundColor Green
+    Write-Host "    客户端安装根证书 $rootCrt 后访问 https://<本机IP>:9999 将不再提示不安全" -ForegroundColor Green
 } finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

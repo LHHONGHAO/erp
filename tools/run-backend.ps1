@@ -28,10 +28,11 @@ $staticDir = '-Dspring.resources.static-locations=file:' + $rootPath + '/jshERP-
 $dataDirArg = '-Djsh.data.dir=' + $dataDir
 $logsHomeArg = '-Dlogs.home=' + $dataDir + '/logs'
 $portArg   = '-Dserver.port=' + $cfg.backendPort
-# 后端只监听本机，对外统一由 tools/local-proxy.js 的 HTTPS 入口（proxyPort）提供服务
-$bindArg   = '-Dserver.address=127.0.0.1'
+# 后端直接对外提供 HTTPS，证书由 https-cert.ps1 生成在数据目录 config 下
+# 用 SPRING_APPLICATION_JSON 注入，避免 -D 参数在 PowerShell 中被拆分
+$env:SPRING_APPLICATION_JSON = '{"server":{"ssl":{"enabled":true,"key-store":"file:' + $dataDir + '/config/jsh-https.p12","key-store-type":"PKCS12","key-store-password":"changeit"}}}'
 $logFile   = Join-Path $Root 'jshERP-boot\local-backend.log'
 $jar       = Join-Path $Root 'jshERP-boot\target\jshERP.jar'
 
 Set-Location (Join-Path $Root 'jshERP-boot')
-& $javaExe '-Xms256m' '-Xmx1024m' '-Dspring.profiles.active=dev' $portArg $bindArg '-Dfile.encoding=UTF-8' $staticDir $dataDirArg $logsHomeArg '-jar' $jar *> $logFile
+& $javaExe '-Xms256m' '-Xmx1024m' '-Dspring.profiles.active=dev' $portArg '-Dfile.encoding=UTF-8' $staticDir $dataDirArg $logsHomeArg '-jar' $jar *> $logFile

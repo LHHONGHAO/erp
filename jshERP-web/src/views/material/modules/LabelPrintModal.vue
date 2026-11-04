@@ -401,7 +401,9 @@
                 >添加</a-button>
               </div>
               <div v-if="!loadingPrinters && !localAgentOnline" class="lp-tip">
-                未检测到本地打印助手，无法列出本机打印机。请在本机运行 tools/local-print-agent/启动打印助手.bat 后点击「刷新」。
+                未检测到本地打印助手，无法列出本机打印机。
+                <a :href="agentDownloadUrl" target="_blank" rel="noopener" download="print-agent.exe">下载安装</a>
+                后双击运行，再点「刷新」。
               </div>
               <div v-else-if="!loadingPrinters && printers.length === 0 && wifiPrinters.length === 0" class="lp-tip">
                 后端未返回打印机（远程部署时后端运行在服务器上），可点击「添加」配置本机或网络打印机。
@@ -532,7 +534,7 @@
     testWifiPrinter,
     printToWifiPrinter
   } from '@/utils/printerSearch'
-  import { fetchLocalPrinters, printToLocalPrinter, isLocalPrinter, localPrinterName, LOCAL_PRINTER_PREFIX } from '@/utils/localPrintAgent'
+  import { fetchLocalPrinters, printToLocalPrinter, isLocalPrinter, localPrinterName, LOCAL_PRINTER_PREFIX, detectLocalAgent, LOCAL_AGENT_DOWNLOAD_URL } from '@/utils/localPrintAgent'
   var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
@@ -556,6 +558,7 @@
         // 本机打印机（由本地打印助手提供，仅电脑端可用）
         localPrinters: [],
         localAgentOnline: false,
+        agentDownloadUrl: LOCAL_AGENT_DOWNLOAD_URL,
         selectedPrinter: undefined,
         loadingPrinters: false,
         printing: false,
@@ -970,7 +973,7 @@
           if (self.localAgentOnline) {
             self.$message.success('已刷新本机打印机（共 ' + self.localPrinters.length + ' 台）')
           } else {
-            self.$message.warning('未检测到本地打印助手，请先运行 tools/local-print-agent/启动打印助手.bat')
+            self.$message.warning('未检测到本地打印助手，请先下载安装并运行 print-agent.exe')
           }
         })
       },
@@ -1047,16 +1050,25 @@
         var self = this
         this.loadingPrinters = true
         // 电脑端同时探测本地打印助手，获取本机打印机
-        var localTask = this.isMobile ? Promise.resolve([]) : fetchLocalPrinters()
+        var localTask = this.isMobile
+          ? Promise.resolve({ online: false, list: [] })
+          : detectLocalAgent().then(function(base) {
+            if (!base) return { online: false, list: [] }
+            return fetchLocalPrinters().then(function(list) {
+              return { online: true, list: list }
+            })
+          })
         return Promise.all([getAction('/print/printers').catch(function() { return null }), localTask]).then(function(arr) {
           var res = arr[0]
-          var locals = arr[1] || []
+          var local = arr[1] || { online: false, list: [] }
+          var locals = local.list || []
           self.loadingPrinters = false
           var data = (res && res.data) || {}
           var list = data.printers || []
           self.printers = list
           self.localPrinters = locals
-          self.localAgentOnline = locals.length > 0
+          // 区分「助手未安装」和「助手在线但没有打印机」
+          self.localAgentOnline = !!local.online
           // 非后端类型（Wi-Fi / 蓝牙 / 云）的选中项不受枚举结果影响
           if (self.printerType !== 'backend') return
           // 已有有效选择则保留（实现「回显设置页选中的打印机」）
@@ -1418,7 +1430,12 @@
           return
         }
         if (!this.selectedPrinter) {
-          this.$message.warning('请先选择打印机')
+          // 远程部署时后端枚举不到本机打印机，此时应引导安装本地打印助手
+          if (this.printerType === 'backend' && !this.localAgentOnline && this.printers.length === 0) {
+            this.showInstallGuide()
+          } else {
+            this.$message.warning('请先选择打印机')
+          }
           return
         }
         // 浏览器打印：走系统打印对话框，可选本机任意打印机（远程部署场景）
@@ -1428,7 +1445,15 @@
         }
         // 本机打印机：交给本地打印助手直接打印，不弹浏览器对话框
         if (isLocalPrinter(this.selectedPrinter)) {
-          this.printViaLocalAgent()
+          // 打印前再确认一次助手仍在运行，避免中途退出后无提示
+          detectLocalAgent().then(function(base) {
+            if (!base) {
+              self.localAgentOnline = false
+              self.showInstallGuide()
+              return
+            }
+            self.printViaLocalAgent()
+          })
           return
         }
         // 若选择的是搜索发现的打印机（蓝牙/云），走对应打印通道
@@ -1559,6 +1584,42 @@
           bodyHtml: bodyHtml
         })
       },
+      // 未检测到本地打印助手时，引导用户下载安装
+      showInstallGuide() {
+        var self = this
+        var h = this.$createElement
+        this.$confirm({
+          title: '需要安装本地打印助手',
+          width: 440,
+          content: h('div', { style: 'line-height:1.9' }, [
+            h('p', '网页无法直接调用你电脑上的打印机，需要安装并运行「本地打印助手」。'),
+            h('p', '安装后会自动识别本机所有打印机，打印时不再弹出系统对话框。'),
+            h('p', [
+              h('a', {
+                attrs: {
+                  href: LOCAL_AGENT_DOWNLOAD_URL,
+                  target: '_blank',
+                  rel: 'noopener',
+                  download: 'print-agent.exe'
+                }
+              }, '① 下载 print-agent.exe')
+            ]),
+            h('p', { style: 'color:#8c8c8c;font-size:12px' },
+              '② 下载后双击运行，程序会常驻后台并自动开机自启。')
+          ]),
+          okText: '我已安装，重新检测',
+          cancelText: '稍后再说',
+          onOk: function() {
+            return self.loadPrinters().then(function() {
+              if (self.localAgentOnline) {
+                self.$message.success('已检测到本地打印助手')
+              } else {
+                self.$message.warning('仍未检测到打印助手，请确认程序已运行后重试')
+              }
+            })
+          }
+        })
+      },
       // 本机打印：把标签渲染为图片，交给本地打印助手直接调用本地打印机
       printViaLocalAgent() {
         var self = this
@@ -1577,11 +1638,16 @@
           if (res && res.code === 200) {
             self.$message.success('已发送到打印机：' + printer)
           } else {
-            self.$message.error((res && res.msg) || '打印失败')
+            self.$message.error((res && (res.message || res.msg)) || '打印失败')
           }
-        }).catch(function() {
+        }).catch(function(err) {
           self.printing = false
-          self.$message.error('调用本地打印助手失败，请确认打印助手已启动')
+          if (err && err.message && err.message.indexOf('未运行') >= 0) {
+            self.localAgentOnline = false
+            self.showInstallGuide()
+          } else {
+            self.$message.error('打印失败：' + ((err && err.message) || '请确认打印助手已启动'))
+          }
         })
       },
       // 按打印布局把标签绘制为 PNG，供本地打印助手输出

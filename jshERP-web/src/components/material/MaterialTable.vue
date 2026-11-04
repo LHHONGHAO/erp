@@ -54,6 +54,11 @@
   <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
   <div v-if="isMobileView" class="mt-mobile-list">
     <div v-for="row in mobileList" :key="row.skuRowKey || row.id" class="mt-mobile-card">
+      <!-- 右上角多选：勾选当前卡片，支持批量操作 -->
+      <a-checkbox
+        class="mt-mobile-checkbox"
+        :checked="mobileSelectedKeys.indexOf(row.skuRowKey || row.id) > -1"
+        @change="onPickMobileRow(row)" />
       <div class="mt-mobile-main">
         <div class="mt-mobile-top">
           <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
@@ -79,7 +84,7 @@
           v-for="(act, i) in visibleActions(row)"
           :key="'mact-' + i"
           class="mt-action-icon-btn"
-          shape="circle"
+          type="link"
           size="small"
           :icon="act.icon"
           :title="act.title"
@@ -135,7 +140,9 @@
         /** 是否正在触发下拉加载（防止重复请求） */
         mobileLoadingMore: false,
         /** 底部哨兵元素的可见性监听器 */
-        mobileObserver: null
+        mobileObserver: null,
+        /** 手机端卡片右上角多选的已选行 key 数组 */
+        mobileSelectedKeys: []
       }
     },
     computed: {
@@ -355,6 +362,37 @@
       visibleActions(record) {
         return (this.actions || []).filter(act => !act.show || act.show(record))
       },
+      /** 手机端卡片多选：切换当前行勾选状态，通知父组件 */
+      onPickMobileRow(row) {
+        var key = row.skuRowKey || row.id
+        var idx = this.mobileSelectedKeys.indexOf(key)
+        if (idx > -1) {
+          this.mobileSelectedKeys.splice(idx, 1)
+        } else {
+          this.mobileSelectedKeys.push(key)
+        }
+        // 构建已选行数组
+        var selectedRows = this.mobileList.filter(r =>
+          this.mobileSelectedKeys.indexOf(r.skuRowKey || r.id) > -1
+        )
+        this.$emit('row-selection-change', this.mobileSelectedKeys.slice(), selectedRows)
+        this.$emit('row-select', row)
+      },
+      /** 暴露给父组件：清空手机端选中 */
+      clearMobileSelection() {
+        this.mobileSelectedKeys = []
+      },
+      /** 暴露给父组件：获取手机端已选行（去重后的商品ID） */
+      getMobileSelectedMaterialIds() {
+        var rows = this.mobileList.filter(r =>
+          this.mobileSelectedKeys.indexOf(r.skuRowKey || r.id) > -1
+        )
+        var ids = []
+        for (var i = 0; i < rows.length; i++) {
+          if (ids.indexOf(rows[i].id) === -1) ids.push(rows[i].id)
+        }
+        return ids
+      },
       onAction(act, record) {
         if (act && typeof act.click === 'function') {
           act.click(record)
@@ -379,6 +417,7 @@
     padding: 0;
   }
   .mt-mobile-card {
+    position: relative;
     display: flex;
     flex-direction: row;
     align-items: stretch;
@@ -387,6 +426,14 @@
     border-radius: 8px;
     padding: 8px;
     margin-bottom: 8px;
+  }
+  /* 卡片右上角多选 checkbox */
+  .mt-mobile-checkbox {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    transform: scale(1.2);
   }
   .mt-mobile-main {
     flex: 1;
@@ -465,20 +512,26 @@
     gap: 24px;
     margin-left: 8px;
     padding-left: 8px;
+    /* 右上角留出单选框位置，按钮整体下移 */
+    padding-top: 26px;
     border-left: 1px dashed #F0F2F5;
     flex-shrink: 0;
   }
   .mt-action-icon-btn {
     color: #595959;
-    border-color: #d9d9d9;
-    width: 40px !important;
-    height: 40px !important;
-    font-size: 20px !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 2px !important;
+    font-size: 22px !important;
+    line-height: 1;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
   }
   .mt-action-icon-btn:hover,
   .mt-action-icon-btn:focus {
     color: #1890ff;
-    border-color: #1890ff;
+    background: transparent !important;
   }
   .mt-mobile-empty {
     text-align: center;

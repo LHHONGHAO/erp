@@ -24,10 +24,10 @@
       <a-textarea v-model="pasteText" class="ocr-member-textarea" :rows="5" :bordered="false"
                   placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别" />
       <div v-if="imageUrl" class="ocr-member-preview">
-        <img :src="imageUrl" />
+        <img :src="imageUrl" @click="previewVisible = true" />
         <span v-if="ocrLoading">正在识别图片...</span>
         <span v-else-if="ocrError" class="ocr-member-preview__error">识别失败：{{ ocrError }}</span>
-        <span v-else>图片已识别，可继续修改下方信息</span>
+        <span v-else>图片已识别，点击图片可放大查看</span>
       </div>
       <div class="ocr-member-toolbar">
         <div class="ocr-member-toolbar__left">
@@ -42,8 +42,19 @@
       </div>
     </div>
 
+    <!-- 图片放大预览 -->
+    <a-modal
+      :visible="previewVisible"
+      :footer="null"
+      :width="'96%'"
+      :zIndex="2000"
+      wrapClassName="ocr-preview-modal"
+      @cancel="previewVisible = false">
+      <img :src="imageUrl" class="ocr-preview-full" @click="previewVisible = false" />
+    </a-modal>
+
     <!-- 电脑端：图片上传 + 粘贴文本 -->
-    <div v-else style="display:flex;gap:12px;margin-top:4px">
+    <div v-if="!isMobileView" style="display:flex;gap:12px;margin-top:4px">
       <div style="width:200px;flex-shrink:0">
         <a-upload
           name="file"
@@ -180,6 +191,7 @@ export default {
       hasOcrResult: false,
       ocrError: '',
       imageUrl: '',
+      previewVisible: false,
       pasteText: '',
       cfgSaving: false,
       cfg: {
@@ -538,6 +550,14 @@ export default {
     height: 64px;
     border-radius: 8px;
     object-fit: cover;
+    cursor: zoom-in;
+  }
+  .ocr-preview-full {
+    display: block;
+    width: 100%;
+    max-height: 78vh;
+    object-fit: contain;
+    cursor: zoom-out;
   }
   .ocr-member-preview__error {
     color: #f5222d;
@@ -558,7 +578,16 @@ export default {
     color: #595959;
   }
   .ocr-member-toolbar__left a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: #595959;
+    line-height: 20px;
+  }
+  .ocr-member-toolbar__left .anticon {
+    font-size: 16px;
+    line-height: 1;
+    vertical-align: middle;
   }
   .ocr-member-toolbar__clear {
     color: #bfbfbf !important;

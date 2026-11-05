@@ -35,7 +35,7 @@ namespace JshPrintAgent
     {
         internal const string AppId = "jsh-print-agent";
         internal const string AppName = "JSH 打印组件";
-        internal const string Version = "1.0.0";
+        internal const string Version = "1.0.1";
         internal static readonly int[] DefaultPorts = new int[] { 17890, 17891, 17892 };
 
         [STAThread]
@@ -269,7 +269,7 @@ namespace JshPrintAgent
                         Logger.Log("处理 " + req.Method + " " + req.RawPath + " 失败：" + ex.Message);
                         res = HttpResponse.Json(500, "打印失败：" + ex.Message);
                     }
-                    HttpResponse.Write(ns, res);
+                    HttpResponse.Write(ns, res, req.Headers.ContainsKey("Origin") ? req.Headers["Origin"] : null);
                 }
             }
             catch (Exception ex)
@@ -417,13 +417,20 @@ namespace JshPrintAgent
             return res;
         }
 
-        internal static void Write(NetworkStream ns, HttpResponse res)
+        internal static void Write(NetworkStream ns, HttpResponse res, string origin)
         {
             StringBuilder head = new StringBuilder();
             head.Append("HTTP/1.1 ").Append(res.Status).Append(' ').Append(StatusText(res.Status)).Append("\r\n");
             head.Append("Content-Type: ").Append(res.ContentType).Append("\r\n");
             head.Append("Content-Length: ").Append(res.Body.Length).Append("\r\n");
-            head.Append("Access-Control-Allow-Origin: *\r\n");
+            // Chrome 私有网络访问（PNA）预检要求精确回显 Origin，不能使用通配符
+            string allowOrigin = "*";
+            if (!string.IsNullOrEmpty(origin) && origin.IndexOf('\r') < 0 && origin.IndexOf('\n') < 0)
+            {
+                allowOrigin = origin;
+            }
+            head.Append("Access-Control-Allow-Origin: ").Append(allowOrigin).Append("\r\n");
+            head.Append("Vary: Origin\r\n");
             head.Append("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n");
             head.Append("Access-Control-Allow-Headers: Content-Type, X-Requested-With, Authorization\r\n");
             head.Append("Access-Control-Allow-Private-Network: true\r\n");

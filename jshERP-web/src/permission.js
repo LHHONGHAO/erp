@@ -27,6 +27,11 @@ NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
 
+// 本地开发时手机端预览页不强制登录，业务页面在 iframe 内仍按正常登录态校验
+if (process.env.NODE_ENV !== 'production') {
+  whiteList.push('/mobile-preview', '/mobile-page-demo')
+}
+
 router.beforeEach((to, from, next) => {
   NProgress.start() // start progress bar
   if (Vue.ls.get(USER_ID)) {

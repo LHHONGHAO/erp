@@ -31,6 +31,9 @@ module.exports = {
                 threshold: 10240, // 对超过10k的数据压缩
                 deleteOriginalAssets: false // 删除源文件
             }))
+            // 手机端预览页只在本地开发使用，生产构建时忽略对应模块，避免产出无用 chunk
+            const webpack = require('webpack')
+            config.plugin('ignore-mobile-preview').use(webpack.IgnorePlugin, [/MobilePreview|MobilePageDemo/])
         }
     },
     css: {
@@ -63,6 +66,8 @@ module.exports = {
             // 本地开发默认代理到本机 nginx(9999)；本地后端直连时用 VUE_APP_API_TARGET=http://localhost:9998
             target: process.env.VUE_APP_API_TARGET || 'http://localhost:9999',
             changeOrigin: true,
+            // 本地后端为自签名 HTTPS 直连，关闭证书校验
+            secure: false,
             ws: false
             }
         }

@@ -25,6 +25,9 @@ tools/*
 !tools/make-cert.ps1
 !tools/run-backend.ps1
 !tools/run-proxy.ps1
+!tools/open-mobile-preview.ps1
+## 手机预览用浏览器独立配置目录
+.cache/
 ## 通用打印组件：源码与构建脚本入库，编译产物不入库
 !tools/local-print-agent/
 tools/local-print-agent/dist/

@@ -61,30 +61,33 @@ export const constantRouterMap = [
     path: '/404',
     component: () => import(/* webpackChunkName: "fail" */ '@/views/exception/404')
   },
-  {
-    path: '/mobile-preview',
-    component: BlankLayout,
-    children: [
-      {
-        path: '',
-        name: 'MobilePreview',
-        meta: { title: '手机端预览' },
-        component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePreview')
-      }
-    ]
-  },
-  {
-    path: '/mobile-page-demo',
-    component: BlankLayout,
-    children: [
-      {
-        path: '',
-        name: 'MobilePageDemo',
-        meta: { title: '标准手机页面模版' },
-        component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePageDemo')
-      }
-    ]
-  },
+  // 手机端预览与标准页面模版仅用于本地开发调试，不进入生产包
+  ...(process.env.NODE_ENV !== 'production' ? [
+    {
+      path: '/mobile-preview',
+      component: BlankLayout,
+      children: [
+        {
+          path: '',
+          name: 'MobilePreview',
+          meta: { title: '手机端预览' },
+          component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePreview')
+        }
+      ]
+    },
+    {
+      path: '/mobile-page-demo',
+      component: BlankLayout,
+      children: [
+        {
+          path: '',
+          name: 'MobilePageDemo',
+          meta: { title: '标准手机页面模版' },
+          component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePageDemo')
+        }
+      ]
+    }
+  ] : []),
   {
     path: '/material/edit',
     component: TabLayout,

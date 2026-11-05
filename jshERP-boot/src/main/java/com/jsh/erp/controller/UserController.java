@@ -227,6 +227,46 @@ public class UserController extends BaseController {
         return res;
     }
 
+    @GetMapping(value = "/getCommonPages")
+    @ApiOperation(value = "获取用户常用页面")
+    public BaseResponseInfo getCommonPages(HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            Long userId = Long.parseLong(redisService.getObjectFromSessionByKey(request, "userId").toString());
+            String value = userBusinessService.getUBValueByTypeAndKeyId("commonPages", String.valueOf(userId));
+            res.code = 200;
+            res.data = value;
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "获取常用页面失败";
+        }
+        return res;
+    }
+
+    @PostMapping(value = "/saveCommonPages")
+    @ApiOperation(value = "保存用户常用页面")
+    public BaseResponseInfo saveCommonPages(@RequestBody JSONObject jsonObject, HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            Long userId = Long.parseLong(redisService.getObjectFromSessionByKey(request, "userId").toString());
+            String pages = jsonObject.getString("pages");
+            int result = userBusinessService.saveCommonPages(String.valueOf(userId), pages);
+            if (result > 0) {
+                res.code = 200;
+                res.data = "保存成功";
+            } else {
+                res.code = 500;
+                res.data = "保存失败";
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "保存常用页面失败";
+        }
+        return res;
+    }
+
     @PostMapping(value = "/resetPwd")
     @ApiOperation(value = "重置密码")
     public String resetPwd(@RequestBody JSONObject jsonObject,

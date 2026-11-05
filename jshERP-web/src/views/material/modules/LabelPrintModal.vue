@@ -1664,7 +1664,8 @@
       },
       // 按打印布局把标签绘制为 PNG，供本地打印助手输出
       renderLabelToPng() {
-        var scale = 3
+        // 提高源图分辨率，让打印助手按打印机 DPI 重采样时有充足细节
+        var scale = 5
         var canvas = document.createElement('canvas')
         canvas.width = Math.round(this.labelWidth * scale)
         canvas.height = Math.round(this.labelHeight * scale)

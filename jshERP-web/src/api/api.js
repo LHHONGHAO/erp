@@ -21,6 +21,9 @@ const getUserList = (params)=>getAction("/user/getUserList",params);
 const getUserBtnByCurrentUser = (params)=>getAction("/user/getUserBtnByCurrentUser",params);
 const queryPermissionsByUser = (params)=>postAction("/function/findMenuByPNumber",params);
 const resetPwd = (params)=>postAction("/user/resetPwd",params);
+//常用页面（云端持久化）
+const getCommonPages = (params)=>getAction("/user/getCommonPages",params);
+const saveCommonPages = (params)=>postAction("/user/saveCommonPages",params);
 //部门管理
 const queryOrganizationTreeList = (params)=>getAction("/organization/getOrganizationTree",params);
 const getAllOrganizationTreeByUser = (params)=>getAction("/organization/getAllOrganizationTreeByUser",params);
@@ -138,6 +141,8 @@ export {
   getUserBtnByCurrentUser,
   queryPermissionsByUser,
   resetPwd,
+  getCommonPages,
+  saveCommonPages,
   queryOrganizationTreeList,
   getAllOrganizationTreeByUser,
   queryOrganizationById,

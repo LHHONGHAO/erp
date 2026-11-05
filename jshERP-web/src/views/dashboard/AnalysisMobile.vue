@@ -20,8 +20,21 @@
           <a-icon type="plus" />添加
         </a-button>
       </div>
-      <div v-if="commonPages.length > 0" class="m-common__grid">
-        <div class="m-common__item" v-for="item in commonPages" :key="item.url" @click="openPage(item)">
+      <div v-if="commonPages.length > 0" class="m-common__grid" ref="commonGrid">
+        <div
+          class="m-common__item"
+          v-for="(item, index) in commonPages"
+          :key="item.url"
+          :class="{ 'is-dragging': dragIndex === index, 'is-drag-over': dragOverIndex === index }"
+          :draggable="true"
+          @click="onItemClick(item, index)"
+          @dragstart="onDragStart($event, index)"
+          @dragover.prevent="onDragOver($event, index)"
+          @dragend="onDragEnd"
+          @touchstart="onTouchStart($event, index)"
+          @touchmove="onTouchMove($event)"
+          @touchend="onTouchEnd"
+        >
           <span class="m-common__icon"><a-icon :type="item.icon || 'appstore'" /></span>
           <span class="m-common__text">{{ item.text }}</span>
         </div>
@@ -106,7 +119,7 @@
 <script>
   import Vue from 'vue'
   import { mapState } from 'vuex'
-  import { getBuyAndSaleStatistics } from '@/api/api'
+  import { getBuyAndSaleStatistics, getCommonPages, saveCommonPages } from '@/api/api'
   import { USER_ID } from '@/store/mutation-types'
 
   const STORAGE_PREFIX = 'mobile_common_pages_'
@@ -135,7 +148,14 @@
         keyword: '',
         pickedUrls: [],
         collapsedGroups: [],
-        activeGroupKey: ''
+        activeGroupKey: '',
+        // 拖拽排序相关
+        dragIndex: -1,
+        dragOverIndex: -1,
+        touchDragIndex: -1,
+        touchStartX: 0,
+        touchStartY: 0,
+        touchMoved: false
       }
     },
     computed: {
@@ -226,14 +246,37 @@
         return value
       },
       initCommonPages() {
-        let pages = Vue.ls.get(this.storageKey) || []
-        // 只保留当前仍有权限的页面
         let validUrls = this.allPages.map(item => item.url)
-        let cached = pages.filter(item => validUrls.indexOf(item.url) > -1)
-        this.commonPages = cached
-        if (cached.length !== pages.length) {
-          Vue.ls.set(this.storageKey, cached)
-        }
+        // 优先从云端加载，失败时回退到本地缓存
+        getCommonPages().then(res => {
+          let pages = []
+          if (res && res.code === 200 && res.data) {
+            try {
+              pages = JSON.parse(res.data)
+            } catch (e) {
+              pages = []
+            }
+          }
+          if (!pages || pages.length === 0) {
+            // 云端无数据，尝试从本地缓存恢复
+            pages = Vue.ls.get(this.storageKey) || []
+          }
+          let cached = pages.filter(item => validUrls.indexOf(item.url) > -1)
+          this.commonPages = cached
+        }).catch(() => {
+          // 接口失败，使用本地缓存
+          let pages = Vue.ls.get(this.storageKey) || []
+          let cached = pages.filter(item => validUrls.indexOf(item.url) > -1)
+          this.commonPages = cached
+        })
+      },
+      // 保存常用页面到云端（同时更新本地缓存）
+      persistCommonPages() {
+        Vue.ls.set(this.storageKey, this.commonPages)
+        let pagesJson = JSON.stringify(this.commonPages)
+        saveCommonPages({ pages: pagesJson }).catch(() => {
+          // 保存失败不影响本地显示，但本地缓存已更新
+        })
       },
       // 递归收集分类下的所有可打开页面
       collectPages(menu, result) {
@@ -322,8 +365,86 @@
       savePicker() {
         let selected = this.allPages.filter(item => this.pickedUrls.indexOf(item.url) > -1)
         this.commonPages = selected
-        Vue.ls.set(this.storageKey, selected)
+        this.persistCommonPages()
         this.pickerVisible = false
+      },
+      // 点击常用页面（区分拖拽和点击）
+      onItemClick(item, index) {
+        if (this.touchMoved) {
+          this.touchMoved = false
+          return
+        }
+        this.openPage(item)
+      },
+      // ===== 拖拽排序（桌面端 HTML5 Drag API）=====
+      onDragStart(e, index) {
+        this.dragIndex = index
+        e.dataTransfer.effectAllowed = 'move'
+      },
+      onDragOver(e, index) {
+        e.dataTransfer.dropEffect = 'move'
+        this.dragOverIndex = index
+      },
+      onDragEnd() {
+        if (this.dragIndex > -1 && this.dragOverIndex > -1 && this.dragIndex !== this.dragOverIndex) {
+          this.reorderPages(this.dragIndex, this.dragOverIndex)
+        }
+        this.dragIndex = -1
+        this.dragOverIndex = -1
+      },
+      // ===== 拖拽排序（移动端 Touch 事件）=====
+      onTouchStart(e, index) {
+        this.touchDragIndex = index
+        this.touchMoved = false
+        if (e.touches && e.touches[0]) {
+          this.touchStartX = e.touches[0].clientX
+          this.touchStartY = e.touches[0].clientY
+        }
+      },
+      onTouchMove(e) {
+        if (this.touchDragIndex < 0) return
+        if (e.touches && e.touches[0]) {
+          let dx = Math.abs(e.touches[0].clientX - this.touchStartX)
+          let dy = Math.abs(e.touches[0].clientY - this.touchStartY)
+          if (dx > 8 || dy > 8) {
+            this.touchMoved = true
+          }
+        }
+        // 拖拽时阻止页面滚动
+        if (this.touchMoved && e.cancelable) {
+          e.preventDefault()
+        }
+        // 计算手指当前悬停在哪个 item 上
+        let touch = e.touches[0]
+        let grid = this.$refs.commonGrid
+        if (grid) {
+          let items = grid.querySelectorAll('.m-common__item')
+          for (let i = 0; i < items.length; i++) {
+            let rect = items[i].getBoundingClientRect()
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+              this.dragOverIndex = i
+              this.dragIndex = this.touchDragIndex
+              break
+            }
+          }
+        }
+      },
+      onTouchEnd() {
+        if (this.touchDragIndex > -1 && this.dragOverIndex > -1 && this.touchDragIndex !== this.dragOverIndex) {
+          this.reorderPages(this.touchDragIndex, this.dragOverIndex)
+        }
+        this.touchDragIndex = -1
+        this.dragIndex = -1
+        this.dragOverIndex = -1
+      },
+      // 重新排序并保存到云端
+      reorderPages(fromIndex, toIndex) {
+        let list = this.commonPages.slice()
+        let item = list.splice(fromIndex, 1)[0]
+        list.splice(toIndex, 0, item)
+        this.commonPages = list
+        this.persistCommonPages()
       }
     }
   }
@@ -455,6 +576,20 @@
     padding: 10px 2px;
     border-radius: 14px;
     background: #f7f9ff;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+
+    &.is-dragging {
+      opacity: 0.4;
+      transform: scale(0.92);
+    }
+
+    &.is-drag-over {
+      box-shadow: 0 0 0 2px #2f5fe0, 0 4px 12px rgba(47, 95, 224, 0.25);
+      background: #eaf1ff;
+    }
   }
 
   .m-common__icon {

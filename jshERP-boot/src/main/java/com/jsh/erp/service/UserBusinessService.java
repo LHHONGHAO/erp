@@ -158,6 +158,31 @@ public class UserBusinessService {
         return id;
     }
 
+    /**
+     * 保存用户常用页面（type=commonPages, keyId=userId, value=JSON数组）
+     * 已存在则更新，不存在则新增
+     */
+    @Transactional(value = "transactionManager", rollbackFor = Exception.class)
+    public int saveCommonPages(String keyId, String value) throws Exception {
+        int result = 0;
+        try {
+            Long existingId = checkIsValueExist("commonPages", keyId);
+            UserBusiness userBusiness = new UserBusiness();
+            userBusiness.setValue(value);
+            if (existingId != null) {
+                userBusiness.setId(existingId);
+                result = userBusinessMapper.updateByPrimaryKeySelective(userBusiness);
+            } else {
+                userBusiness.setType("commonPages");
+                userBusiness.setKeyId(keyId);
+                result = userBusinessMapper.insertSelective(userBusiness);
+            }
+        } catch (Exception e) {
+            JshException.writeFail(logger, e);
+        }
+        return result;
+    }
+
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int updateBtnStr(String keyId, String type, String btnStr) throws Exception{
         logService.insertLog("关联关系",

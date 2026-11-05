@@ -50,15 +50,8 @@
                   <a-form-item v-else-if="prop.field==='mnemonic'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input :placeholder="'自动生成'+prop.anotherName" v-decorator.trim="[ 'mnemonic' ]" :readOnly="true" />
                   </a-form-item>
-                  <!-- 类别 -->
-                  <a-form-item v-else-if="prop.field==='categoryId'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
-                                   dropdownClassName="mm-category-dropdown" allow-clear
-                                   :treeData="categoryTreeFiltered" :treeDefaultExpandAll="true"
-                                   v-decorator="[ 'categoryId', validatorRules.categoryId ]"
-                                   :placeholder="'请选择'+prop.anotherName+'（须选二级类目，一级类目不可选）'" @change="handleCategoryChange">
-                    </a-tree-select>
-                  </a-form-item>
+                  <!-- 类别：已移至「商品信息」页签商品信息卡片上方 -->
+                  <template v-else-if="prop.field==='categoryId'"></template>
                   <!-- 填充物重量 -->
                   <a-form-item v-else-if="prop.field==='weight'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
                     <a-input-number style="width: 100%" :placeholder="'请输入'+prop.anotherName+'(kg)'" v-decorator.trim="[ 'weight' ]" />
@@ -142,11 +135,22 @@
             </div>
             <!-- 第 2 页：商品信息（规格） -->
             <div class="mm-page">
+            <!-- 类别选择：移至商品信息卡片上方 -->
+            <div class="mm-category-selector">
+              <a-form-item :labelCol="{ span: 4 }" :wrapperCol="{ span: 20 }" label="种类" class="mm-category-form-item">
+                <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
+                               dropdownClassName="mm-category-dropdown" allow-clear
+                               :treeData="categoryTreeFiltered" :treeDefaultExpandAll="true"
+                               v-decorator="[ 'categoryId', validatorRules.categoryId ]"
+                               placeholder="请选择种类（须选二级类目，一级类目不可选）" @change="handleCategoryChange">
+                </a-tree-select>
+              </a-form-item>
+            </div>
             <!-- 商品信息卡片：规格模块 -->
             <a-card :title="'商品信息' + (categorySelected ? '' : ' — 选择种类')" size="small" :bordered="true" style="margin-top: 12px;">
               <div v-if="!categorySelected" style="text-align: center; padding: 40px 0; color: #999;">
                 <a-icon type="info-circle" style="font-size: 24px;" />
-                <div style="margin-top: 8px;">请先在基本信息中选择类别，规格将自动加载</div>
+                <div style="margin-top: 8px;">请先选择种类，规格将自动加载</div>
               </div>
               <template v-else>
               <div v-for="(module, mIndex) in specModules" :key="mIndex" class="spec-module">
@@ -3109,6 +3113,16 @@
     height: auto;
     overflow-y: visible;
   }
+  /* 种类选择器：移到商品信息页签后的样式 */
+  .mm-category-selector {
+    padding: 8px 12px 0;
+  }
+  .mm-pages.is-mobile .mm-category-form-item {
+    margin-bottom: 8px;
+  }
+  .mm-pages.is-mobile .mm-category-form-item .ant-form-item-label {
+    padding-bottom: 4px;
+  }
   /* 手机端：收紧弹窗内容区留白，避免三页左侧留白过多 */
   @media (max-width: 768px) {
     ::v-deep .ant-modal-body {
@@ -3381,6 +3395,21 @@
     transform: translateY(-50%);
     margin: 0;
     padding: 0 2px;
+  }
+  /* 手机端：子规格输入框显示为可见的输入框，占满剩余宽度 */
+  .mm-pages.is-mobile .spec-composite-field ::v-deep .ant-input {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0;
+    border: 1px solid #d9d9d9 !important;
+    background: #fff !important;
+    border-radius: 4px;
+    padding: 4px 8px;
+    height: 32px;
+  }
+  .mm-pages.is-mobile .spec-composite-field ::v-deep .ant-input:focus {
+    border-color: #1890ff !important;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2) !important;
   }
   /* 手机端：规格区宽度收敛，避免卡片被内容撑破 */
   .mm-pages.is-mobile .spec-module {

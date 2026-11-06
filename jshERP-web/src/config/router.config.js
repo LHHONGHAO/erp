@@ -89,6 +89,42 @@ export const constantRouterMap = [
     }
   ] : []),
   {
+    path: '/bill/deliveryNote',
+    component: BlankLayout,
+    children: [
+      {
+        path: '',
+        name: 'DeliveryNote',
+        meta: { title: '发货单' },
+        component: () => import(/* webpackChunkName: "bill-delivery-note" */ '@/views/bill/DeliveryNote')
+      }
+    ]
+  },
+  {
+    path: '/bill/deliveryNote/template',
+    component: BlankLayout,
+    children: [
+      {
+        path: '',
+        name: 'DeliveryNoteTemplate',
+        meta: { title: '发货模板' },
+        component: () => import(/* webpackChunkName: "bill-delivery-note" */ '@/views/bill/DeliveryNoteTemplate')
+      }
+    ]
+  },
+  {
+    path: '/label/edit-mobile',
+    name: 'LabelEditMobile',
+    component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelEditMobile'),
+    meta: { title: '标签编辑' }
+  },
+  {
+    path: '/label/print-mobile',
+    name: 'LabelPrintMobile',
+    component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelPrintModal'),
+    meta: { title: '标签打印' }
+  },
+  {
     path: '/material/edit',
     component: TabLayout,
     children: [

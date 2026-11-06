@@ -31,20 +31,29 @@
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
           <div class="lmp-preview-area" ref="previewArea">
             <div class="lmp-preview" :style="previewStyle">
-              <div
-                v-for="item in renderItems"
-                :key="item.key"
-                class="lp-item"
-                :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
-                :style="itemStyle(item.key)"
-              >
-                <template v-if="item.isCode">
-                  <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
-                </template>
-                <template v-else>
-                  <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
-                </template>
-              </div>
+              <!-- 新版模板：按 elements 直接渲染（mm 坐标、条码/二维码、明细循环） -->
+              <label-paper
+                v-if="templateSchema"
+                :schema="templateSchema"
+                :values="attrValues"
+                :rows="detailRows"
+                :scale="1" />
+              <template v-else>
+                <div
+                  v-for="item in renderItems"
+                  :key="item.key"
+                  class="lp-item"
+                  :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                  :style="itemStyle(item.key)"
+                >
+                  <template v-if="item.isCode">
+                    <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                  </template>
+                  <template v-else>
+                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                  </template>
+                </div>
+              </template>
             </div>
           </div>
 
@@ -362,21 +371,30 @@
         <div class="lp-main">
           <!-- 左：标签预览 -->
           <div class="lp-preview-wrap">
-            <div class="lp-preview" :style="{ width: labelWidth + 'px', height: labelHeight + 'px' }">
-              <div
-                v-for="item in renderItems"
-                :key="item.key"
-                class="lp-item"
-                :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
-                :style="itemStyle(item.key)"
-              >
-                <template v-if="item.isCode">
-                  <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
-                </template>
-                <template v-else>
-                  <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
-                </template>
-              </div>
+            <div class="lp-preview" :class="{ 'lp-preview-schema': templateSchema }" :style="{ width: labelWidth + 'px', height: labelHeight + 'px' }">
+              <!-- 新版模板：按 elements 直接渲染（mm 坐标、条码/二维码、明细循环） -->
+              <label-paper
+                v-if="templateSchema"
+                :schema="templateSchema"
+                :values="attrValues"
+                :rows="detailRows"
+                :scale="1" />
+              <template v-else>
+                <div
+                  v-for="item in renderItems"
+                  :key="item.key"
+                  class="lp-item"
+                  :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                  :style="itemStyle(item.key)"
+                >
+                  <template v-if="item.isCode">
+                    <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                  </template>
+                  <template v-else>
+                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                  </template>
+                </div>
+              </template>
             </div>
           </div>
           <!-- 右：打印设置 -->
@@ -523,6 +541,8 @@
   import { printLabel } from '@/views/material/utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
+  import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
+  import LabelPaper from '@/views/material/modules/LabelPaper'
   import { getAction, postAction } from '@/api/manage'
   import {
     DEFAULT_PRINTER_PORT,
@@ -539,6 +559,7 @@
   var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
+    components: { LabelPaper },
     data() {
       return {
         visible: false,
@@ -550,6 +571,8 @@
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 数据源明细行（新版模板 table 元素循环渲染用）
+        detailRows: [],
         // 条码/二维码图片缓存（key → dataURL）
         codeImages: {},
         labelWidth: 320,
@@ -671,13 +694,14 @@
         var map = { backend: '后端', bluetooth: '蓝牙', wifi: 'Wi-Fi', cloud: '云打印' }
         return map[this.printerType] || '后端'
       },
-      // 手机端：预览标签样式（带缩放 + 旋转）
+      // 手机端：预览标签样式（宽度优先填满，高度自然溢出）
       previewStyle() {
         return {
           width: this.labelWidth + 'px',
           height: this.labelHeight + 'px',
           transform: 'scale(' + this.previewScale + ') rotate(' + this.printRotation + 'deg)',
-          transformOrigin: 'center center'
+          // center top：缩放从顶部向下展开，超出高度时从底部溢出可滚动
+          transformOrigin: 'center top'
         }
       },
       modalWidth() {
@@ -770,6 +794,20 @@
         return Math.round(this.labelHeight / PX_PER_MM)
       },
       // 渲染条目：属性文字元素 + 独立的条码/二维码元素
+      // 新版模板（v3 elements）直接渲染；旧模板没有 schema，继续走下面的兼容渲染
+      templateSchema() {
+        return this.template && this.template.schema && this.template.schema.elements
+          ? this.template.schema
+          : null
+      },
+      // 新版模板渲染用的字段值（来自统一数据接口）
+      attrValues() {
+        var map = {}
+        this.allAttrs.forEach(function(attr) {
+          map[attr.key] = attr.value == null ? '' : attr.value
+        })
+        return map
+      },
       renderItems() {
         var items = []
         var styles = this.attrStyles
@@ -814,6 +852,30 @@
         if (self.isMobile && self.visible) self.updatePreviewScale()
       }
       window.addEventListener('resize', this._onResize)
+      // 路由入口（/label/print-mobile）→ 自动打开
+      if (this.$route && this.$route.path === '/label/print-mobile') {
+        var q = this.$route.query || {}
+        this.visible = true
+        this.record = {}
+        this.sku = {}
+        this.allAttrs = this.buildAttrList()
+        this.type = q.type || 'delivery'
+        // 尝试从 sessionStorage 恢复编辑中的模板数据
+        try {
+          var snap = sessionStorage.getItem('jsh.labelEdit.snapshot')
+          if (snap) {
+            var s = JSON.parse(snap)
+            if (s.labelWidth) this.labelWidth = s.labelWidth
+            if (s.labelHeight) this.labelHeight = s.labelHeight
+            if (s.selectedAttrs) this.selectedAttrs = s.selectedAttrs
+            if (s.attrStyles) this.attrStyles = s.attrStyles
+            if (s.attrLabels) this.attrLabels = s.attrLabels
+            // 发货单/小票的字段不在 label 的 allAttrs 里 → 补回缺失字段为自定义条目
+            self.restoreMissingAttrs(this.selectedAttrs)
+          }
+        } catch (e) { /* 忽略 */ }
+        this.$nextTick(function() { self.updatePreviewScale() })
+      }
     },
     beforeDestroy() {
       if (!this._mql) return
@@ -825,7 +887,10 @@
       window.removeEventListener('resize', this._onResize)
     },
     methods: {
-      // 手机端：根据预览区容器尺寸计算标签缩放因子，让标签四周各留 5px 空隙
+      // 手机端：按容器尺寸等比缩放小票/标签
+      //   宽度约束：容器宽 - 左右各 8px
+      //   高度约束：容器高 - 上边距 16px - 底部控件区
+      //   最终 scale = Math.min(scaleW, scaleH) → 完整显示不溢出
       updatePreviewScale() {
         var self = this
         this.$nextTick(function() {
@@ -833,9 +898,13 @@
           if (!area) { self.previewScale = 1; return }
           var rect = area.getBoundingClientRect()
           if (rect.width <= 0 || rect.height <= 0) { self.previewScale = 1; return }
-          // 每侧留 5px 空白
-          var scaleW = (rect.width - 10) / self.labelWidth
-          var scaleH = (rect.height - 10) / self.labelHeight
+          var padLR = 8    // 左右各留 8px
+          var padT = 16    // 上边固定距
+          // 预览区下方还有底部控制区（高度由 flex 自动分配，这里用一个合理估算）
+          var availW = rect.width - padLR * 2
+          var availH = rect.height - padT
+          var scaleW = availW / self.labelWidth
+          var scaleH = availH / self.labelHeight
           self.previewScale = Math.min(scaleW, scaleH)
         })
       },
@@ -1261,6 +1330,7 @@
         this.selectedAttrs = []
         this.attrStyles = {}
         this.attrLabels = {}
+        this.detailRows = []
         if (!tpl) return
         // 自定义标签的值保存在模板里，需要合并回属性列表
         if (tpl.customLabels && tpl.customLabels.length > 0) {
@@ -1303,6 +1373,38 @@
         this.labelHeight = tpl.labelHeight || 240
         // 旧模板（文字与条码合在一个元素里）自动拆分为独立编码元素
         this.attrStyles = migrateCodeStyles(this.attrStyles, this.allAttrs, this.attrLabels)
+        // 模板绑定了业务数据源：走统一适配器取数，预览与打印共用同一份数据
+        this.applyProviderData(tpl)
+      },
+      // 按模板数据源加载统一数据（不直接访问业务数据库）
+      applyProviderData(tpl) {
+        var self = this
+        var provider = tpl && tpl.provider
+        if (!provider) return
+        resolveTemplateData({
+          provider: provider,
+          documentId: this.record.id,
+          sku: this.sku
+        }).then(function(result) {
+          if (!self.template || self.template.id !== tpl.id) return
+          var attrs = (result.attrs || []).map(function(attr) {
+            return { key: attr.key, label: attr.label, value: attr.value, type: attr.type, isCustom: false }
+          })
+          var exists = {}
+          attrs.forEach(function(attr) { exists[attr.key] = true })
+          self.allAttrs.forEach(function(attr) {
+            if (attr.isCustom && !exists[attr.key]) attrs.push(attr)
+          })
+          self.allAttrs = attrs
+          // 明细数组：供新版模板 table 元素循环渲染
+          self.detailRows = result.rows || []
+          // 模板未显式设置标签名的字段，按数据源字段名补上
+          attrs.forEach(function(attr) {
+            if (self.attrLabels[attr.key] === undefined) {
+              self.$set(self.attrLabels, attr.key, attr.label)
+            }
+          })
+        })
       },
       itemStyle(key) {
         var s = this.attrStyles[key]
@@ -1333,6 +1435,18 @@
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
         return buildLabelAttrs(this.record, this.sku)
+      },
+      // 发货单/小票模板里的字段不在 label attrs 里 → 补回缺失 key
+      restoreMissingAttrs(keys) {
+        var self = this
+        var exists = {}
+        this.allAttrs.forEach(function(a) { exists[a.key] = true })
+        ;(keys || []).forEach(function(key) {
+          if (exists[key]) return
+          var label = self.attrLabels[key] || '自定义'
+          self.allAttrs.push({ key: key, label: label, value: label, isCustom: true, group: '自定义' })
+          exists[key] = true
+        })
       },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
@@ -1472,12 +1586,16 @@
         }
         var items = this.buildLayoutItems()
         this.printing = true
-        postAction('/print/label', {
-          printerName: self.selectedPrinter,
-          copies: self.copies,
-          width: self.labelWidth,
-          height: self.labelHeight,
-          items: items
+        // 打印机只能打点阵，交给前端把整张标签渲染成图片，后端转单色位图下发
+        this.renderLabelToPng().then(function(image) {
+          return postAction('/print/label', {
+            printerName: self.selectedPrinter,
+            copies: self.copies,
+            width: self.labelWidth,
+            height: self.labelHeight,
+            image: image,
+            items: items
+          })
         }).then(function(res) {
           self.printing = false
           var data = (res && res.data) || {}
@@ -1546,11 +1664,15 @@
           return
         }
         this.printing = true
-        printToWifiPrinter(printer, {
-          copies: self.copies,
-          width: self.labelWidth,
-          height: self.labelHeight,
-          items: this.buildLayoutItems()
+        // 打印机只能打点阵，交给前端把整张标签渲染成图片，后端转单色位图下发
+        this.renderLabelToPng().then(function(image) {
+          return printToWifiPrinter(printer, {
+            copies: self.copies,
+            width: self.labelWidth,
+            height: self.labelHeight,
+            image: image,
+            items: self.buildLayoutItems()
+          })
         }).then(function(res) {
           self.printing = false
           if (res && res.code === 200) {
@@ -1781,6 +1903,11 @@
     border: 1px dashed #d9d9d9;
     overflow: hidden;
     box-sizing: border-box;
+  }
+  /* 新版模板自带纸张边框，外层不再重复描边，避免 1~2px 内缩 */
+  .lp-preview.lp-preview-schema {
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
   }
   .lp-item {
     position: absolute;
@@ -2185,14 +2312,15 @@
     display: flex;
     align-items: flex-start;
   }
-  /* 预览区：flex 撑满剩余空间，padding 决定标签离上下组件的距离 */
+  /* 预览区：flex 撑满剩余空间，Math.min 完整显示 */
   .lmp-preview-area {
     flex: 1;
     min-height: 80px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 0;
+    padding: 16px 8px 8px 8px;
+    overflow: hidden;
   }
   /* 预览标签（直接在灰色背景上，无白色卡片包裹） */
   .lmp-preview {

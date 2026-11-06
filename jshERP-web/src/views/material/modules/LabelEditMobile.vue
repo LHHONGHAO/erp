@@ -1,0 +1,1836 @@
+<template>
+  <div class="lem-page">
+    <!-- 顶栏 -->
+    <div class="lem-topbar">
+      <a-icon type="arrow-left" class="lem-back" @click="handleBack" />
+      <div class="lem-title-area">
+        <div class="lem-title">{{ currentTitle }}</div>
+        <div class="lem-subtitle" @click="openSizeEditor">
+          {{ labelWidthMm }}mm × {{ labelHeightMm }}mm
+          <a-icon type="edit" class="lem-size-edit-icon" />
+        </div>
+      </div>
+      <div class="lem-top-actions">
+        <a-icon type="fullscreen" class="lem-top-icon" @click="toggleZoom" />
+        <a-icon type="more" class="lem-top-icon" @click="showMore = !showMore" />
+      </div>
+    </div>
+
+    <!-- 对齐排列工具条（固定在顶栏下方，全部图标按钮） -->
+    <div class="lem-align-bar">
+      <div class="lem-align-btns">
+        <a-button size="small" icon="undo" title="撤销" :disabled="historyIndex <= 0" @click="undo" />
+        <a-button size="small" icon="redo" title="恢复" :disabled="historyIndex >= history.length - 1" @click="redo" />
+        <span class="lem-align-divider"></span>
+        <a-button size="small" icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
+        <a-button size="small" icon="align-center" title="水平居中" :disabled="selectedKeys.length < 2" @click="alignSelected('center')" />
+        <a-button size="small" icon="align-right" title="右对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('right')" />
+        <a-button size="small" icon="vertical-align-top" title="顶对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('top')" />
+        <a-button size="small" icon="vertical-align-middle" title="垂直居中" :disabled="selectedKeys.length < 2" @click="alignSelected('middle')" />
+        <a-button size="small" icon="vertical-align-bottom" title="底对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('bottom')" />
+        <span class="lem-align-divider"></span>
+        <a-button size="small" title="左右均分" :disabled="selectedKeys.length < 3" @click="distributeSelected('h')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="4" width="3" height="8"/>
+            <rect x="6.5" y="4" width="3" height="8"/>
+            <rect x="12" y="4" width="3" height="8"/>
+          </svg>
+        </a-button>
+        <a-button size="small" title="上下均分" :disabled="selectedKeys.length < 3" @click="distributeSelected('v')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="4" y="1" width="8" height="3"/>
+            <rect x="4" y="6.5" width="8" height="3"/>
+            <rect x="4" y="12" width="8" height="3"/>
+          </svg>
+        </a-button>
+        <a-button size="small" icon="close" title="取消选择" :disabled="!selectedKeys.length" @click="clearSelection" />
+      </div>
+    </div>
+
+    <!-- 预览区 -->
+    <div class="lem-preview-wrap" ref="previewWrap" :class="wrapScrolling ? 'lem-preview-wrap--scrolling' : 'lem-preview-wrap--fitting'">
+      <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
+      <div
+        class="lem-label"
+        ref="labelCanvas"
+        :style="[labelStyle, { touchAction: multiSelectMode ? 'none' : 'auto' }]"
+        @pointerdown.self.prevent="startMarquee"
+      >
+        <div
+          v-for="(key, idx) in selectedAttrs"
+          :key="key"
+          class="lem-elem"
+          :data-key="key"
+          :class="{ 'lem-elem-selected': isSelected(key), 'lem-elem-code': isCode(key) }"
+          :style="getElementStyle(key)"
+          @pointerdown.stop.prevent="startPointerDrag(key, $event, 'move')"
+        >
+          <template v-if="isCode(key)">
+            <img v-if="codeImages[key]" :src="codeImages[key]" class="lem-code-img" />
+            <span v-else class="lem-code-placeholder">编码</span>
+          </template>
+          <template v-else-if="key === 'dn_table'">
+            <div class="lem-mini-table" :style="{ width: getTablePreviewWidth(key) + 'px' }">
+              <div class="lem-mini-row lem-mini-head">
+                <span class="lem-mini-col-name">商品名称</span>
+                <span class="lem-mini-col-qty">数量</span>
+                <span class="lem-mini-col-spec">规格</span>
+              </div>
+              <div class="lem-mini-row" v-for="n in 3" :key="n">
+                <span class="lem-mini-col-name">{{ '示例商品' + n }}</span>
+                <span class="lem-mini-col-qty">{{ n }}</span>
+                <span class="lem-mini-col-spec">白色 / XL</span>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="isDetailColumn(key)">
+            <div class="lem-col-stack">
+              <div class="lem-col-line" v-for="n in 2" :key="n">{{ getDetailSample(key, n) }}</div>
+            </div>
+          </template>
+          <template v-else>
+            <span class="lem-elem-label" v-if="attrLabels[key]">{{ attrLabels[key] }}：</span>
+            <span class="lem-elem-value">{{ getAttrValue(key) }}</span>
+          </template>
+          <span
+            v-if="currentAttrKey === key"
+            class="lem-resize-handle"
+            :style="handleAntiScaleStyle"
+            @pointerdown.stop.prevent="startPointerDrag(key, $event, 'resize')"
+          ></span>
+          <span
+            v-if="currentAttrKey === key && !isCode(key)"
+            class="lem-delete-btn"
+            :style="deleteBtnAntiScaleStyle"
+            @click.stop="removeAttr(currentAttrKey)"
+          >×</span>
+        </div>
+        <!-- 框选矩形 -->
+        <div v-if="marquee.visible" class="lem-marquee" :style="marqueeStyle"></div>
+      </div>
+      <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
+    </div>
+
+    <!-- 工具栏：始终固定在屏幕底边，按钮左右滑动，下滑/上滑按钮固定在右侧 -->
+    <div class="lem-toolbar">
+      <div class="lem-toolbar-scroll">
+        <div class="lem-tool-btn" @click="openElementPanel">
+          <a-icon type="appstore" />
+          <span>元素</span>
+        </div>
+        <div class="lem-tool-btn" @click="deleteSelected">
+          <a-icon type="delete" />
+          <span>删除</span>
+        </div>
+        <div class="lem-tool-btn" @click="zoomIn">
+          <a-icon type="zoom-in" />
+          <span>放大</span>
+        </div>
+        <div class="lem-tool-btn" @click="zoomOut">
+          <a-icon type="zoom-out" />
+          <span>缩小</span>
+        </div>
+        <div class="lem-tool-btn" @click="saveTemplate">
+          <a-icon type="save" />
+          <span>保存</span>
+        </div>
+        <div class="lem-tool-btn" @click="handlePrint">
+          <a-icon type="printer" />
+          <span>打印</span>
+        </div>
+        <div class="lem-tool-btn" @click="openSettings">
+          <a-icon type="setting" />
+          <span>设置</span>
+        </div>
+      </div>
+      <div class="lem-toolbar-move" :class="{ 'lem-toolbar-move-locked': panelDown }" @click="togglePanelMode">
+        <a-icon :type="panelDown ? 'up' : 'down'" />
+        <span>{{ panelDown ? '上滑' : '下滑' }}</span>
+      </div>
+    </div>
+
+    <!-- 属性编辑面板：上滑状态为向上浮出的弹层；下滑状态不弹层 -->
+    <div class="lem-panel" v-if="selectedKeys.length && !panelDown">
+      <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
+      <!-- 属性名 / 文本内容（单选时显示） -->
+      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields">
+        <a-input
+          :value="currentLabel"
+          :placeholder="isCustomAttr(selectedKeys[0]) ? '自定义文本内容' : '属性名（留空不显示）'"
+          class="lem-text-input"
+          @input="updateCurrentLabel"
+        />
+      </div>
+      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0])">
+        <a-input
+          :value="currentValue"
+          placeholder="文本内容"
+          class="lem-text-input"
+          @input="updateCurrentValue"
+        />
+        <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+      </div>
+      <!-- 样式编辑：多选时不一致的项显示为空，修改后应用到全部 -->
+      <div class="lem-style-grid">
+        <div class="lem-style-item" v-if="showFontFields">
+          <span class="lem-style-label">字号</span>
+          <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" style="width:70px" placeholder="多值" />
+        </div>
+        <div class="lem-style-item" v-if="showFontFields">
+          <span class="lem-style-label">粗细</span>
+          <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" style="width:70px" placeholder="多值">
+            <a-select-option value="normal">正常</a-select-option>
+            <a-select-option value="bold">粗体</a-select-option>
+          </a-select>
+        </div>
+        <div class="lem-style-item" v-if="showFontFields">
+          <span class="lem-style-label">字距</span>
+          <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" style="width:70px" placeholder="多值" />
+        </div>
+        <div class="lem-style-item" v-if="showFontFields">
+          <span class="lem-style-label">行距</span>
+          <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" style="width:70px" placeholder="多值" />
+        </div>
+        <div class="lem-style-item">
+          <span class="lem-style-label">X</span>
+          <a-input-number :value="getMultiStyle('x')" @change="v => setMultiStyle('x', v)" size="small" style="width:70px" />
+        </div>
+        <div class="lem-style-item">
+          <span class="lem-style-label">Y</span>
+          <a-input-number :value="getMultiStyle('y')" @change="v => setMultiStyle('y', v)" size="small" style="width:70px" />
+        </div>
+        <div class="lem-style-item">
+          <span class="lem-style-label">宽</span>
+          <a-input-number :value="getMultiStyle('width')" @change="v => setMultiStyle('width', v)" :min="10" :max="2000" size="small" style="width:70px" placeholder="自动" />
+        </div>
+        <div class="lem-style-item">
+          <span class="lem-style-label">高</span>
+          <a-input-number :value="getMultiStyle('height')" @change="v => setMultiStyle('height', v)" :min="10" :max="1000" size="small" style="width:70px" placeholder="自动" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 元素选择弹层：全宽，从底边栏上沿向上弹出，受弹出锁定按钮控制 -->
+    <div v-if="elementPanelVisible && !panelDown" class="lem-sheet-mask" @click="elementPanelVisible = false">
+      <div class="lem-sheet" @click.stop>
+        <div class="lem-sheet-head">
+          <span class="lem-sheet-title">元素</span>
+        </div>
+        <div class="lem-sheet-body">
+          <div v-for="group in attrGroups" :key="group.name" class="lem-elem-group">
+            <div class="lem-elem-group-title">{{ group.name }}</div>
+            <div
+              v-for="attr in group.attrs"
+              :key="attr.key"
+              class="lem-elem-item"
+              :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
+              @click="toggleAttr(attr.key)"
+            >
+              <span>{{ attr.label }}</span>
+              <a-icon
+                :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
+                :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
+                :style="{ color: selectedAttrs.indexOf(attr.key) > -1 ? '#1890ff' : '#bfbfbf' }"
+              />
+            </div>
+          </div>
+          <a-button type="dashed" block class="lem-add-custom" @click="addCustomLabel">
+            <a-icon type="plus" />添加自定义标签
+          </a-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 尺寸编辑弹窗 -->
+    <a-modal
+      :visible="sizeEditorVisible"
+      title="标签尺寸"
+      @ok="confirmSizeEdit"
+      @cancel="sizeEditorVisible = false"
+      ok-text="确定"
+      cancel-text="取消"
+    >
+      <div class="lem-size-editor">
+        <div class="lem-size-row">
+          <span class="lem-size-label">宽度</span>
+          <a-input-number
+            v-model="editWidthMm"
+            :min="10"
+            :max="500"
+            style="width: 120px"
+            addon-after="mm"
+          />
+        </div>
+        <div class="lem-size-row">
+          <span class="lem-size-label">高度</span>
+          <a-input-number
+            v-model="editHeightMm"
+            :min="10"
+            :max="800"
+            style="width: 120px"
+            addon-after="mm"
+          />
+        </div>
+        <div class="lem-size-presets">
+          <div class="lem-size-preset-item" @click="applyPreset(60, 40)">60×40</div>
+          <div class="lem-size-preset-item" @click="applyPreset(40, 30)">40×30</div>
+          <div class="lem-size-preset-item" @click="applyPreset(80, 50)">80×50</div>
+          <div class="lem-size-preset-item" @click="applyPreset(100, 60)">100×60</div>
+          <div class="lem-size-preset-item" @click="applyPreset(148, 212)">148×212</div>
+          <div class="lem-size-preset-item" @click="applyPreset(210, 297)">A4</div>
+        </div>
+      </div>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+  import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
+  import { isCodeKey, codeSourceKey, renderCodeDataUrl, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
+  import { fetchLabelTemplates, saveLabelTemplates } from '@/views/material/utils/labelTemplateStore'
+  import { fetchDeliveryTemplate, saveDeliveryTemplate as persistDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
+  import { getAction, postAction } from '@/api/manage'
+  import { computeSpacer, centerScroll, setupLabelScroll } from '@/utils/label-scroll'
+
+  const PX_PER_MM = 3.779528
+
+  /**
+   * 模板类型配置表
+   * 所有类型差异集中在此，新增类型只需加一行（如以后的 receipt/小票）
+   *
+   * storage: 'localTemplates' → 用 fetchLabelTemplates / saveLabelTemplates（多模板列表）
+   *           'platformConfig' → 用 getUiConfig / saveUiConfig（单 key 覆盖写）
+   */
+  const TYPE_CONFIG = {
+    label: {
+      title: '标签编辑',
+      defaultWidth: 320,
+      defaultHeight: 240,
+      attrsBuilder: 'label',
+      storage: 'localTemplates',
+      defaultKeys: ['name', 'spec', 'price', 'barcode'], // 仅 applyDefaultLayout 使用
+      successMsg: '标签模版已保存'
+    },
+    delivery: {
+      title: '发货模版编辑',
+      defaultWidth: 560,
+      defaultHeight: 800,
+      attrsBuilder: 'delivery',
+      storage: 'deliveryTemplate',
+      defaultKeys: ['dn_title', 'dn_no', 'dn_date', 'dn_member', 'dn_phone', 'dn_table', 'dn_qty_total', 'dn_amount_total', 'dn_remark', 'dn_footer'],
+      successMsg: '发货模版已保存'
+    },
+    receipt: {
+      title: '小票编辑',
+      defaultWidth: 380,
+      defaultHeight: 600,
+      attrsBuilder: 'receipt',
+      storage: 'platformConfig',
+      platformConfigKey: 'receipt_layout',
+      defaultKeys: [],
+      successMsg: '小票模版已保存'
+    }
+  }
+
+  export default {
+    name: 'LabelEditMobile',
+    data() {
+      return {
+        templateType: 'label',
+        record: {},
+        sku: {},
+        allAttrs: [],
+        selectedAttrs: [],
+        attrStyles: {},
+        attrLabels: {},
+        currentAttrKey: null,
+        labelWidth: 320,
+        labelHeight: 240,
+        zoom: 1,
+        showMore: false,
+        elementPanelVisible: false,
+        customCounter: 0,
+        // true = 下滑状态：点击元素不向上弹层；false = 上滑状态：面板向上浮出
+        panelDown: false,
+        templates: [],
+        selectedTemplateId: null,
+        // 发货单模板（统一模板表记录）
+        deliveryTemplate: null,
+        codeImages: {},
+        history: [],
+        historyIndex: -1,
+        dragging: { active: false, mode: '', key: '', startX: 0, startY: 0, origX: 0, origY: 0, origW: 0, origH: 0, moved: false },
+        selectedKeys: [],
+        multiSelectMode: false,
+        suppressClick: false,
+        marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
+        sizeEditorVisible: false,
+        editWidthMm: 148,
+        editHeightMm: 212,
+        // wrap 是否溢出需要滚动：true → flex-start + scrollLeft 居中；false → center 直接居中
+        wrapScrolling: false
+      }
+    },
+    computed: {
+      currentTitle() {
+        var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        return cfg.title
+      },
+      labelWidthMm() {
+        return Math.round(this.labelWidth / PX_PER_MM)
+      },
+      labelHeightMm() {
+        return Math.round(this.labelHeight / PX_PER_MM)
+      },
+      labelStyle() {
+        return {
+          width: this.labelWidth + 'px',
+          height: this.labelHeight + 'px',
+          transform: 'scale(' + this.zoom + ')',
+          transformOrigin: 'center top'
+        }
+      },
+      // 标签居中 + 对称滑动：从 label-scroll 模块计算单侧 spacer 宽度
+      scrollSpacer() {
+        return computeSpacer(this.labelWidth, this.zoom)
+      },
+      // handle / delete 反缩放：同时抵消尺寸 AND 偏移量
+      // 外层 label scale(zoom) 会把子元素的尺寸和偏移都放大 zoom 倍
+      // 所以 layout 层的 right/bottom/top/left 也要除以 zoom
+      handleAntiScaleStyle() {
+        var inv = 1 / this.zoom
+        return {
+          right: (-10 * inv) + 'px',
+          bottom: (-10 * inv) + 'px',
+          transform: 'scale(' + inv + ')',
+          transformOrigin: 'bottom right'
+        }
+      },
+      deleteBtnAntiScaleStyle() {
+        var inv = 1 / this.zoom
+        return {
+          top: (-10 * inv) + 'px',
+          left: (-10 * inv) + 'px',
+          transform: 'scale(' + inv + ')',
+          transformOrigin: 'top left'
+        }
+      },
+      // 按 group 分组展示全部字段（已选中/未选中都列出，勾选式切换）
+      attrGroups() {
+        var groups = []
+        var map = {}
+        this.allAttrs.forEach(function(a) {
+          var name = a.group || '可用字段'
+          if (!map[name]) {
+            map[name] = { name: name, attrs: [] }
+            groups.push(map[name])
+          }
+          map[name].attrs.push(a)
+        })
+        return groups
+      },
+      currentValue() {
+        if (!this.currentAttrKey) return ''
+        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
+        return attr ? attr.value : ''
+      },
+      currentLabel() {
+        if (!this.currentAttrKey) return ''
+        return this.attrLabels[this.currentAttrKey] || ''
+      },
+      // 字体类字段是否显示：只要选中项中含非编码元素就显示
+      showFontFields() {
+        if (!this.selectedKeys.length) return false
+        return !this.selectedKeys.every(k => this.isCode(k))
+      },
+      marqueeStyle() {
+        return {
+          left: this.marquee.x + 'px',
+          top: this.marquee.y + 'px',
+          width: this.marquee.w + 'px',
+          height: this.marquee.h + 'px'
+        }
+      }
+    },
+    mounted() {
+      this.initFromRoute()
+      // 标签居中 + 对称滑动：用 label-scroll 模块
+      setupLabelScroll(this, 'previewWrap', 'labelWidth', 'zoom', 'wrapScrolling')
+    },
+    beforeDestroy() {
+      this.unbindPointerEvents()
+      this.unbindMarqueeEvents()
+      if (this._labelScrollResize && typeof window !== 'undefined') {
+        window.removeEventListener('resize', this._labelScrollResize)
+        this._labelScrollResize = null
+      }
+    },
+    methods: {
+      initFromRoute() {
+        var type = this.$route.query.type || 'label'
+        var cfg = TYPE_CONFIG[type] || TYPE_CONFIG.label
+        this.templateType = type
+        this.labelWidth = cfg.defaultWidth
+        this.labelHeight = cfg.defaultHeight
+        this.deliveryTemplate = null
+        this.allAttrs = this.buildAttrs(cfg.attrsBuilder)
+        this.loadTemplate(cfg)
+      },
+      /** 根据 attrsBuilder 名称构建字段列表，新增类型只需在此加分支 */
+      buildAttrs(builder) {
+        switch (builder) {
+          case 'delivery': return this.buildDeliveryAttrs()
+          case 'receipt': return this.buildReceiptAttrs()
+          case 'label':
+          default: return buildLabelAttrs(this.record, this.sku)
+        }
+      },
+      /** 统一的模板加载入口，根据 storage 类型分发 */
+      loadTemplate(cfg) {
+        var self = this
+        if (cfg.storage === 'localTemplates') {
+          var templateId = this.$route.query.templateId
+          fetchLabelTemplates().then(function(templates) {
+            self.templates = templates || []
+            var target = templateId ? templates.find(t => t.id === templateId) : (templates[0] || null)
+            if (target && target.selectedAttrs) {
+              self.applyTemplateSnapshot(target, cfg)
+              self.selectedTemplateId = target.id
+            }
+          })
+        } else if (cfg.storage === 'deliveryTemplate') {
+          // 发货单模板：统一模板表适配器（兼容旧 platformConfig）
+          fetchDeliveryTemplate().then(function(tpl) {
+            if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) {
+              self.deliveryTemplate = tpl
+              self.applyTemplateSnapshot(tpl, cfg)
+            } else {
+              self.applyDefaultLayout(cfg)
+            }
+          }).catch(function() {
+            self.applyDefaultLayout(cfg)
+          })
+        } else if (cfg.storage === 'platformConfig') {
+          var tryLoad = function(key, isFallback) {
+            getAction('/platformConfig/getUiConfig', { key: key }).then(function(res) {
+              var data = (res && res.code === 200) ? res.data : null
+              var snap = self.parseConfigData(data)
+              if (snap && snap.selectedAttrs && snap.selectedAttrs.length) {
+                self.applyTemplateSnapshot(snap, cfg)
+                // 从旧 key 迁移过来的话，顺便写一份到新 key
+                if (isFallback && cfg.platformConfigKey && cfg.platformConfigKey !== key) {
+                  self.postSnapshot(cfg.platformConfigKey, snap)
+                }
+              } else if (!isFallback && cfg.legacyPlatformConfigKey) {
+                tryLoad(cfg.legacyPlatformConfigKey, true)
+              } else {
+                self.applyDefaultLayout(cfg)
+              }
+            }).catch(function() {
+              if (!isFallback && cfg.legacyPlatformConfigKey) {
+                tryLoad(cfg.legacyPlatformConfigKey, true)
+              } else {
+                self.applyDefaultLayout(cfg)
+              }
+            })
+          }
+          tryLoad(cfg.platformConfigKey, false)
+        }
+      },
+      /** 把持久化快照应用到当前编辑状态 */
+      applyTemplateSnapshot(snap, cfg) {
+        this.selectedAttrs = JSON.parse(JSON.stringify(snap.selectedAttrs))
+        this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
+        this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        if (snap.width) this.labelWidth = snap.width
+        if (snap.height) this.labelHeight = snap.height
+        this.restoreMissingAttrs(snap.selectedAttrs)
+      },
+      /** getUiConfig 返回值可能是字符串或已解析对象，统一处理 */
+      parseConfigData(data) {
+        var cfg = data
+        if (typeof data === 'string') {
+          try { cfg = JSON.parse(data) } catch (e) { cfg = null }
+        }
+        if (cfg && typeof cfg === 'object' && cfg.config != null) cfg = cfg.config
+        return cfg
+      },
+      /** 通用 platformConfig 写入 */
+      postSnapshot(key, snap) {
+        return postAction('/platformConfig/saveUiConfig', {
+          key: key,
+          value: JSON.stringify(snap)
+        })
+      },
+      // 零售出库单据全部可显示字段，group 仅用于「元素」弹窗分组展示
+      buildDeliveryAttrs() {
+        return [
+          { key: 'dn_title', label: '发货单标题', value: '发货单', group: '单据头' },
+          { key: 'dn_no', label: '单号', value: 'LS261105001', group: '单据头' },
+          { key: 'dn_date', label: '单据日期', value: '2026-11-05 10:30', group: '单据头' },
+          { key: 'dn_member', label: '会员', value: '张三', group: '单据头' },
+          { key: 'dn_receiver', label: '收货人', value: '张三', group: '单据头' },
+          { key: 'dn_phone', label: '联系电话', value: '13800138000', group: '单据头' },
+          { key: 'dn_address', label: '收货地址', value: '北京市朝阳区xx路xx号', group: '单据头' },
+          { key: 'dn_depot', label: '仓库', value: '主仓库', group: '单据头' },
+          { key: 'dn_paytype', label: '收款类型', value: '现金', group: '单据头' },
+          { key: 'dn_account', label: '收款账户', value: '现金账户', group: '单据头' },
+          { key: 'dn_operator', label: '操作员', value: 'admin', group: '单据头' },
+          { key: 'dn_salesman', label: '业务员', value: '李四', group: '单据头' },
+          { key: 'dn_remark', label: '备注', value: '请尽快发货', group: '单据头' },
+          { key: 'dn_attach', label: '附件', value: '无', group: '单据头' },
+          { key: 'dn_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
+          { key: 'dn_col_name', label: '商品名（逐行）', value: '示例商品', group: '商品明细' },
+          { key: 'dn_col_spec', label: '规格（逐行）', value: '白色/XL', group: '商品明细' },
+          { key: 'dn_col_qty', label: '数量（逐行）', value: '2', group: '商品明细' },
+          { key: 'dn_col_price', label: '单价（逐行）', value: '280.00', group: '商品明细' },
+          { key: 'dn_col_amount', label: '金额（逐行）', value: '280.00', group: '商品明细' },
+          { key: 'dn_qty_total', label: '数量合计', value: '1', group: '金额合计' },
+          { key: 'dn_amount_total', label: '金额合计', value: '¥280.00', group: '金额合计' },
+          { key: 'dn_discount', label: '优惠折扣', value: '10', group: '金额合计' },
+          { key: 'dn_discount_amount', label: '优惠金额', value: '28.00', group: '金额合计' },
+          { key: 'dn_real_amount', label: '应收金额', value: '252.00', group: '金额合计' },
+          { key: 'dn_paid_total', label: '收款金额', value: '252.00', group: '金额合计' },
+          { key: 'dn_back_amount', label: '找零', value: '0.00', group: '金额合计' },
+          { key: 'dn_status', label: '单据状态', value: '已审核', group: '其它' },
+          { key: 'dn_footer', label: '落款', value: '华夏家纺', group: '其它' }
+        ]
+      },
+      /** 小票字段占位（后续按业务需求补充） */
+      buildReceiptAttrs() {
+        return [
+          { key: 'rc_title', label: '小票标题', value: '零售小票', group: '单据头' },
+          { key: 'rc_no', label: '单号', value: 'LS261105001', group: '单据头' },
+          { key: 'rc_date', label: '日期', value: '2026-11-05 10:30', group: '单据头' },
+          { key: 'rc_member', label: '会员', value: '张三', group: '单据头' },
+          { key: 'rc_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
+          { key: 'rc_qty_total', label: '数量合计', value: '1', group: '金额合计' },
+          { key: 'rc_amount_total', label: '金额合计', value: '¥280.00', group: '金额合计' },
+          { key: 'rc_remark', label: '备注', value: '谢谢惠顾', group: '其它' },
+          { key: 'rc_footer', label: '落款', value: '华夏家纺', group: '其它' }
+        ]
+      },
+      /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
+      applyDefaultLayout(cfg) {
+        cfg = cfg || TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        var DEFAULT_KEYS = cfg.defaultKeys || []
+        var styles = {}
+        var labels = {}
+        var selected = []
+        var y = 10
+        var self = this
+        this.allAttrs.forEach(function(a) {
+          if (DEFAULT_KEYS.indexOf(a.key) === -1) return
+          selected.push(a.key)
+          var isTitle = /title$/.test(a.key)
+          var isTable = /table$/.test(a.key)
+          styles[a.key] = {
+            x: 20, y: y, width: 0, height: 0,
+            fontSize: isTitle ? 18 : 12,
+            fontWeight: isTitle ? 'bold' : 'normal',
+            letterSpacing: 0, lineHeight: 1.2
+          }
+          labels[a.key] = a.label
+          if (isTable) y += 160
+          else if (isTitle) y += 32
+          else y += 24
+        })
+        // 小票没配 defaultKeys 时，至少选标题+单号
+        if (!selected.length && self.templateType === 'receipt') {
+          self.allAttrs.forEach(function(a) {
+            if (a.key === 'rc_title' || a.key === 'rc_no') {
+              selected.push(a.key)
+              styles[a.key] = { x: 20, y: y, width: 0, height: 0, fontSize: 14, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.2 }
+              labels[a.key] = a.label
+              y += 28
+            }
+          })
+        }
+        this.selectedAttrs = selected
+        this.attrStyles = styles
+        this.attrLabels = labels
+      },
+      // 模板里的自定义标签不在固定字段清单中，需补回 allAttrs 才能在编辑器预览/编辑
+      restoreMissingAttrs(keys) {
+        var self = this
+        var exists = {}
+        this.allAttrs.forEach(function(a) { exists[a.key] = true })
+        ;(keys || []).forEach(function(key) {
+          if (exists[key]) return
+          var label = self.attrLabels[key] || '自定义'
+          self.allAttrs.push({ key: key, label: label, value: label, isCustom: true, group: '自定义' })
+          exists[key] = true
+        })
+      },
+      getAttrValue(key) {
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return attr ? attr.value : ''
+      },
+      getElementStyle(key) {
+        var style = this.attrStyles[key] || {}
+        var result = {
+          left: (style.x || 0) + 'px',
+          top: (style.y || 0) + 'px',
+          fontSize: (style.fontSize || 12) + 'px',
+          fontWeight: style.fontWeight || 'normal',
+          letterSpacing: (style.letterSpacing || 0) + 'px',
+          lineHeight: style.lineHeight || 1.2
+        }
+        if (style.width) result.width = style.width + 'px'
+        if (style.height) result.height = style.height + 'px'
+        return result
+      },
+      isCode(key) {
+        return isCodeKey(key)
+      },
+      isSelected(key) {
+        return this.selectedKeys.indexOf(key) > -1
+      },
+      selectElement(key) {
+        // 拖动结束后紧随的 click 不应改变选择状态
+        if (this.suppressClick) {
+          this.suppressClick = false
+          return
+        }
+        // 点击一次选中、再次点击取消（toggle）
+        var idx = this.selectedKeys.indexOf(key)
+        if (idx > -1) {
+          this.selectedKeys.splice(idx, 1)
+          if (this.currentAttrKey === key) {
+            this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+          }
+        } else {
+          // 如果之前已多选且点在另一个未选中项上 → 开始多选（保留已选中）
+          if (this.selectedKeys.length > 0) {
+            this.selectedKeys.push(key)
+          } else {
+            this.selectedKeys = [key]
+          }
+          this.currentAttrKey = key
+        }
+      },
+      clearSelection() {
+        this.selectedKeys = []
+        this.currentAttrKey = null
+      },
+      addAttr(key) {
+        if (this.selectedAttrs.indexOf(key) !== -1) return
+        this.selectedAttrs.push(key)
+        var idx = this.selectedAttrs.length
+        this.$set(this.attrStyles, key, { x: 10, y: 10 + idx * 30, width: 0, height: 0, fontSize: 12, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.2 })
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        if (attr) this.$set(this.attrLabels, key, attr.label)
+        this.selectedKeys = [key]
+        this.currentAttrKey = key
+      },
+      // 勾选式切换：已选中则移除，未选中则添加（弹窗保持打开，可连续操作）
+      toggleAttr(key) {
+        if (this.selectedAttrs.indexOf(key) > -1) {
+          this.removeAttr(key)
+        } else {
+          this.addAttr(key)
+        }
+      },
+      // 自定义标签：新增一个可自由填写文案的元素
+      addCustomLabel() {
+        this.customCounter = (this.customCounter || 0) + 1
+        var key = 'custom_' + this.customCounter + '_' + Date.now()
+        var attr = { key: key, label: '自定义', value: '自定义文本', isCustom: true, group: '自定义' }
+        this.allAttrs.push(attr)
+        this.addAttr(key)
+      },
+      isDetailColumn(key) {
+        return ['dn_col_name', 'dn_col_spec', 'dn_col_qty', 'dn_col_price', 'dn_col_amount'].indexOf(key) > -1
+      },
+      isCustomAttr(key) {
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return !!(attr && attr.isCustom)
+      },
+      // 明细列在编辑器中的两行示例值，与渲染页行高保持一致
+      getDetailSample(key, n) {
+        var samples = {
+          dn_col_name: n === 1 ? '示例商品一' : '示例商品二',
+          dn_col_spec: '白色/XL',
+          dn_col_qty: '2',
+          dn_col_price: '280.00',
+          dn_col_amount: '280.00'
+        }
+        return samples[key] || ''
+      },
+      removeAttr(key) {
+        var idx = this.selectedAttrs.indexOf(key)
+        if (idx !== -1) this.selectedAttrs.splice(idx, 1)
+        this.$delete(this.attrStyles, key)
+        this.$delete(this.attrLabels, key)
+        var sIdx = this.selectedKeys.indexOf(key)
+        if (sIdx !== -1) this.selectedKeys.splice(sIdx, 1)
+        if (this.currentAttrKey === key) {
+          this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+        }
+      },
+      updateCurrentLabel(e) {
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        if (this.currentAttrKey) this.$set(this.attrLabels, this.currentAttrKey, val)
+      },
+      // 多选批量读取：全部一致返回值，否则 null（输入框显示为空）
+      getMultiStyle(field) {
+        if (!this.selectedKeys.length) return null
+        var first = this.attrStyles[this.selectedKeys[0]]
+        var val = first ? first[field] : undefined
+        for (var i = 1; i < this.selectedKeys.length; i++) {
+          var s = this.attrStyles[this.selectedKeys[i]]
+          if ((s ? s[field] : undefined) !== val) return null
+        }
+        return val === undefined ? null : val
+      },
+      // 多选批量写入：应用到全部选中元素（跳过空值，避免破坏定位样式）
+      setMultiStyle(field, val) {
+        if (val === null || val === undefined || val === '') return
+        var self = this
+        this.selectedKeys.forEach(function(key) {
+          if (!self.attrStyles[key]) self.$set(self.attrStyles, key, {})
+          self.$set(self.attrStyles[key], field, val)
+        })
+        this.pushSnapshot()
+      },
+      // 读取元素实际渲染尺寸（offsetWidth/Height 不受 transform 缩放影响）
+      getItemSize(key) {
+        var el = document.querySelector('.lem-elem[data-key="' + key + '"]')
+        return { w: el ? el.offsetWidth : 0, h: el ? el.offsetHeight : 0 }
+      },
+      // 对齐：以选中对象外接矩形为基准 left/center/right/top/middle/bottom
+      alignSelected(mode) {
+        var self = this
+        var keys = this.selectedKeys
+        if (keys.length < 2) return
+        var rects = keys.map(function(key) {
+          var s = self.attrStyles[key] || {}
+          var size = self.getItemSize(key)
+          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+        })
+        var minX = Math.min.apply(null, rects.map(function(r) { return r.x }))
+        var maxX = Math.max.apply(null, rects.map(function(r) { return r.x + r.w }))
+        var minY = Math.min.apply(null, rects.map(function(r) { return r.y }))
+        var maxY = Math.max.apply(null, rects.map(function(r) { return r.y + r.h }))
+        rects.forEach(function(r) {
+          var s = self.attrStyles[r.key]
+          if (!s) return
+          if (mode === 'left') self.$set(s, 'x', Math.round(minX))
+          if (mode === 'right') self.$set(s, 'x', Math.round(maxX - r.w))
+          if (mode === 'center') self.$set(s, 'x', Math.round((minX + maxX - r.w) / 2))
+          if (mode === 'top') self.$set(s, 'y', Math.round(minY))
+          if (mode === 'bottom') self.$set(s, 'y', Math.round(maxY - r.h))
+          if (mode === 'middle') self.$set(s, 'y', Math.round((minY + maxY - r.h) / 2))
+        })
+        this.pushSnapshot()
+      },
+      // 均分：h 左右均分，v 上下均分（首尾不动，中间等间距）
+      distributeSelected(dir) {
+        var self = this
+        var keys = this.selectedKeys
+        if (keys.length < 3) return
+        var rects = keys.map(function(key) {
+          var s = self.attrStyles[key] || {}
+          var size = self.getItemSize(key)
+          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+        })
+        if (dir === 'h') {
+          rects.sort(function(a, b) { return a.x - b.x })
+          var totalW = rects.reduce(function(sum, r) { return sum + r.w }, 0)
+          var firstH = rects[0]
+          var lastH = rects[rects.length - 1]
+          var gapH = ((lastH.x + lastH.w) - firstH.x - totalW) / (rects.length - 1)
+          var cursorH = firstH.x
+          rects.forEach(function(r) {
+            self.$set(self.attrStyles[r.key], 'x', Math.round(cursorH))
+            cursorH += r.w + gapH
+          })
+        } else {
+          rects.sort(function(a, b) { return a.y - b.y })
+          var totalH = rects.reduce(function(sum, r) { return sum + r.h }, 0)
+          var firstV = rects[0]
+          var lastV = rects[rects.length - 1]
+          var gapV = ((lastV.y + lastV.h) - firstV.y - totalH) / (rects.length - 1)
+          var cursorV = firstV.y
+          rects.forEach(function(r) {
+            self.$set(self.attrStyles[r.key], 'y', Math.round(cursorV))
+            cursorV += r.h + gapV
+          })
+        }
+        this.pushSnapshot()
+      },
+      updateCurrentValue(e) {
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
+        if (attr) attr.value = val
+      },
+      openElementPanel() {
+        if (this.panelDown) {
+          this.$message.warning('已锁定弹出层，先点右下角「上滑」解锁')
+          return
+        }
+        // 再点一次「元素」即关闭
+        this.elementPanelVisible = !this.elementPanelVisible
+      },
+      deleteSelected() {
+        var keys = this.selectedKeys.slice()
+        if (!keys.length && this.currentAttrKey) keys = [this.currentAttrKey]
+        if (!keys.length) return
+        var self = this
+        keys.forEach(function(k) { self.removeAttr(k) })
+      },
+      toggleMultiSelect() {
+        this.multiSelectMode = !this.multiSelectMode
+        // 退出多选时收敛为单选；进入多选保留当前选中项作为起点
+        if (!this.multiSelectMode) {
+          this.selectedKeys = this.currentAttrKey ? [this.currentAttrKey] : []
+        }
+      },
+      // 下滑/上滑：只控制属性面板是否向上弹层，工具栏始终固定在底边
+      togglePanelMode() {
+        this.panelDown = !this.panelDown
+      },
+      copyElement() {
+        if (!this.currentAttrKey) return
+        var srcKey = this.currentAttrKey
+        var newKey = srcKey + '_copy_' + Date.now()
+        var srcAttr = this.allAttrs.find(function(a) { return a.key === srcKey })
+        if (srcAttr) {
+          this.allAttrs.push({ key: newKey, label: srcAttr.label, value: srcAttr.value, isCustom: true })
+        }
+        this.selectedAttrs.push(newKey)
+        this.$set(this.attrStyles, newKey, JSON.parse(JSON.stringify(this.attrStyles[srcKey] || {})))
+        if (this.attrStyles[newKey]) this.attrStyles[newKey].x += 10
+        this.$set(this.attrLabels, newKey, this.attrLabels[srcKey] || '')
+        this.selectedKeys = [newKey]
+        this.currentAttrKey = newKey
+        this.pushSnapshot()
+      },
+      pushSnapshot() {
+        var snap = JSON.stringify({
+          attrStyles: this.attrStyles,
+          attrLabels: this.attrLabels,
+          labelWidth: this.labelWidth,
+          labelHeight: this.labelHeight
+        })
+        if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) return
+        // 丢弃 redo 分支
+        if (this.historyIndex < this.history.length - 1) {
+          this.history = this.history.slice(0, this.historyIndex + 1)
+        }
+        if (this.history.length > 50) this.history.shift()
+        this.historyIndex = this.history.push(snap) - 1
+      },
+      undo() {
+        if (this.historyIndex <= 0) { this.$message.info('没有可撤销的操作'); return }
+        this.historyIndex--
+        var snap = JSON.parse(this.history[this.historyIndex])
+        this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
+        this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        this.labelWidth = snap.labelWidth != null ? snap.labelWidth : this.labelWidth
+        this.labelHeight = snap.labelHeight != null ? snap.labelHeight : this.labelHeight
+      },
+      redo() {
+        if (this.historyIndex >= this.history.length - 1) { this.$message.info('没有可恢复的操作'); return }
+        this.historyIndex++
+        var snap = JSON.parse(this.history[this.historyIndex])
+        this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
+        this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        this.labelWidth = snap.labelWidth != null ? snap.labelWidth : this.labelWidth
+        this.labelHeight = snap.labelHeight != null ? snap.labelHeight : this.labelHeight
+      },
+      zoomIn() {
+        this.zoom = Math.min(3, this.zoom + 0.1)
+      },
+      zoomOut() {
+        this.zoom = Math.max(0.3, this.zoom - 0.1)
+      },
+      toggleZoom() {
+        this.zoom = this.zoom === 1 ? 1.5 : 1
+      },
+      // 拖拽移动/缩放：统一用 Pointer Events + setPointerCapture，
+      // 手指移出元素后事件仍持续派发到捕获元素，不依赖 touch passive 机制
+      // 选中逻辑也在这里完成（彻底移除 click 事件避免时序冲突）
+      startPointerDrag(key, e, mode) {
+        var self = this
+        // 记录 pointerdown 瞬间的快照，留到 pointerup 做 toggle 判断
+        this._pointerDownKey = key
+        this._selectedBeforeDown = this.selectedKeys.slice()
+        this._prevFocus = this.currentAttrKey  // ← 记录 pointerdown 前的焦点
+        // ⚠️ 不在这里改 currentAttrKey！焦点只能在 pointerup toggle 后决定
+        var willMultiDrag = mode === 'move' && this.selectedKeys.length > 1
+        // 长按 600ms：全选所有元素并整体拖动
+        if (mode === 'move') {
+          this._longPressTimer = setTimeout(function() {
+            self._longPressTimer = null
+            var allKeys = self.selectedAttrs.slice()
+            self.selectedKeys = allKeys
+            self.currentAttrKey = allKeys[0] || null
+            self.startActualDrag(key, e, 'move', true)
+          }, 600)
+        }
+        this.startActualDrag(key, e, mode, willMultiDrag)
+      },
+      startActualDrag(key, e, mode, multiDrag) {
+        var self = this
+        var style = this.attrStyles[key] || {}
+        // resize 模式下如果没有显式 width/height，从 DOM 实际尺寸除以 zoom 得到
+        var origW = style.width || 0
+        var origH = style.height || 0
+        if ((mode === 'resize') && (!origW || !origH)) {
+          var el = document.querySelector('.lem-elem[data-key="' + key + '"]')
+          if (el) {
+            var r = el.getBoundingClientRect()
+            if (!origW) origW = Math.round(r.width / this.zoom)
+            if (!origH) origH = Math.round(r.height / this.zoom)
+          }
+        }
+        // 记录整体拖拽的所有元素起点
+        var allKeys = multiDrag ? this.selectedKeys.slice() : [key]
+        var dragOrigins = {}
+        allKeys.forEach(function(k) {
+          var s = self.attrStyles[k] || {}
+          dragOrigins[k] = { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
+        })
+        this.dragging = {
+          active: true,
+          mode: mode,
+          key: key,
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: style.x || 0,
+          origY: style.y || 0,
+          origW: origW,
+          origH: origH,
+          moved: false,
+          multiDrag: multiDrag,
+          dragOrigins: dragOrigins
+        }
+        try {
+          if (e.currentTarget.setPointerCapture) {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }
+        } catch (err) { /* 忽略捕获失败，仍有 document 级监听兜底 */ }
+        document.addEventListener('pointermove', this.onPointerMove)
+        document.addEventListener('pointerup', this.onPointerUp)
+        document.addEventListener('pointercancel', this.onPointerUp)
+      },
+      unbindPointerEvents() {
+        document.removeEventListener('pointermove', this.onPointerMove)
+        document.removeEventListener('pointerup', this.onPointerUp)
+        document.removeEventListener('pointercancel', this.onPointerUp)
+      },
+      onPointerMove(e) {
+        // 有长按定时器 → 手指一动立即取消长按，视为普通拖动
+        if (this._longPressTimer) {
+          clearTimeout(this._longPressTimer)
+          this._longPressTimer = null
+        }
+        if (!this.dragging.active) return
+        var d = this.dragging
+        var dx = e.clientX - d.startX
+        var dy = e.clientY - d.startY
+        if (!d.moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+          d.moved = true
+        }
+        if (d.mode === 'move') {
+          if (d.multiDrag && d.dragOrigins) {
+            // 多选整体移动
+            var self2 = this
+            Object.keys(d.dragOrigins).forEach(function(k) {
+              var origin = d.dragOrigins[k]
+              var newX = Math.round((origin.x || 0) + dx / self2.zoom)
+              var newY = Math.round((origin.y || 0) + dy / self2.zoom)
+              if (newX < 0) newX = 0
+              if (newY < 0) newY = 0
+              self2.$set(self2.attrStyles[k], 'x', newX)
+              self2.$set(self2.attrStyles[k], 'y', newY)
+            })
+          } else {
+            // 单个元素移动
+            var newX = d.origX + dx / this.zoom
+            var newY = d.origY + dy / this.zoom
+            if (newX < 0) newX = 0
+            if (newY < 0) newY = 0
+            this.$set(this.attrStyles[d.key], 'x', Math.round(newX))
+            this.$set(this.attrStyles[d.key], 'y', Math.round(newY))
+          }
+        } else if (d.mode === 'resize') {
+          // 调整元素尺寸
+          var newW = d.origW + dx / this.zoom
+          var newH = d.origH + dy / this.zoom
+          // 动态获取内容自然尺寸（元素 shrink-wrap 时的最小尺寸）
+          var el = document.querySelector('.lem-elem[data-key="' + d.key + '"]')
+          var minW = 0, minH = 0
+          if (el) {
+            minW = Math.round(el.scrollWidth / this.zoom)
+            minH = Math.round(el.scrollHeight / this.zoom)
+          }
+          // 允许缩到内容自然尺寸；低于则清除显式 width/height，让元素 shrink-wrap
+          if (newW <= minW) {
+            this.$delete(this.attrStyles[d.key], 'width')
+          } else {
+            this.$set(this.attrStyles[d.key], 'width', Math.round(newW))
+          }
+          if (newH <= minH) {
+            this.$delete(this.attrStyles[d.key], 'height')
+          } else {
+            this.$set(this.attrStyles[d.key], 'height', Math.round(newH))
+          }
+        }
+      },
+      onPointerUp() {
+        if (this._longPressTimer) {
+          clearTimeout(this._longPressTimer)
+          this._longPressTimer = null
+        }
+        var prevKeys = this._selectedBeforeDown || []
+        var prevFocus = this._prevFocus
+        var pKey = this._pointerDownKey
+        var didMove = this.dragging.moved
+        if (this.dragging.active) {
+          this.dragging.active = false
+          this.dragging.moved = false
+          this.pushSnapshot()
+        }
+        // 没移动 + 不是 resize 手柄操作 → 点击意图，执行 toggle
+        if (!didMove && pKey && (!this.dragging.mode || this.dragging.mode === 'move')) {
+          var idx = prevKeys.indexOf(pKey)
+          if (idx > -1) {
+            // 之前已选中 → 移除（点谁踢谁）
+            var next = prevKeys.slice()
+            next.splice(idx, 1)
+            this.selectedKeys = next
+            // 焦点逻辑：
+            //   移除的是 prevFocus → 无焦点（不自动转给剩余元素）
+            //   移除的是非焦点  → prevFocus 保持不变
+            if (pKey === prevFocus) {
+              this.currentAttrKey = null
+            } else {
+              this.currentAttrKey = prevFocus
+            }
+          } else {
+            // 之前未选中 → 累加选中 + 设为焦点
+            var next2 = prevKeys.slice()
+            next2.push(pKey)
+            this.selectedKeys = next2
+            this.currentAttrKey = pKey
+          }
+        }
+        // 移动过 → 拖拽意图，恢复 pointerdown 前的焦点（如果有的话）
+        // 注意 pointerdown 没改 currentAttrKey，所以这里不需要恢复
+        this._pointerDownKey = null
+        this._selectedBeforeDown = null
+        this._prevFocus = null
+        this.unbindPointerEvents()
+      },
+      // 空白处按住滑动框选：Pointer Events + setPointerCapture，与元素拖动同一套机制
+      startMarquee(e) {
+        var rect = this.$refs.labelCanvas.getBoundingClientRect()
+        this.marquee = {
+          active: true,
+          visible: false,
+          startX: (e.clientX - rect.left) / this.zoom,
+          startY: (e.clientY - rect.top) / this.zoom,
+          x: 0, y: 0, w: 0, h: 0
+        }
+        try {
+          if (e.currentTarget.setPointerCapture) {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }
+        } catch (err) { /* 忽略捕获失败，仍有 document 级监听兜底 */ }
+        document.addEventListener('pointermove', this.onMarqueeMove)
+        document.addEventListener('pointerup', this.onMarqueeUp)
+        document.addEventListener('pointercancel', this.onMarqueeUp)
+      },
+      onMarqueeMove(e) {
+        var m = this.marquee
+        if (!m.active) return
+        var rect = this.$refs.labelCanvas.getBoundingClientRect()
+        var cx = (e.clientX - rect.left) / this.zoom
+        var cy = (e.clientY - rect.top) / this.zoom
+        var w = Math.abs(cx - m.startX)
+        var h = Math.abs(cy - m.startY)
+        if (!m.visible && (w > 6 || h > 6)) m.visible = true
+        if (m.visible) {
+          m.x = Math.round(Math.min(cx, m.startX))
+          m.y = Math.round(Math.min(cy, m.startY))
+          m.w = Math.round(w)
+          m.h = Math.round(h)
+        }
+      },
+      onMarqueeUp() {
+        var m = this.marquee
+        if (m.active) {
+          m.active = false
+          if (m.visible) {
+            // 相交命中：与框选矩形有重叠的元素全部选中
+            var hit = []
+            var self = this
+            this.selectedAttrs.forEach(function(key) {
+              var s = self.attrStyles[key] || {}
+              var size = self.getItemSize(key)
+              var ex = s.x || 0
+              var ey = s.y || 0
+              var ew = s.width > 0 ? s.width : size.w
+              var eh = s.height > 0 ? s.height : size.h
+              if (ex < m.x + m.w && ex + ew > m.x && ey < m.y + m.h && ey + eh > m.y) {
+                hit.push(key)
+              }
+            })
+            this.selectedKeys = hit
+            this.currentAttrKey = hit.length ? hit[hit.length - 1] : null
+          } else {
+            // 未形成框选 = 点击空白，清空选择
+            this.selectedKeys = []
+            this.currentAttrKey = null
+          }
+          m.visible = false
+        }
+        this.unbindMarqueeEvents()
+      },
+      unbindMarqueeEvents() {
+        document.removeEventListener('pointermove', this.onMarqueeMove)
+        document.removeEventListener('pointerup', this.onMarqueeUp)
+        document.removeEventListener('pointercancel', this.onMarqueeUp)
+      },
+      // 明细表预览宽度：与渲染页规则一致（未手动调整宽度时占满画布剩余宽度）
+      getTablePreviewWidth(key) {
+        var style = this.attrStyles[key] || {}
+        if (style.width > 0) return style.width
+        return Math.max(60, this.labelWidth - (style.x || 0) - 10)
+      },
+      saveTemplate() {
+        var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        var self = this
+        var payload = {
+          selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
+          attrStyles: JSON.parse(JSON.stringify(this.attrStyles)),
+          attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
+          width: this.labelWidth,
+          height: this.labelHeight
+        }
+        if (cfg.storage === 'localTemplates') {
+          // 多模板列表模式：覆盖已有或新建
+          if (this.selectedTemplateId) {
+            var exist = this.templates.find(function(t) { return t.id === self.selectedTemplateId })
+            if (exist) Object.assign(exist, payload)
+          } else {
+            this.templates.push(Object.assign({ id: 'tpl_' + Date.now(), name: '新建' + cfg.title, type: this.templateType }, payload))
+            this.selectedTemplateId = this.templates[this.templates.length - 1].id
+          }
+          saveLabelTemplates(this.templates).then(function(res) {
+            self.showSaveResult(res, cfg)
+          }).catch(function() {
+            self.$message.error(cfg.title + '保存失败，请检查网络')
+          })
+        } else if (cfg.storage === 'deliveryTemplate') {
+          var base = this.deliveryTemplate || {}
+          var tpl = Object.assign({}, base, {
+            name: base.name || '发货单模板',
+            businessType: 'shipping.delivery',
+            provider: 'shipping.delivery',
+            selectedAttrs: payload.selectedAttrs,
+            attrStyles: payload.attrStyles,
+            attrLabels: payload.attrLabels,
+            labelWidth: payload.width,
+            labelHeight: payload.height
+          })
+          persistDeliveryTemplate(tpl).then(function(res) {
+            if (res && res.code === 200 && res.data != null) {
+              tpl.serverId = res.data
+              tpl.id = res.data
+              self.deliveryTemplate = tpl
+            }
+            self.showSaveResult(res, cfg)
+          }).catch(function() {
+            self.$message.error(cfg.title + '保存失败，请检查网络')
+          })
+        } else if (cfg.storage === 'platformConfig') {
+          // 单 key 覆盖写模式
+          this.postSnapshot(cfg.platformConfigKey, payload).then(function(res) {
+            self.showSaveResult(res, cfg)
+          }).catch(function() {
+            self.$message.error(cfg.title + '保存失败，请检查网络')
+          })
+        }
+      },
+      showSaveResult(res, cfg) {
+        if (res && res.code === 200) {
+          this.$message.success(cfg.successMsg)
+        } else {
+          this.$message.error((res && res.data) || (cfg.title + '保存失败'))
+        }
+      },
+      handlePrint() {
+        // 把当前编辑中的模板快照写入 sessionStorage，跳转打印页后恢复
+        try {
+          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
+            labelWidth: this.labelWidth,
+            labelHeight: this.labelHeight,
+            selectedAttrs: this.selectedAttrs,
+            attrStyles: this.attrStyles,
+            attrLabels: this.attrLabels
+          }))
+        } catch (e) { /* 忽略 */ }
+        var path = '/label/print-mobile?type=' + (this.templateType || 'label')
+        this.$router.push(path)
+      },
+      openSettings() {
+        this.$message.info('设置功能开发中')
+      },
+      handleBack() {
+        this.$router.back()
+      },
+      openSizeEditor() {
+        this.editWidthMm = this.labelWidthMm
+        this.editHeightMm = this.labelHeightMm
+        this.sizeEditorVisible = true
+      },
+      confirmSizeEdit() {
+        this.labelWidth = Math.round(this.editWidthMm * PX_PER_MM)
+        this.labelHeight = Math.round(this.editHeightMm * PX_PER_MM)
+        this.sizeEditorVisible = false
+      },
+      applyPreset(wMm, hMm) {
+        this.editWidthMm = wMm
+        this.editHeightMm = hMm
+      }
+    }
+  }
+</script>
+
+<style lang="scss" scoped>
+.lem-page {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  background: #f5f5f5;
+  padding-bottom: calc(58px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.lem-topbar {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+}
+
+.lem-back {
+  font-size: 22px;
+  color: #333;
+  margin-right: 12px;
+}
+
+.lem-title-area {
+  flex: 1;
+  text-align: center;
+}
+
+.lem-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #333;
+}
+
+.lem-subtitle {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.lem-top-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.lem-top-icon {
+  font-size: 20px;
+  color: #666;
+}
+
+.lem-preview-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+/* 有溢出（需要滚动）时用 flex-start + spacer 配合 scrollLeft=max/2 居中 */
+.lem-preview-wrap--scrolling {
+  justify-content: flex-start;
+}
+
+/* 无溢出（fit）时直接用 center 让标签在视口中居中 */
+.lem-preview-wrap--fitting {
+  justify-content: center;
+}
+
+.lem-scroll-spacer {
+  flex-shrink: 0;
+  height: 1px;
+}
+
+.lem-label {
+  position: relative;
+  flex-shrink: 0;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 4px;
+}
+
+.lem-elem {
+  position: absolute;
+  cursor: move;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 1;
+}
+
+.lem-elem-selected {
+  outline: 1px solid #1890ff;
+  outline-offset: 0;
+  background: rgba(24, 144, 255, 0.05);
+}
+
+.lem-elem-label {
+  color: #333;
+}
+
+.lem-elem-value {
+  color: #333;
+}
+
+.lem-code-img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.lem-code-placeholder {
+  color: #999;
+}
+
+/* 明细表迷你预览：与渲染页结构/列宽比例一致，保证所见即所得 */
+.lem-mini-table {
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.lem-mini-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 5px 0;
+  border-top: 1px solid #eee;
+}
+
+.lem-mini-head {
+  border-top: none;
+  color: #999;
+}
+
+.lem-mini-col-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
+  color: #333;
+}
+
+.lem-mini-col-qty {
+  flex: 0 0 17%;
+  color: #333;
+  text-align: center;
+}
+
+.lem-mini-col-spec {
+  flex: 0 0 30%;
+  color: #333;
+  text-align: right;
+}
+
+.lem-resize-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #1890ff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lem-resize-handle::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid #fff;
+  border-bottom: 1.5px solid #fff;
+  margin-top: -1px;
+  margin-left: -1px;
+}
+
+.lem-delete-btn {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #ff4d4f;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 框选矩形 */
+.lem-marquee {
+  position: absolute;
+  border: 1px dashed #1890ff;
+  background: rgba(24, 144, 255, 0.12);
+  z-index: 30;
+  pointer-events: none;
+}
+
+/* 对齐排列工具条（固定在顶栏下方，始终显示） */
+.lem-align-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.lem-align-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.lem-align-btns {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.lem-align-divider {
+  width: 1px;
+  height: 18px;
+  background: #e8e8e8;
+  margin: 0 6px;
+  flex: none;
+}
+
+.lem-align-btns .ant-btn {
+  flex: none;
+}
+
+/* 多选按钮激活态 */
+.lem-tool-active,
+.lem-tool-active span {
+  color: #1890ff;
+}
+
+.lem-toolbar {
+  /* 始终固定在屏幕底边，点击元素不会改变其位置 */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  background: #fff;
+  border-top: 1px solid #eee;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 可横向滑动的按钮区 */
+.lem-toolbar-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.lem-toolbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* 上下移动按钮：固定在右侧，不随按钮栏滑动 */
+.lem-toolbar-move {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #1890ff;
+  padding: 4px 12px;
+  border-left: 1px solid #eee;
+  background: #fff;
+  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.05);
+  z-index: 2;
+}
+
+/* 弹出锁定状态：按钮高亮提示当前已锁定，点击元素不弹卡片 */
+.lem-toolbar-move-locked {
+  color: #fff;
+  background: #1890ff;
+}
+
+.lem-toolbar-move-locked span {
+  color: #fff;
+}
+
+.lem-tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #666;
+  padding: 4px 8px;
+  flex: 0 0 auto;
+  min-width: 44px;
+}
+
+.lem-tool-btn .anticon {
+  font-size: 18px;
+}
+
+/* 属性面板：宽度与页面一致，从底边栏上沿向上弹出；下滑（锁定）状态不弹 */
+.lem-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  z-index: 90;
+  background: #fff;
+  border-top: 1px solid #eee;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  padding: 12px 16px;
+  max-height: 46vh;
+  overflow-y: auto;
+  animation: lem-panel-up 0.18s ease-out;
+}
+
+@keyframes lem-panel-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 元素选择弹层：全宽，从底边栏上沿向上弹出，遮罩不覆盖底边栏 */
+.lem-sheet-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
+}
+
+.lem-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: 46vh;
+  background: #fff;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: lem-panel-up 0.18s ease-out;
+}
+
+.lem-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.lem-sheet-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.lem-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 16px;
+}
+
+.lem-panel-multi-tip {
+  font-size: 12px;
+  color: #1890ff;
+  margin-bottom: 8px;
+}
+
+.lem-text-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lem-text-input {
+  flex: 1;
+}
+
+.lem-ocr-btn {
+  flex-shrink: 0;
+}
+
+.lem-style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.lem-style-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lem-style-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.lem-elem-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.lem-elem-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 8px;
+  border-bottom: 1px solid #f5f5f5;
+  font-size: 14px;
+  color: #333;
+}
+
+.lem-elem-item .anticon {
+  color: #1890ff;
+}
+
+/* 勾选式元素列表：分组标题 + 已选中高亮 */
+.lem-elem-group-title {
+  font-size: 12px;
+  color: #999;
+  padding: 8px 8px 4px;
+  background: #fafafa;
+}
+
+.lem-elem-item-active {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.lem-add-custom {
+  margin-top: 10px;
+}
+
+/* 明细列元素：逐行重复，行高固定 20px，与发货单渲染页保持一致 */
+.lem-col-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.lem-col-line {
+  height: 20px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lem-subtitle {
+  cursor: pointer;
+}
+
+.lem-size-edit-icon {
+  margin-left: 4px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.lem-size-editor {
+  padding: 8px 0;
+}
+
+.lem-size-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.lem-size-label {
+  font-size: 14px;
+  color: #333;
+}
+
+.lem-size-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lem-size-preset-item {
+  padding: 6px 14px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lem-size-preset-item:active {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+</style>

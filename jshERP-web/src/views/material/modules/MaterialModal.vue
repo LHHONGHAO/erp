@@ -275,6 +275,7 @@
                   </div>
                 </div>
               </div>
+              </div>
               <!-- 添加规格按钮 -->
               <a-button
                 v-if="!specLocked"

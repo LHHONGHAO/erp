@@ -37,15 +37,17 @@
         @pressEnter="reload" />
       <a-button size="small" icon="reload" @click="reload">刷新</a-button>
       <a-button size="small" icon="export" @click="openNew">新窗口打开</a-button>
-      <span class="mp-tip">宽度小于 768px 自动进入手机端布局；扫码页需 HTTPS 或 localhost 才能调用摄像头</span>
+      <span class="mp-tip">鼠标在空白处按住拖动＝手指滑动（上下左右滚动），按住约 0.6 秒不动＝长按；宽度小于 768px 自动进入手机端布局</span>
     </div>
     <div ref="stage" class="mp-stage">
       <div class="mp-scaler" :style="scalerStyle">
         <div class="mp-phone" :style="phoneStyle">
           <iframe
+            ref="frame"
             :key="frameKey"
             :src="currentPath"
             class="mp-frame"
+            @load="installTouchBridge"
             allow="camera; microphone; clipboard-write; fullscreen"></iframe>
         </div>
       </div>
@@ -87,7 +89,8 @@
         currentPath: '/dashboard/analysis',
         frameKey: 0,
         stageWidth: 0,
-        stageHeight: 0
+        stageHeight: 0,
+        stageObserver: null
       }
     },
     computed: {
@@ -152,11 +155,21 @@
       if (savedPath) {
         this.currentPath = savedPath
       }
-      this.updateStageSize()
+      // DOM 布局完成后再量取舞台尺寸，避免初始为 0 导致手机框按 1:1 溢出、看起来不居中
+      this.$nextTick(this.updateStageSize)
       window.addEventListener('resize', this.updateStageSize)
+      // 监听舞台容器尺寸变化（工具栏换行、IDE 预览面板缩放时都能重新居中适配）
+      if (window.ResizeObserver) {
+        this.stageObserver = new window.ResizeObserver(() => this.updateStageSize())
+        this.stageObserver.observe(this.$refs.stage)
+      }
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.updateStageSize)
+      if (this.stageObserver) {
+        this.stageObserver.disconnect()
+        this.stageObserver = null
+      }
     },
     methods: {
       updateStageSize () {
@@ -191,6 +204,99 @@
       },
       openNew () {
         window.open(this.currentPath, '_blank')
+      },
+      // 在 iframe 内注入触摸手势桥接：
+      // 鼠标按住拖动 => 手指滑动（滚动最近的可滚动容器），按住不动 0.6s => 长按（派发 contextmenu）
+      installTouchBridge () {
+        const frame = this.$refs.frame
+        if (!frame) return
+        let doc = null
+        try {
+          doc = frame.contentDocument
+          if (!doc || !doc.body || doc.__mpTouchBridge) return
+          doc.__mpTouchBridge = true
+        } catch (e) {
+          // 跨域时无法注入，忽略
+          return
+        }
+        const win = frame.contentWindow
+        // .lem-label 为标签画布：内部拖动用于移动元素/框选，不参与滑动滚动
+        const BLOCK = 'input, textarea, select, button, a, [contenteditable="true"], .ant-modal, .ant-select, .lem-elem, .lem-resize-handle, .lem-label'
+        let state = null
+
+        const findScroller = (el) => {
+          let p = el
+          while (p && p.nodeType === 1 && p !== doc.body) {
+            const cs = win.getComputedStyle(p)
+            if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p
+            if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth + 1) return p
+            p = p.parentElement
+          }
+          return doc.scrollingElement || doc.documentElement
+        }
+
+        doc.addEventListener('mousedown', (e) => {
+          if (e.button !== 0) return
+          if (e.target.closest && e.target.closest(BLOCK)) return
+          const scroller = findScroller(e.target)
+          state = {
+            sx: e.clientX,
+            sy: e.clientY,
+            x: e.clientX,
+            y: e.clientY,
+            moved: false,
+            scroller: scroller,
+            scrollLeft: scroller.scrollLeft,
+            scrollTop: scroller.scrollTop,
+            longTimer: win.setTimeout(() => {
+              if (state && !state.moved) {
+                const ev = new win.MouseEvent('contextmenu', {
+                  bubbles: true,
+                  cancelable: true,
+                  clientX: state.x,
+                  clientY: state.y
+                })
+                e.target.dispatchEvent(ev)
+              }
+            }, 600)
+          }
+          doc.body.classList.add('mp-touch-dragging')
+        }, true)
+
+        doc.addEventListener('mousemove', (e) => {
+          if (!state) return
+          state.x = e.clientX
+          state.y = e.clientY
+          if (!state.moved && (Math.abs(e.clientX - state.sx) > 4 || Math.abs(e.clientY - state.sy) > 4)) {
+            state.moved = true
+            win.clearTimeout(state.longTimer)
+          }
+          if (state.moved) {
+            state.scroller.scrollLeft = state.scrollLeft - (e.clientX - state.sx)
+            state.scroller.scrollTop = state.scrollTop - (e.clientY - state.sy)
+            if (e.cancelable) e.preventDefault()
+          }
+        }, true)
+
+        const reset = () => {
+          if (!state) return
+          win.clearTimeout(state.longTimer)
+          state = null
+          doc.body.classList.remove('mp-touch-dragging')
+        }
+        doc.addEventListener('mouseup', (e) => {
+          const moved = state && state.moved
+          reset()
+          if (moved) {
+            e.preventDefault()
+            e.stopPropagation()
+          }
+        }, true)
+        doc.addEventListener('mouseleave', reset, true)
+
+        const style = doc.createElement('style')
+        style.textContent = '.mp-touch-dragging, .mp-touch-dragging * { cursor: grabbing !important; user-select: none !important; }'
+        doc.head.appendChild(style)
       }
     }
   }
@@ -223,6 +329,7 @@
   }
   .mp-stage {
     flex: 1;
+    min-height: 0;
     overflow: hidden;
     display: flex;
     align-items: center;

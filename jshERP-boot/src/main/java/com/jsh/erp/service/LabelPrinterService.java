@@ -17,13 +17,20 @@ import javax.print.DocPrintJob;
 import javax.print.PrintService;
 import javax.print.PrintServiceLookup;
 import javax.print.SimpleDoc;
+import javax.imageio.ImageIO;
 import javax.print.attribute.HashPrintRequestAttributeSet;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.Charset;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -32,8 +39,9 @@ import java.util.Map;
  * 标签打印：枚举本机打印机、按标签布局直接打印到指定打印机
  * 说明：浏览器无法读取系统打印机列表，只能由后端（运行后端的机器）提供
  *
- * 输出方式：不栅格化图片，直接把前端传来的坐标/尺寸/内容拼成 TSPL 指令
- * （TEXT / BARCODE / QRCODE），由打印机固件用硬件字库和条码引擎渲染。
+ * 输出方式：优先由前端把整张标签渲染成图片，后端转成 1 位单色位图后
+ * 用 TSPL 的 BITMAP 指令下发（所见即所得）；未传图片时回退为
+ * TEXT / BARCODE / QRCODE 硬件指令。
  * 目标机型：汉印 D45（TSPL，203dpi，8 点/mm）。
  */
 @Service
@@ -74,10 +82,11 @@ public class LabelPrinterService {
      * @param widthPx     标签宽（px，96dpi）
      * @param heightPx    标签高（px，96dpi）
      * @param items       标签内容，元素含 x/y/width/height/fontSize/lineHeight/text/codeType/codeText
+     * @param image       前端渲染好的整张标签图片（dataURL），有值时按单色位图打印
      */
-    public void printLabel(String printerName, int copies, int widthPx, int heightPx, JSONArray items) throws Exception {
+    public void printLabel(String printerName, int copies, int widthPx, int heightPx, JSONArray items, String image) throws Exception {
         PrintService target = findPrinter(printerName);
-        sendRaw(target, buildTsplJob(widthPx, heightPx, items, copies));
+        sendRaw(target, buildTsplJob(widthPx, heightPx, items, copies, image));
     }
 
     /**
@@ -95,8 +104,8 @@ public class LabelPrinterService {
     /**
      * 打印标签到网络打印机：把同样的 TSPL 指令通过 Socket 直接发送到 ip:port
      */
-    public void printNetworkLabel(String ip, int port, int copies, int widthPx, int heightPx, JSONArray items) throws Exception {
-        byte[] data = buildTsplJob(widthPx, heightPx, items, copies);
+    public void printNetworkLabel(String ip, int port, int copies, int widthPx, int heightPx, JSONArray items, String image) throws Exception {
+        byte[] data = buildTsplJob(widthPx, heightPx, items, copies, image);
         sendToSocket(ip, port, data);
     }
 
@@ -123,7 +132,10 @@ public class LabelPrinterService {
     /**
      * 拼装 TSPL 打印任务：标签尺寸 + 逐元素指令
      */
-    private byte[] buildTsplJob(int widthPx, int heightPx, JSONArray items, int copies) throws IOException {
+    private byte[] buildTsplJob(int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+        if (image != null && !image.trim().isEmpty()) {
+            return buildBitmapJob(widthPx, heightPx, image, copies);
+        }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeLine(out, "SIZE " + toMm(toDots(widthPx)) + " mm," + toMm(toDots(heightPx)) + " mm");
         writeLine(out, "CLS");
@@ -145,6 +157,96 @@ public class LabelPrinterService {
         }
         writeLine(out, "PRINT 1," + Math.max(1, copies));
         return out.toByteArray();
+    }
+
+    /**
+     * 按整张图片拼装 TSPL 任务：图片缩放到打印点尺寸后转为 1 位单色位图，用 BITMAP 指令下发
+     * 这样文字、粗体、字距、Logo、条码全部由前端渲染，打印机只负责打点，效果与本地打印一致
+     */
+    private byte[] buildBitmapJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+        BufferedImage source = decodeImage(image);
+        int dotsWidth = Math.max(1, toDots(widthPx));
+        int dotsHeight = Math.max(1, toDots(heightPx));
+        BufferedImage target = resize(source, dotsWidth, dotsHeight);
+        int widthBytes = (dotsWidth + 7) / 8;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeLine(out, "SIZE " + toMm(dotsWidth) + " mm," + toMm(dotsHeight) + " mm");
+        writeLine(out, "CLS");
+        StringBuilder bitmap = new StringBuilder("BITMAP 0,0,").append(widthBytes).append(',')
+                .append(dotsHeight).append(",0");
+        for (int y = 0; y < dotsHeight; y++) {
+            for (int byteIndex = 0; byteIndex < widthBytes; byteIndex++) {
+                int value = 0;
+                for (int bit = 0; bit < 8; bit++) {
+                    int x = byteIndex * 8 + bit;
+                    if (x < dotsWidth && isBlack(target.getRGB(x, y))) {
+                        value |= (0x80 >> bit);
+                    }
+                }
+                bitmap.append(',').append(String.format("%02X", value));
+            }
+        }
+        writeLine(out, bitmap.toString());
+        writeLine(out, "PRINT 1," + Math.max(1, copies));
+        return out.toByteArray();
+    }
+
+    /**
+     * 解析前端传来的 dataURL / base64 图片
+     */
+    private BufferedImage decodeImage(String image) throws IOException {
+        String base64 = image.trim();
+        if (base64.startsWith("data:")) {
+            int comma = base64.indexOf(',');
+            if (comma < 0) {
+                throw new IOException("图片数据格式错误");
+            }
+            base64 = base64.substring(comma + 1);
+        }
+        byte[] bytes = Base64.getDecoder().decode(base64);
+        BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
+        if (source == null) {
+            throw new IOException("图片解析失败，请确认前端渲染正常");
+        }
+        return source;
+    }
+
+    /**
+     * 缩放到打印点尺寸：多次折半再双线性缩放，避免一步大幅缩小导致笔画断裂
+     */
+    private BufferedImage resize(BufferedImage source, int width, int height) {
+        BufferedImage current = source;
+        int currentWidth = source.getWidth();
+        int currentHeight = source.getHeight();
+        while (currentWidth / 2 >= width && currentHeight / 2 >= height && currentWidth > 1 && currentHeight > 1) {
+            currentWidth /= 2;
+            currentHeight /= 2;
+            BufferedImage half = new BufferedImage(currentWidth, currentHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = half.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(current, 0, 0, currentWidth, currentHeight, null);
+            g.dispose();
+            current = half;
+        }
+        BufferedImage target = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = target.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, width, height);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(current, 0, 0, width, height, null);
+        g.dispose();
+        return target;
+    }
+
+    /**
+     * 像素是否打印为黑点：按亮度阈值二值化（阈值稍高保证文字笔画不断）
+     */
+    private boolean isBlack(int rgb) {
+        int red = (rgb >> 16) & 0xFF;
+        int green = (rgb >> 8) & 0xFF;
+        int blue = rgb & 0xFF;
+        int luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+        return luminance < 160;
     }
 
     /**

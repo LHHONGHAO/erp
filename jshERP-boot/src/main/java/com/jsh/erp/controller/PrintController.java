@@ -55,8 +55,9 @@ public class PrintController extends BaseController {
         int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
         int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
         JSONArray items = body.getJSONArray("items");
+        String image = body.getString("image");
         try {
-            labelPrinterService.printLabel(printerName, copies, width, height, items);
+            labelPrinterService.printLabel(printerName, copies, width, height, items, image);
             return returnJson(objectMap, "打印成功", ErpInfo.OK.code);
         } catch (Exception e) {
             logger.error("标签打印失败", e);
@@ -94,8 +95,9 @@ public class PrintController extends BaseController {
         int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
         int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
         JSONArray items = body.getJSONArray("items");
+        String image = body.getString("image");
         try {
-            labelPrinterService.printNetworkLabel(ip.trim(), port, copies, width, height, items);
+            labelPrinterService.printNetworkLabel(ip.trim(), port, copies, width, height, items, image);
             return returnJson(objectMap, "打印成功", ErpInfo.OK.code);
         } catch (Exception e) {
             logger.error("网络打印机打印失败", e);

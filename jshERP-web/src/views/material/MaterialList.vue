@@ -556,7 +556,12 @@
       },
       // 预览弹层点「编辑」：打开标签编辑弹层，并按其当前模板加载标签数据
       handleEditLabel({ record, sku, categoryTree, templateId }) {
-        this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId)
+        var isMobile = window.innerWidth <= 768
+        if (isMobile) {
+          this.$router.push({ path: '/label/edit-mobile', query: { type: 'label', templateId: templateId } })
+        } else {
+          this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId)
+        }
       },
       handleImportXls() {
         let importExcelUrl = this.url.importExcelUrl

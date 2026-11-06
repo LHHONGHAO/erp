@@ -5,54 +5,66 @@
       <div v-if="mobileLoading" class="rol-mobile-tip">加载中...</div>
       <div v-else-if="mobileBills.length === 0" class="rol-mobile-tip">今日暂无销售单</div>
       <div v-for="bill in mobileBills" :key="bill.id" class="rol-card">
-        <!-- 最上方：单号 + 日期 -->
+        <!-- 最上方：单号 + 日期左对齐，右侧多选 -->
         <div class="rol-card-head">
           <div class="rol-card-number-wrap">
             <span class="rol-card-label">单号</span>
             <span class="rol-card-number">{{ bill.number }}</span>
+            <span class="rol-card-time">{{ bill.operTimeStr }}</span>
           </div>
-          <span class="rol-card-time">{{ bill.operTimeStr }}</span>
+          <a-checkbox
+            class="rol-card-check"
+            :checked="isMobileSelected(bill)"
+            @change="e => toggleMobileSelect(bill, e.target.checked)"
+          />
         </div>
-        <!-- 中间：商品名称、规格（名称下方）、数量、金额、结算金额（标题数据并列） -->
+        <!-- 中间：商品名称与规格同行，下方显示数量、零售价、实付价格 -->
         <div class="rol-card-items">
           <div v-for="(item, index) in (bill.items || [])" :key="item.id || index" class="rol-item">
-            <div class="rol-item-top">
-              <div class="rol-item-name">{{ item.name }}</div>
-              <div class="rol-item-metrics">
-                <div class="rol-item-metric">
-                  <span class="rol-item-label">数量</span>
-                  <span class="rol-item-value">{{ item.operNumber }}</span>
-                </div>
-                <div class="rol-item-metric">
-                  <span class="rol-item-label">金额</span>
-                  <span class="rol-item-value">¥{{ item.allPrice }}</span>
-                </div>
-                <div class="rol-item-metric">
-                  <span class="rol-item-label">结算金额</span>
-                  <span class="rol-item-value">¥{{ itemSettleAmount(bill, item) }}</span>
-                </div>
+            <div class="rol-item-title">
+              <span class="rol-item-name">{{ item.name }}</span>
+              <span v-if="itemSpec(item)" class="rol-item-spec">{{ itemSpec(item) }}</span>
+            </div>
+            <div class="rol-item-metrics">
+              <div class="rol-item-metric">
+                <span class="rol-item-label rol-label-qty">数量</span>
+                <span class="rol-item-value">{{ item.operNumber }}</span>
+              </div>
+              <div class="rol-item-metric">
+                <span class="rol-item-label rol-label-retail">零售价</span>
+                <span class="rol-item-value">¥{{ item.unitPrice }}</span>
+              </div>
+              <div class="rol-item-metric">
+                <span class="rol-item-label rol-label-paid">实付价</span>
+                <span class="rol-item-value">¥{{ itemSettleAmount(bill, item) }}</span>
               </div>
             </div>
-            <div class="rol-item-spec">{{ itemSpec(item) }}</div>
           </div>
           <div v-if="!bill.items || bill.items.length === 0" class="rol-item-empty">无商品明细</div>
         </div>
-        <!-- 最下方：会员名、电话 + 发货、审核 -->
+        <!-- 最下方：合计行（数量、零售价、实付价），会员信息与发货/审核按钮同一行 -->
         <div class="rol-card-foot">
-          <div class="rol-member">
-            <div class="rol-member-metric">
-              <span class="rol-member-label">会员名</span>
-              <span class="rol-member-value">{{ billMemberName(bill) }}</span>
+          <div class="rol-totals">
+            <div class="rol-item-metric">
+              <span class="rol-item-label rol-label-qty">合计数量</span>
+              <span class="rol-item-value">{{ billTotalQty(bill) }}</span>
             </div>
-            <div class="rol-member-metric">
-              <span class="rol-member-label">电话</span>
-              <span class="rol-member-value">{{ billMemberPhone(bill) }}</span>
+            <div class="rol-item-metric">
+              <span class="rol-item-label rol-label-retail">零售价</span>
+              <span class="rol-item-value">¥{{ billRetailAmount(bill) }}</span>
+            </div>
+            <div class="rol-item-metric">
+              <span class="rol-item-label rol-label-paid">实付价</span>
+              <span class="rol-item-value">¥{{ billPaidAmount(bill) }}</span>
             </div>
           </div>
-          <div class="rol-actions">
-            <a-button size="small" @click="mobileDeliver(bill)">发货</a-button>
-            <a-button v-if="bill.status === '0'" size="small" type="primary" @click="mobileSetStatus(bill, 1)">审核</a-button>
-            <a-button v-else size="small" @click="mobileSetStatus(bill, 0)">反审核</a-button>
+          <div class="rol-member-row">
+            <span class="rol-member">{{ billMemberText(bill) }}</span>
+            <div class="rol-actions">
+              <a-button size="small" @click="mobileDeliver(bill)">发货</a-button>
+              <a-button v-if="bill.status === '0'" size="small" type="primary" @click="mobileSetStatus(bill, 1)">审核</a-button>
+              <a-button v-else size="small" @click="mobileSetStatus(bill, 0)">反审核</a-button>
+            </div>
           </div>
         </div>
       </div>
@@ -248,7 +260,6 @@
   import moment from 'moment'
   import { getAction, postAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
-  import { getSpecDisplay } from '@/views/material/utils/materialDisplay'
   export default {
     name: "RetailOutList",
     mixins:[JeecgListMixin,BillListMixin],
@@ -285,6 +296,8 @@
         // 手机端：当日销售单卡片数据
         mobileBills: [],
         mobileLoading: false,
+        // 手机端卡片多选
+        mobileSelectedIds: [],
         labelCol: {
           span: 5
         },
@@ -403,43 +416,80 @@
           row.items = []
         })
       },
-      // 商品规格：出库明细的 sku 字段保存了规格 JSON（与商品 spec_values 一致）
+      // 商品规格：仅显示规格值，多个值用 / 分隔（如 绿/220*240）
       itemSpec (item) {
-        if (!item) return '-'
-        let spec = ''
-        if (item.sku) {
-          spec = getSpecDisplay({ specValues: item.sku })
-        }
-        if (!spec && item.specValues) {
-          spec = getSpecDisplay({ specValues: item.specValues })
-        }
-        if (!spec) {
-          spec = [item.standard, item.model].filter(Boolean).join(' / ')
-        }
-        return spec ? spec.replace(/\n/g, ' / ') : '-'
+        if (!item) return ''
+        let specValues = item.sku || item.specValues || ''
+        try {
+          const arr = typeof specValues === 'string' ? JSON.parse(specValues) : specValues
+          if (Array.isArray(arr) && arr.length > 0) {
+            const values = []
+            arr.forEach(spec => {
+              const childNames = spec.childNames || []
+              const subValues = spec.subValues || {}
+              if (childNames.length > 0) {
+                childNames.forEach(childName => {
+                  const value = subValues[childName]
+                  if (value != null && String(value).trim() !== '') {
+                    values.push(String(value).trim())
+                  }
+                })
+              } else {
+                const value = spec.valueText || spec.value || ''
+                if (value !== '') values.push(String(value).trim())
+              }
+            })
+            if (values.length > 0) return values.join('/')
+          }
+        } catch (e) { /* 非 JSON 规格值时走兜底 */ }
+        return [item.standard, item.model].filter(Boolean).join('/')
       },
-      // 每行结算金额：按实收占单据金额的比例分摊
+      // 每行实付价格：按实收占单据金额的比例分摊
       itemSettleAmount (bill, item) {
         const total = Number(bill.totalPrice) || 0
-        const paid = bill.getAmount == null ? total : Number(bill.getAmount)
+        const paid = bill.changeAmount == null ? total : Number(bill.changeAmount)
         const amount = Number(item.allPrice) || 0
         if (total <= 0) return amount.toFixed(2)
         return (amount * paid / total).toFixed(2)
+      },
+      // 单据合计数量
+      billTotalQty (bill) {
+        return (bill.items || []).reduce((sum, item) => sum + (Number(item.operNumber) || 0), 0)
+      },
+      // 单据零售价合计（零售价 × 数量的合计）
+      billRetailAmount (bill) {
+        const total = (bill.items || []).reduce((sum, item) => sum + (Number(item.allPrice) || 0), 0)
+        return total.toFixed(2)
+      },
+      // 单据实付价合计
+      billPaidAmount (bill) {
+        const total = Number(this.billRetailAmount(bill)) || 0
+        return (bill.changeAmount == null ? total : Number(bill.changeAmount)).toFixed(2)
       },
       // 单据会员
       billMember (bill) {
         if (!bill || !bill.organId || !Array.isArray(this.retailList)) return {}
         return this.retailList.find(m => String(m.id) === String(bill.organId)) || {}
       },
-      billMemberName (bill) {
-        return this.billMember(bill).contacts || '散客'
+      // 会员信息文本：有会员显示会员名/电话，无会员直接显示散客
+      billMemberText (bill) {
+        const member = this.billMember(bill)
+        const name = member.contacts || ''
+        if (!name) return '散客'
+        return member.telephone ? name + ' ' + member.telephone : name
       },
-      billMemberPhone (bill) {
-        return this.billMember(bill).telephone || ''
+      // 卡片多选
+      isMobileSelected (bill) {
+        return this.mobileSelectedIds.some(id => String(id) === String(bill.id))
       },
-      // 发货：打开单据详情（可查看并打印发货单）
+      toggleMobileSelect (bill, checked) {
+        const ids = this.mobileSelectedIds.filter(id => String(id) !== String(bill.id))
+        if (checked) ids.push(bill.id)
+        this.mobileSelectedIds = ids
+      },
+      // 发货：打开发货单页面（按发货模板渲染）
       mobileDeliver (bill) {
-        this.myHandleDetail(bill, '零售出库', this.prefixNo)
+        this.$router.push({ path: '/bill/deliveryNote', query: { number: bill.number } })
       },
       // 审核 / 反审核
       mobileSetStatus (bill, status) {
@@ -451,6 +501,7 @@
             return postAction(that.url.batchSetStatusUrl, { status: status, ids: bill.id + ',' }).then(res => {
               if (res && res.code === 200) {
                 that.$message.success(status === 1 ? '审核成功' : '反审核成功')
+                that.mobileSelectedIds = []
                 that.loadTodayBills()
                 that.loadData()
               } else if (res && res.data) {
@@ -515,6 +566,10 @@
     font-size: 12px;
     color: #999;
   }
+  .rol-card-check {
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
   .rol-item {
     padding: 8px 0;
     border-bottom: 1px dashed #f0f0f0;
@@ -522,54 +577,77 @@
   .rol-item:last-child {
     border-bottom: none;
   }
-  .rol-item-top {
+  .rol-item-title {
     display: flex;
     align-items: baseline;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rol-item-title::-webkit-scrollbar {
+    display: none;
   }
   .rol-item-name {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
+    flex: 0 0 auto;
     white-space: nowrap;
-    text-overflow: ellipsis;
     font-size: 14px;
     font-weight: 500;
     color: #333;
   }
   .rol-item-spec {
-    margin-top: 2px;
-    overflow: hidden;
+    flex: 0 0 auto;
+    margin-left: 6px;
     white-space: nowrap;
-    text-overflow: ellipsis;
     font-size: 12px;
     color: #999;
   }
   .rol-item-metrics {
-    flex: 1;
     display: flex;
-    justify-content: flex-end;
-    margin-left: 8px;
+    align-items: baseline;
+    margin-top: 4px;
     min-width: 0;
   }
   .rol-item-metric {
     display: flex;
     align-items: baseline;
     min-width: 0;
-    margin-left: 10px;
   }
-  .rol-item-metric:first-child {
-    margin-left: 0;
+  .rol-item-metric:nth-child(1) {
+    flex: 0 0 66px;
+  }
+  .rol-item-metric:nth-child(2) {
+    flex: 0 0 104px;
+    margin-left: 12px;
+  }
+  .rol-item-metric:nth-child(3) {
+    flex: 1 1 auto;
+    margin-left: 12px;
   }
   .rol-item-label {
+    display: inline-block;
     flex-shrink: 0;
     margin-right: 4px;
+    text-align: right;
     font-size: 11px;
     color: #999;
   }
+  .rol-label-qty {
+    min-width: 4.2em;
+  }
+  .rol-label-retail {
+    min-width: 3.2em;
+  }
+  .rol-label-paid {
+    min-width: 4.2em;
+  }
   .rol-item-value {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    text-align: right;
     font-size: 14px;
     font-weight: 600;
     color: #333;
@@ -582,33 +660,36 @@
   }
   .rol-card-foot {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px solid #f0f0f0;
   }
+  .rol-member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+  }
   .rol-member {
-    display: flex;
-    align-items: flex-start;
-  }
-  .rol-member-metric {
-    display: flex;
-    flex-direction: column;
-    margin-right: 16px;
-  }
-  .rol-member-label {
-    font-size: 11px;
-    color: #999;
-  }
-  .rol-member-value {
-    margin-top: 2px;
+    flex: 1;
+    min-width: 0;
+    white-space: normal;
+    word-break: break-all;
     font-size: 13px;
     color: #333;
   }
+  .rol-totals {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
   .rol-actions {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
+    margin-left: 8px;
   }
   .rol-actions .ant-btn + .ant-btn {
     margin-left: 8px;

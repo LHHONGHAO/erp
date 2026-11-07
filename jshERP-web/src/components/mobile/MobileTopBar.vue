@@ -60,13 +60,15 @@ export default {
       background: rgba(255, 255, 255, 0.2);
     }
   }
+  /* 标题左对齐：起点与商品信息页一致（返回区 58px + 16px 间距） */
   .mtb-title {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-    text-align: center;
+    justify-content: flex-start;
+    padding-left: 16px;
+    text-align: left;
     font-size: 16px;
     font-weight: 500;
     color: #fff;

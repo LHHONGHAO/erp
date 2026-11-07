@@ -18,14 +18,14 @@
           <div class="lmp-title">{{ mobileTitle }}</div>
           <div class="lmp-subtitle">{{ mobileSubtitle }}</div>
         </div>
-        <a-icon v-if="template" class="lmp-settings" type="setting" @click="handleEdit" />
+        <a-icon v-if="template || isRoutePrintPage" class="lmp-settings" type="setting" @click="handleEdit" />
         <span v-else class="lmp-settings placeholder" />
       </div>
 
       <!-- 主内容 -->
       <div class="lmp-content" :class="{ 'lmp-empty': !template }">
         <template v-if="!template">
-          <a-alert type="info" show-icon message="该商品暂无可用标签模板" description="可点击右上角设置图标创建标签模板" />
+          <a-alert type="info" show-icon :message="emptyMessage" description="可点击右上角设置图标创建模板" />
         </template>
         <template v-else>
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
@@ -225,9 +225,10 @@
                   <a-icon type="wifi" class="lmpl-item-icon" />
                   <div class="lmpl-item-text">
                     <div class="lmpl-item-title">{{ p.name }}</div>
-                    <div class="lmpl-item-sub">{{ p.ip }}:{{ p.port }}</div>
+                    <div class="lmpl-item-sub">{{ p.ip }}:{{ p.port }} · {{ p.cmdSet || 'TSPL' }}</div>
                   </div>
                 </div>
+                <a-tag class="lmpl-tag" @click.stop="openPrinterCmdSheet(p)">{{ p.cmdSet || 'TSPL' }}</a-tag>
                 <template v-if="activeWifiId === p.id">
                   <a-tag v-if="wifiStatus[p.id]" color="green" class="lmpl-tag">已连接</a-tag>
                   <a-tag v-else class="lmpl-tag">未连接</a-tag>
@@ -291,6 +292,20 @@
             >{{ c }}</div>
           </div>
           <div class="lmb-sheet-cancel" @click="cmdSheetBrand = null">取消</div>
+        </div>
+      </div>
+      <!-- 已保存打印机的指令集切换弹层 -->
+      <div v-if="cmdSheetPrinter" class="lmb-sheet-mask" @click="cmdSheetPrinter = null">
+        <div class="lmb-sheet" @click.stop>
+          <div class="lmb-sheet-group">
+            <div
+              v-for="c in wifiCmdOptions"
+              :key="c"
+              class="lmb-sheet-item"
+              @click="confirmPrinterCmdSheet(c)"
+            >{{ c }}</div>
+          </div>
+          <div class="lmb-sheet-cancel" @click="cmdSheetPrinter = null">取消</div>
         </div>
       </div>
     </div>
@@ -540,7 +555,9 @@
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { printLabel } from '@/views/material/utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
+  import { mmToPx, schemaToLegacy } from '@/views/material/utils/labelSchema'
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
+  import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import { getAction, postAction } from '@/api/manage'
@@ -566,6 +583,8 @@
         record: {},
         sku: {},
         categoryTree: [],
+        // 当前模板业务类型：label / delivery / receipt
+        type: 'label',
         template: null,
         allAttrs: [],
         selectedAttrs: [],
@@ -619,9 +638,11 @@
           { key: 'ure', name: '优迩', en: 'URPRTCN', color: '#fa8c16', cmd: 'TSPL' }
         ],
         // 信号传输格式选项
-        wifiCmdOptions: ['CPCL', 'DDPL', 'TSPL'],
+        wifiCmdOptions: ['CPCL', 'DDPL', 'TSPL', 'ESC/POS'],
         // 正在调整传输格式的品牌（底部弹层），null 表示关闭
         cmdSheetBrand: null,
+        // 正在调整指令集的已保存打印机（底部弹层），null 表示关闭
+        cmdSheetPrinter: null,
         // 已选中的品牌（进入配置页）
         selectedWifiBrand: null,
         // 手机端：打印方向（0 / 90 / 180）
@@ -657,7 +678,17 @@
       // 手机端顶栏标题：模板名，无模板时取 SKU 名称
       mobileTitle() {
         if (this.template) return this.template.name || '标签打印'
-        return '标签打印'
+        var titles = { delivery: '发货单打印', receipt: '小票打印' }
+        return titles[this.type] || '标签打印'
+      },
+      // 路由页（/label/print-mobile）：顶栏设置图标始终可用，用于跳转统一编辑页
+      isRoutePrintPage() {
+        return !!(this.$route && this.$route.path === '/label/print-mobile')
+      },
+      // 空状态提示：按模板类型区分文案
+      emptyMessage() {
+        var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板' }
+        return msgs[this.type] || '该商品暂无可用标签模板'
       },
       // 手机端顶栏副标题：尺寸 + 列数
       mobileSubtitle() {
@@ -860,21 +891,37 @@
         this.sku = {}
         this.allAttrs = this.buildAttrList()
         this.type = q.type || 'delivery'
-        // 尝试从 sessionStorage 恢复编辑中的模板数据
-        try {
-          var snap = sessionStorage.getItem('jsh.labelEdit.snapshot')
-          if (snap) {
-            var s = JSON.parse(snap)
-            if (s.labelWidth) this.labelWidth = s.labelWidth
-            if (s.labelHeight) this.labelHeight = s.labelHeight
-            if (s.selectedAttrs) this.selectedAttrs = s.selectedAttrs
-            if (s.attrStyles) this.attrStyles = s.attrStyles
-            if (s.attrLabels) this.attrLabels = s.attrLabels
+        // 统一逻辑：优先按类型从统一模板存储读取模板，读不到再用编辑页快照兜底
+        // 关键：预览只接受标准化后的模板结构（selectedAttrs/attrStyles/attrLabels/尺寸），
+        // 模板存储里可能是 v3 elements、旧 platformConfig 或编辑器快照，先规整再渲染
+        this.loadRouteTemplate(q).then(function(raw) {
+          var tpl = self.normalizeTemplate(raw)
+          if (tpl) {
+            self.applyTemplate(tpl, true)
             // 发货单/小票的字段不在 label 的 allAttrs 里 → 补回缺失字段为自定义条目
-            self.restoreMissingAttrs(this.selectedAttrs)
+            self.restoreMissingAttrs(self.selectedAttrs)
+            // 模板只提供布局，业务值由上一页快照带入（结构与模板分离）
+            self.applySnapshotValues()
+          } else {
+            self.applySnapshot()
           }
-        } catch (e) { /* 忽略 */ }
-        this.$nextTick(function() { self.updatePreviewScale() })
+          self.$nextTick(function() { self.updatePreviewScale() })
+        }).catch(function() {
+          // 模板读取异常不能把整页打空，退回编辑快照/空状态
+          self.applySnapshot()
+          self.$nextTick(function() { self.updatePreviewScale() })
+        })
+        // 恢复上次使用的打印机并加载设备列表，保证“打印”按钮可用
+        var last = null
+        try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e2) { last = null }
+        if (last && last.type) {
+          this.printerType = last.type
+          if (last.type === 'backend') this.selectedPrinter = last.name || undefined
+          else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
+          else this.selectedPrinter = undefined
+        }
+        this.loadPrinters()
+        this.loadWifiPrinters()
       }
     },
     beforeDestroy() {
@@ -1241,6 +1288,24 @@
         if (this.cmdSheetBrand) this.cmdSheetBrand.cmd = cmd
         this.cmdSheetBrand = null
       },
+      // 已保存打印机：打开指令集切换
+      openPrinterCmdSheet(printer) {
+        this.cmdSheetPrinter = printer
+      },
+      // 已保存打印机：切换指令集并持久化
+      confirmPrinterCmdSheet(cmd) {
+        var printer = this.cmdSheetPrinter
+        this.cmdSheetPrinter = null
+        if (!printer) return
+        this.wifiPrinters = saveWifiPrinter({
+          name: printer.name,
+          ip: printer.ip,
+          port: printer.port,
+          brand: printer.brand,
+          cmdSet: cmd
+        })
+        this.$message.success('指令集已切换为 ' + cmd)
+      },
       // 选择品牌页：选中品牌，进入 Wi-Fi 配置页
       selectWifiBrand(brand) {
         this.selectedWifiBrand = brand
@@ -1324,7 +1389,128 @@
           self.applyTemplate(normal || defaultTpl || null)
         })
       },
-      applyTemplate(tpl) {
+      // 路由页：按类型从统一模板存储读取模板（label 支持按 templateId/name 定位）
+      loadRouteTemplate(q) {
+        if (this.type === 'delivery') {
+          return fetchDeliveryTemplate().then(function(tpl) {
+            return tpl || null
+          }).catch(function() { return null })
+        }
+        if (this.type === 'receipt') {
+          return getAction('/platformConfig/getUiConfig', { key: 'receipt_layout' }).then(function(res) {
+            var cfg = res && res.code === 200 ? res.data : null
+            if (typeof cfg === 'string') {
+              try { cfg = JSON.parse(cfg) } catch (e) { cfg = null }
+            }
+            if (cfg && cfg.config != null && !cfg.selectedAttrs && !cfg.elements) cfg = cfg.config
+            if (!cfg || !cfg.selectedAttrs || !cfg.selectedAttrs.length) return null
+            return {
+              id: 'receipt_layout',
+              name: cfg.name || '小票模板',
+              businessType: 'receipt.layout',
+              selectedAttrs: cfg.selectedAttrs,
+              attrStyles: cfg.attrStyles || {},
+              attrLabels: cfg.attrLabels || {},
+              labelWidth: cfg.width || cfg.labelWidth || 380,
+              labelHeight: cfg.height || cfg.labelHeight || 600
+            }
+          }).catch(function() { return null })
+        }
+        return fetchLabelTemplates().then(function(list) {
+          var id = q && q.templateId
+          var tpl = null
+          if (id) {
+            tpl = (list || []).find(function(t) {
+              return String(t.serverId) === String(id) || String(t.id) === String(id)
+            })
+          }
+          if (!tpl && q && q.name) {
+            tpl = (list || []).find(function(t) { return t.name === q.name })
+          }
+          return tpl || null
+        }).catch(function() { return null })
+      },
+      // 模板结构标准化：把「统一模板表 v3 elements / 旧 platformConfig / 编辑器快照」
+      // 统一转换成本页预览使用的编辑器结构，避免预览模块先于标准化读原始结构导致不兼容
+      normalizeTemplate(raw) {
+        var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板' }
+        var src = raw
+        if (typeof src === 'string') {
+          try { src = JSON.parse(src) } catch (e) { return null }
+        }
+        if (!src || typeof src !== 'object') return null
+        // getUiConfig 的 { config: ... } 包装
+        if (src.config != null && !src.selectedAttrs && !src.elements) {
+          var inner = src.config
+          if (typeof inner === 'string') {
+            try { inner = JSON.parse(inner) } catch (e) { inner = null }
+          }
+          if (inner && typeof inner === 'object') src = inner
+        }
+        // v3 模板：elements 为准，编辑器结构由 schema 反推
+        var schema = src.elements && Array.isArray(src.elements)
+          ? src
+          : (src.schema && Array.isArray(src.schema.elements) ? src.schema : null)
+        var base = schema ? schemaToLegacy(schema) : src
+        var selectedAttrs = Array.isArray(base && base.selectedAttrs) ? base.selectedAttrs : []
+        selectedAttrs = selectedAttrs
+          .filter(function(key) { return key != null && key !== '' })
+          .map(function(key) { return String(key) })
+        // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
+        if (!selectedAttrs.length) return null
+        var size = (schema && schema.size) || {}
+        var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600] }
+        var fallback = defaults[this.type] || defaults.label
+        var width = size.width ? mmToPx(size.width) : (base.labelWidth || base.width)
+        var height = size.height ? mmToPx(size.height) : (base.labelHeight || base.height)
+        var styles = base.attrStyles && typeof base.attrStyles === 'object' ? base.attrStyles : {}
+        var labels = base.attrLabels && typeof base.attrLabels === 'object' && !Array.isArray(base.attrLabels) ? base.attrLabels : {}
+        return {
+          id: src.id || src.serverId || ('storage_' + this.type),
+          serverId: src.serverId || null,
+          name: src.name || (schema && schema.name) || names[this.type] || '模板',
+          businessType: src.businessType || (schema && schema.businessType) || '',
+          provider: base.provider || (schema && schema.dataSource && schema.dataSource.provider) || '',
+          selectedAttrs: selectedAttrs,
+          attrStyles: styles,
+          attrLabels: labels,
+          customLabels: Array.isArray(base.customLabels) ? base.customLabels : [],
+          labelWidth: width || fallback[0],
+          labelHeight: height || fallback[1],
+          width: width || fallback[0],
+          height: height || fallback[1],
+          schema: schema
+        }
+      },
+      // 路由页兜底：存储里没有模板时，用编辑页快照还原预览
+      applySnapshot() {
+        var s = null
+        try { s = JSON.parse(sessionStorage.getItem('jsh.labelEdit.snapshot') || 'null') } catch (e) { s = null }
+        var tpl = this.normalizeTemplate(s)
+        if (!tpl) return
+        this.applyTemplate(tpl, true)
+        this.applySnapshotValues()
+      },
+      // 快照里的业务值：模板结构标准化完成后按字段 key 回填，保证预览读的是统一结构
+      applySnapshotValues() {
+        var s = null
+        try { s = JSON.parse(sessionStorage.getItem('jsh.labelEdit.snapshot') || 'null') } catch (e) { s = null }
+        if (!s || !s.values || typeof s.values !== 'object') return
+        var self = this
+        var exists = {}
+        this.allAttrs.forEach(function(attr) { exists[attr.key] = true })
+        Object.keys(s.values).forEach(function(key) {
+          if (exists[key]) {
+            var attr = self.allAttrs.find(function(a) { return a.key === key })
+            if (attr) attr.value = s.values[key]
+            return
+          }
+          self.allAttrs.push({ key: key, label: self.attrLabels[key] || '', value: s.values[key], isCustom: true, group: '自定义' })
+          exists[key] = true
+        })
+        if (Array.isArray(s.rows)) this.detailRows = s.rows
+      },
+      applyTemplate(tpl, skipProvider) {
         var self = this
         this.template = tpl
         this.selectedAttrs = []
@@ -1374,7 +1560,7 @@
         // 旧模板（文字与条码合在一个元素里）自动拆分为独立编码元素
         this.attrStyles = migrateCodeStyles(this.attrStyles, this.allAttrs, this.attrLabels)
         // 模板绑定了业务数据源：走统一适配器取数，预览与打印共用同一份数据
-        this.applyProviderData(tpl)
+        if (!skipProvider) this.applyProviderData(tpl)
       },
       // 按模板数据源加载统一数据（不直接访问业务数据库）
       applyProviderData(tpl) {
@@ -1444,7 +1630,8 @@
         ;(keys || []).forEach(function(key) {
           if (exists[key]) return
           var label = self.attrLabels[key] || '自定义'
-          self.allAttrs.push({ key: key, label: label, value: label, isCustom: true, group: '自定义' })
+          // 未知字段只补结构，值必须来自真实数据，避免预览里把字段名当成值显示
+          self.allAttrs.push({ key: key, label: label, value: '', isCustom: true, group: '自定义' })
           exists[key] = true
         })
       },
@@ -1458,6 +1645,23 @@
           templateId: this.template ? this.template.id : null
         }
         this.visible = false
+        // 路由页没有父组件监听 edit → 直接跳转统一标签编辑页
+        if (this.isRoutePrintPage && !(this.$listeners && this.$listeners.edit)) {
+          // 把商品数据和当前模板带到编辑页，否则编辑页拿不到 record/sku，字段会全部为空
+          try {
+            sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
+              record: this.record || {},
+              sku: this.sku || {},
+              template: this.template || null,
+              provider: (this.template && this.template.provider) || (this.type === 'delivery' ? 'sales.delivery' : 'product.label'),
+              businessType: this.type === 'delivery' ? 'delivery' : 'product'
+            }))
+          } catch (e) { /* 忽略 */ }
+          var query = { type: this.type || 'label', businessType: this.type === 'delivery' ? 'delivery' : 'product' }
+          if (payload.templateId) query.templateId = payload.templateId
+          this.$router.push({ path: '/label/edit-mobile', query: query })
+          return
+        }
         setTimeout(() => this.$emit('edit', payload), 200)
       },
       // 通过搜索发现的打印机打印（蓝牙/云）
@@ -1664,29 +1868,35 @@
           return
         }
         this.printing = true
-        // 打印机只能打点阵，交给前端把整张标签渲染成图片，后端转单色位图下发
-        this.renderLabelToPng().then(function(image) {
-          return printToWifiPrinter(printer, {
+        var self2 = this
+        // TSPL / DDPL 走打印机内置字库的文本+条码指令（数据量小、出纸稳定）；
+        // CPCL / ESC/POS 只支持位图，才需要把整张标签渲染成图片
+        var cmdSet = String(printer.cmdSet || 'TSPL').toUpperCase()
+        var needsImage = cmdSet === 'CPCL' || cmdSet === 'ESC/POS'
+        var prepare = needsImage ? this.renderLabelToPng() : Promise.resolve(null)
+        prepare.then(function(image) {
+          var payload = {
             copies: self.copies,
             width: self.labelWidth,
             height: self.labelHeight,
-            image: image,
             items: self.buildLayoutItems()
-          })
+          }
+          if (image) payload.image = image
+          return printToWifiPrinter(printer, payload)
         }).then(function(res) {
-          self.printing = false
+          self2.printing = false
           if (res && res.code === 200) {
-            self.$message.success('已发送到打印机：' + printer.name)
-            self.$set(self.wifiStatus, printer.id, true)
+            self2.$message.success('已发送到打印机：' + printer.name)
+            self2.$set(self2.wifiStatus, printer.id, true)
           } else {
             // 后端把失败原因放在 data.message 中
             var data = (res && res.data) || {}
             var message = (typeof data === 'string' ? data : data.message) || '打印失败'
-            self.$message.error(message)
+            self2.$message.error(message)
           }
         }).catch(function(err) {
-          self.printing = false
-          self.$message.error((err && err.message) || '网络打印失败，请检查打印机与后端网络')
+          self2.printing = false
+          self2.$message.error((err && err.message) || '网络打印失败，请检查打印机与后端网络')
         })
       },
       // 浏览器打印（后端打印不可用时兜底）
@@ -2244,11 +2454,11 @@
   /* 顶栏：蓝底 + 白色图标文字 */
   .lmp-header {
     flex: none;
-    height: 50px;
+    height: 49px;
     background: #fff;
     display: flex;
     align-items: center;
-    padding: 0 12px;
+    padding: 0 8px 0 0;
   }
   .lmp-header-blue {
     background: #1890ff;
@@ -2262,16 +2472,22 @@
   .lmp-header-blue .lmp-subtitle {
     color: rgba(255, 255, 255, 0.75);
   }
+  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
   .lmp-back,
   .lmp-settings {
-    font-size: 20px;
+    font-size: 22px;
     color: #333;
     cursor: pointer;
-    width: 32px;
+    width: 58px;
+    height: 58px;
+    line-height: 1;
     flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .lmp-back {
+    margin-left: 0;
   }
   .lmp-settings.placeholder {
     visibility: hidden;
@@ -2285,7 +2501,7 @@
   }
   .lmp-title {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 500;
     color: #262626;
     max-width: 60vw;
     overflow: hidden;

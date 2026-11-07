@@ -61,6 +61,10 @@ router.beforeEach((to, from, next) => {
         store.dispatch('GetPermissionList').then(res => {
           const menuData = res;
           if (menuData === null || menuData === "" || menuData === undefined) {
+            // 菜单为空时不能直接 return，否则 next() 永不执行，页面会一直白屏
+            store.dispatch('Logout').then(() => {
+              next({ path: '/user/login' })
+            })
             return;
           }
           // 缓存用户的按钮权限

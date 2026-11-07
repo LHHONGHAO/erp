@@ -159,7 +159,9 @@ export function testWifiPrinter (ip, port) {
 export function printToWifiPrinter (printer, payload) {
   return postAction('/print/network', Object.assign({
     ip: printer.ip,
-    port: Number(printer.port) || DEFAULT_PRINTER_PORT
+    port: Number(printer.port) || DEFAULT_PRINTER_PORT,
+    // 网络打印机按所选品牌/指令集下发（TSPL / CPCL / DDPL）
+    cmdSet: String(printer.cmdSet || 'TSPL').toUpperCase()
   }, payload))
 }
 

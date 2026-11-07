@@ -1,8 +1,10 @@
 import { getAction, postAction } from '@/api/manage'
 
 /** 数据源列表（含字段元数据） */
-export function fetchProviders() {
-  return getAction('/labelProvider/list').then(function(res) {
+export function fetchProviders(businessType) {
+  var params = {}
+  if (businessType) params.businessType = businessType
+  return getAction('/labelProvider/list', params).then(function(res) {
     return res && res.code === 200 ? (res.data || []) : []
   }).catch(function() {
     return []

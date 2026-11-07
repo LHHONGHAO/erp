@@ -489,7 +489,27 @@
       },
       // 发货：打开发货单页面（按发货模板渲染）
       mobileDeliver (bill) {
-        this.$router.push({ path: '/bill/deliveryNote', query: { number: bill.number } })
+        if (!bill || !bill.number) {
+          this.$message.warning('单据编号缺失，无法打开发货单')
+          return
+        }
+        var self = this
+        var target = { path: '/bill/deliveryNote', query: { number: bill.number } }
+        // 路由表是旧缓存时 $router.push 会被静默吞掉（页面无反应）→ 整页跳转兜底
+        var matched = this.$router.resolve(target).route.matched
+        if (!matched || !matched.length) {
+          this.gotoDeliveryNote(bill.number)
+          return
+        }
+        this.$router.push(target)
+        // 组件 chunk 加载失败时 push 同样会被静默吞掉，这里兜底
+        setTimeout(function() {
+          if (self.$route.path !== target.path) self.gotoDeliveryNote(bill.number)
+        }, 1500)
+      },
+      gotoDeliveryNote (number) {
+        var base = (this.$router.options && this.$router.options.base) || '/'
+        window.location.href = base.replace(/\/+$/, '') + '/bill/deliveryNote?number=' + encodeURIComponent(number)
       },
       // 审核 / 反审核
       mobileSetStatus (bill, status) {

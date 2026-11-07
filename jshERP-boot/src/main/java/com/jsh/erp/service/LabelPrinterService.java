@@ -110,11 +110,28 @@ public class LabelPrinterService {
     }
 
     /**
-     * 打印标签到网络打印机：把同样的 TSPL 指令通过 Socket 直接发送到 ip:port
+     * 打印标签到网络打印机：按前端选择的指令集拼装指令后通过 Socket 直接发送到 ip:port
      */
-    public void printNetworkLabel(String ip, int port, int copies, int widthPx, int heightPx, JSONArray items, String image) throws Exception {
-        byte[] data = buildTsplJob(widthPx, heightPx, items, copies, image);
+    public void printNetworkLabel(String ip, int port, String cmdSet, int copies, int widthPx, int heightPx, JSONArray items, String image) throws Exception {
+        byte[] data = buildJob(cmdSet, widthPx, heightPx, items, copies, image);
         sendToSocket(ip, port, data);
+    }
+
+    /**
+     * 按指令集分发：TSPL（默认）、CPCL、DDPL，均优先使用整张位图，避免中文编码问题
+     */
+    private byte[] buildJob(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+        String cmd = cmdSet == null ? "" : cmdSet.trim().toUpperCase();
+        if ("CPCL".equals(cmd)) {
+            return buildCpclJob(widthPx, heightPx, image, copies);
+        }
+        if ("DDPL".equals(cmd)) {
+            return buildDdplJob(widthPx, heightPx, image, copies);
+        }
+        if ("ESC/POS".equals(cmd) || "ESCPOS".equals(cmd)) {
+            return buildEscPosJob(widthPx, heightPx, image, copies);
+        }
+        return buildTsplJob(widthPx, heightPx, items, copies, image);
     }
 
     private void sendToSocket(String ip, int port, byte[] data) throws Exception {
@@ -175,13 +192,19 @@ public class LabelPrinterService {
         BufferedImage source = decodeImage(image);
         int dotsWidth = Math.max(1, toDots(widthPx));
         int dotsHeight = Math.max(1, toDots(heightPx));
+        // 4 寸机型（D45 等）最宽 832 点（108mm），超出时等比缩小，避免走纸异常
+        int maxWidth = 832;
+        if (dotsWidth > maxWidth) {
+            dotsHeight = Math.max(1, (int) Math.round(dotsHeight * (maxWidth * 1.0 / dotsWidth)));
+            dotsWidth = maxWidth;
+        }
         BufferedImage target = resize(source, dotsWidth, dotsHeight);
         int widthBytes = (dotsWidth + 7) / 8;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeLine(out, "SIZE " + toMm(dotsWidth) + " mm," + toMm(dotsHeight) + " mm");
         writeLine(out, "CLS");
-        StringBuilder bitmap = new StringBuilder("BITMAP 0,0,").append(widthBytes).append(',')
-                .append(dotsHeight).append(",0");
+        // TSPL 的 BITMAP 后面必须跟二进制位图数据，不能是 "00,FF" 这类文本
+        out.write(("BITMAP 0,0," + widthBytes + "," + dotsHeight + ",0,").getBytes(CHARSET));
         for (int y = 0; y < dotsHeight; y++) {
             for (int byteIndex = 0; byteIndex < widthBytes; byteIndex++) {
                 int value = 0;
@@ -191,12 +214,104 @@ public class LabelPrinterService {
                         value |= (0x80 >> bit);
                     }
                 }
-                bitmap.append(',').append(String.format("%02X", value));
+                out.write(value);
             }
         }
-        writeLine(out, bitmap.toString());
+        writeLine(out, "");
         writeLine(out, "PRINT 1," + Math.max(1, copies));
         return out.toByteArray();
+    }
+
+    /**
+     * 按整张图片拼装 CPCL 任务：逐行用 EG 指令下发 1 位单色位图
+     */
+    private byte[] buildCpclJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+        requireBitmap(image, "CPCL");
+        BufferedImage source = decodeImage(image);
+        int dotsWidth = Math.max(1, toDots(widthPx));
+        int dotsHeight = Math.max(1, toDots(heightPx));
+        BufferedImage target = resize(source, dotsWidth, dotsHeight);
+        int widthBytes = (dotsWidth + 7) / 8;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeLine(out, "! 0 200 200 " + dotsHeight + " " + Math.max(1, copies));
+        writeLine(out, "PAGE-WIDTH " + (widthBytes * 8));
+        for (int y = 0; y < dotsHeight; y++) {
+            StringBuilder row = new StringBuilder("EG ").append(widthBytes).append(" 1 0 ").append(y).append(' ');
+            for (int byteIndex = 0; byteIndex < widthBytes; byteIndex++) {
+                int value = 0;
+                for (int bit = 0; bit < 8; bit++) {
+                    int x = byteIndex * 8 + bit;
+                    if (x < dotsWidth && isBlack(target.getRGB(x, y))) {
+                        value |= (0x80 >> bit);
+                    }
+                }
+                row.append(String.format("%02X", value));
+            }
+            writeLine(out, row.toString());
+        }
+        writeLine(out, "FORM");
+        writeLine(out, "PRINT");
+        return out.toByteArray();
+    }
+
+    /**
+     * DDPL 任务：SIZE / CLS / BITMAP / PRINT 与 TSPL 兼容，直接复用位图任务
+     */
+    private byte[] buildDdplJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+        requireBitmap(image, "DDPL");
+        return buildBitmapJob(widthPx, heightPx, image, copies);
+    }
+
+    /**
+     * ESC/POS 任务（58 / 80mm 票据机）：整张标签转单色光栅位图，逐行用 GS v 0 下发
+     */
+    private byte[] buildEscPosJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+        requireBitmap(image, "ESC/POS");
+        BufferedImage source = decodeImage(image);
+        int dotsWidth = Math.max(1, toDots(widthPx));
+        int dotsHeight = Math.max(1, toDots(heightPx));
+        // 票据机单行最大 576 点（80mm），超出时等比缩小，避免右侧被裁掉
+        int maxWidth = 576;
+        if (dotsWidth > maxWidth) {
+            dotsHeight = Math.max(1, (int) Math.round(dotsHeight * (maxWidth * 1.0 / dotsWidth)));
+            dotsWidth = maxWidth;
+        }
+        BufferedImage target = resize(source, dotsWidth, dotsHeight);
+        int widthBytes = (dotsWidth + 7) / 8;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int total = Math.max(1, copies);
+        for (int copy = 0; copy < total; copy++) {
+            out.write(new byte[]{0x1B, 0x40}); // ESC @ 初始化
+            for (int y = 0; y < dotsHeight; y++) {
+                // GS v 0 m xL xH yL yH：一次下发一行位图
+                out.write(0x1D);
+                out.write(0x76);
+                out.write(0x30);
+                out.write(0x00);
+                out.write(widthBytes & 0xFF);
+                out.write((widthBytes >> 8) & 0xFF);
+                out.write(0x01);
+                out.write(0x00);
+                for (int byteIndex = 0; byteIndex < widthBytes; byteIndex++) {
+                    int value = 0;
+                    for (int bit = 0; bit < 8; bit++) {
+                        int x = byteIndex * 8 + bit;
+                        if (x < dotsWidth && isBlack(target.getRGB(x, y))) {
+                            value |= (0x80 >> bit);
+                        }
+                    }
+                    out.write(value);
+                }
+            }
+            out.write(new byte[]{0x1B, 0x64, 0x03}); // ESC d 3：走纸
+        }
+        return out.toByteArray();
+    }
+
+    private void requireBitmap(String image, String cmdSet) throws IOException {
+        if (image == null || image.trim().isEmpty()) {
+            throw new IOException(cmdSet + " 指令集需要整张标签位图，请确认标签预览正常后重试");
+        }
     }
 
     /**

@@ -1,20 +1,21 @@
 <template>
   <div class="lem-page">
-    <!-- 顶栏 -->
-    <div class="lem-topbar">
-      <a-icon type="arrow-left" class="lem-back" @click="handleBack" />
-      <div class="lem-title-area">
-        <div class="lem-title">{{ currentTitle }}</div>
-        <div class="lem-subtitle" @click="openSizeEditor">
-          {{ labelWidthMm }}mm × {{ labelHeightMm }}mm
-          <a-icon type="edit" class="lem-size-edit-icon" />
+    <!-- 标准顶栏 -->
+    <mobile-top-bar @back="handleBack">
+      <template #title>
+        <div class="lem-title-area">
+          <div class="lem-title">{{ currentTitle }}</div>
+          <div class="lem-subtitle" @click="openSizeEditor">
+            {{ labelWidthMm }}mm × {{ labelHeightMm }}mm
+            <a-icon type="edit" class="lem-size-edit-icon" />
+          </div>
         </div>
-      </div>
-      <div class="lem-top-actions">
+      </template>
+      <template #actions>
         <a-icon type="fullscreen" class="lem-top-icon" @click="toggleZoom" />
         <a-icon type="more" class="lem-top-icon" @click="showMore = !showMore" />
-      </div>
-    </div>
+      </template>
+    </mobile-top-bar>
 
     <!-- 对齐排列工具条（固定在顶栏下方，全部图标按钮） -->
     <div class="lem-align-bar">
@@ -217,6 +218,19 @@
           <span class="lem-sheet-title">元素</span>
         </div>
         <div class="lem-sheet-body">
+          <!-- 数据表选择：字段随所选表加载，逻辑与 Web 端「业务数据源」一致 -->
+          <div v-if="providerList.length" class="lem-provider">
+            <span class="lem-provider-label">数据表</span>
+            <a-select
+              :value="provider"
+              size="small"
+              style="flex:1"
+              placeholder="选择数据表"
+              @change="onProviderChange"
+            >
+              <a-select-option v-for="p in providerList" :key="p.provider" :value="p.provider">{{ p.name }}</a-select-option>
+            </a-select>
+          </div>
           <div v-for="group in attrGroups" :key="group.name" class="lem-elem-group">
             <div class="lem-elem-group-title">{{ group.name }}</div>
             <div
@@ -226,7 +240,8 @@
               :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
               @click="toggleAttr(attr.key)"
             >
-              <span>{{ attr.label }}</span>
+              <span class="lem-elem-key">{{ attr.key }}</span>
+              <span class="lem-elem-cn">{{ attr.comment || attr.label }}</span>
               <a-icon
                 :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
                 :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
@@ -281,15 +296,44 @@
         </div>
       </div>
     </a-modal>
+
+    <!-- 保存模板弹窗：与 PC 端一致（模板名称 + 商品类型） -->
+    <a-modal
+      title="保存模板"
+      :visible="saveModalVisible"
+      :width="'92%'"
+      :maskClosable="false"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="confirmSaveTemplate"
+      @cancel="saveModalVisible = false"
+    >
+      <div class="lem-save-field">
+        <div class="lem-save-label">模板名称</div>
+        <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
+      </div>
+      <div v-if="templateType === 'label'" class="lem-save-field">
+        <div class="lem-save-label">商品类型</div>
+        <a-select v-model="templateCategoryId" style="width:100%" placeholder="不选择则保存为普通模板" allowClear>
+          <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
+        </a-select>
+        <div class="lem-save-hint">仅二级类目可作为模板类型（一级类目不可保存模板）；一个类目只保留一个模板</div>
+        <div v-if="conflictTemplate" class="lem-save-conflict">该类型已有模板「{{ conflictTemplate.name }}」，保存后将覆盖</div>
+        <div class="lem-save-hint">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script>
+  import MobileTopBar from '@/components/mobile/MobileTopBar'
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { isCodeKey, codeSourceKey, renderCodeDataUrl, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
-  import { fetchLabelTemplates, saveLabelTemplates } from '@/views/material/utils/labelTemplateStore'
+  import { fetchLabelTemplates, saveLabelTemplate } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate, saveDeliveryTemplate as persistDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
+  import { fetchProviders, fetchProviderFields, fetchLabelData } from '@/views/material/utils/labelProviderApi'
   import { getAction, postAction } from '@/api/manage'
+  import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll } from '@/utils/label-scroll'
 
   const PX_PER_MM = 3.779528
@@ -298,7 +342,7 @@
    * 模板类型配置表
    * 所有类型差异集中在此，新增类型只需加一行（如以后的 receipt/小票）
    *
-   * storage: 'localTemplates' → 用 fetchLabelTemplates / saveLabelTemplates（多模板列表）
+   * storage: 'localTemplates' → 用 fetchLabelTemplates / saveLabelTemplate（多模板列表）
    *           'platformConfig' → 用 getUiConfig / saveUiConfig（单 key 覆盖写）
    */
   const TYPE_CONFIG = {
@@ -334,11 +378,16 @@
 
   export default {
     name: 'LabelEditMobile',
+    components: { MobileTopBar },
     data() {
       return {
         templateType: 'label',
         record: {},
         sku: {},
+        // 业务数据表（数据源）：与 Web 端一致，字段由后端适配器/数据表提供
+        providerList: [],
+        provider: '',
+        businessType: '',
         allAttrs: [],
         selectedAttrs: [],
         attrStyles: {},
@@ -354,6 +403,11 @@
         panelDown: false,
         templates: [],
         selectedTemplateId: null,
+        // 保存模板弹窗（与 PC 端一致：模板名称 + 商品类型）
+        saveModalVisible: false,
+        newTemplateName: '',
+        templateCategoryId: null,
+        categoryTree: [],
         // 发货单模板（统一模板表记录）
         deliveryTemplate: null,
         codeImages: {},
@@ -375,6 +429,23 @@
       currentTitle() {
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         return cfg.title
+      },
+      // 仅二级类目可作为模板类型（一级类目不可保存模板）
+      categoryList() {
+        return this.flattenCategoryTree(this.categoryTree, 2)
+      },
+      // 全部类目（仅用于类目名称回显，包含一级类目）
+      allCategoryList() {
+        return this.flattenCategoryTree(this.categoryTree)
+      },
+      // 所选类目下已存在的其它模板：一个类目只保留一个模板，保存时覆盖
+      conflictTemplate() {
+        var id = this.templateCategoryId
+        if (!id) return null
+        var self = this
+        return this.templates.find(function(t) {
+          return t.type === 'default' && String(t.categoryId) === String(id) && t.id !== self.selectedTemplateId
+        }) || null
       },
       labelWidthMm() {
         return Math.round(this.labelWidth / PX_PER_MM)
@@ -469,12 +540,109 @@
       initFromRoute() {
         var type = this.$route.query.type || 'label'
         var cfg = TYPE_CONFIG[type] || TYPE_CONFIG.label
+        // 从打印预览页点「编辑」返回时，恢复当时的商品数据和模板，避免编辑页字段全空
+        var context = null
+        try { context = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { context = null }
+        if (context) {
+          try { sessionStorage.removeItem('jsh.labelEdit.context') } catch (e) { /* 忽略 */ }
+          if (context.record) this.record = context.record
+          if (context.sku) this.sku = context.sku
+        }
         this.templateType = type
+        // 业务标识：来源页优先，其次按类型兜底（商品/发货单）
+        this.businessType = this.$route.query.businessType || (context && context.businessType) ||
+          (type === 'delivery' ? 'delivery' : (type === 'label' ? 'product' : ''))
         this.labelWidth = cfg.defaultWidth
         this.labelHeight = cfg.defaultHeight
         this.deliveryTemplate = null
         this.allAttrs = this.buildAttrs(cfg.attrsBuilder)
-        this.loadTemplate(cfg)
+        var loaded
+        if (context && context.template && context.template.selectedAttrs) {
+          this.applyTemplateSnapshot(context.template, cfg)
+          this.selectedTemplateId = context.template.id || null
+          // 列表仍要加载，供后续切换/保存，但不再用列表里的模板覆盖刚恢复的布局
+          loaded = this.loadTemplate(cfg, true)
+        } else {
+          loaded = this.loadTemplate(cfg)
+        }
+        // 模板布局恢复后再拉数据表，避免数据源字段覆盖模板里的已选字段
+        var self = this
+        Promise.resolve(loaded).then(function() {
+          self.initProvider(context)
+        })
+      },
+      /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
+      initProvider(context) {
+        var self = this
+        this.providerList = []
+        if (!this.businessType) return
+        fetchProviders(this.businessType).then(function(list) {
+          self.providerList = list || []
+          if (!self.providerList.length) return
+          var preferred = (context && context.provider) ||
+            (context && context.template && context.template.provider) ||
+            (self.templateType === 'delivery' ? 'sales.delivery' : 'product.label')
+          var matched = self.providerList.filter(function(p) { return p.provider === preferred })[0]
+          self.provider = matched ? matched.provider : self.providerList[0].provider
+          self.applyProviderData(self.provider, false)
+        })
+      },
+      /** 手动切换数据表：按新表重建字段，并清理新表中不存在的已选字段 */
+      onProviderChange(provider) {
+        this.provider = provider || ''
+        this.applyProviderData(this.provider, true)
+      },
+      /**
+       * 按数据表加载字段清单（有单据 id 时同时取真实值）
+       * rebuild=true 表示用户主动切换：清理新表里不存在的已选字段（自定义标签始终保留）
+       */
+      applyProviderData(provider, rebuild) {
+        var self = this
+        if (!provider) {
+          this.allAttrs = this.buildAttrs((TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label).attrsBuilder)
+          return Promise.resolve()
+        }
+        var documentId = this.record && this.record.id
+        return Promise.all([
+          fetchProviderFields(provider),
+          fetchLabelData(provider, documentId)
+        ]).then(function(result) {
+          if (self.provider !== provider) return
+          var fields = result[0] || []
+          var values = result[1] || {}
+          if (!fields.length) return
+          var list = fields.filter(function(field) {
+            // 数组明细交给模板的循环渲染，不作为文本字段
+            return field.type !== 'array'
+          }).map(function(field) {
+            return {
+              key: field.key,
+              label: field.label || field.key,
+              comment: field.comment || '',
+              value: values[field.key] == null ? '' : String(values[field.key]),
+              type: field.type || 'text',
+              isCustom: false,
+              group: self.templateType === 'delivery' ? '销售出库' : '可用字段'
+            }
+          })
+          var exists = {}
+          list.forEach(function(attr) { exists[attr.key] = true })
+          // 自定义标签、以及模板中已选但新表没有的字段保留，避免存量模板字段被清空
+          self.allAttrs.forEach(function(attr) {
+            if (exists[attr.key]) return
+            if (attr.isCustom || self.selectedAttrs.indexOf(attr.key) > -1) list.push(attr)
+          })
+          self.allAttrs = list
+          fields.forEach(function(field) {
+            if (self.attrLabels[field.key] === undefined) {
+              self.$set(self.attrLabels, field.key, field.label || field.key)
+            }
+          })
+          if (rebuild) {
+            var keys = list.map(function(attr) { return attr.key })
+            self.selectedAttrs = self.selectedAttrs.filter(function(key) { return keys.indexOf(key) > -1 })
+          }
+        })
       },
       /** 根据 attrsBuilder 名称构建字段列表，新增类型只需在此加分支 */
       buildAttrs(builder) {
@@ -486,12 +654,13 @@
         }
       },
       /** 统一的模板加载入口，根据 storage 类型分发 */
-      loadTemplate(cfg) {
+      loadTemplate(cfg, skipApply) {
         var self = this
         if (cfg.storage === 'localTemplates') {
           var templateId = this.$route.query.templateId
-          fetchLabelTemplates().then(function(templates) {
+          return fetchLabelTemplates().then(function(templates) {
             self.templates = templates || []
+            if (skipApply) return
             var target = templateId ? templates.find(t => t.id === templateId) : (templates[0] || null)
             if (target && target.selectedAttrs) {
               self.applyTemplateSnapshot(target, cfg)
@@ -500,7 +669,11 @@
           })
         } else if (cfg.storage === 'deliveryTemplate') {
           // 发货单模板：统一模板表适配器（兼容旧 platformConfig）
-          fetchDeliveryTemplate().then(function(tpl) {
+          return fetchDeliveryTemplate().then(function(tpl) {
+            if (skipApply) {
+              if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) self.deliveryTemplate = tpl
+              return
+            }
             if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) {
               self.deliveryTemplate = tpl
               self.applyTemplateSnapshot(tpl, cfg)
@@ -508,11 +681,13 @@
               self.applyDefaultLayout(cfg)
             }
           }).catch(function() {
+            if (skipApply) return
             self.applyDefaultLayout(cfg)
           })
         } else if (cfg.storage === 'platformConfig') {
           var tryLoad = function(key, isFallback) {
-            getAction('/platformConfig/getUiConfig', { key: key }).then(function(res) {
+            return getAction('/platformConfig/getUiConfig', { key: key }).then(function(res) {
+              if (skipApply) return
               var data = (res && res.code === 200) ? res.data : null
               var snap = self.parseConfigData(data)
               if (snap && snap.selectedAttrs && snap.selectedAttrs.length) {
@@ -522,19 +697,18 @@
                   self.postSnapshot(cfg.platformConfigKey, snap)
                 }
               } else if (!isFallback && cfg.legacyPlatformConfigKey) {
-                tryLoad(cfg.legacyPlatformConfigKey, true)
+                return tryLoad(cfg.legacyPlatformConfigKey, true)
               } else {
                 self.applyDefaultLayout(cfg)
               }
             }).catch(function() {
               if (!isFallback && cfg.legacyPlatformConfigKey) {
-                tryLoad(cfg.legacyPlatformConfigKey, true)
-              } else {
-                self.applyDefaultLayout(cfg)
+                return tryLoad(cfg.legacyPlatformConfigKey, true)
               }
+              self.applyDefaultLayout(cfg)
             })
           }
-          tryLoad(cfg.platformConfigKey, false)
+          return tryLoad(cfg.platformConfigKey, false)
         }
       },
       /** 把持久化快照应用到当前编辑状态 */
@@ -1203,33 +1377,45 @@
       saveTemplate() {
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         var self = this
+        // 统一保存逻辑：所有类型先弹「保存模板」，再按类型走各自的模板数据模块保存
+        if (cfg.storage === 'localTemplates') {
+          var exist = this.selectedTemplateId
+            ? this.templates.find(function(t) { return t.id === self.selectedTemplateId })
+            : null
+          this.loadCategoryTree().then(function() {
+            self.newTemplateName = exist ? (exist.name || '') : ''
+            var catId = exist && exist.type === 'default' ? exist.categoryId : null
+            var valid = catId && self.categoryList.some(function(c) { return String(c.value) === String(catId) })
+            self.templateCategoryId = valid ? catId : null
+            self.saveModalVisible = true
+          })
+          return
+        }
+        if (cfg.storage === 'deliveryTemplate') {
+          this.newTemplateName = (this.deliveryTemplate && this.deliveryTemplate.name) || '发货单模板'
+        } else {
+          this.newTemplateName = cfg.title.replace('编辑', '') + '模板'
+        }
+        this.templateCategoryId = null
+        this.saveModalVisible = true
+      },
+      /** 发货单/小票：使用统一模板数据保存（不涉及商品类型） */
+      persistUnifiedTemplate(cfg, name) {
+        var self = this
         var payload = {
+          name: name,
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
           attrStyles: JSON.parse(JSON.stringify(this.attrStyles)),
           attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
           width: this.labelWidth,
           height: this.labelHeight
         }
-        if (cfg.storage === 'localTemplates') {
-          // 多模板列表模式：覆盖已有或新建
-          if (this.selectedTemplateId) {
-            var exist = this.templates.find(function(t) { return t.id === self.selectedTemplateId })
-            if (exist) Object.assign(exist, payload)
-          } else {
-            this.templates.push(Object.assign({ id: 'tpl_' + Date.now(), name: '新建' + cfg.title, type: this.templateType }, payload))
-            this.selectedTemplateId = this.templates[this.templates.length - 1].id
-          }
-          saveLabelTemplates(this.templates).then(function(res) {
-            self.showSaveResult(res, cfg)
-          }).catch(function() {
-            self.$message.error(cfg.title + '保存失败，请检查网络')
-          })
-        } else if (cfg.storage === 'deliveryTemplate') {
+        if (cfg.storage === 'deliveryTemplate') {
           var base = this.deliveryTemplate || {}
           var tpl = Object.assign({}, base, {
-            name: base.name || '发货单模板',
+            name: name,
             businessType: 'shipping.delivery',
-            provider: 'shipping.delivery',
+            provider: this.provider || 'shipping.delivery',
             selectedAttrs: payload.selectedAttrs,
             attrStyles: payload.attrStyles,
             attrLabels: payload.attrLabels,
@@ -1255,6 +1441,146 @@
           })
         }
       },
+      /** 加载商品类目树（保存模板弹窗的「商品类型」选项，仅二级类目可选） */
+      loadCategoryTree() {
+        var self = this
+        if (this.categoryTree.length) return Promise.resolve(this.categoryTree)
+        return queryMaterialCategoryTreeList({ id: '' }).then(function(res) {
+          self.categoryTree = Array.isArray(res) ? res : []
+          return self.categoryTree
+        }).catch(function() {
+          return []
+        })
+      },
+      // onlyLevel 指定时只保留该级类目（1=一级，2=二级），未返回 categoryLevel 时按树深度判断
+      flattenCategoryTree(tree, onlyLevel) {
+        var result = []
+        function traverse(nodes, prefix, depth) {
+          if (!nodes) return
+          nodes.forEach(function(node) {
+            var label = prefix ? prefix + ' / ' + (node.title || node.label) : (node.title || node.label)
+            var level = node.categoryLevel != null ? Number(node.categoryLevel) : depth
+            if (!onlyLevel || level === onlyLevel) {
+              result.push({ value: node.value || node.id, label: label })
+            }
+            if (node.children) traverse(node.children, label, depth + 1)
+          })
+        }
+        traverse(tree, '', 1)
+        return result
+      },
+      getCategoryName(categoryId) {
+        if (!categoryId) return ''
+        var cat = this.allCategoryList.find(function(c) { return String(c.value) === String(categoryId) })
+        return cat ? cat.label : ''
+      },
+      /** 收集当前编辑内容，组装模板数据对象（字段与 PC 端 buildTplPayload 一致） */
+      buildTplPayload(tpl) {
+        var self = this
+        var customLabels = []
+        this.allAttrs.forEach(function(attr) {
+          if (attr.isCustom) {
+            customLabels.push(JSON.parse(JSON.stringify(attr)))
+          }
+        })
+        var cleanStyles = {}
+        var cleanLabels = {}
+        this.selectedAttrs.forEach(function(key) {
+          if (self.attrStyles[key]) {
+            cleanStyles[key] = JSON.parse(JSON.stringify(self.attrStyles[key]))
+          }
+          // 属性名允许留空（留空表示只显示规格值），空字符串也要保存
+          if (Object.prototype.hasOwnProperty.call(self.attrLabels, key)) {
+            cleanLabels[key] = self.attrLabels[key]
+          }
+        })
+        return Object.assign(tpl || {}, {
+          // 数据源取「数据表」下拉当前选中项，未选择时按商品标签兜底
+          provider: this.provider || (tpl && tpl.provider) || 'product.label',
+          businessType: this.provider || (tpl && tpl.businessType) || 'product.label',
+          selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
+          attrStyles: cleanStyles,
+          attrLabels: cleanLabels,
+          customLabels: customLabels,
+          labelWidth: this.labelWidth,
+          labelHeight: this.labelHeight
+        })
+      },
+      /** 保存弹窗确认：不选商品类型=普通模板，选了=该类型的通用模板（同类型只保留一个） */
+      confirmSaveTemplate() {
+        var name = (this.newTemplateName || '').trim()
+        if (!name) {
+          this.$message.warning('请输入模板名称')
+          return
+        }
+        var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        // 发货单/小票：同一套保存入口，按各自模板数据模块落地
+        if (cfg.storage !== 'localTemplates') {
+          this.saveModalVisible = false
+          this.persistUnifiedTemplate(cfg, name)
+          return
+        }
+        var self = this
+        var isCategoryTpl = !!this.templateCategoryId
+        var exist = this.selectedTemplateId
+          ? this.templates.find(function(t) { return t.id === self.selectedTemplateId })
+          : null
+        var tpl = this.buildTplPayload({
+          id: exist ? exist.id : 'tpl_' + Date.now(),
+          serverId: exist ? exist.serverId : null,
+          name: name,
+          type: isCategoryTpl ? 'default' : 'normal',
+          materialId: isCategoryTpl ? null : (exist ? exist.materialId : null),
+          categoryId: isCategoryTpl ? this.templateCategoryId : null,
+          categoryName: isCategoryTpl ? this.getCategoryName(this.templateCategoryId) : null
+        })
+        // 类型通用模板：同类型只保留一个，其余移除
+        if (isCategoryTpl) {
+          this.templates = this.templates.filter(function(t) {
+            if (t.id === tpl.id) return true
+            return !(t.type === 'default' && String(t.categoryId) === String(self.templateCategoryId))
+          })
+        }
+        // 覆盖当前模板，或新增一条
+        var idx = this.templates.findIndex(function(t) { return t.id === tpl.id })
+        if (idx > -1) this.templates.splice(idx, 1, tpl)
+        else this.templates.push(tpl)
+        this.selectedTemplateId = tpl.id
+        this.saveModalVisible = false
+        this.persistTemplate(tpl, '模板已保存')
+      },
+      /** 保存单个模板到统一模板表，成功后从服务端刷新列表，拿到权威 id/version */
+      persistTemplate(tpl, successMsg) {
+        var self = this
+        return saveLabelTemplate(tpl).then(function(res) {
+          if (!res || res.code !== 200) {
+            self.$message.warning('模板已保存到本机，云端保存失败，其他设备暂无法同步')
+            return null
+          }
+          var serverId = res.data
+          return fetchLabelTemplates().then(function(list) {
+            self.templates = list
+            var saved = null
+            if (serverId != null && serverId !== '') {
+              saved = list.find(function(t) { return String(t.serverId) === String(serverId) })
+            }
+            if (!saved) {
+              saved = list.find(function(t) { return t.name === tpl.name })
+            }
+            if (saved) self.selectedTemplateId = saved.id
+            return saved
+          }).catch(function() {
+            // 刷新失败时保留本地乐观数据，不阻塞保存结果
+            return null
+          }).then(function(saved) {
+            self.$message.success(successMsg)
+            return saved
+          })
+        }).catch(function() {
+          self.$message.warning('模板已保存到本机，云端保存失败，其他设备暂无法同步')
+          return null
+        })
+      },
       showSaveResult(res, cfg) {
         if (res && res.code === 200) {
           this.$message.success(cfg.successMsg)
@@ -1274,6 +1600,16 @@
           }))
         } catch (e) { /* 忽略 */ }
         var path = '/label/print-mobile?type=' + (this.templateType || 'label')
+        // 标签模板可能有多个：带上当前模板标识，打印页从统一模板存储读取对应模板
+        if (this.templateType === 'label') {
+          var curId = this.selectedTemplateId
+          var cur = curId
+            ? this.templates.find(function(t) { return t.id === curId })
+            : null
+          var sid = cur ? (cur.serverId || cur.id) : ''
+          if (sid) path += '&templateId=' + encodeURIComponent(sid)
+          if (cur && cur.name) path += '&name=' + encodeURIComponent(cur.name)
+        }
         this.$router.push(path)
       },
       openSettings() {
@@ -1312,46 +1648,43 @@
   box-sizing: border-box;
 }
 
-.lem-topbar {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  background: #fff;
-  border-bottom: 1px solid #eee;
-  flex-shrink: 0;
-}
-
-.lem-back {
-  font-size: 22px;
-  color: #333;
-  margin-right: 12px;
-}
-
 .lem-title-area {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
   text-align: center;
+  line-height: 1.2;
 }
 
 .lem-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: #333;
+  font-size: 16px;
+  font-weight: 400;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lem-subtitle {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
   margin-top: 2px;
-}
-
-.lem-top-actions {
-  display: flex;
-  gap: 16px;
+  white-space: nowrap;
 }
 
 .lem-top-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 49px;
   font-size: 20px;
-  color: #666;
+  color: #fff;
+}
+
+.lem-top-icon:active {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .lem-preview-wrap {
@@ -1550,6 +1883,30 @@
   color: #1890ff;
 }
 
+/* 保存模板弹窗 */
+.lem-save-field {
+  margin-bottom: 14px;
+}
+
+.lem-save-label {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.lem-save-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #999;
+}
+
+.lem-save-conflict {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #fa8c16;
+}
+
 .lem-toolbar {
   /* 始终固定在屏幕底边，点击元素不会改变其位置 */
   position: absolute;
@@ -1699,6 +2056,21 @@
   padding: 12px 16px 16px;
 }
 
+.lem-provider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.lem-provider-label {
+  flex: none;
+  font-size: 13px;
+  color: #666;
+}
+
 .lem-panel-multi-tip {
   font-size: 12px;
   color: #1890ff;
@@ -1753,6 +2125,29 @@
 
 .lem-elem-item .anticon {
   color: #1890ff;
+  flex: 0 0 auto;
+  margin-left: 8px;
+}
+
+/* 字段名（左）+ 中文名（中）+ 选择按钮（右） */
+.lem-elem-key {
+  flex: 0 0 46%;
+  font-size: 13px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lem-elem-cn {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 8px;
+  font-size: 13px;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 勾选式元素列表：分组标题 + 已选中高亮 */

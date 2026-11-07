@@ -1,7 +1,6 @@
 package com.jsh.erp.controller;
 
 import com.alibaba.fastjson.JSONObject;
-import com.jsh.erp.label.LabelDataProvider;
 import com.jsh.erp.label.LabelProviderRegistry;
 import com.jsh.erp.utils.BaseResponseInfo;
 import org.slf4j.Logger;
@@ -28,12 +27,19 @@ public class LabelProviderController {
     @Resource
     private LabelProviderRegistry registry;
 
-    /** 数据源列表（含字段元数据） */
+    /**
+     * 数据源列表（含字段元数据）
+     *
+     * @param businessType 业务标识（如 product），传入时追加该业务相关的数据表
+     */
     @GetMapping(value = "/list")
-    public BaseResponseInfo list() {
+    public BaseResponseInfo list(
+            @RequestParam(value = "businessType", required = false) String businessType) {
+        logger.info("labelProvider/list called, businessType={}", businessType);
         BaseResponseInfo res = new BaseResponseInfo();
         res.code = 200;
-        res.data = registry.describe();
+        res.data = registry.describe(businessType);
+        logger.info("labelProvider/list done, size={}", res.data == null ? 0 : ((com.alibaba.fastjson.JSONArray) res.data).size());
         return res;
     }
 
@@ -41,14 +47,8 @@ public class LabelProviderController {
     @GetMapping(value = "/fields")
     public BaseResponseInfo fields(@RequestParam("provider") String provider) {
         BaseResponseInfo res = new BaseResponseInfo();
-        LabelDataProvider dataProvider = registry.get(provider);
-        if (dataProvider == null) {
-            res.code = 500;
-            res.data = "未知数据源：" + provider;
-            return res;
-        }
         res.code = 200;
-        res.data = dataProvider.getFields();
+        res.data = registry.getFields(provider);
         return res;
     }
 
@@ -58,15 +58,9 @@ public class LabelProviderController {
                                  @RequestParam("documentId") String documentId,
                                  @RequestParam(value = "subId", required = false) String subId) {
         BaseResponseInfo res = new BaseResponseInfo();
-        LabelDataProvider dataProvider = registry.get(provider);
-        if (dataProvider == null) {
-            res.code = 500;
-            res.data = new JSONObject();
-            return res;
-        }
         try {
             res.code = 200;
-            res.data = dataProvider.loadData(documentId, subId);
+            res.data = registry.loadData(provider, documentId, subId);
         } catch (Exception e) {
             logger.error("标签数据加载失败: " + e.getMessage(), e);
             res.code = 500;

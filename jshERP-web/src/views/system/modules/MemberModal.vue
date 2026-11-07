@@ -484,7 +484,7 @@
       display: flex;
       align-items: center;
       min-height: 49px;
-      padding: 0 16px 0 0;
+      padding: 0 8px 0 0;
       background: #1890ff;
       border-bottom: none;
       border-radius: 0;
@@ -500,11 +500,18 @@
       height: 49px;
     }
 
+    /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
     .member-modal-back {
       flex: 0 0 auto;
-      height: 49px;
-      line-height: 49px;
-      padding: 0 14px;
+      width: 58px;
+      height: 58px;
+      line-height: 1;
+      margin-left: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
       font-size: 22px;
       color: #fff;
     }
@@ -512,8 +519,9 @@
     .member-modal-title__text {
       flex: 1 1 auto;
       min-width: 0;
+      text-align: center;
       font-size: 16px;
-      font-weight: 400;
+      font-weight: 500;
       color: #fff;
       white-space: nowrap;
       overflow: hidden;

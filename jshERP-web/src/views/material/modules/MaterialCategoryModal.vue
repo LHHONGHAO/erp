@@ -261,7 +261,7 @@
   }
   .mcm-mobile-modal .ant-modal-header {
     background: #1890ff;
-    padding: 0 12px;
+    padding: 0 8px 0 0;
     border-bottom: none;
   }
   .mcm-mobile-modal .ant-modal-body {
@@ -276,13 +276,28 @@
   .mcm-mobile-header {
     display: flex;
     align-items: center;
-    height: 44px;
+    height: 49px;
     color: #fff;
+  }
+  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
+  .mcm-mobile-back {
+    width: 58px;
+    height: 58px;
+    line-height: 1;
+    margin-left: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+  }
+  .mcm-mobile-save {
+    font-size: 15px;
+    padding: 0 12px;
   }
   .mcm-mobile-back,
   .mcm-mobile-save {
     color: #fff;
-    font-size: 16px;
   }
   .mcm-mobile-title {
     flex: 1;

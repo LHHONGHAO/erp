@@ -1,10 +1,10 @@
 <template>
   <div class="dn-page">
-    <div class="dn-header">
-      <a-icon type="arrow-left" class="dn-back" @click="goBack" />
-      <span class="dn-title">{{ pageTitle }}</span>
-      <span v-if="hasTemplate" class="dn-edit" @click="openTemplate">编辑模板</span>
-    </div>
+    <mobile-top-bar :title="pageTitle" @back="goBack">
+      <template #actions>
+        <span v-if="hasTemplate" class="mtb-action" @click="openTemplate">编辑模板</span>
+      </template>
+    </mobile-top-bar>
     <div v-if="!loading && !hasTemplate" class="dn-empty">
       <div class="dn-empty-title">添加发货模板</div>
       <div class="dn-empty-desc">尚未设置发货单模板，添加后可查看并核对发货单</div>
@@ -95,11 +95,12 @@
   import Vue from 'vue'
   import LabelEditModal from '@/views/material/modules/LabelEditModal'
   import TemplatePaper from '@/views/material/modules/TemplatePaper'
+  import MobileTopBar from '@/components/mobile/MobileTopBar'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
 
   export default {
     name: 'DeliveryNote',
-    components: { LabelEditModal, TemplatePaper },
+    components: { LabelEditModal, TemplatePaper, MobileTopBar },
     data() {
       return {
         loading: true,
@@ -194,13 +195,19 @@
       },
       handlePrint() {
         // 保存当前模板快照到 sessionStorage，跳转到打印预览页（LabelPrintModal 独立路由）
+        // 模板结构 + 业务值一起带过去：预览页先标准化模板，再回填 values，避免读到未规整的数据
         try {
           sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
+            type: 'delivery',
+            number: this.number,
             labelWidth: this.paperW,
             labelHeight: this.paperH,
             selectedAttrs: this.tpl ? this.tpl.selectedAttrs : [],
             attrStyles: this.tpl ? (this.tpl.attrStyles || {}) : {},
-            attrLabels: this.tpl ? (this.tpl.attrLabels || {}) : {}
+            attrLabels: this.tpl ? (this.tpl.attrLabels || {}) : {},
+            provider: (this.tpl && this.tpl.provider) || 'sales.delivery',
+            values: this.paperValues,
+            rows: this.paperRows
           }))
         } catch (e) { /* 忽略 */ }
         this.$router.push({ path: '/label/print-mobile', query: { type: 'delivery' } })
@@ -208,7 +215,16 @@
       openTemplate() {
         var isMobile = window.innerWidth <= 768
         if (isMobile) {
-          this.$router.push({ path: '/label/edit-mobile', query: { type: 'delivery' } })
+          // 带上来源业务与单据数据：编辑页会自动选中「销售出库」数据表并回填字段值
+          try {
+            sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
+              record: this.bill || {},
+              sku: {},
+              provider: 'sales.delivery',
+              businessType: 'delivery'
+            }))
+          } catch (e) { /* 忽略 */ }
+          this.$router.push({ path: '/label/edit-mobile', query: { type: 'delivery', businessType: 'delivery' } })
         } else {
           this.$refs.labelEditModal.open({}, {}, [], null, 'delivery')
         }
@@ -342,38 +358,23 @@
 <style scoped>
   .dn-page {
     min-height: 100vh;
+    /* iOS Safari 的 100vh 会包含底部工具栏区域，导致底部按钮被遮挡 */
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     background: #f0f2f5;
   }
-  .dn-header {
+  /* 标准顶栏固定在滚动区域顶部 */
+  .dn-page > .mobile-top-bar {
     position: sticky;
     top: 0;
     z-index: 10;
-    display: flex;
-    align-items: center;
-    height: 44px;
-    padding: 0 12px;
-    background: #1890ff;
-    color: #fff;
-  }
-  .dn-back {
-    font-size: 18px;
-    padding: 6px;
-  }
-  .dn-title {
-    flex: 1;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-  }
-  .dn-edit {
-    font-size: 13px;
-    padding: 4px 0 4px 8px;
   }
   .dn-body {
     flex: 1;
     padding: 10px;
+    /* 给固定底部工具栏留出空间，避免内容被遮挡 */
+    padding-bottom: calc(66px + env(safe-area-inset-bottom));
     overflow: hidden;
   }
   .dn-paper {
@@ -535,11 +536,19 @@
   }
   /* 新格式自由布局样式 → 已迁到 TemplatePaper.vue */
   .dn-footer-bar {
-    flex-shrink: 0;
-    padding: 10px 12px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    box-sizing: border-box;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
     background: #fff;
     border-top: 1px solid #eee;
     box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  }
+  .dn-footer-bar .ant-btn {
+    height: 42px;
   }
 </style>

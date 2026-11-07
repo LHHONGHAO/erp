@@ -485,7 +485,7 @@ export default {
   }
   .ant-modal-header {
     height: 49px;
-    padding: 0;
+    padding: 0 8px 0 0;
     border-radius: 0;
     background: #1890ff;
   }
@@ -502,16 +502,25 @@ export default {
     align-items: center;
     height: 49px;
   }
+  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
   .ocr-member-back {
+    width: 58px;
+    height: 58px;
+    line-height: 1;
+    margin-left: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 22px;
     color: #fff;
-    padding: 0 14px;
     cursor: pointer;
   }
   .ocr-member-title__text {
     flex: 1;
+    text-align: center;
     font-size: 16px;
-    font-weight: 400;
+    font-weight: 500;
     color: #fff;
     overflow: hidden;
     text-overflow: ellipsis;

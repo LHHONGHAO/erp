@@ -282,24 +282,37 @@
     .header.dark {
       height: @height;
       line-height: @height;
+      padding: 0 8px 0 0;
+      display: flex;
+      align-items: center;
       background-color: @primary-color !important;
       color: #fff !important;
       box-shadow: none;
     }
 
+    /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
     .trigger.back-trigger {
+      flex: 0 0 auto;
+      width: 58px;
+      height: 58px;
+      line-height: 1;
+      margin-left: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 22px;
-      line-height: @height;
-      height: @height;
-      padding: 0 14px;
       color: #fff;
+      vertical-align: middle;
     }
 
     .mobile-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      text-align: center;
       font-size: 16px;
-      font-weight: 400;
+      font-weight: 500;
       color: #fff;
-      padding-left: 2px;
     }
 
     /* 页面级顶部按钮（右侧，位于默认按钮左侧） */

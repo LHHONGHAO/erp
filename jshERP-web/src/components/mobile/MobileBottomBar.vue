@@ -1,5 +1,5 @@
 <template>
-  <div class="mobile-bottom-bar">
+  <div class="mobile-bottom-bar" :class="{ 'mbb-left-auto': leftAuto }">
     <div class="mbb-left">
       <slot name="left"></slot>
     </div>
@@ -16,7 +16,14 @@
  * 左侧放「标题 + 数据」指标，中间放悬浮入口（绝对定位），右侧放主操作按钮
  */
 export default {
-  name: 'MobileBottomBar'
+  name: 'MobileBottomBar',
+  props: {
+    /** 左侧内容按自身宽度排布，不占据剩余空间（如只有一个筛选按钮时使用） */
+    leftAuto: {
+      type: Boolean,
+      default: false
+    }
+  }
 }
 </script>
 
@@ -41,6 +48,10 @@ export default {
     align-items: center;
     gap: 18px;
     min-width: 0;
+  }
+  /* 左侧不占剩余空间，把宽度让给中间搜索区 */
+  &.mbb-left-auto .mbb-left {
+    flex: 0 0 auto;
   }
   .mbb-right {
     flex: 0 0 auto;

@@ -769,17 +769,26 @@ export default {
 .ocr-mobile-header {
   display: flex;
   align-items: center;
-  height: 44px;
+  height: 49px;
   color: #fff;
 }
+/* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
 .ocr-mobile-back {
-  font-size: 20px;
+  width: 58px;
+  height: 58px;
+  line-height: 1;
+  margin-left: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
   color: #fff;
-  margin-right: 12px;
   cursor: pointer;
 }
 .ocr-mobile-title {
   flex: 1;
+  text-align: center;
   font-size: 16px;
   font-weight: 500;
   color: #fff;
@@ -811,7 +820,7 @@ export default {
 }
 .ocr-mobile-modal .ant-modal-header {
   flex: none;
-  padding: 0 12px;
+  padding: 0 8px 0 0;
   background: #1890ff;
   border-radius: 0;
 }

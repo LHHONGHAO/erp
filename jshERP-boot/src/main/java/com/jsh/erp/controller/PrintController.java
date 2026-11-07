@@ -96,8 +96,10 @@ public class PrintController extends BaseController {
         int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
         JSONArray items = body.getJSONArray("items");
         String image = body.getString("image");
+        // 前端按打印机品牌选择的指令集：TSPL / CPCL / DDPL
+        String cmdSet = body.getString("cmdSet");
         try {
-            labelPrinterService.printNetworkLabel(ip.trim(), port, copies, width, height, items, image);
+            labelPrinterService.printNetworkLabel(ip.trim(), port, cmdSet, copies, width, height, items, image);
             return returnJson(objectMap, "打印成功", ErpInfo.OK.code);
         } catch (Exception e) {
             logger.error("网络打印机打印失败", e);

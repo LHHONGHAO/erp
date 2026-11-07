@@ -346,7 +346,7 @@
         <div class="label-edit-section-title" style="margin-bottom:6px">模板名称</div>
         <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
       </div>
-        <div>
+        <div v-if="templateType !== 'delivery'">
           <div class="label-edit-section-title" style="margin-bottom:6px">商品类型</div>
           <a-select
             v-model="templateCategoryId"
@@ -401,6 +401,7 @@
         provider: '',
         providerFields: [],
         providerData: {},
+        businessType: '',
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
@@ -456,7 +457,13 @@
         customCounter: 0,
         // undo/redo 历史
         history: [],
-        historyIdx: -1
+        historyIdx: -1,
+        // 发货模板预览用的商品明细 mock 数据
+        deliveryMockItems: [
+          { materialName: '记忆棉枕芯', operNumber: 2, specDisplay: '50×30cm 白色' },
+          { materialName: '纯棉四件套', operNumber: 1, specDisplay: '1.8m床 蓝色' },
+          { materialName: '蚕丝被', operNumber: 1, specDisplay: '200×230cm 双人' }
+        ]
       }
     },
     computed: {
@@ -618,11 +625,13 @@
       setupLabelScroll(this, 'previewScroll', 'labelWidth', 'zoom', 'wrapScrolling')
     },
     methods: {
-      open(record, sku, categoryTree, templateId, templateType) {
+      open(record, sku, categoryTree, templateId, templateType, businessType) {
         this.record = record || {}
         this.sku = sku || {}
         this.categoryTree = categoryTree || []
         this.templateType = templateType || 'label'
+        // 业务标识（如 product），决定下拉框自动加载哪些业务数据表
+        this.businessType = businessType || ''
         // 从打印预览进入时带上的模板 id：优先加载这套模板（即预览里看到的那套标签数据）
         this.pendingTemplateId = templateId || null
         this.allAttrs = this.buildAttrList()
@@ -652,6 +661,8 @@
         }
         this.zoom = 1
         this.guideLines = { v: [], h: [] }
+        // 按业务类型加载数据源（含该业务相关的数据表）
+        this.loadProviders(this.businessType)
         this.visible = true
         if (this.templateType === 'delivery') {
           this.loadDeliveryTemplate()
@@ -724,12 +735,6 @@
           { key: 'dn_footer', label: '落款', value: '华夏家纺' }
         ]
       },
-      // 发货模板预览用的商品明细 mock 数据
-      deliveryMockItems: [
-        { materialName: '记忆棉枕芯', operNumber: 2, specDisplay: '50×30cm 白色' },
-        { materialName: '纯棉四件套', operNumber: 1, specDisplay: '1.8m床 蓝色' },
-        { materialName: '蚕丝被', operNumber: 1, specDisplay: '200×230cm 双人' }
-      ],
       // onlyLevel 指定时只保留该级类目（1=一级，2=二级），未返回 categoryLevel 时按树深度判断
       flattenCategoryTree(tree, onlyLevel) {
         var result = []
@@ -1404,16 +1409,22 @@
         var self = this
         fetchLabelTemplates().then(function(list) {
           self.templates = list
-          // 弹层已打开但模板晚于打开到达时，补一次品类默认模板匹配
-          if (self.visible && !self.selectedTemplateId) {
+          // 弹层已打开但模板晚于打开到达时，补一次品类默认模板匹配。
+          // 但若用户已主动选择了业务数据源（provider 非空），则不再用默认模板覆盖其选择。
+          if (self.visible && !self.selectedTemplateId && !self.provider) {
             self.loadCategoryDefaultTemplate()
           }
         })
       },
       // 业务数据源列表（后端适配器注册）
-      loadProviders() {
+      // businessType 为业务标识（如 product），传入时后端会追加该业务相关的数据表
+      loadProviders(businessType) {
         var self = this
-        fetchProviders().then(function(list) {
+        this.businessType = businessType || ''
+        var expectedBusinessType = this.businessType
+        fetchProviders(businessType).then(function(list) {
+          // 防止更早的请求（如 mounted 中无 businessType 的调用）覆盖更新的结果
+          if (self.businessType !== expectedBusinessType) return
           self.providerList = list || []
         })
       },
@@ -1540,12 +1551,15 @@
       loadCategoryDefaultTemplate() {
         var self = this
         var tpl = null
+        // 记录调度时的 provider，若用户在此期间主动选择了数据源则不再覆盖
+        var providerAtSchedule = this.provider
         // 从打印预览进入：先加载预览里正在用的那套模板
         if (this.pendingTemplateId) {
           tpl = this.templates.find(function(t) { return t.id === self.pendingTemplateId }) || null
           if (tpl) {
             this.selectedTemplateId = tpl.id
             this.$nextTick(function() {
+              if (self.provider !== providerAtSchedule) return
               self.onTemplateChange(tpl.id)
               // 打开时的模板加载不算修改，避免关闭时误弹保存确认
               self.markClean()
@@ -1560,7 +1574,10 @@
         })
         if (tpl) {
           this.selectedTemplateId = tpl.id
-          this.$nextTick(function() { self.onTemplateChange(tpl.id) })
+          this.$nextTick(function() {
+            if (self.provider !== providerAtSchedule) return
+            self.onTemplateChange(tpl.id)
+          })
         }
       },
       // 收集当前编辑内容，组装模板数据对象
@@ -1649,9 +1666,15 @@
       // 保存按钮：已有模板（编辑打开）直接覆盖；新建弹保存弹层
       saveTemplate() {
         var self = this
-        // 发货模版：通过统一模板适配器保存，不弹保存弹层
+        // 发货模版：同样先弹「保存模板」（只需模板名称），确认后走统一模板适配器保存
         if (this.templateType === 'delivery') {
-          this.saveDeliveryTemplate()
+          if (!this.selectedAttrs.length) {
+            this.$message.warning('请先选择要显示的内容')
+            return
+          }
+          this.newTemplateName = (this.deliveryTemplate && this.deliveryTemplate.name) || '发货单模板'
+          this.templateCategoryId = null
+          this.saveModalVisible = true
           return
         }
         // 标签模板必须绑定业务数据源，否则模板无法解析数据
@@ -1674,7 +1697,7 @@
         this.saveModalVisible = true
       },
       // 发货模版保存：通过适配器写入统一模板表（businessType=shipping.delivery）
-      saveDeliveryTemplate() {
+      saveDeliveryTemplate(name) {
         var self = this
         if (!this.selectedAttrs.length) {
           this.$message.warning('请先选择要显示的内容')
@@ -1682,7 +1705,7 @@
         }
         var base = this.deliveryTemplate || {}
         var tpl = Object.assign({}, base, {
-          name: base.name || '发货单模板',
+          name: name || base.name || '发货单模板',
           businessType: DELIVERY_BUSINESS_TYPE,
           provider: DELIVERY_BUSINESS_TYPE,
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
@@ -1725,6 +1748,12 @@
       confirmSaveTemplate() {
         if (!this.newTemplateName) {
           this.$message.warning('请输入模板名称')
+          return
+        }
+        // 发货模版：走统一的保存入口，仅使用模板名称
+        if (this.templateType === 'delivery') {
+          this.saveModalVisible = false
+          this.saveDeliveryTemplate(this.newTemplateName)
           return
         }
         if (!this.provider) {
@@ -1877,6 +1906,14 @@
   .le-side,
   .le-center {
     height: 100%;
+  }
+  /* 左栏纵向滚动，面板按内容高度排列；否则多个 height:100% 的面板会互相挤压，后面的面板被裁掉 */
+  .le-side {
+    overflow-y: auto;
+  }
+  .le-side > .label-edit-panel {
+    height: auto;
+    overflow: visible;
   }
   .label-edit-panel {
     background: #fafafa;

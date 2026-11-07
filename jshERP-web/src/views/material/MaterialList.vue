@@ -1,38 +1,44 @@
 <!-- by 7527189 2 0 -->
 <template>
-  <!-- ==================== 手机端布局 ==================== -->
-  <div v-if="isMobile" class="ml-mobile-page">
-    <!-- 蓝色顶栏 49px -->
-    <div class="ml-mobile-header">
-      <a-icon type="left" class="ml-mobile-back" @click="$router.back()" />
-      <span class="ml-mobile-title">商品信息</span>
-      <div class="ml-mobile-header-actions">
-        <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" @click="handleMobileAdd">新增</a-button>
-        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="delete" @click="mobileBatchDel">删除</a-button>
-        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="check-square" @click="mobileBatchSetStatus(true)">启用</a-button>
-        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="close-square" @click="mobileBatchSetStatus(false)">禁用</a-button>
-        <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" @click="handleImportXls()">导入</a-button>
-        <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" @click="handleExportXls('商品信息')">导出</a-button>
-      </div>
-    </div>
+  <!-- ==================== 手机端布局（标准信息搜索页面） ==================== -->
+  <mobile-search-page
+    v-if="isNarrowScreen"
+    v-model="mobileSearchKeyword"
+    title="商品信息"
+    placeholder="搜索商品 / 条码"
+    @back="$router.back()"
+    @search="mobileSearch"
+    @scan="openScanner"
+    @camera="ocrVisible = true"
+    @filter="filterDrawerVisible = true">
+      <template #actions>
+        <div class="ml-mobile-header-actions">
+          <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" title="新增" @click="handleMobileAdd" />
+          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="delete" title="删除" @click="mobileBatchDel" />
+          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="check-square" title="启用" @click="mobileBatchSetStatus(true)" />
+          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="close-square" title="禁用" @click="mobileBatchSetStatus(false)" />
+          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" title="导入" @click="handleImportXls()" />
+          <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" title="导出" @click="handleExportXls('商品信息')" />
+        </div>
+      </template>
 
-    <!-- 中间卡片列表区域，底部留出底边栏空间 -->
-    <div class="ml-mobile-body">
-      <material-table
-        ref="mobileTable"
-        table-key="material_list_mobile"
-        storage-key="columns_material_mobile"
-        :dimension="displayMode"
-        :actions="rowActions"
-        :data-source="tableRows"
-        :pagination="ipagination"
-        :scroll="scroll"
-        :loading="loading"
-        @row-selection-change="onMobileSelectionChange"
-        @change="handleTableChange">
-      </material-table>
-    </div>
+    <!-- 信息列表 -->
+    <material-table
+      ref="mobileTable"
+      table-key="material_list_mobile"
+      storage-key="columns_material_mobile"
+      :dimension="displayMode"
+      :actions="rowActions"
+      :data-source="tableRows"
+      :pagination="ipagination"
+      :scroll="scroll"
+      :loading="loading"
+      @row-selection-change="onMobileSelectionChange"
+      @change="handleTableChange">
+    </material-table>
 
+    <!-- 浮层：筛选抽屉、扫码、弹窗 -->
+    <template #overlay>
     <!-- 条件筛选抽屉 -->
     <a-drawer
       :visible="filterDrawerVisible"
@@ -86,28 +92,7 @@
       </div>
     </div>
 
-    <!-- 标准手机底边栏 -->
-    <mobile-bottom-bar>
-      <template #left>
-        <a-button size="small" icon="filter" @click="filterDrawerVisible = true">筛选</a-button>
-      </template>
-      <div class="ml-search-bar">
-        <div class="ml-search-box">
-          <a-icon type="scan" class="ml-search-scan" @click="openScanner" />
-          <a-input
-            placeholder="搜索商品 / 条码"
-            v-model="mobileSearchKeyword"
-            class="ml-search-input"
-            @pressEnter="mobileSearch"
-          />
-          <span class="ml-search-camera" @click="ocrVisible = true">
-            <a-icon type="camera" />
-            <span class="ml-search-ai-tag">AI</span>
-          </span>
-        </div>
-        <span class="ml-search-btn" @click="mobileSearch">搜索</span>
-      </div>
-    </mobile-bottom-bar>
+    <!-- 标准手机底边栏由 mobile-search-page 统一提供 -->
 
     <!-- 弹窗组件（手机端也复用） -->
     <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
@@ -120,7 +105,8 @@
       @ok="onOcrOk"
       @cancel="ocrVisible = false"
     />
-  </div>
+    </template>
+  </mobile-search-page>
 
   <!-- ==================== 电脑端布局（保持原样） ==================== -->
   <a-row v-else :gutter="24" class="material-list-page">
@@ -311,7 +297,7 @@
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
-  import MobileBottomBar from '@/components/mobile/MobileBottomBar'
+  import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import CertInstallGuide from '@/views/bill/modules/CertInstallGuide'
   import { SCANNER_STATE } from '@/types/scanner'
   import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
@@ -327,13 +313,13 @@
       LabelPrintModal,
       OcrRecognizeModal,
       MaterialTable,
-      MobileBottomBar,
+      MobileSearchPage,
       CertInstallGuide
     },
     data () {
       return {
-        /** 是否是手机浏览器（<=768px） */
-        isMobile: false,
+        /** 是否是窄屏（<=768px），避免与 mixin 的 isMobile() 方法重名 */
+        isNarrowScreen: false,
         categoryTree:[],
         mPropertyListShort: '',
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
@@ -426,9 +412,9 @@
       this.loadTreeData()
     },
     mounted() {
-      this.isMobile = window.innerWidth <= 768
+      this.isNarrowScreen = window.innerWidth <= 768
       this._onResize = () => {
-        this.isMobile = window.innerWidth <= 768
+        this.isNarrowScreen = window.innerWidth <= 768
       }
       window.addEventListener('resize', this._onResize)
     },
@@ -558,9 +544,19 @@
       handleEditLabel({ record, sku, categoryTree, templateId }) {
         var isMobile = window.innerWidth <= 768
         if (isMobile) {
-          this.$router.push({ path: '/label/edit-mobile', query: { type: 'label', templateId: templateId } })
+          // 手机端编辑页是独立路由，商品数据需要经 sessionStorage 带过去，
+          // 否则编辑页拿不到 record/sku，标签字段会全部为空
+          try {
+            sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
+              record: record || {},
+              sku: sku || {},
+              provider: 'product.label',
+              businessType: 'product'
+            }))
+          } catch (e) { /* 忽略 */ }
+          this.$router.push({ path: '/label/edit-mobile', query: { type: 'label', templateId: templateId, businessType: 'product' } })
         } else {
-          this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId)
+          this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId, 'label', 'product')
         }
       },
       handleImportXls() {
@@ -791,75 +787,45 @@
 </style>
 <style>
   /* ==================== 手机端布局 ==================== */
-  .ml-mobile-page {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    flex-direction: column;
-    background: #f5f6f7;
-    overflow: hidden;
-    z-index: 10;
-  }
-  /* 蓝色顶栏 49px */
-  .ml-mobile-header {
-    flex-shrink: 0;
-    height: 49px;
-    background: #1890ff;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-    box-sizing: border-box;
-    position: relative;
-    z-index: 101;
-  }
-  .ml-mobile-back {
-    font-size: 22px;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    margin-left: -4px;
-  }
-  .ml-mobile-title {
-    flex: 1;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-    line-height: 49px;
-  }
+  /* 顶栏右侧操作按钮 */
   .ml-mobile-header-actions {
     display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
+    gap: 2px;
+    flex-wrap: nowrap;
     justify-content: flex-end;
-    max-width: 55%;
+    flex-shrink: 0;
   }
+  /* 纯图标按钮，统一方形尺寸，一行排列，底色与顶栏一致 */
   .ml-mobile-header-actions .ant-btn {
-    padding: 0 6px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
     font-size: 11px;
-    height: 24px;
-    line-height: 22px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border-color: transparent;
+    color: #fff;
+    box-shadow: none;
   }
   .ml-mobile-header-actions .ant-btn .anticon {
-    margin-right: 2px;
-    font-size: 12px;
+    margin: 0;
+    font-size: 20px;
+    color: #fff;
   }
-  /* 中间内容区 */
-  .ml-mobile-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-    padding-bottom: calc(66px + env(safe-area-inset-bottom)); /* 底边栏 58px + 安全区 */
-    box-sizing: border-box;
-    -webkit-overflow-scrolling: touch;
+  /* 按下/悬停时仅做浅色高亮，不改变底色 */
+  .ml-mobile-header-actions .ant-btn:hover,
+  .ml-mobile-header-actions .ant-btn:focus,
+  .ml-mobile-header-actions .ant-btn:active,
+  .ml-mobile-header-actions .ant-btn.ant-btn-primary:hover,
+  .ml-mobile-header-actions .ant-btn.ant-btn-primary:focus,
+  .ml-mobile-header-actions .ant-btn.ant-btn-primary:active {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: transparent;
+    color: #fff;
   }
-
   /* 条件筛选抽屉样式 */
   .ml-filter-item {
     margin-bottom: 20px;
@@ -873,99 +839,6 @@
   }
   .ml-filter-footer {
     margin-top: 24px;
-  }
-
-  /* 左侧筛选按钮只占自身宽度，搜索栏整体左移并加宽贴近筛选按钮 */
-  .mobile-bottom-bar /deep/ .mbb-left {
-    flex: 0 0 auto;
-    margin-right: 2px;
-  }
-  /* 底边栏搜索区：胶囊输入框 + 内嵌相机 AI + 搜索文字按钮 */
-  .ml-search-bar {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .ml-search-box {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    background: #f5f6f8;
-    border-radius: 20px;
-    padding: 0 10px;
-    height: 40px;
-  }
-  .ml-search-scan {
-    font-size: 20px;
-    color: #e94d4d;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .ml-search-input {
-    flex: 1;
-    min-width: 0;
-    margin: 0 6px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    font-size: 14px;
-    height: auto;
-    border-radius: 0;
-  }
-  .ml-search-input .ant-input,
-  .ml-search-input .ant-input-group-wrapper {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-    font-size: 14px;
-  }
-  .ml-search-input .ant-input:focus,
-  .ml-search-input .ant-input-group-wrapper .ant-input:focus {
-    box-shadow: none;
-  }
-  .ml-search-camera {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    color: #999;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .ml-search-camera .anticon {
-    font-size: 18px;
-  }
-  .ml-search-ai-tag {
-    position: absolute;
-    top: -4px;
-    right: -6px;
-    font-size: 9px;
-    line-height: 1;
-    padding: 1px 3px;
-    background: linear-gradient(135deg, #ff6b6b, #ffb347);
-    color: #fff;
-    border-radius: 6px;
-    font-weight: 700;
-  }
-  .ml-search-btn {
-    flex-shrink: 0;
-    font-size: 17px;
-    color: #e94d4d;
-    font-weight: 600;
-    padding: 0 8px;
-    line-height: 1;
-    white-space: nowrap;
-    cursor: pointer;
-    user-select: none;
-  }
-  .ml-search-btn:active {
-    opacity: .7;
   }
 
   /* 全屏扫码界面 */

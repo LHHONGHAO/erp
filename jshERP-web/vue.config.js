@@ -54,6 +54,11 @@ module.exports = {
         port: 3000,
         // 允许通过局域网 IP（手机）访问开发服务器
         disableHostCheck: true,
+        // 开发包文件名不带 hash，手机浏览器会缓存旧的异步 chunk，
+        // 重新编译后 chunk id 变化会拿到旧文件 → 路由卡在加载中（白屏），这里强制不缓存
+        headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate'
+        },
         proxy: {
             '/': {
             // 页面导航与前端静态资源不代理，交给开发服务器

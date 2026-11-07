@@ -86,14 +86,17 @@
     height: 49px;
     display: flex;
     align-items: center;
+    padding: 0 8px 0 0;
     background: #1890ff;
     color: #fff;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
 
+  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
   .mobile-page-back {
-    width: 44px;
-    height: 49px;
+    width: 58px;
+    height: 58px;
+    margin-left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -107,10 +110,12 @@
   }
 
   .mobile-page-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
     font-size: 16px;
-    font-weight: 400;
+    font-weight: 500;
     color: #fff;
-    padding-left: 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -121,7 +126,6 @@
     height: 49px;
     display: flex;
     align-items: center;
-    padding-right: 6px;
   }
 
   .mobile-page-body {

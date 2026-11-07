@@ -1,10 +1,10 @@
 <template>
   <div class="dnt-page">
-    <div class="dnt-header">
-      <a-icon type="arrow-left" class="dnt-back" @click="goBack" />
-      <span class="dnt-title">发货模板</span>
-      <span class="dnt-save" @click="saveTemplate">保存</span>
-    </div>
+    <mobile-top-bar title="发货模板" @back="goBack">
+      <template #actions>
+        <span class="mtb-action" @click="saveTemplate">保存</span>
+      </template>
+    </mobile-top-bar>
     <div class="dnt-body">
       <div class="dnt-card">
         <div class="dnt-item">
@@ -59,6 +59,7 @@
 
 <script>
   import { getAction, postAction } from '@/api/manage'
+  import MobileTopBar from '@/components/mobile/MobileTopBar'
 
   const TEMPLATE_KEY = 'delivery_note_template'
 
@@ -76,6 +77,7 @@
 
   export default {
     name: 'DeliveryNoteTemplate',
+    components: { MobileTopBar },
     data() {
       return {
         number: '',
@@ -154,30 +156,11 @@
     flex-direction: column;
     background: #f0f2f5;
   }
-  .dnt-header {
+  /* 标准顶栏固定在滚动区域顶部 */
+  .dnt-page > .mobile-top-bar {
     position: sticky;
     top: 0;
     z-index: 10;
-    display: flex;
-    align-items: center;
-    height: 44px;
-    padding: 0 12px;
-    background: #1890ff;
-    color: #fff;
-  }
-  .dnt-back {
-    font-size: 18px;
-    padding: 6px;
-  }
-  .dnt-title {
-    flex: 1;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-  }
-  .dnt-save {
-    font-size: 14px;
-    padding: 4px 0 4px 8px;
   }
   .dnt-body {
     flex: 1;

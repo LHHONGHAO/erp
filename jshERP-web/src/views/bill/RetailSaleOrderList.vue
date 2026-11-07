@@ -58,10 +58,7 @@
 
     <!-- 结算页面：标准手机全屏页面（顶栏返回/标题 + 单据信息置顶 + 商品明细 + 合计实收 + 底部提交） -->
     <div v-if="settleVisible" class="rso-settle-page">
-      <div class="rso-settle-header">
-        <a-icon type="left" class="rso-settle-back" @click="settleVisible = false" />
-        <span class="rso-settle-title">结算</span>
-      </div>
+      <mobile-top-bar title="结算" @back="settleVisible = false" />
       <div class="rso-settle-body">
         <!-- 单据信息：单号/日期、仓库/收款类型按两列并排置于页面最顶端 -->
         <div class="rso-billinfo">
@@ -239,6 +236,7 @@
   import { getFormatDate } from '@/utils/util'
   import DataTable from '@/components/DataTable'
   import MobileBottomBar from '@/components/mobile/MobileBottomBar'
+  import MobileTopBar from '@/components/mobile/MobileTopBar'
   import moment from 'moment'
   import { searchContentByCode } from '@/services/search/contentSearch'
   import { SCANNER_STATE } from '@/types/scanner'
@@ -254,7 +252,8 @@
       MemberModal,
       CertInstallGuide,
       DataTable,
-      MobileBottomBar
+      MobileBottomBar,
+      MobileTopBar
     },
     data () {
       return {
@@ -1462,27 +1461,6 @@
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
-  .rso-settle-header {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    height: 49px;
-    background: #1890ff;
-    color: #fff;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  }
-  .rso-settle-back {
-    padding: 0 14px;
-    height: 49px;
-    line-height: 49px;
-    font-size: 22px;
-    color: #fff;
-  }
-  .rso-settle-title {
-    padding-left: 2px;
-    font-size: 16px;
-    color: #fff;
-  }
   // 页面主体：可滚动；底部标准底栏固定，留出与底栏等高的空间
   .rso-settle-body {
     flex: 1;

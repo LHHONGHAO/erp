@@ -30,8 +30,13 @@
             </div>
             <div class="mm-card-address">{{ item.address || '暂无地址' }}</div>
           </div>
-          <div v-if="btnEnableList.indexOf(1)>-1" class="mm-card-edit" @click.stop="handleEdit(item)">
-            <a-icon type="edit" />
+          <div class="mm-card-actions">
+            <div v-if="btnEnableList.indexOf(1)>-1" class="mm-card-action" title="编辑" @click.stop="handleEdit(item)">
+              <a-icon type="edit" />
+            </div>
+            <div class="mm-card-action" title="打印" @click.stop="openMemberPrint(item)">
+              <a-icon type="printer" />
+            </div>
           </div>
         </div>
         <div v-if="!loading && dataSource.length === 0" class="mm-empty">暂无会员</div>
@@ -307,6 +312,13 @@
         this.$refs.modalImportForm.initModal(importExcelUrl, templateUrl, templateName);
         this.$refs.modalImportForm.title = "会员导入";
       },
+      // 手机端打印：携带当前会员数据进入标准预览页
+      openMemberPrint(record) {
+        try {
+          sessionStorage.setItem('jsh.memberPrint.record', JSON.stringify(record || {}))
+        } catch (e) { /* 忽略 */ }
+        this.$router.push('/system/member-print')
+      },
       handleEdit: function (record) {
         this.$refs.modalForm.edit(record);
         this.$refs.modalForm.title = "编辑";
@@ -427,17 +439,31 @@
     color: #888;
     word-break: break-all;
   }
-  .mm-card-edit {
+  .mm-card-actions {
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-left: 8px;
+  }
+  .mm-card-action {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 34px;
     height: 34px;
-    margin-left: 8px;
+    margin-top: 6px;
     font-size: 18px;
     color: #999;
+    border-radius: 6px;
     cursor: pointer;
+  }
+  .mm-card-action:first-child {
+    margin-top: 0;
+  }
+  .mm-card-action:active {
+    background: #f5f5f5;
   }
   .mm-empty {
     padding: 40px 0;

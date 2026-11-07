@@ -113,6 +113,12 @@ export const constantRouterMap = [
     ]
   },
   {
+    path: '/system/member-print',
+    name: 'MemberPrintPreview',
+    component: () => import(/* webpackChunkName: "member-print" */ '@/views/system/MemberPrintPreview'),
+    meta: { title: '会员信息预览' }
+  },
+  {
     path: '/label/edit-mobile',
     name: 'LabelEditMobile',
     component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelEditMobile'),

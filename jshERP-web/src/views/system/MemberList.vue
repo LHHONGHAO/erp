@@ -1,5 +1,59 @@
 <template>
-  <a-row :gutter="24">
+  <div class="member-list-page">
+    <!-- ==================== 手机端：标准信息搜索页面 ==================== -->
+    <mobile-search-page
+      v-if="isNarrowScreen"
+      v-model="mobileKeyword"
+      title="会员信息"
+      placeholder="搜索姓名 / 电话"
+      :show-scan="false"
+      :show-camera="false"
+      :show-filter="false"
+      @back="$router.back()"
+      @search="mobileSearch">
+      <template #actions>
+        <div class="mm-header-actions">
+          <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" title="新增" @click="handleAdd" />
+          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" title="导入" @click="handleImportXls" />
+          <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" title="导出" @click="handleExportXls('会员信息')" />
+        </div>
+      </template>
+
+      <!-- 会员卡片：姓名 + 电话 一行，地址换行 -->
+      <div class="mm-list">
+        <div v-for="item in dataSource" :key="item.id" class="mm-card">
+          <div class="mm-card-main">
+            <div class="mm-card-line">
+              <span class="mm-card-name">{{ item.contacts || item.supplier || '-' }}</span>
+              <span class="mm-card-phone">{{ item.telephone || '' }}</span>
+              <span v-if="item.enabled === false" class="mm-card-tag">禁用</span>
+            </div>
+            <div class="mm-card-address">{{ item.address || '暂无地址' }}</div>
+          </div>
+          <div v-if="btnEnableList.indexOf(1)>-1" class="mm-card-edit" @click.stop="handleEdit(item)">
+            <a-icon type="edit" />
+          </div>
+        </div>
+        <div v-if="!loading && dataSource.length === 0" class="mm-empty">暂无会员</div>
+      </div>
+
+      <div v-if="ipagination.total > ipagination.pageSize" class="mm-pager">
+        <a-pagination
+          simple
+          :current="ipagination.current"
+          :page-size="ipagination.pageSize"
+          :total="ipagination.total"
+          @change="onMobilePageChange" />
+      </div>
+
+      <template #overlay>
+        <member-modal ref="modalForm" @ok="modalFormOk"></member-modal>
+        <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
+      </template>
+    </mobile-search-page>
+
+    <!-- ==================== 电脑端布局 ==================== -->
+    <a-row v-else :gutter="24">
     <a-col :md="24">
       <a-card :style="cardStyle" :bordered="false">
         <!-- 查询区域 -->
@@ -103,12 +157,14 @@
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
       </a-card>
     </a-col>
-  </a-row>
+    </a-row>
+  </div>
 </template>
 <!-- f r o m 7 5  2 7 1  8 9 2 0 -->
 <script>
   import MemberModal from './modules/MemberModal'
   import ImportFileModal from '@/components/tools/ImportFileModal'
+  import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import { postAction } from '@/api/manage'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import JDate from '@/components/jeecg/JDate'
@@ -119,10 +175,14 @@
     components: {
       MemberModal,
       ImportFileModal,
-      JDate
+      JDate,
+      MobileSearchPage
     },
     data () {
       return {
+        // 手机端：是否窄屏 + 搜索关键字
+        isNarrowScreen: false,
+        mobileKeyword: '',
         labelCol: {
           span: 5
         },
@@ -191,12 +251,49 @@
         }
       }
     },
+    mounted() {
+      this.isNarrowScreen = window.innerWidth <= 768
+      this._onResize = () => {
+        this.isNarrowScreen = window.innerWidth <= 768
+      }
+      window.addEventListener('resize', this._onResize)
+    },
+    beforeDestroy() {
+      window.removeEventListener('resize', this._onResize)
+    },
     computed: {
       importExcelUrl: function () {
         return `${window._CONFIG['domianURL']}${this.url.importExcelUrl}`;
       }
     },
     methods: {
+      // 手机端搜索：数字按电话查询，其它按联系人（姓名）查询
+      mobileSearch() {
+        const kw = (this.mobileKeyword || '').trim()
+        this.queryParam = {
+          supplier: '',
+          type: '会员',
+          contacts: '',
+          telephone: '',
+          phonenum: '',
+          email: '',
+          wechatAccount: '',
+          douyinAccount: '',
+          alipayAccount: ''
+        }
+        if (kw) {
+          if (/^[\d\s+-]+$/.test(kw)) {
+            this.queryParam.telephone = kw
+          } else {
+            this.queryParam.contacts = kw
+          }
+        }
+        this.loadData(1)
+      },
+      onMobilePageChange(page) {
+        this.ipagination.current = page
+        this.loadData(page)
+      },
       searchReset() {
         this.queryParam = {
           type:'会员',
@@ -252,4 +349,105 @@
 </script>
 <style scoped>
   @import '~@assets/less/common.less'
+
+  /* ==================== 手机端会员卡片 ==================== */
+  .member-list-page {
+    min-height: 100%;
+  }
+  /* 顶栏右侧图标按钮 */
+  .mm-header-actions {
+    display: flex;
+    align-items: center;
+    height: 49px;
+  }
+  .mm-header-actions .ant-btn {
+    width: 36px;
+    height: 36px;
+    margin-left: 6px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: #fff;
+    font-size: 18px;
+  }
+  .mm-header-actions .ant-btn:hover,
+  .mm-header-actions .ant-btn:focus,
+  .mm-header-actions .ant-btn:active {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: transparent;
+    color: #fff;
+  }
+  .mm-list {
+    padding: 0;
+  }
+  .mm-card {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    margin-bottom: 10px;
+    background: #fff;
+    border-radius: 12px;
+  }
+  .mm-card-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .mm-card-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .mm-card-name {
+    margin-right: 10px;
+    font-size: 17px;
+    font-weight: 600;
+    color: #222;
+  }
+  .mm-card-phone {
+    font-size: 15px;
+    color: #444;
+  }
+  .mm-card-tag {
+    margin-left: 8px;
+    padding: 0 4px;
+    font-size: 11px;
+    line-height: 16px;
+    color: #fa8c16;
+    border: 1px solid #ffd591;
+    border-radius: 4px;
+  }
+  .mm-card-address {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #888;
+    word-break: break-all;
+  }
+  .mm-card-edit {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    margin-left: 8px;
+    font-size: 18px;
+    color: #999;
+    cursor: pointer;
+  }
+  .mm-empty {
+    padding: 40px 0;
+    text-align: center;
+    font-size: 14px;
+    color: #999;
+  }
+  .mm-pager {
+    display: flex;
+    justify-content: center;
+    padding: 6px 0 12px;
+  }
 </style>

@@ -23,6 +23,23 @@ function injectMobilePageRoutes(routes) {
   }
 }
 
+// 打印管理页面由前端内置，挂到首页同一个 TabLayout 下，不依赖后台菜单表
+function injectPrintAgentRoute(routes) {
+  if (!Array.isArray(routes)) return
+  const rootRoute = routes.find(route => route.path === '/')
+  if (!rootRoute) return
+  if (!Array.isArray(rootRoute.children)) rootRoute.children = []
+  const exists = rootRoute.children.some(route => route.path === '/print/agent')
+  if (!exists) {
+    rootRoute.children.push({
+      path: '/print/agent',
+      name: 'PrintAgent',
+      meta: { title: '打印管理', componentName: 'PrintAgentList', keepAlive: true },
+      component: () => import('@/views/print/agent/PrintAgentList')
+    })
+  }
+}
+
 NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
@@ -53,6 +70,7 @@ router.beforeEach((to, from, next) => {
           let constRoutes = [];
           constRoutes = generateIndexRouter(menuData);
           injectMobilePageRoutes(constRoutes)
+          injectPrintAgentRoute(constRoutes)
           // 添加主界面路由
           store.dispatch('UpdateAppRouter',  { constRoutes }).then(() => {
             // 根据roles权限生成可访问的路由表

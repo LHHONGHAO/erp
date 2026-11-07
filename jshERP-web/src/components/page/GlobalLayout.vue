@@ -114,7 +114,7 @@
     created() {
       //--update-begin----author:scott---date:20190320------for:根据后台菜单配置，判断是否路由菜单字段，动态选择是否生成路由（为了支持参数URL菜单）------
       //this.menus = this.mainRouters.find((item) => item.path === '/').children;
-      this.menus = this.permissionMenuList
+      this.menus = this.injectLocalMenus(this.permissionMenuList)
       // 根据后台配置菜单，重新排序加载路由信息
       //console.log('----加载菜单逻辑----')
       //console.log(this.mainRouters)
@@ -131,6 +131,24 @@
     },
     methods: {
       ...mapActions(['setSidebar']),
+      // 内置页面菜单：后台菜单表未配置时也能在侧边栏看到「打印管理」
+      injectLocalMenus(menus) {
+        const list = Array.isArray(menus) ? menus.slice() : []
+        const exists = list.some(item => item.url === '/print/agent')
+        if (!exists) {
+          list.push({
+            id: 'print-agent',
+            text: '打印管理',
+            icon: 'printer',
+            url: '/print/agent',
+            path: '/print/agent',
+            name: 'PrintAgent',
+            route: '0',
+            component: '/print/agent/PrintAgentList'
+          })
+        }
+        return list
+      },
       toggle() {
         this.collapsed = !this.collapsed
         this.setSidebar(!this.collapsed)

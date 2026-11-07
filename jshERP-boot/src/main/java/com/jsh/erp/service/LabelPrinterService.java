@@ -90,6 +90,14 @@ public class LabelPrinterService {
     }
 
     /**
+     * 构建原始 TSPL 数据，供远程打印代理（/ws/print-agent）下发使用
+     * 参数含义与 printLabel 一致
+     */
+    public byte[] buildTspl(int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+        return buildTsplJob(widthPx, heightPx, items, copies, image);
+    }
+
+    /**
      * 测试网络打印机连通性（TCP 连接 ip:port，默认原始打印端口 9100）
      */
     public boolean testNetworkPrinter(String ip, int port) {

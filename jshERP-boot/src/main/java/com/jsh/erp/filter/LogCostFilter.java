@@ -46,6 +46,11 @@ public class LogCostFilter implements Filter {
             servletResponse.getWriter().write("loginOut");
             return;
         }
+        // 打印代理走 WebSocket，设备 Token 在握手阶段校验，不依赖登录会话
+        if (path.startsWith("/ws/")) {
+            chain.doFilter(request, response);
+            return;
+        }
         //具体，比如：处理若用户未登录，则跳转到登录页
         Object userId = redisService.getObjectFromSessionByKey(servletRequest,"userId");
         if(userId!=null) { //如果已登录，不阻止

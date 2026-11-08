@@ -196,7 +196,12 @@
                     <div v-for="(val, vIndex) in module.values" :key="vIndex" class="spec-value-row">
                       <!-- 普通规格值：输入框 → 图片方块 → 删除 -->
                       <template v-if="!module.childNames || module.childNames.length === 0">
-                        <span v-if="specLocked" class="spec-value-readonly">{{ val.text || '—' }}</span>
+                        <!-- 类别配置的规格值：标题只读，值为可输入框 -->
+                        <template v-if="module.titleValueMode">
+                          <span v-if="val.lockedTitle" class="spec-value-title">{{ val.label }}</span>
+                          <a-input v-else v-model="val.label" class="spec-value-label-input" placeholder="规格值名称" />
+                          <a-input v-model="val.text" class="spec-value-input" placeholder="请输入" @blur="onSpecChange()" />
+                        </template>
                         <a-input
                           v-else
                           v-model="val.text"
@@ -213,7 +218,7 @@
                           </div>
                         </div>
                         <a-button
-                          v-if="!specLocked"
+                          v-if="!val.lockedTitle"
                           type="link"
                           size="small"
                           @click="removeSpecValue(mIndex, vIndex)"
@@ -251,8 +256,8 @@
                     </div>
                   </div>
                 </div>
-                <!-- 底部：添加规格值（规格由类别锁定时只读，不提供新增入口） -->
-                <div class="spec-bottom" v-if="!specLocked">
+                <!-- 底部：添加规格值（规格名由类别锁定，规格值仍可维护） -->
+                <div class="spec-bottom">
                   <a-button type="link" @click="addSpecValue(mIndex)" class="spec-add-value-btn">
                     <a-icon type="plus" />
                     <span>添加规格值</span>
@@ -901,8 +906,15 @@
                 name: m.name || '',
                 enableImage: !!m.enableImage,
                 childNames: Array.isArray(m.childNames) ? m.childNames.slice() : [],
+                titleValueMode: !!m.titleValueMode,
                 values: (m.values || []).map(function(v) {
-                  return { text: v.text || '', image: v.image || '', subValues: Object.assign({}, v.subValues || {}) }
+                  return {
+                    label: v.label || '',
+                    lockedTitle: !!v.lockedTitle,
+                    text: v.text || '',
+                    image: v.image || '',
+                    subValues: Object.assign({}, v.subValues || {})
+                  }
                 })
               }
             })
@@ -1363,7 +1375,16 @@
             name: m.name,
             enableImage: m.enableImage,
             childNames: (m.childNames || []).slice(),
-            values: m.values.map(function(v) { return { text: v.text, image: v.image || '', subValues: Object.assign({}, v.subValues || {}) } })
+            titleValueMode: !!m.titleValueMode,
+            values: m.values.map(function(v) {
+              return {
+                label: v.label || '',
+                lockedTitle: !!v.lockedTitle,
+                text: v.text,
+                image: v.image || '',
+                subValues: Object.assign({}, v.subValues || {})
+              }
+            })
           }
         })
         materialMain.attribute = JSON.stringify({ specModules: cleanSpecModules })
@@ -1688,7 +1709,7 @@
           return
         }
         if (!Array.isArray(specs) || specs.length === 0) return
-        // 类别已配置规格：编辑商品时同样锁定规格名称与规格值（只读展示）
+        // 类别已配置规格：锁定规格名称与图片开关，规格值仍由商品信息页维护
         this.specLocked = true
         // 商品尚未加载规格模块时，直接按类别配置补全
         if (!this.specModules || this.specModules.length === 0) {
@@ -1739,15 +1760,15 @@
         }
         return result
       },
-      // 按类别规格配置构建只读规格模块（规格名与规格值均来自类别配置）
+      // 按类别规格配置构建规格模块：childNames 作为只读标题，值由商品页输入
       buildSpecModulesFromCategory(categorySpecs) {
         return categorySpecs.map(function(item) {
           if (typeof item === 'string') {
-            return { name: item, enableImage: false, childNames: [], values: [{ text: '', image: '', subValues: {} }] }
+            return { name: item, enableImage: false, childNames: [], titleValueMode: false, values: [{ text: '', image: '', subValues: {} }] }
           }
-          // 类别中的 childNames 存的是该规格的规格值，直接作为规格值行展示
+          // 类别中的 childNames 是规格值标题，页面上只读展示，每个标题对应一个值输入框
           let rawValues = Array.isArray(item.childNames) ? item.childNames : []
-          let categoryValues = rawValues
+          let categoryTitles = rawValues
             .map(function(v) {
               if (typeof v === 'string') return v
               return (v && (v.name || v.value || v.text)) || ''
@@ -1757,9 +1778,10 @@
             name: item.name || '',
             enableImage: !!item.enableImage,
             childNames: [],
-            values: categoryValues.length
-              ? categoryValues.map(function(v) {
-                  return { text: v, image: '', subValues: {} }
+            titleValueMode: categoryTitles.length > 0,
+            values: categoryTitles.length
+              ? categoryTitles.map(function(v) {
+                  return { label: v, lockedTitle: true, text: '', image: '', subValues: {} }
                 })
               : [{ text: '', image: '', subValues: {} }]
           }
@@ -1846,7 +1868,9 @@
           this.$message.warning('单个规格最多50个值')
           return
         }
-        module.values.push({ text: '', image: '', subValues: {} })
+        module.values.push(module.titleValueMode
+          ? { label: '', lockedTitle: false, text: '', image: '', subValues: {} }
+          : { text: '', image: '', subValues: {} })
       },
       onSubSpecChange(mIndex, vIndex, childName, value) {
         const item = this.specModules[mIndex].values[vIndex]
@@ -2651,18 +2675,6 @@
     color: #333;
     font-weight: 500;
   }
-  /* 规格由类别锁定后：规格值只读展示 */
-  .spec-value-readonly {
-    display: inline-flex;
-    align-items: center;
-    width: 220px;
-    min-height: 32px;
-    color: #333;
-    font-size: 16px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .spec-header-label {
     font-size: 14px;
     color: #333;
@@ -2708,6 +2720,25 @@
     padding-bottom: 8px;
     border-bottom: 1px dashed #f0f0f0;
     box-sizing: border-box;
+  }
+  /* 类别配置的规格值：标题只读，右侧为值输入框 */
+  .spec-value-title {
+    flex: 0 0 auto;
+    min-width: 56px;
+    margin-right: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+    white-space: nowrap;
+  }
+  .spec-value-label-input {
+    flex: 0 0 110px;
+    width: 110px;
+    margin-right: 8px;
+  }
+  .spec-value-input {
+    flex: 1;
+    min-width: 0;
   }
   .spec-composite-value {
     flex: 1;

@@ -173,29 +173,8 @@
     <!-- 新增会员 -->
     <member-modal ref="memberModalForm" attach-to-body full-screen :z-index="1200" @ok="onMemberAdded"></member-modal>
 
-    <!-- 全屏扫码界面 -->
-    <div v-if="scanVisible" class="rso-scan-fullscreen">
-      <!-- 无法获取摄像头权限时：展示证书安装下载说明 -->
-      <cert-install-guide v-if="certGuideVisible" @close="closeCertGuide" @retry="retryScan" />
-      <div class="rso-scan-stage" @click="onScanTap">
-        <video ref="scanVideo" class="rso-scan-video" autoplay playsinline muted></video>
-        <canvas ref="scanOverlay" class="rso-scan-overlay"></canvas>
-      </div>
-      <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
-      <!-- 页面内文字提示：识别结果、商品是否存在、异常都在这里显示，不再弹框 -->
-      <div class="rso-scan-tip" :class="scanTipClass">{{ scanTip }}</div>
-      <!-- 条码扫描 / 文字识别：都只分析取景框内的图像 -->
-      <div v-if="!multiScanMode" class="rso-scan-capture">
-        <a-button type="primary" size="large" class="rso-scan-btn" :loading="capturing" @click="shoot">条码扫描</a-button>
-        <a-button type="primary" size="large" class="rso-scan-btn" :loading="ocrLoading" @click="recognizeText">文字识别</a-button>
-      </div>
-      <!-- 焦距调节：默认后置摄像头，初始焦距为原生焦距的三分之一 -->
-      <div v-if="!multiScanMode && zoomSupported" class="rso-scan-zoom">
-        <a-button shape="circle" icon="zoom-out" @click="changeZoom(-1)" />
-        <span class="rso-scan-zoom-value">{{ zoomText }}</span>
-        <a-button shape="circle" icon="zoom-in" @click="changeZoom(1)" />
-      </div>
-    </div>
+    <!-- 标准扫码页（全屏）：所有扫码入口统一复用 -->
+    <mobile-scan-page ref="standardScanner" :visible="scanVisible" @close="closeScanner" @result="onStandardScanResult" />
 
     <!-- 商品选择页面（共用页面，弹窗形式加载） -->
     <a-modal
@@ -222,7 +201,7 @@
   import BillDetail from './dialog/BillDetail'
   import MaterialSelectPage from '@/views/material/MaterialSelectPage'
   import MemberModal from '@/views/system/modules/MemberModal'
-  import CertInstallGuide from './modules/CertInstallGuide'
+  import MobileScanPage from '@/components/mobile/MobileScanPage'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import { getAction, postAction } from '@/api/manage'
@@ -233,7 +212,6 @@
   import MobileTopBar from '@/components/mobile/MobileTopBar'
   import moment from 'moment'
   import { searchContentByCode } from '@/services/search/contentSearch'
-  import { SCANNER_STATE } from '@/types/scanner'
   import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
 
   export default {
@@ -244,7 +222,7 @@
       BillDetail,
       MaterialSelectPage,
       MemberModal,
-      CertInstallGuide,
+      MobileScanPage,
       DataTable,
       MobileBottomBar,
       MobileTopBar
@@ -301,10 +279,8 @@
         memberKeyword: '',
         memberOptions: [],
         selectedMember: null,
-        // 扫码相关
+        // 扫码相关（取景与识别由标准 MobileScanPage 负责）
         scanVisible: false,
-        // 扫码状态机
-        scanState: SCANNER_STATE.INITIAL,
         scanResult: null,
         scanError: '',
         searching: false,
@@ -312,31 +288,9 @@
         successTimer: null,
         // 扫描反馈提示音（Web Audio 合成，不依赖音频文件）
         audioContext: null,
-        scanStream: null,
-        capturing: false,
-        // 焦距（变焦）调节：默认后置摄像头，初始焦距取当前值的三分之一（受设备最小焦距限制）
-        zoomSupported: false,
-        zoomValue: 1,
-        zoomMin: 1,
-        zoomMax: 1,
-        zoomStepValue: 0.5,
-        // 无法获取摄像头权限时展示证书安装下载说明
-        certGuideVisible: false,
-        // 是否已进入多码框选模式（出现过两个以上不同码值后锁定）
-        multiScanMode: false,
-        // 本帧识别到的码：[{ code, box }]
-        detectedCodes: [],
-        // 多码模式下绘制到屏幕的框（屏幕坐标，用于点击命中判断）
-        screenBoxes: [],
-        // 解码帧尺寸（识别框坐标以该尺寸为准）
-        frameW: 0,
-        frameH: 0,
         // 商品选择
         materialVisible: false,
         scanBarCode: '',
-        // 文字识别（OCR）状态与结果
-        ocrLoading: false,
-        ocrText: '',
         // 结算弹窗（单据信息）
         settleVisible: false
       }
@@ -362,44 +316,6 @@
       payAmountDisplay () {
         const n = Number(this.billForm.payAmount)
         return Number.isFinite(n) ? (Math.max(n, 0)).toFixed(2) : '0.00'
-      },
-      // 扫码提示语：所有扫码反馈（识别结果、商品是否存在、异常）只在页面内文字提示
-      scanTip () {
-        if (this.multiScanMode) {
-          return `画面中有 ${this.detectedCodes.length} 个码，请点击要使用的方框`
-        }
-        if (this.scanState === 'SUCCESS') {
-          if (this.ocrText) return `识别文字：${this.ocrText}`
-          const name = this.scanResult && this.scanResult.name
-          return name ? `商品添加成功：${name}` : '商品添加成功'
-        }
-        if (this.scanState === 'NOT_FOUND') {
-          return this.scanResult
-            ? `条码 ${this.scanResult.content} 商品不存在`
-            : (this.scanError || '条码未识别，请将条码完整放入框内后重试')
-        }
-        if (this.scanState === 'ERROR') {
-          return this.scanError || '摄像头或识别异常，请重试'
-        }
-        const tips = {
-          INITIAL: '正在准备扫码...',
-          REQUESTING: '正在请求摄像头权限...',
-          SCANNING: '将条码/二维码完整放入框内，点击「条码扫描」或「文字识别」',
-          RECOGNIZING: '正在识别框内图像...',
-          SEARCHING: '正在搜索商品...',
-          STOPPED: '已停止扫描'
-        }
-        return tips[this.scanState] || '将条码/二维码完整放入框内'
-      },
-      // 提示文字颜色：成功绿色、失败/异常红色
-      scanTipClass () {
-        if (this.scanState === 'SUCCESS') return 'rso-scan-tip-success'
-        if (this.scanState === 'NOT_FOUND' || this.scanState === 'ERROR') return 'rso-scan-tip-error'
-        return ''
-      },
-      // 当前焦距显示（倍数）
-      zoomText () {
-        return this.zoomValue.toFixed(1) + 'x'
       }
     },
     created () {
@@ -419,32 +335,39 @@
       this.queryParam.createTimeRange = [moment(today), moment(today)]
     },
     beforeDestroy () {
-      this.stopScan()
+      if (this.successTimer) {
+        clearTimeout(this.successTimer)
+        this.successTimer = null
+      }
       if (this.audioContext) {
         try { this.audioContext.close() } catch (e) {}
         this.audioContext = null
       }
     },
     methods: {
-      // 打开全屏扫码界面并立即启动摄像头
+      // 打开标准扫码页（识别与取景由 MobileScanPage 负责）
       openScanner () {
         this.scanVisible = true
         // 点击扫码图标即解锁音频，保证后续扫描反馈提示音可播放
         this.unlockAudio()
         this.scanResult = null
         this.scanError = ''
-        this.scanState = SCANNER_STATE.INITIAL
         this.searching = false
-        this.ocrLoading = false
-        this.ocrText = ''
-        this.certGuideVisible = false
-        this.$nextTick(() => {
-          this.startScan()
-        })
       },
-      // 是否具备网页摄像头调用条件（必须 HTTPS 安全连接且浏览器支持 getUserMedia）
-      cameraAvailable () {
-        return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+      // 标准扫码页识别结果：条码走商品查询并加入明细，文字仅在扫码页内提示
+      onStandardScanResult (payload) {
+        const text = ((payload && payload.text) || '').trim()
+        if (!text) return
+        this.unlockAudio()
+        if (payload.type === 'barcode') {
+          this.handleScannedContent(text, payload.format, payload.type)
+          return
+        }
+        const scanner = this.$refs.standardScanner
+        if (scanner && scanner.setTip) {
+          scanner.setTip('识别文字：' + text, false)
+        }
+        this.playFeedbackSound(true)
       },
       // 初始化/唤醒音频上下文（iOS 需在用户点击手势中解锁）
       unlockAudio () {
@@ -488,416 +411,27 @@
           })
         } catch (e) {}
       },
-      // 启动摄像头：只做预览，不自动解码；识别在点击「条码扫描」或「文字识别」时只分析取景框区域
-      startScan () {
-        // 统一申请摄像头权限：非 HTTPS 安全连接下浏览器不会提供摄像头，直接展示证书安装说明
-        if (!this.cameraAvailable()) {
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '当前页面不是 HTTPS 安全连接，无法申请摄像头权限'
-          this.certGuideVisible = true
-          return
-        }
-        const video = this.$refs.scanVideo
-        if (!video) return
-        this.stopScan()
-        this.scanResult = null
-        this.scanError = ''
-        this.ocrText = ''
-        this.detectedCodes = []
-        this.screenBoxes = []
-        this.multiScanMode = false
-        this.scanState = SCANNER_STATE.REQUESTING
-        // 固定使用后置摄像头（扫码更清晰）
-        const constraints = {
-          audio: false,
-          video: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            facingMode: { ideal: 'environment' }
-          }
-        }
-        navigator.mediaDevices.getUserMedia(constraints).then(stream => {
-          if (!this.scanVisible) {
-            this.stopStream(stream)
-            return
-          }
-          this.scanStream = stream
-          video.srcObject = stream
-          return video.play().then(() => {
-            this.scanState = SCANNER_STATE.SCANNING
-            this.drawGuideFrame()
-            // 部分浏览器 play 之后才有真实分辨率，延迟重绘一次保证取景框位置准确
-            setTimeout(() => {
-              if (this.scanVisible && this.scanStream) this.drawGuideFrame()
-            }, 300)
-            this.detectZoom()
-          })
-        }).catch(error => {
-          console.error('摄像头开启失败:', error)
-          this.onScannerError(error)
-        })
-      },
-      // 检测焦距（变焦）能力，并把初始焦距设为当前的三分之一（设备支持下限为准）
-      detectZoom () {
-        const track = this.scanStream && this.scanStream.getVideoTracks()[0]
-        if (!track || !track.getCapabilities) {
-          this.zoomSupported = false
-          return
-        }
-        const caps = track.getCapabilities()
-        const zoom = caps && caps.zoom
-        if (!zoom || !isFinite(zoom.min) || !isFinite(zoom.max) || zoom.max <= zoom.min) {
-          this.zoomSupported = false
-          return
-        }
-        this.zoomSupported = true
-        this.zoomMin = zoom.min
-        this.zoomMax = zoom.max
-        this.zoomStepValue = Math.max(0.1, Math.round((zoom.max - zoom.min) / 10 * 100) / 100)
-        // 默认焦距固定为 2.4x（低于设备下限或高于上限时自动取边界值）
-        this.applyZoom(2.4)
-      },
-      // 应用焦距：受设备最小/最大值限制
-      applyZoom (value) {
-        const track = this.scanStream && this.scanStream.getVideoTracks()[0]
-        if (!track || !this.zoomSupported) return
-        const next = Math.round(Math.max(this.zoomMin, Math.min(this.zoomMax, value)) * 100) / 100
-        track.applyConstraints({ advanced: [{ zoom: next }] }).then(() => {
-          this.zoomValue = next
-        }).catch(() => {
-          // 部分浏览器声明了能力但不支持设置，隐藏焦距按钮
-          this.zoomSupported = false
-        })
-      },
-      // 焦距调节按钮：direction 为 -1 拉远、1 拉近
-      changeZoom (direction) {
-        this.applyZoom(this.zoomValue + direction * this.zoomStepValue)
-      },
-      // 条码扫描入口：截取取景框内的画面交给条码识别模块
-      shoot () {
-        // 拍照是用户点击动作，这里解锁音频，后续提示音才能正常播放
-        this.unlockAudio()
-        this.captureFrame()
-      },
-      // 截取取景框内的画面（base64 JPEG），供条码识别与文字识别共用
-      captureFrameImage () {
-        const video = this.$refs.scanVideo
-        const rect = this.getFrameSourceRect(video)
-        // 框内区域放大后再识别，小条码/小文字更容易解出
-        const scale = Math.min(3, Math.max(1, 1280 / rect.w))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.round(rect.w * scale)
-        canvas.height = Math.round(rect.h * scale)
-        canvas.getContext('2d').drawImage(video, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height)
-        return canvas.toDataURL('image/jpeg', 0.92)
-      },
-      // 条码扫描：只截取取景框内的画面，放大后交给后端条码识别模块
-      captureFrame () {
-        if (this.searching || this.capturing) return
-        const video = this.$refs.scanVideo
-        if (!video || !video.videoWidth) {
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '摄像头尚未就绪，请稍候再试'
-          return
-        }
-        this.capturing = true
-        this.ocrText = ''
-        this.scanState = SCANNER_STATE.RECOGNIZING
-        try {
-          const image = this.captureFrameImage()
-          postAction('/material/scanFrame', { image }).then(response => {
-            this.capturing = false
-            if (!this.scanVisible) return
-            const codes = (response && response.code === 200 && response.data && response.data.codes) || []
-            const unique = []
-            codes.forEach(item => {
-              if (item && item.code && !unique.some(u => u.code === item.code && u.format === item.format)) {
-                unique.push(item)
-              }
-            })
-            if (unique.length === 0) {
-              this.scanState = SCANNER_STATE.NOT_FOUND
-              this.scanError = '条码未识别，请将条码完整放入框内后重试'
-              this.playFeedbackSound(false)
-              return
-            }
-            this.handleScannedContent(unique[0].code, unique[0].format || 'UNKNOWN', unique[0].type || 'UNKNOWN')
-          }).catch(error => {
-            this.capturing = false
-            if (!this.scanVisible) return
-            this.scanState = SCANNER_STATE.ERROR
-            this.scanError = '识别失败：' + (error && error.message ? error.message : '未知错误')
-            this.playFeedbackSound(false)
-          })
-        } catch (error) {
-          this.capturing = false
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '截取画面失败：' + (error && error.message ? error.message : '未知错误')
-          this.playFeedbackSound(false)
-        }
-      },
-      // 文字识别：调用 OCR 接口识别取景框内的图像文字
-      recognizeText () {
-        this.unlockAudio()
-        if (this.searching || this.ocrLoading) return
-        const video = this.$refs.scanVideo
-        if (!video || !video.videoWidth) {
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '摄像头尚未就绪，请稍候再试'
-          return
-        }
-        this.ocrLoading = true
-        this.ocrText = ''
-        this.scanState = SCANNER_STATE.RECOGNIZING
-        try {
-          const image = this.captureFrameImage()
-          postAction('/ocr/recognizeProductByBase64', { imageBase64: image }).then(response => {
-            this.ocrLoading = false
-            if (!this.scanVisible) return
-            const data = (response && response.data) || {}
-            const text = data.rawText || ''
-            if (!text) {
-              if (response && response.code !== 200) {
-                this.scanState = SCANNER_STATE.ERROR
-                this.scanError = '文字识别失败：' + (data.message || 'OCR服务不可用')
-              } else {
-                this.scanState = SCANNER_STATE.NOT_FOUND
-                this.scanError = '未识别到文字，请将文字完整放入框内后重试'
-              }
-              this.playFeedbackSound(false)
-              return
-            }
-            this.ocrText = text
-            this.scanState = SCANNER_STATE.SUCCESS
-            this.playFeedbackSound(true)
-          }).catch(error => {
-            this.ocrLoading = false
-            if (!this.scanVisible) return
-            this.scanState = SCANNER_STATE.ERROR
-            this.scanError = '文字识别失败：' + (error && error.message ? error.message : '未知错误')
-            this.playFeedbackSound(false)
-          })
-        } catch (error) {
-          this.ocrLoading = false
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '截取画面失败：' + (error && error.message ? error.message : '未知错误')
-          this.playFeedbackSound(false)
-        }
-      },
-      // 取景框：宽度与屏幕对齐，高度缩为原来高度的 2/3，中线位于屏幕高度 1/3 处
-      getGuideBox (elW, elH) {
-        const video = this.$refs.scanVideo
-        const vw = (video && video.videoWidth) || elW
-        const vh = (video && video.videoHeight) || elH
-        const scale = Math.min(elW / vw, elH / vh)
-        const dispH = vh * scale
-        // 宽度与屏幕宽度对齐，只压缩高度
-        const w = elW
-        const oldH = Math.min(w / 2.2, dispH * 0.52)
-        const h = oldH * 2 / 3
-        // 取景框垂直中线对齐屏幕高度的三分之一处
-        let y = elH / 3 - h / 2
-        if (y < 0) y = 0
-        if (y + h > elH - 8) y = Math.max(0, elH - h - 8)
-        return { x: 0, y, w, h }
-      },
-      // 取景框对应的视频原始像素区域（拍照时按这个区域裁剪）
-      getFrameSourceRect (video) {
-        const elW = video.clientWidth
-        const elH = video.clientHeight
-        const vw = video.videoWidth
-        const vh = video.videoHeight
-        const scale = Math.min(elW / vw, elH / vh)
-        const offX = (elW - vw * scale) / 2
-        const offY = (elH - vh * scale) / 2
-        const box = this.getGuideBox(elW, elH)
-        const x = Math.max(0, (box.x - offX) / scale)
-        const y = Math.max(0, (box.y - offY) / scale)
-        const w = Math.min(vw - x, box.w / scale)
-        const h = Math.min(vh - y, box.h / scale)
-        return { x, y, w, h }
-      },
-      // 绘制取景框：框外半透明遮罩 + 绿色边框与四角标记
-      drawGuideFrame () {
-        const video = this.$refs.scanVideo
-        const overlay = this.$refs.scanOverlay
-        if (!video || !overlay) return
-        const elW = video.clientWidth
-        const elH = video.clientHeight
-        if (!elW || !elH) return
-        overlay.width = elW
-        overlay.height = elH
-        const ctx = overlay.getContext('2d')
-        ctx.clearRect(0, 0, elW, elH)
-        const box = this.getGuideBox(elW, elH)
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-        ctx.fillRect(0, 0, elW, elH)
-        ctx.clearRect(box.x, box.y, box.w, box.h)
-        ctx.strokeStyle = '#52c41a'
-        ctx.lineWidth = 3
-        ctx.strokeRect(box.x, box.y, box.w, box.h)
-        // 四角加粗，便于对齐条码
-        const len = Math.min(box.w, box.h) / 6
-        ctx.lineWidth = 5
-        const corners = [
-          [box.x, box.y, 1, 1],
-          [box.x + box.w, box.y, -1, 1],
-          [box.x, box.y + box.h, 1, -1],
-          [box.x + box.w, box.y + box.h, -1, -1]
-        ]
-        corners.forEach(c => {
-          ctx.beginPath()
-          ctx.moveTo(c[0], c[1] + c[3] * len)
-          ctx.lineTo(c[0], c[1])
-          ctx.lineTo(c[0] + c[2] * len, c[1])
-          ctx.stroke()
-        })
-      },
-      // 摄像头异常：没有权限时展示证书安装下载说明，其余异常在页面内提示
-      onScannerError (error) {
-        const message = error && error.message ? error.message : '摄像头或识别异常'
-        const name = (error && error.name) || ''
-        console.error('扫码异常:', error)
-        const denied = name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError'
-        this.scanError = denied ? '无法访问摄像头，请允许摄像头权限' : message
-        this.scanState = SCANNER_STATE.ERROR
-        if (this.scanStream) {
-          this.stopStream(this.scanStream)
-          this.scanStream = null
-        }
-        if (denied) this.certGuideVisible = true
-      },
-      // 释放视频流
-      stopStream (stream) {
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop())
-        }
-      },
-      // 绘制识别框：视频坐标 → 屏幕坐标（按 object-fit: contain 换算）
-      drawScanOverlay () {
-        const video = this.$refs.scanVideo
-        const overlay = this.$refs.scanOverlay
-        if (!video || !overlay) return
-        const elW = video.clientWidth
-        const elH = video.clientHeight
-        if (!elW || !elH) return
-        if (overlay.width !== elW) overlay.width = elW
-        if (overlay.height !== elH) overlay.height = elH
-        const ctx = overlay.getContext('2d')
-        ctx.clearRect(0, 0, elW, elH)
-        this.screenBoxes = []
-        if (this.detectedCodes.length === 0) return
-        const fw = this.frameW || video.videoWidth
-        const fh = this.frameH || video.videoHeight
-        if (!fw || !fh) return
-        const scale = Math.min(elW / fw, elH / fh)
-        const offX = (elW - fw * scale) / 2
-        const offY = (elH - fh * scale) / 2
-        this.detectedCodes.forEach((item, index) => {
-          if (!item.box) return
-          const b = item.box
-          const w = Math.max(b.w * scale, 70)
-          const h = Math.max(b.h * scale, 48)
-          const x = Math.min(Math.max(offX + b.x * scale, 0), elW - 10)
-          const y = Math.min(Math.max(offY + b.y * scale, 0), elH - 10)
-          this.screenBoxes.push({ code: item.code, format: item.format, type: item.type, x, y, w, h })
-          ctx.fillStyle = 'rgba(82, 196, 26, 0.16)'
-          ctx.fillRect(x, y, w, h)
-          ctx.strokeStyle = '#52c41a'
-          ctx.lineWidth = 3
-          ctx.strokeRect(x, y, w, h)
-          // 左上角序号，便于说明“点击哪个方框”
-          ctx.fillStyle = '#52c41a'
-          ctx.fillRect(x, y - 20, 20, 20)
-          ctx.fillStyle = '#fff'
-          ctx.font = '12px sans-serif'
-          ctx.fillText(String(index + 1), x + 6, y - 5)
-        })
-      },
-      // 点击画面：多码模式下命中哪个框就用哪个码；单码时点击即确认
-      onScanTap (event) {
-        if (this.detectedCodes.length === 0) return
-        if (!this.multiScanMode) {
-          if (this.detectedCodes.length === 1) {
-            const item = this.detectedCodes[0]
-            this.handleScannedContent(item.code, item.format || 'UNKNOWN', item.type || 'UNKNOWN')
-          }
-          return
-        }
-        const video = this.$refs.scanVideo
-        if (!video) return
-        const rect = video.getBoundingClientRect()
-        const cx = event.clientX - rect.left
-        const cy = event.clientY - rect.top
-        const hit = (this.screenBoxes || []).find(b =>
-          cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h
-        )
-        if (!hit) return
-        this.handleScannedContent(hit.code, hit.format || 'UNKNOWN', hit.type || 'UNKNOWN')
-      },
-      // 停止扫码：释放视频流、画面资源与状态
-      stopScan (nextState) {
+      closeScanner () {
         if (this.successTimer) {
           clearTimeout(this.successTimer)
           this.successTimer = null
         }
-        if (this.scanStream) {
-          this.stopStream(this.scanStream)
-          this.scanStream = null
-        }
-        const video = this.$refs.scanVideo
-        if (video) {
-          try { video.pause() } catch (e) {}
-          video.srcObject = null
-        }
-        this.capturing = false
-        this.zoomSupported = false
-        this.zoomValue = 1
-        const overlay = this.$refs.scanOverlay
-        if (overlay) {
-          const ctx = overlay.getContext('2d')
-          ctx.clearRect(0, 0, overlay.width, overlay.height)
-        }
-        this.detectedCodes = []
-        this.screenBoxes = []
-        this.multiScanMode = false
-        if (nextState) {
-          this.scanState = nextState
-        }
-      },
-      closeScanner () {
-        this.stopScan(SCANNER_STATE.STOPPED)
         this.scanVisible = false
-        this.certGuideVisible = false
-        this.ocrText = ''
-        this.ocrLoading = false
+        this.searching = false
       },
-      // 关闭证书安装说明
-      closeCertGuide () {
-        this.certGuideVisible = false
-      },
-      // 安装证书后重新申请摄像头权限
-      retryScan () {
-        this.certGuideVisible = false
-        this.scanState = SCANNER_STATE.INITIAL
-        this.scanError = ''
-        this.$nextTick(() => this.startScan())
-      },
-      /**
-       * 识别内容统一入口（条码扫描、多码框选共用）。
-       * content 原样提交，不截断、不转换、不删除前导零。
-       */
+      // 识别内容统一入口（扫描条码）：精确查询商品并加入明细
       handleScannedContent (content, format, type) {
         if (!content || this.searching) return
         this.searching = true
+        const scanner = this.$refs.standardScanner
         this.scanResult = {
           content: content,
           format: format || 'UNKNOWN',
           type: type || 'UNKNOWN',
           timestamp: Date.now()
         }
-        // 搜索期间保留摄像头画面，避免出现黑屏；成功后再释放
         if (navigator.vibrate) navigator.vibrate(60)
+        if (scanner && scanner.setTip) scanner.setTip('正在搜索商品…', false)
         searchContentByCode({
           content: content,
           format: this.scanResult.format,
@@ -908,28 +442,26 @@
           this.searching = false
           if (!this.scanVisible) return
           if (!result.success || result.rows.length === 0) {
-            this.scanState = SCANNER_STATE.NOT_FOUND
+            if (scanner && scanner.setTip) scanner.setTip('条码 ' + content + ' 商品不存在，请继续扫描', true)
             this.playFeedbackSound(false)
             return
           }
           if (result.rows.length === 1) {
             this.addMaterialToCart(result.rows[0])
             this.scanResult = Object.assign({}, this.scanResult, { name: result.rows[0].name })
-            this.scanState = SCANNER_STATE.SUCCESS
+            if (scanner && scanner.setTip) scanner.setTip('商品添加成功：' + result.rows[0].name, false)
             this.playFeedbackSound(true)
             // 识别成功：短暂展示成功提示后退出扫码页面
             this.scheduleScanClose(600)
             return
           }
-          this.scanState = SCANNER_STATE.SUCCESS
           this.playFeedbackSound(true)
           this.closeScanner()
           this.openMaterialSelect(content)
         }).catch(error => {
           this.searching = false
           if (!this.scanVisible) return
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '搜索商品失败：' + (error && error.message ? error.message : '未知错误')
+          if (scanner && scanner.setTip) scanner.setTip('搜索商品失败：' + (error && error.message ? error.message : '未知错误'), true)
           this.playFeedbackSound(false)
         })
       },

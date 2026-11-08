@@ -55,13 +55,13 @@
       reasonText () {
         return window.isSecureContext ? '当前浏览器未授权摄像头。' : '当前页面不是 HTTPS 安全连接。'
       },
-      // 统一约定的 HTTPS 访问地址（本机部署 HTTPS 端口固定为 9443）
+      // 统一约定的 HTTPS 访问地址（默认部署 HTTPS 端口为 9999）
       httpsUrl () {
-        return 'https://' + window.location.hostname + ':9443'
+        return 'https://' + window.location.hostname + ':9999'
       },
       // 证书安装引导页走 HTTP 端口，未登录也可访问
       certHome () {
-        return 'http://' + window.location.hostname + ':9999/cert'
+        return 'http://' + window.location.hostname + ':9998/cert'
       }
     }
   }

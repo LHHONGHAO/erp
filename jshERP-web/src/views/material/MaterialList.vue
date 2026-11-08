@@ -3,12 +3,14 @@
   <!-- ==================== 手机端布局（标准信息搜索页面） ==================== -->
   <mobile-search-page
     v-if="isNarrowScreen"
+    ref="mobileSearchPage"
     v-model="mobileSearchKeyword"
+    :auto-scan-close="false"
     title="商品信息"
     placeholder="搜索商品 / 条码"
     @back="$router.back()"
     @search="mobileSearch"
-    @scan="openScanner"
+    @scan-result="onProductScanResult"
     @camera="ocrVisible = true"
     @filter="filterDrawerVisible = true">
       <template #actions>
@@ -63,27 +65,6 @@
         <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
       </div>
     </a-drawer>
-
-    <!-- 全屏扫码界面 -->
-    <div v-if="scanVisible" class="ml-scan-fullscreen">
-      <cert-install-guide v-if="certGuideVisible" @close="closeCertGuide" @retry="retryScan" />
-      <div class="ml-scan-stage" @click="onScanTap">
-        <video ref="scanVideo" class="ml-scan-video" autoplay playsinline muted></video>
-        <canvas ref="scanOverlay" class="ml-scan-overlay"></canvas>
-        <!-- 取景框 -->
-        <div class="ml-scan-guide"></div>
-        <!-- 扫描线 -->
-        <div class="ml-scan-line"></div>
-      </div>
-      <div class="ml-scan-header">
-        <a-icon type="close" @click="closeScanner" />
-        <span>扫码识别</span>
-      </div>
-      <div class="ml-scan-footer">
-        <span v-if="scanError" class="ml-scan-error">{{ scanError }}</span>
-        <span v-else class="ml-scan-hint">将条码/二维码对准取景框</span>
-      </div>
-    </div>
 
     <!-- 标准手机底边栏由 mobile-search-page 统一提供 -->
 
@@ -292,9 +273,9 @@
   import MaterialTable from '@/components/material/MaterialTable'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
-  import CertInstallGuide from '@/views/bill/modules/CertInstallGuide'
-  import { SCANNER_STATE } from '@/types/scanner'
   import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
+  import { searchContentByCode } from '@/services/search/contentSearch'
+  import { buildSearchCandidates, parseProductText, classifyCode } from '@/views/material/utils/productTextScan'
   import Vue from 'vue'
 
   export default {
@@ -308,8 +289,7 @@
       OcrRecognizeModal,
       MaterialTable,
       MobileSearchPage,
-      MobileHeaderActions,
-      CertInstallGuide
+      MobileHeaderActions
     },
     data () {
       return {
@@ -386,18 +366,6 @@
         mobileSearchKeyword: '',
         /** 手机端多选的商品ID数组（去重后） */
         mobileSelectedMaterialIds: [],
-        /** 全屏扫码界面 */
-        scanVisible: false,
-        /** 扫码状态机 */
-        scanState: SCANNER_STATE.INITIAL,
-        /** 摄像头权限获取失败时展示证书安装说明 */
-        certGuideVisible: false,
-        /** 扫码过程中的错误信息 */
-        scanError: '',
-        /** 摄像头流 */
-        scanStream: null,
-        /** 扫码循环定时器 */
-        scanTimer: null,
         /** OCR 文字提取弹层 */
         ocrVisible: false,
       }
@@ -656,6 +624,190 @@
         this.queryParam.materialParam = this.mobileSearchKeyword
         this.loadData(1)
       },
+      /** 标准扫码页识别结果：条码精确查询；文字按「条码→品名→品类」级联查询，命中回列表展示 */
+      onProductScanResult(payload) {
+        var text = ((payload && payload.text) || '').trim()
+        if (!text) return
+        var that = this
+        if (payload.type === 'barcode') {
+          this.searchExactCode(text).then(function(result) {
+            if (!result) {
+              that.stayOnScanPage('未找到对应商品，请继续扫描')
+              return
+            }
+            that.applyExactCodeResult(text, result)
+          })
+          return
+        }
+        // 文字识别：单行按品名；多行先解析再级联
+        var lines = text.split(/\r?\n/).map(function(line) { return line.trim() }).filter(Boolean)
+        if (lines.length <= 1) {
+          this.runCascadeCandidates(buildSearchCandidates(text, null))
+          return
+        }
+        parseProductText(text).then(function(res) {
+          var parsed = (res && res.code === 200 && res.data) || {}
+          that.runCascadeCandidates(buildSearchCandidates(text, parsed))
+        }).catch(function() {
+          that.stayOnScanPage('文字解析失败，请重新扫描')
+        })
+      },
+      /** 按候选字段顺序级联查询，前一个字段命中即停止 */
+      runCascadeCandidates(candidates) {
+        if (!candidates || candidates.length === 0) {
+          this.stayOnScanPage('未识别到有效商品信息，请重新扫描')
+          return
+        }
+        var that = this
+        var index = 0
+        var next = function() {
+          if (index >= candidates.length) {
+            that.stayOnScanPage('未找到对应商品，请继续扫描')
+            return
+          }
+          var candidate = candidates[index++]
+          if (candidate.field === 'barCode') {
+            that.searchExactCode(candidate.value).then(function(result) {
+              if (result) {
+                that.applyExactCodeResult(candidate.value, result)
+              } else {
+                next()
+              }
+            })
+          } else if (candidate.field === 'name') {
+            that.searchByKeyword(candidate.value).then(function(hit) {
+              if (hit) {
+                that.closeScanPage()
+              } else {
+                next()
+              }
+            })
+          } else if (candidate.field === 'category') {
+            var node = that.findCategoryNodeByName(candidate.value)
+            if (!node) {
+              next()
+              return
+            }
+            that.searchByCategory(node.value).then(function(hit) {
+              if (hit) {
+                that.closeScanPage()
+              } else {
+                next()
+              }
+            })
+          } else {
+            next()
+          }
+        }
+        next()
+      },
+      /** 精确码查询：条码 / SKU码 / SPU商品码 */
+      searchExactCode(content) {
+        return searchContentByCode({
+          content: content,
+          mpList: this.queryParam.mpList
+        }).then(function(result) {
+          if (result && result.success && result.rows && result.rows.length > 0) {
+            return result
+          }
+          return null
+        }).catch(function() {
+          return null
+        })
+      },
+      /** 精确码命中后回到商品信息页：普通码走列表查询，SPU 商品码直接展示精确结果 */
+      applyExactCodeResult(content, result) {
+        var that = this
+        this.mobileSearchKeyword = content
+        if (classifyCode(content) === 'spu') {
+          this.showExactRows(result.rows)
+          this.closeScanPage()
+          return
+        }
+        this.queryParam.materialParam = content
+        this.loadData(1).then(function() {
+          if (!that.dataSource || that.dataSource.length === 0) {
+            that.showExactRows(result.rows)
+          }
+          that.closeScanPage()
+        }).catch(function() {
+          that.showExactRows(result.rows)
+          that.closeScanPage()
+        })
+      },
+      /** 列表接口不覆盖 m.code 时，用精确返回行直接填充列表 */
+      showExactRows(rows) {
+        var list = (rows || []).map(function(row) {
+          return Object.assign({}, row, {
+            mBarCode: row.mBarCode || row.barCode || row.mBar_code || '',
+            sku: row.sku || row.specValues || '',
+            currentStock: row.currentStock != null ? row.currentStock : row.stock
+          })
+        })
+        this.dataSource = list
+        this.ipagination.total = list.length
+      },
+      /** 品名模糊查询（沿用底边栏搜索的查询条件） */
+      searchByKeyword(keyword) {
+        var that = this
+        this.mobileSearchKeyword = keyword
+        this.queryParam.materialParam = keyword
+        return this.loadData(1).then(function() {
+          return (that.dataSource || []).length > 0
+        }).catch(function() {
+          return false
+        })
+      },
+      /** 按商品分类查询 */
+      searchByCategory(categoryId) {
+        var that = this
+        this.mobileSearchKeyword = ''
+        this.queryParam.materialParam = ''
+        this.queryParam.categoryId = categoryId
+        return this.loadData(1).then(function() {
+          return (that.dataSource || []).length > 0
+        }).catch(function() {
+          return false
+        })
+      },
+      /** 在分类树中按名称查找节点（优先精确，其次包含） */
+      findCategoryNodeByName(keyword) {
+        var target = String(keyword || '').trim().toLowerCase()
+        if (!target) return null
+        var exact = null
+        var contains = null
+        var walk = function(nodes) {
+          for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i]
+            var title = String(node.title || node.name || '').trim().toLowerCase()
+            var value = node.value != null ? node.value : node.id
+            if (value != null && title === target && !exact) {
+              exact = { value: value }
+            }
+            if (value != null && !contains && title.indexOf(target) > -1) {
+              contains = { value: value }
+            }
+            if (node.children && node.children.length) {
+              walk(node.children)
+            }
+            if (exact) return
+          }
+        }
+        walk(this.categoryTree || [])
+        return exact || contains
+      },
+      /** 未命中时停留在标准扫码页并提示 */
+      stayOnScanPage(message) {
+        if (this.$refs.mobileSearchPage && this.$refs.mobileSearchPage.setScanTip) {
+          this.$refs.mobileSearchPage.setScanTip(message, true)
+        }
+      },
+      /** 关闭标准扫码页 */
+      closeScanPage() {
+        if (this.$refs.mobileSearchPage && this.$refs.mobileSearchPage.closeScanPage) {
+          this.$refs.mobileSearchPage.closeScanPage()
+        }
+      },
       /** OCR 文字提取完成：把识别到的文字填入搜索框并自动搜索 */
       onOcrOk(res) {
         this.ocrVisible = false
@@ -672,119 +824,6 @@
       applyMobileFilter() {
         this.filterDrawerVisible = false
         this.loadData(1)
-      },
-
-      // ============ 手机端扫码 ============
-      openScanner() {
-        this.scanVisible = true
-        this.scanError = ''
-        this.scanState = SCANNER_STATE.INITIAL
-        this.certGuideVisible = false
-        this.$nextTick(() => this.startScan())
-      },
-      closeScanner() {
-        this.stopScan()
-        this.scanVisible = false
-        this.certGuideVisible = false
-      },
-      closeCertGuide() {
-        this.certGuideVisible = false
-        this.closeScanner()
-      },
-      retryScan() {
-        this.certGuideVisible = false
-        this.$nextTick(() => this.startScan())
-      },
-      onScanTap() {
-        // 点击取景框不做操作
-      },
-      startScan() {
-        if (!this.cameraAvailable()) {
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '当前页面不是 HTTPS 安全连接，无法申请摄像头权限'
-          this.certGuideVisible = true
-          return
-        }
-        const video = this.$refs.scanVideo
-        if (!video) return
-        const constraints = {
-          audio: false,
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        }
-        navigator.mediaDevices.getUserMedia(constraints).then(stream => {
-          if (!this.scanVisible) { this.stopStream(stream); return }
-          this.scanStream = stream
-          video.srcObject = stream
-          video.setAttribute('playsinline', 'true')
-          video.play().then(() => {
-            this.scanState = SCANNER_STATE.SCANNING
-            this.scanLoop()
-          }).catch(err => {
-            this.scanError = '视频播放失败'
-            this.stopScan()
-          })
-        }).catch(err => {
-          this.scanState = SCANNER_STATE.ERROR
-          this.scanError = '无法获取摄像头权限：' + (err && err.message ? err.message : '')
-          this.certGuideVisible = true
-        })
-      },
-      cameraAvailable() {
-        return location.protocol === 'https:' ||
-          location.hostname === 'localhost' ||
-          location.hostname === '127.0.0.1'
-      },
-      stopScan() {
-        if (this.scanTimer) {
-          clearTimeout(this.scanTimer)
-          this.scanTimer = null
-        }
-        if (this.scanStream) {
-          this.scanStream.getTracks().forEach(t => t.stop())
-          this.scanStream = null
-        }
-        const video = this.$refs.scanVideo
-        if (video) { video.srcObject = null; try { video.pause() } catch (e) {} }
-      },
-      stopStream(stream) {
-        stream.getTracks().forEach(t => t.stop())
-      },
-      scanLoop() {
-        if (!this.scanVisible || this.scanState !== SCANNER_STATE.SCANNING) return
-        this.scanTimer = setTimeout(() => this.scanOnce(), 200)
-      },
-      scanOnce() {
-        if (!this.scanVisible) return
-        const video = this.$refs.scanVideo
-        if (!video || video.readyState < 2) { this.scanLoop(); return }
-        try {
-          const w = video.videoWidth, h = video.videoHeight
-          if (!w || !h) { this.scanLoop(); return }
-          const canvas = document.createElement('canvas')
-          canvas.width = 640; canvas.height = 480
-          const ctx = canvas.getContext('2d')
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const image = canvas.toDataURL('image/jpeg', 0.9)
-          postAction('/material/scanFrame', { image }).then(res => {
-            if (!this.scanVisible) return
-            const codes = (res && res.code === 200 && res.data && res.data.codes) || []
-            if (codes.length > 0) {
-              // 扫到码：填入搜索框并自动搜索
-              const code = codes[0].code
-              this.mobileSearchKeyword = code
-              this.queryParam.materialParam = code
-              this.closeScanner()
-              this.$message.success('识别到条码：' + code)
-              this.loadData(1)
-            } else {
-              this.scanLoop()
-            }
-          }).catch(() => {
-            this.scanLoop()
-          })
-        } catch (e) {
-          this.scanLoop()
-        }
       },
     }
   }
@@ -808,84 +847,6 @@
   }
   .ml-filter-footer {
     margin-top: 24px;
-  }
-
-  /* 全屏扫码界面 */
-  .ml-scan-fullscreen {
-    position: fixed;
-    inset: 0;
-    background: #000;
-    z-index: 9999;
-  }
-  .ml-scan-stage {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .ml-scan-video {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .ml-scan-overlay {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  .ml-scan-guide {
-    position: absolute;
-    width: 240px;
-    height: 240px;
-    border: 2px solid #1890ff;
-    border-radius: 8px;
-    box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
-  }
-  .ml-scan-line {
-    position: absolute;
-    width: 240px;
-    height: 2px;
-    background: #1890ff;
-    animation: ml-scan-move 2s ease-in-out infinite;
-  }
-  @keyframes ml-scan-move {
-    0%, 100% { transform: translateY(-100px) }
-    50% { transform: translateY(100px) }
-  }
-  .ml-scan-header {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 16px;
-    z-index: 10;
-  }
-  .ml-scan-header .anticon {
-    position: absolute;
-    left: 16px;
-    font-size: 22px;
-  }
-  .ml-scan-footer {
-    position: absolute;
-    bottom: 80px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    color: rgba(255,255,255,0.85);
-    font-size: 14px;
-    z-index: 10;
-  }
-  .ml-scan-error {
-    color: #ff6b6b;
   }
 
   /* ==================== 电脑端：删除查询条件后保持的原有样式 ==================== */

@@ -22,7 +22,15 @@
       <!-- 主内容 -->
       <div class="lmp-content" :class="{ 'lmp-empty': !template }">
         <template v-if="!template">
-          <a-alert type="info" show-icon :message="emptyMessage" description="可点击右上角编辑图标创建模板" />
+          <a-alert type="info" show-icon :message="emptyMessage">
+            <template #description>
+              <span>可点击右上角编辑图标创建模板</span>
+              <a
+                v-if="type !== 'member' && type !== 'address'"
+                class="lmp-empty-link"
+                @click="handleEdit">去添加模版</a>
+            </template>
+          </a-alert>
           <a-button
             v-if="type === 'member' || type === 'address'"
             type="primary"
@@ -2667,6 +2675,12 @@
   /* 空状态提示占满宽度，创建模板按钮居中显示 */
   .lmp-content.lmp-empty .ant-alert {
     align-self: stretch;
+  }
+  /* 无模板提示后的「去添加模版」文字按钮 */
+  .lmp-empty-link {
+    margin-left: 8px;
+    font-weight: 600;
+    white-space: nowrap;
   }
   .lmp-empty-create {
     margin-top: 16px;

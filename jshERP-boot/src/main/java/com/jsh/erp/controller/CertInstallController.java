@@ -29,8 +29,11 @@ public class CertInstallController {
     @Value("${jsh.data.dir:}")
     private String dataDir;
 
-    @Value("${server.port:9999}")
+    @Value("${server.port:9998}")
     private int httpPort;
+
+    @Value("${jsh.https.port:9999}")
+    private int httpsPort;
 
     private File rootCaFile() {
         String dir = (dataDir == null || dataDir.trim().isEmpty() ? "config" : dataDir.trim() + "/config");
@@ -44,7 +47,7 @@ public class CertInstallController {
     @GetMapping({"", "/", "/index.html"})
     public ResponseEntity<String> guide(HttpServletRequest request) {
         String base = httpBase(request);
-        String httpsUrl = "https://" + request.getServerName() + ":9443";
+        String httpsUrl = "https://" + request.getServerName() + ":" + httpsPort;
         String exist = rootCaFile().exists() ? "" : "<p class=\"warn\">服务端尚未生成根证书，请先在服务器执行 https-cert.ps1。</p>";
         String html = "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"

@@ -12,11 +12,14 @@
       <slot></slot>
     </div>
 
-    <!-- 标准底边栏：扫码 + 搜索框 + 拍照 + 搜索 + 筛选 -->
+    <!-- 标准底边栏：拍照 + 搜索框 + 扫码 + 搜索 + 筛选 -->
     <mobile-bottom-bar left-auto>
       <div class="msp-search-bar">
         <div class="msp-search-box">
-          <a-icon v-if="showScan" type="scan" class="msp-scan" @click="$emit('scan')" />
+          <span v-if="showCamera" class="msp-camera" @click="$emit('camera')">
+            <a-icon type="camera" />
+            <span class="msp-ai-tag">AI</span>
+          </span>
           <a-input
             :placeholder="placeholder"
             :value="value"
@@ -24,15 +27,15 @@
             @change="handleInput"
             @pressEnter="$emit('search', value)"
           />
-          <span v-if="showCamera" class="msp-camera" @click="$emit('camera')">
-            <a-icon type="camera" />
-            <span class="msp-ai-tag">AI</span>
-          </span>
+          <a-icon v-if="showScan" type="scan" class="msp-scan" @click="openScanPage" />
         </div>
         <a-button type="primary" class="msp-search-btn" @click="$emit('search', value)">{{ searchText }}</a-button>
       </div>
       <a-button v-if="showFilter" class="msp-filter-btn" icon="filter" @click="$emit('filter')">{{ filterText }}</a-button>
     </mobile-bottom-bar>
+
+    <!-- 标准条码扫描页 -->
+    <mobile-scan-page ref="scanPage" :visible="scanVisible" @close="scanVisible = false" @result="onScanResult" />
 
     <!-- 浮层（抽屉、扫码全屏、弹窗等） -->
     <slot name="overlay"></slot>
@@ -42,14 +45,15 @@
 <script>
 import MobileTopBar from './MobileTopBar'
 import MobileBottomBar from './MobileBottomBar'
+import MobileScanPage from './MobileScanPage'
 
 /**
  * 手机端标准「信息搜索页面」模板
- * 顶栏（返回/标题/操作）+ 可滚动信息列表 + 底部搜索栏（扫码/输入/拍照/搜索/筛选）
+ * 顶栏（返回/标题/操作）+ 可滚动信息列表 + 底部搜索栏（拍照/输入/扫码/搜索/筛选）
  */
 export default {
   name: 'MobileSearchPage',
-  components: { MobileTopBar, MobileBottomBar },
+  components: { MobileTopBar, MobileBottomBar, MobileScanPage },
   props: {
     title: {
       type: String,
@@ -87,11 +91,48 @@ export default {
     filterText: {
       type: String,
       default: '筛选'
+    },
+    /** 识别到内容后是否自动关闭扫码页，false 时由调用页决定关闭时机 */
+    autoScanClose: {
+      type: Boolean,
+      default: true
+    }
+  },
+  data() {
+    return {
+      /** 标准条码扫描页是否打开 */
+      scanVisible: false
     }
   },
   methods: {
     handleInput(e) {
       this.$emit('input', e.target.value)
+    },
+    openScanPage() {
+      this.scanVisible = true
+    },
+    // 扫码页识别结果：默认回填搜索框并触发搜索；autoScanClose=false 时交由调用页处理
+    onScanResult(payload) {
+      if (!this.autoScanClose) {
+        this.$emit('scan-result', payload)
+        return
+      }
+      this.scanVisible = false
+      const text = (payload && payload.text) || ''
+      if (!text) return
+      this.$emit('input', text)
+      this.$emit('search', text)
+      this.$emit('scan-result', payload)
+    },
+    // 供调用页主动关闭标准扫码页
+    closeScanPage() {
+      this.scanVisible = false
+    },
+    // 供调用页在扫码页内显示提示（如未命中商品）
+    setScanTip(text, isError) {
+      if (this.$refs.scanPage && this.$refs.scanPage.setTip) {
+        this.$refs.scanPage.setTip(text, isError)
+      }
     }
   }
 }
@@ -139,7 +180,7 @@ export default {
 }
 .msp-scan {
   flex-shrink: 0;
-  margin-right: 8px;
+  margin-left: 8px;
   font-size: 19px;
   color: #999;
   cursor: pointer;
@@ -170,14 +211,14 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 4px;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
   color: #999;
   cursor: pointer;
   flex-shrink: 0;
   .anticon {
-    font-size: 18px;
+    font-size: 19px;
   }
 }
 .msp-ai-tag {
@@ -192,36 +233,38 @@ export default {
   border-radius: 6px;
   font-weight: 700;
 }
-/* 搜索按钮：位于搜索框与筛选按钮之间 */
+/* 搜索按钮：与搜索框同为胶囊形、同高 */
 .msp-search-btn {
   flex-shrink: 0;
   height: 42px;
   margin-left: 8px;
-  padding: 0 14px;
-  border-radius: 8px;
+  padding: 0 18px;
+  border-radius: 21px;
   font-size: 15px;
 }
-/* 筛选按钮：正方形，上图标下文字 */
+/* 筛选按钮：单行「图标 + 文字」，与搜索框同高 */
 .msp-filter-btn {
   flex-shrink: 0;
-  width: 42px;
   height: 42px;
   margin-left: 8px;
   margin-right: -8px;
-  padding: 0;
+  padding: 0 12px;
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  border-radius: 8px;
-  .anticon {
-    margin: 0 0 3px 0;
-    font-size: 20px;
+  border-radius: 21px;
+  border-color: #e5e6eb;
+  background: #fff;
+  color: #4e5969;
+  font-size: 13px;
+  white-space: nowrap;
+  /deep/ .anticon {
+    margin: 0 4px 0 0;
+    font-size: 16px;
   }
-  .anticon + span {
-    margin-left: 0;
-    font-size: 10px;
+  /deep/ span {
+    font-size: 13px;
   }
 }
 </style>

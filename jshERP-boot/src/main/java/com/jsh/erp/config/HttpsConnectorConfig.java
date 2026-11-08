@@ -12,9 +12,9 @@ import org.springframework.context.annotation.Configuration;
 import java.io.File;
 
 /**
- * 在原有 HTTP 端口之外额外开启一个 HTTPS 连接器（默认 9443）。
+ * 在 HTTP 端口之外额外开启 HTTPS 连接器（约定默认 9999，作为对外主入口）。
  * 目的：手机通过局域网访问时，浏览器仅在 HTTPS（安全上下文）下才允许调用摄像头，
- * 不修改原 HTTP 端口，避免影响现有访问方式。
+ * HTTP 端口（9998）仅保留用于证书安装与兼容访问。
  * 证书默认取数据目录下的 config/jsh-https.p12，找不到则自动跳过。
  */
 @Configuration
@@ -22,7 +22,7 @@ public class HttpsConnectorConfig {
     private static final Logger logger = LoggerFactory.getLogger(HttpsConnectorConfig.class);
     private static final String HTTP11_PROTOCOL = "org.apache.coyote.http11.Http11NioProtocol";
 
-    @Value("${jsh.https.port:9443}")
+    @Value("${jsh.https.port:9999}")
     private int httpsPort;
 
     @Value("${jsh.https.keystore:}")

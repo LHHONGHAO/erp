@@ -20,7 +20,7 @@
 .PARAMETER MvnPath
   指定 Maven mvn.cmd 路径，不传则自动探测
 .PARAMETER Port
-  服务端口，默认 9999
+  HTTPS 服务端口，默认 9999（HTTP 固定 9998，用于证书安装与兼容访问）
 .EXAMPLE
   .\deploy-local.ps1                # 完整部署
   .\deploy-local.ps1 -SkipBoot      # 只更新前端
@@ -52,6 +52,8 @@ $WebDir  = Join-Path $Root 'jshERP-web'
 $Jar     = Join-Path $BootDir 'target\jshERP.jar'
 $Log     = Join-Path $BootDir 'deploy-backend.log'
 $ErrLog  = Join-Path $BootDir 'deploy-backend.err.log'
+# HTTP 端口固定 9998（仅用于证书安装与兼容访问），HTTPS 为 $Port
+$HttpPort = 9998
 # application.yml 中配置的外部静态资源目录（相对 jshERP-boot 启动目录）
 $StaticLink = Join-Path $BootDir 'frontend-dist'
 # 统一数据目录：图片、导出缓存、外部配置、数据库备份都放在这里，重新部署不受影响
@@ -61,7 +63,7 @@ $DataDirs = @('upload', 'export', 'config', 'backup', 'logs')
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  JSH_ERP 本地部署脚本" -ForegroundColor Cyan
 Write-Host "  项目根: $Root" -ForegroundColor DarkGray
-Write-Host "  端口  : $Port" -ForegroundColor DarkGray
+Write-Host "  HTTPS : $Port（HTTP: $HttpPort）" -ForegroundColor DarkGray
 Write-Host "============================================================" -ForegroundColor Cyan
 
 # ============================================================
@@ -246,11 +248,11 @@ function Launch-Service {
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host "  部署完成" -ForegroundColor Green
     Write-Host "------------------------------------------------------------"
-    Write-Host "  本机访问 : http://localhost:$Port"
+    Write-Host "  本机访问 : https://localhost:$Port"
     if ($lanIp) {
-        Write-Host "  局域网   : http://${lanIp}:${Port}"
-        Write-Host "  HTTPS    : https://${lanIp}:9443"
-        Write-Host "  证书安装 : http://${lanIp}:${Port}/cert"
+        Write-Host "  局域网   : https://${lanIp}:${Port}"
+        Write-Host "  HTTP     : http://${lanIp}:${HttpPort}（证书安装/兼容）"
+        Write-Host "  证书安装 : http://${lanIp}:${HttpPort}/cert"
     }
     Write-Host "  后端日志 : $Log"
     Write-Host "  前端产物 : $StaticLink -> $DistPath"
@@ -263,6 +265,7 @@ function Launch-Service {
 # ============================================================
 if ($StopOnly) {
     Stop-OldService $Port
+    Stop-OldService $HttpPort
     Write-Host "`n已停止。" -ForegroundColor Green
     exit 0
 }
@@ -291,6 +294,7 @@ Write-Ok "git  : $gitCmd"
 
 # ---------- 停止旧服务 ----------
 Stop-OldService $Port
+Stop-OldService $HttpPort
 
 # ---------- 仅启动 ----------
 if ($StartOnly) {

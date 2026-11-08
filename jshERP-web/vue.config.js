@@ -68,8 +68,8 @@ module.exports = {
                 if (/^\/(js|css|img|fonts|media|static|sockjs-node|__webpack|favicon\.ico)/.test(req.url)) { return req.url }
                 return null
             },
-            // 本地开发默认代理到本机 nginx(9999)；本地后端直连时用 VUE_APP_API_TARGET=http://localhost:9998
-            target: process.env.VUE_APP_API_TARGET || 'http://localhost:9999',
+            // 本地开发默认代理到本机后端 HTTPS(9999)；如需走 HTTP 兼容端口用 VUE_APP_API_TARGET=http://localhost:9998
+            target: process.env.VUE_APP_API_TARGET || 'https://localhost:9999',
             changeOrigin: true,
             // 本地后端为自签名 HTTPS 直连，关闭证书校验
             secure: false,

@@ -6,8 +6,6 @@
       v-model="mobileKeyword"
       title="零售出库"
       placeholder="搜索单号 / 会员 / 商品"
-      :show-scan="false"
-      :show-camera="false"
       @back="$router.back()"
       @search="mobileSearch"
       @filter="filterDrawerVisible = true">

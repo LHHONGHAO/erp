@@ -1,27 +1,23 @@
 <template>
   <div class="addr-page">
     <div class="addr-body">
-      <!-- 输入卡片 -->
-      <div ref="scrollBlankFirst" class="addr-card">
-        <a-textarea v-model="pasteText" class="addr-textarea" :rows="5" :bordered="false"
-                    placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别" />
-        <div v-if="imageUrl" class="addr-preview">
-          <img :src="imageUrl" @click="previewVisible = true" />
-          <span v-if="ocrLoading">正在识别图片...</span>
-          <span v-else-if="ocrError" class="addr-preview__error">识别失败：{{ ocrError }}</span>
-          <span v-else>图片已识别，点击图片可放大查看</span>
-        </div>
-        <div class="addr-toolbar">
-          <div class="addr-toolbar__left">
-            <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="addr-file-input" @change="onPick" />
-            <input ref="galleryInput" type="file" accept="image/*" class="addr-file-input" @change="onPick" />
-            <a @click="triggerCamera"><a-icon type="camera" />拍照识别</a>
-            <a @click="triggerGallery"><a-icon type="picture" />图片识别</a>
-            <a class="addr-toolbar__clear" @click="clearAll">清除</a>
-          </div>
-          <a-button type="primary" size="small" class="addr-ai" :loading="pasteLoading"
-                    :disabled="!pasteText" @click="parsePastedText">智能识别</a-button>
-        </div>
+      <!-- 标准图片识别框 -->
+      <div ref="scrollBlankFirst">
+        <image-recognize-box
+          v-model="pasteText"
+          class="addr-ocr-box"
+          placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别"
+          :image-url="imageUrl"
+          :loading="ocrLoading"
+          :error-text="ocrError"
+          :smart-loading="pasteLoading"
+          @camera="triggerCamera"
+          @gallery="triggerGallery"
+          @clear="clearAll"
+          @smart="parsePastedText"
+          @preview="previewVisible = true" />
+        <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="addr-file-input" @change="onPick" />
+        <input ref="galleryInput" type="file" accept="image/*" class="addr-file-input" @change="onPick" />
       </div>
 
       <!-- 识别结果卡片 -->
@@ -102,6 +98,7 @@ import { getAction, postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
 import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
 
 /**
  * 地址识别独立页面：界面与识别逻辑与 OcrMemberRecognizeModal 保持一致，
@@ -110,7 +107,7 @@ import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
 export default {
   name: 'AddressRecognize',
   mixins: [mixinDevice, scrollBlankMixin],
-  components: { LabelPrintModal },
+  components: { LabelPrintModal, ImageRecognizeBox },
   data() {
     return {
       showConfig: false,
@@ -349,31 +346,8 @@ export default {
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.addr-textarea {
-  display: block;
-  padding: 14px;
-  font-size: 16px;
-  line-height: 24px;
-  resize: none;
-}
-.addr-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px 12px;
-  font-size: 13px;
-  color: #8c8c8c;
-}
-.addr-preview img {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  object-fit: cover;
-  cursor: zoom-in;
-}
-.addr-preview__error {
-  color: #f5222d;
-  flex: 1;
+.addr-ocr-box {
+  margin-bottom: 12px;
 }
 .addr-preview-full {
   display: block;
@@ -381,41 +355,6 @@ export default {
   max-height: 78vh;
   object-fit: contain;
   cursor: zoom-out;
-}
-.addr-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-top: 1px solid #f0f0f0;
-}
-.addr-toolbar__left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 14px;
-  color: #595959;
-}
-.addr-toolbar__left a {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #595959;
-  line-height: 20px;
-}
-.addr-toolbar__left .anticon {
-  font-size: 16px;
-  line-height: 1;
-  vertical-align: middle;
-}
-.addr-toolbar__clear {
-  color: #bfbfbf !important;
-}
-.addr-ai {
-  min-width: 96px;
-  height: 32px;
-  border-radius: 16px;
-  font-size: 14px;
 }
 .addr-card__head {
   display: flex;

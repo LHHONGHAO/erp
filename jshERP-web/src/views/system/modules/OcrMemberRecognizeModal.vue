@@ -19,27 +19,23 @@
       </div>
     </template>
 
-    <!-- 手机端：文本输入 + 拍照/图片/清除 + 智能识别 -->
-    <div v-if="isMobileView" class="ocr-member-card">
-      <a-textarea v-model="pasteText" class="ocr-member-textarea" :rows="5" :bordered="false"
-                  placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别" />
-      <div v-if="imageUrl" class="ocr-member-preview">
-        <img :src="imageUrl" @click="previewVisible = true" />
-        <span v-if="ocrLoading">正在识别图片...</span>
-        <span v-else-if="ocrError" class="ocr-member-preview__error">识别失败：{{ ocrError }}</span>
-        <span v-else>图片已识别，点击图片可放大查看</span>
-      </div>
-      <div class="ocr-member-toolbar">
-        <div class="ocr-member-toolbar__left">
-          <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onMobilePick" />
-          <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onMobilePick" />
-          <a @click="triggerCamera"><a-icon type="camera" />拍照识别</a>
-          <a @click="triggerGallery"><a-icon type="picture" />图片识别</a>
-          <a class="ocr-member-toolbar__clear" @click="clearMobile">清除</a>
-        </div>
-        <a-button type="primary" size="small" class="ocr-member-ai" :loading="pasteLoading"
-                  :disabled="!pasteText" @click="parsePastedText">智能识别</a-button>
-      </div>
+    <!-- 标准图片识别框（文本输入 + 拍照/图片/清除 + 智能识别） -->
+    <div>
+      <image-recognize-box
+        v-model="pasteText"
+        class="ocr-member-ocr-box"
+        placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别"
+        :image-url="imageUrl"
+        :loading="ocrLoading"
+        :error-text="ocrError"
+        :smart-loading="pasteLoading"
+        @camera="triggerCamera"
+        @gallery="triggerGallery"
+        @clear="clearMobile"
+        @smart="parsePastedText"
+        @preview="previewVisible = true" />
+      <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onMobilePick" />
+      <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onMobilePick" />
     </div>
 
     <!-- 图片放大预览 -->
@@ -52,42 +48,6 @@
       @cancel="previewVisible = false">
       <img :src="imageUrl" class="ocr-preview-full" @click="previewVisible = false" />
     </a-modal>
-
-    <!-- 电脑端：图片上传 + 粘贴文本 -->
-    <div v-if="!isMobileView" style="display:flex;gap:12px;margin-top:4px">
-      <div style="width:200px;flex-shrink:0">
-        <a-upload
-          name="file"
-          :multiple="false"
-          :before-upload="beforeUpload"
-          :showUploadList="false"
-          accept="image/*"
-          style="display:block"
-        >
-          <div v-if="!ocrLoading && !imageUrl" style="width:200px;height:200px;border:1px dashed #d9d9d9;border-radius:4px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;">
-            <a-icon type="camera" style="font-size:32px;color:#1890ff" />
-            <p style="margin-top:6px;color:#999;font-size:12px">拍照或上传图片</p>
-          </div>
-          <div v-if="ocrLoading" style="width:200px;height:200px;border:1px dashed #d9d9d9;border-radius:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;">
-            <a-icon type="loading" style="font-size:32px;color:#1890ff" />
-            <p style="margin-top:6px;color:#999;font-size:12px">识别中...</p>
-          </div>
-          <div v-if="imageUrl && !ocrLoading" style="width:200px;height:200px;border:1px solid #d9d9d9;border-radius:4px;overflow:hidden;cursor:pointer;position:relative;">
-            <img :src="imageUrl" style="width:100%;height:100%;object-fit:contain;" />
-            <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.4);color:#fff;text-align:center;font-size:11px;padding:2px 0;">点击更换图片</div>
-          </div>
-        </a-upload>
-      </div>
-
-      <!-- 粘贴文本区域 -->
-      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
-        <div style="font-size:14px;color:rgba(0,0,0,0.85);line-height:22px;margin-bottom:2px">
-          粘贴内容
-          <a-button size="small" type="link" style="padding:0;margin-left:8px" :loading="pasteLoading" @click="parsePastedText">识别文本</a-button>
-        </div>
-        <a-textarea v-model="pasteText" placeholder="粘贴名片、快递单等文本内容，点击「识别文本」解析" style="flex:1;font-size:12px;color:#666;resize:none;min-height:176px" />
-      </div>
-    </div>
 
     <!-- 识别结果（原始文本）：电脑端展示 -->
     <div v-if="!isMobileView && ocrFields.rawText" style="margin-top:4px">
@@ -169,10 +129,12 @@
 <script>
 import { getAction, postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
+import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
 
 export default {
   name: 'OcrMemberRecognizeModal',
   mixins: [mixinDevice],
+  components: { ImageRecognizeBox },
   props: {
     visible: {
       type: Boolean,
@@ -423,6 +385,9 @@ export default {
 </script>
 
 <style scoped>
+.ocr-member-ocr-box {
+  margin-bottom: 12px;
+}
 .ocr-prop-item {
   padding: 4px 0;
 }
@@ -539,73 +504,12 @@ export default {
     overflow: hidden;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   }
-  .ocr-member-textarea {
-    display: block;
-    padding: 14px;
-    font-size: 16px;
-    line-height: 24px;
-    resize: none;
-  }
-  .ocr-member-preview {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 14px 12px;
-    font-size: 13px;
-    color: #8c8c8c;
-  }
-  .ocr-member-preview img {
-    width: 64px;
-    height: 64px;
-    border-radius: 8px;
-    object-fit: cover;
-    cursor: zoom-in;
-  }
   .ocr-preview-full {
     display: block;
     width: 100%;
     max-height: 78vh;
     object-fit: contain;
     cursor: zoom-out;
-  }
-  .ocr-member-preview__error {
-    color: #f5222d;
-    flex: 1;
-  }
-  .ocr-member-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    border-top: 1px solid #f0f0f0;
-  }
-  .ocr-member-toolbar__left {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    font-size: 14px;
-    color: #595959;
-  }
-  .ocr-member-toolbar__left a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: #595959;
-    line-height: 20px;
-  }
-  .ocr-member-toolbar__left .anticon {
-    font-size: 16px;
-    line-height: 1;
-    vertical-align: middle;
-  }
-  .ocr-member-toolbar__clear {
-    color: #bfbfbf !important;
-  }
-  .ocr-member-ai {
-    min-width: 96px;
-    height: 32px;
-    border-radius: 16px;
-    font-size: 14px;
   }
   .ocr-member-card__head {
     display: flex;

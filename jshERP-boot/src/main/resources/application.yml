@@ -1,6 +1,6 @@
-# 服务端口
+# 服务端口：约定 HTTPS 默认使用 9999 对外访问，HTTP 仅保留 9998 用于证书安装与兼容
 server:
-  port: 9999
+  port: 9998
   servlet:
     # 登录超时 - 秒
     session:
@@ -10,6 +10,11 @@ server:
   tomcat:
     # 文件上传临时路径（使用用户 Temp 目录，避免 C:\opt 被 Windows Defender 拦截）
     basedir: C:/Users/Administrator/AppData/Local/Temp/tomcat
+
+# HTTPS 连接器：对外统一使用 https://<主机>:9999 访问
+jsh:
+  https:
+    port: 9999
 
 spring:
   # 前端打包产物（npm run build）直接由后端同源托管，省去 nginx

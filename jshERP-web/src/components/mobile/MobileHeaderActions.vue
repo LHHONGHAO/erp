@@ -60,7 +60,7 @@
   /* 非 scoped：a-button 内部的 .anticon 不带父组件作用域标记，需用 .mha-wrap 前缀全局限定 */
   .mha-wrap {
     display: flex;
-    gap: 2px;
+    gap: 0;
     flex-wrap: nowrap;
     justify-content: flex-end;
     flex-shrink: 0;

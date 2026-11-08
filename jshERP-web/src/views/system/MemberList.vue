@@ -6,8 +6,6 @@
       v-model="mobileKeyword"
       title="会员管理"
       placeholder="搜索姓名 / 电话"
-      :show-scan="false"
-      :show-camera="false"
       @back="$router.back()"
       @search="mobileSearch"
       @filter="filterDrawerVisible = true">
@@ -15,16 +13,9 @@
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
 
-      <!-- 会员卡片：姓名 + 电话 一行，地址换行 -->
+      <!-- 会员卡片：姓名 + 电话 一行，地址单行省略 -->
       <div class="mm-list">
         <div v-for="item in dataSource" :key="item.id" class="mm-card">
-          <!-- 多选：与商品信息页一致，无外框仅勾图标 -->
-          <span
-            class="mm-card-check"
-            :class="{ 'is-checked': isMobileSelected(item) }"
-            @click.stop="toggleMobileSelect(item)">
-            <a-icon type="check" />
-          </span>
           <div class="mm-card-main">
             <div class="mm-card-line">
               <span class="mm-card-name">{{ item.contacts || item.supplier || '-' }}</span>
@@ -379,24 +370,6 @@
       printMember(item) {
         this.$refs.memberPreview.openPrint(item)
       },
-      // 手机端卡片多选：当前行是否已选
-      isMobileSelected(item) {
-        return this.selectedRowKeys.indexOf(item.id) > -1
-      },
-      // 手机端卡片多选：切换勾选状态（复用弹窗/表格共用的 selectedRowKeys）
-      toggleMobileSelect(item) {
-        var keys = this.selectedRowKeys.slice()
-        var idx = keys.indexOf(item.id)
-        if (idx > -1) {
-          keys.splice(idx, 1)
-        } else {
-          keys.push(item.id)
-        }
-        var rows = this.dataSource.filter(function(row) {
-          return keys.indexOf(row.id) > -1
-        })
-        this.onSelectChange(keys, rows)
-      },
       batchSetAdvanceIn() {
         if (this.selectedRowKeys.length <= 0) {
           this.$message.warning('请选择一条记录！');
@@ -448,25 +421,6 @@
     background: #fff;
     border-radius: 12px;
   }
-  /* 多选勾图标：与商品信息页卡片一致（未选灰色、选中主题色） */
-  .mm-card-check {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    margin-top: 1px;
-    margin-right: 4px;
-    font-size: 20px;
-    line-height: 1;
-    color: #c8c9cc;
-    cursor: pointer;
-    transition: color 0.2s;
-  }
-  .mm-card-check.is-checked {
-    color: #1890ff;
-  }
   .mm-card-main {
     flex: 1;
     min-width: 0;
@@ -500,7 +454,9 @@
     font-size: 14px;
     line-height: 1.5;
     color: #888;
-    word-break: break-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   /* 查看/打印按钮：横向排列并顶部对齐，整体上移、压缩卡片高度 */
   .mm-card-actions {

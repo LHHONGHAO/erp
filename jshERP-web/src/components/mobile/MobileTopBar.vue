@@ -43,11 +43,11 @@ export default {
   background: #1890ff;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
+  /* 返回按钮：与顶栏等高（49px），左边贴屏幕左边 */
   .mtb-back {
     flex: 0 0 auto;
     width: 58px;
-    height: 58px;
+    height: 49px;
     margin-left: 0;
     display: flex;
     align-items: center;
@@ -66,8 +66,8 @@ export default {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    /* 标题左对齐：起点与商品信息页标题一致（返回按钮 58px 之后留 4px） */
-    padding-left: 4px;
+    /* 标题左对齐：返回按钮 58px 之后留 8px */
+    padding-left: 8px;
     text-align: left;
     font-size: 16px;
     font-weight: 500;

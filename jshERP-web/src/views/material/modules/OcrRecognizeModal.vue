@@ -27,34 +27,24 @@
       </div>
     </template>
 
-    <!-- 文字编辑框 + 底部操作栏（不再显示图片预览框） -->
-    <div class="ocr-text-panel">
-      <a-textarea
-        v-model="ocrFields.rawText"
-        class="ocr-raw-text"
-        :rows="extractOnly ? 10 : 8"
-        :placeholder="ocrLoading ? '正在识别图片文字...' : '识别结果会显示在这里，也可以直接输入或粘贴文字'"
-        @input="onTextEdited" />
-      <div v-if="previewImage" class="ocr-image-preview">
-        <img :src="previewImage" @click="previewVisible = true" />
-        <span>图片已加载，点击图片可放大查看</span>
-      </div>
-      <div class="ocr-text-toolbar">
-        <div class="ocr-text-toolbar-left">
-          <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onPickImage" />
-          <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onPickImage" />
-          <a-button type="link" class="ocr-toolbar-btn" :loading="ocrLoading" @click="triggerCamera">
-            <a-icon type="camera" />拍照识别
-          </a-button>
-          <a-button type="link" class="ocr-toolbar-btn" :loading="ocrLoading" @click="triggerGallery">
-            <a-icon type="picture" />图片识别
-          </a-button>
-          <a-button type="link" class="ocr-toolbar-btn ocr-toolbar-clear" :disabled="!ocrFields.rawText && !ocrLoading" @click="clearText">清除</a-button>
-          <a-button v-if="!extractOnly" type="primary" class="ocr-ai-btn" :loading="ocrLoading" :disabled="!ocrFields.rawText" @click="smartRecognize">智能识别</a-button>
-          <a-button v-else type="primary" class="ocr-ai-btn" :disabled="!ocrFields.rawText" @click="copyRawText">复制文字</a-button>
-        </div>
-      </div>
-    </div>
+    <!-- 标准图片识别框：文本编辑 + 图片预览 + 拍照/图片/清除 + 智能识别 -->
+    <image-recognize-box
+      v-model="ocrFields.rawText"
+      :placeholder="ocrLoading ? '正在识别图片文字...' : '识别结果会显示在这里，也可以直接输入或粘贴文字'"
+      :image-url="previewImage"
+      :loading="ocrLoading"
+      preview-text="图片已加载，点击图片可放大查看"
+      :smart-text="extractOnly ? '复制文字' : '智能识别'"
+      :smart-loading="!extractOnly && ocrLoading"
+      :clear-disabled="!ocrFields.rawText && !ocrLoading"
+      @input="onTextEdited"
+      @camera="triggerCamera"
+      @gallery="triggerGallery"
+      @clear="clearText"
+      @smart="extractOnly ? copyRawText() : smartRecognize()"
+      @preview="previewVisible = true" />
+    <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onPickImage" />
+    <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onPickImage" />
 
     <!-- 图片放大预览 -->
     <a-modal
@@ -128,6 +118,8 @@ import Vue from 'vue'
 import { postAction, getAction } from '@/api/manage'
 import { axios as uploadHttp } from '@/utils/request'
 import OcrApiConfigModal from './OcrApiConfigModal'
+import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
+import { recognizeTextFromImage, parseProductText } from '@/views/material/utils/productTextScan'
 
 // 基础属性列表：与商品新增页「基础属性设置」的可选项保持一致
 // （即 MaterialModal.basePropertyList 中 basePropertyFields 包含的属性，顺序、名称、默认显示状态一致）
@@ -159,7 +151,8 @@ var BASE_PROPERTIES = [
 export default {
   name: 'OcrRecognizeModal',
   components: {
-    OcrApiConfigModal
+    OcrApiConfigModal,
+    ImageRecognizeBox
   },
   props: {
     visible: {
@@ -451,7 +444,7 @@ export default {
       // 使用 Base64 JSON 接口，避免 multipart 在部分代理/网关下出现 Network Error
       this.fileToBase64(file).then(function(imageBase64) {
         that.previewImage = imageBase64
-        return postAction('/ocr/recognizeProductByBase64', { imageBase64: imageBase64 })
+        return recognizeTextFromImage(imageBase64)
       }).then(function(res) {
         that.ocrLoading = false
         that.applyOcrSuccess(res)
@@ -469,7 +462,7 @@ export default {
       }
       this.ocrLoading = true
       var that = this
-      postAction('/ocr/parseProductText', { text: text }).then(function(res) {
+      parseProductText(text).then(function(res) {
         that.ocrLoading = false
         that.applyOcrSuccess(res)
       }).catch(function(err) {
@@ -620,38 +613,6 @@ export default {
 </script>
 
 <style scoped>
-.ocr-text-panel {
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  background: #fff;
-  overflow: hidden;
-}
-
-.ocr-raw-text {
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  padding: 14px 16px;
-  font-size: 14px;
-  line-height: 22px;
-  resize: vertical;
-}
-
-.ocr-text-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.ocr-text-toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .ocr-file-input {
   display: none;
 }
@@ -671,44 +632,6 @@ export default {
   background: #000;
 }
 
-.ocr-toolbar-btn {
-  padding: 0 8px;
-  color: #595959;
-  font-size: 14px;
-}
-
-.ocr-toolbar-btn .anticon {
-  margin-right: 4px;
-  font-size: 16px;
-}
-
-.ocr-toolbar-clear {
-  color: #bfbfbf;
-}
-
-.ocr-ai-btn {
-  min-width: 0;
-  height: 28px;
-  padding: 0 12px;
-  margin-left: 8px;
-  border-radius: 14px;
-  font-size: 13px;
-}
-.ocr-image-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0 4px;
-  font-size: 12px;
-  color: #8c8c8c;
-}
-.ocr-image-preview img {
-  width: 56px;
-  height: 56px;
-  border-radius: 6px;
-  object-fit: cover;
-  cursor: zoom-in;
-}
 .ocr-preview-full {
   display: block;
   width: 100%;
@@ -716,26 +639,8 @@ export default {
   object-fit: contain;
   cursor: zoom-out;
 }
-/* 手机端适配：工具栏换行、输入框字号防止聚焦放大 */
+/* 手机端适配：属性行字号防止聚焦放大 */
 @media (max-width: 768px) {
-  .ocr-text-toolbar {
-    flex-wrap: wrap;
-  }
-  .ocr-text-toolbar-left {
-    flex-wrap: wrap;
-    width: 100%;
-  }
-  .ocr-ai-btn {
-    height: 28px;
-    padding: 0 10px;
-    margin-left: 6px;
-    font-size: 12px;
-  }
-  .ocr-raw-text {
-    font-size: 16px;
-    line-height: 24px;
-    padding: 10px 12px;
-  }
   .ocr-prop-item .ant-input {
     font-size: 16px;
   }

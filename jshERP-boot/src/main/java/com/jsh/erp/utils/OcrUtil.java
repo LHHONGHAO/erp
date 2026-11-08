@@ -56,6 +56,11 @@ public class OcrUtil {
         loadConfigFromFile();
     }
 
+    /** 密钥判空：null 或仅空白字符都视为未配置 */
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
     /** OCR 配置文件路径：优先取统一数据目录（-Djsh.data.dir），否则退回启动目录下 config/ */
     private static String getOcrConfigPath() {
         String dataDir = System.getProperty("jsh.data.dir");
@@ -122,6 +127,9 @@ public class OcrUtil {
         }
         String apiKey = runtimeApiKey != null ? runtimeApiKey : config.getApiKey();
         String secretKey = runtimeSecretKey != null ? runtimeSecretKey : config.getSecretKey();
+        if (isBlank(apiKey) || isBlank(secretKey)) {
+            throw new RuntimeException("未配置百度OCR的API Key和Secret Key，请在图片识别页右上角设置中填写");
+        }
         String tokenUrl = config.getTokenUrl();
 
         String params = "grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
@@ -171,6 +179,9 @@ public class OcrUtil {
         }
         String apiKey = getAddressApiKey();
         String secretKey = getAddressSecretKey();
+        if (isBlank(apiKey) || isBlank(secretKey)) {
+            throw new RuntimeException("未配置地址识别的API Key和Secret Key，请在地址识别页右上角设置中填写");
+        }
         String tokenUrl = config.getTokenUrl();
 
         String params = "grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;

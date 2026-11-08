@@ -103,10 +103,13 @@ if ($Frontend) {
     Write-Host '==> 上传前端 dist ...'
     Invoke-Pscp @('-r', (Join-Path $webDir 'dist')) "$RemoteDir/"
 }
+# 容器编排与 nginx 配置一并同步，避免端口约定变更后远端仍用旧配置
+Write-Host '==> 上传 compose / nginx 配置 ...'
+Invoke-Pscp @((Join-Path $toolsDir 'deploy\docker-compose.yml'), (Join-Path $toolsDir 'deploy\nginx.conf')) "$RemoteDir/"
 
 # 3. 重启并验证
-Write-Host '==> 重建远端 app 容器 ...'
-Invoke-Plink "cd $RemoteDir && docker compose up -d --force-recreate app 2>&1 | tail -1"
+Write-Host '==> 重建远端 app / nginx 容器 ...'
+Invoke-Plink "cd $RemoteDir && docker compose up -d --force-recreate app nginx 2>&1 | tail -2"
 Write-Host '==> 等待服务启动 (50s) ...'
 Start-Sleep 50
 Invoke-Plink "curl -s -o /dev/null -w 'app  HTTP %{http_code}\n' http://127.0.0.1:9998/user/randomImage; curl -s -o /dev/null -w 'nginx HTTP %{http_code}\n' http://127.0.0.1:9999/"

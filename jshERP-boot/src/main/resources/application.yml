@@ -68,11 +68,12 @@ file:
   # 文件导出缓存
   exportTmp: ${jsh.data.dir:E:/huaxia/jshERP-data}/export
 
-# 百度OCR配置
+# 百度OCR配置（密钥不写死在这里，统一在页面设置中配置，
+# 落盘到 <数据目录>/config/ocr-config.properties，避免换机部署误用失效默认值）
 ocr:
   baidu:
     enabled: true
-    apiKey: GHWyHwY2sqtpY63fFXFcNWgB
-    secretKey: JYCK1oPGpXaj44go7eytSH4h2Ghpjsr4
+    apiKey: ""
+    secretKey: ""
     tokenUrl: https://aip.baidubce.com/oauth/2.0/token
     ocrUrl: https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic

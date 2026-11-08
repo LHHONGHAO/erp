@@ -80,8 +80,9 @@ router.beforeEach((to, from, next) => {
             // 根据roles权限生成可访问的路由表
             // 动态添加可访问路由表
             router.addRoutes(store.getters.addRouters)
-            const redirect = decodeURIComponent(from.query.redirect || to.path)
-            next({ path: redirect })
+            // 用 fullPath 保留查询参数，否则首次进入 /xxx?number=yyy 会丢失 query
+            const redirect = decodeURIComponent(from.query.redirect || to.fullPath)
+            next(redirect)
           })
         })
         .catch(() => {

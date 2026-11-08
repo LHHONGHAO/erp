@@ -56,11 +56,12 @@ public class LabelProviderController {
     @GetMapping(value = "/data")
     public BaseResponseInfo data(@RequestParam("provider") String provider,
                                  @RequestParam("documentId") String documentId,
-                                 @RequestParam(value = "subId", required = false) String subId) {
+                                 @RequestParam(value = "subId", required = false) String subId,
+                                 @RequestParam(value = "businessType", required = false) String businessType) {
         BaseResponseInfo res = new BaseResponseInfo();
         try {
             res.code = 200;
-            res.data = registry.loadData(provider, documentId, subId);
+            res.data = registry.loadData(provider, documentId, subId, businessType);
         } catch (Exception e) {
             logger.error("标签数据加载失败: " + e.getMessage(), e);
             res.code = 500;

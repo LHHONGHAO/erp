@@ -12,14 +12,7 @@
     @camera="ocrVisible = true"
     @filter="filterDrawerVisible = true">
       <template #actions>
-        <div class="ml-mobile-header-actions">
-          <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" title="新增" @click="handleMobileAdd" />
-          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="delete" title="删除" @click="mobileBatchDel" />
-          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="check-square" title="启用" @click="mobileBatchSetStatus(true)" />
-          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="close-square" title="禁用" @click="mobileBatchSetStatus(false)" />
-          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" title="导入" @click="handleImportXls()" />
-          <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" title="导出" @click="handleExportXls('商品信息')" />
-        </div>
+        <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
 
     <!-- 信息列表 -->
@@ -298,6 +291,7 @@
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
+  import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import CertInstallGuide from '@/views/bill/modules/CertInstallGuide'
   import { SCANNER_STATE } from '@/types/scanner'
   import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
@@ -314,6 +308,7 @@
       OcrRecognizeModal,
       MaterialTable,
       MobileSearchPage,
+      MobileHeaderActions,
       CertInstallGuide
     },
     data () {
@@ -432,6 +427,18 @@
         return [
           { title: '编辑', icon: 'edit', click: record => this.handleEdit(record) },
           { title: '打印标签', icon: 'printer', click: record => this.handlePrintSkuLabel(record) }
+        ]
+      },
+      // 手机端顶栏图标按钮（与会员信息页共用 MobileHeaderActions 组件）
+      mobileHeaderActions() {
+        const can = this.btnEnableList
+        return [
+          { key: 'add', icon: 'plus', title: '新增', primary: true, visible: can.indexOf(1) > -1, click: this.handleMobileAdd },
+          { key: 'delete', icon: 'delete', title: '删除', visible: can.indexOf(1) > -1, click: this.mobileBatchDel },
+          { key: 'enable', icon: 'check-square', title: '启用', visible: can.indexOf(1) > -1, click: () => this.mobileBatchSetStatus(true) },
+          { key: 'disable', icon: 'close-square', title: '禁用', visible: can.indexOf(1) > -1, click: () => this.mobileBatchSetStatus(false) },
+          { key: 'import', icon: 'import', title: '导入', visible: can.indexOf(1) > -1, click: () => this.handleImportXls() },
+          { key: 'export', icon: 'download', title: '导出', visible: can.indexOf(3) > -1, click: () => this.handleExportXls('商品信息') }
         ]
       },
       // SKU维度行数据：为每个SKU行生成唯一key
@@ -787,45 +794,7 @@
 </style>
 <style>
   /* ==================== 手机端布局 ==================== */
-  /* 顶栏右侧操作按钮 */
-  .ml-mobile-header-actions {
-    display: flex;
-    gap: 2px;
-    flex-wrap: nowrap;
-    justify-content: flex-end;
-    flex-shrink: 0;
-  }
-  /* 纯图标按钮，统一方形尺寸，一行排列，底色与顶栏一致 */
-  .ml-mobile-header-actions .ant-btn {
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    font-size: 11px;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border-color: transparent;
-    color: #fff;
-    box-shadow: none;
-  }
-  .ml-mobile-header-actions .ant-btn .anticon {
-    margin: 0;
-    font-size: 20px;
-    color: #fff;
-  }
-  /* 按下/悬停时仅做浅色高亮，不改变底色 */
-  .ml-mobile-header-actions .ant-btn:hover,
-  .ml-mobile-header-actions .ant-btn:focus,
-  .ml-mobile-header-actions .ant-btn:active,
-  .ml-mobile-header-actions .ant-btn.ant-btn-primary:hover,
-  .ml-mobile-header-actions .ant-btn.ant-btn-primary:focus,
-  .ml-mobile-header-actions .ant-btn.ant-btn-primary:active {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: transparent;
-    color: #fff;
-  }
+  /* 顶栏右侧操作按钮：统一由 MobileHeaderActions 组件提供样式 */
   /* 条件筛选抽屉样式 */
   .ml-filter-item {
     margin-bottom: 20px;

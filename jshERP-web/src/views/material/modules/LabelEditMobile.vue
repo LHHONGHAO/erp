@@ -322,11 +322,14 @@
         <div class="lem-save-hint">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
       </div>
     </a-modal>
+    <!-- 打印标签弹层（不再跳转打印页面） -->
+    <label-print-modal ref="labelPrintModal" />
   </div>
 </template>
 
 <script>
   import MobileTopBar from '@/components/mobile/MobileTopBar'
+  import LabelPrintModal from './LabelPrintModal'
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { isCodeKey, codeSourceKey, renderCodeDataUrl, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates, saveLabelTemplate } from '@/views/material/utils/labelTemplateStore'
@@ -373,12 +376,22 @@
       platformConfigKey: 'receipt_layout',
       defaultKeys: [],
       successMsg: '小票模版已保存'
+    },
+    member: {
+      title: '会员标签编辑',
+      defaultWidth: 320,
+      defaultHeight: 240,
+      attrsBuilder: 'member',
+      storage: 'platformConfig',
+      platformConfigKey: 'member_layout',
+      defaultKeys: ['contacts', 'telephone', 'address'],
+      successMsg: '会员标签模版已保存'
     }
   }
 
   export default {
     name: 'LabelEditMobile',
-    components: { MobileTopBar },
+    components: { MobileTopBar, LabelPrintModal },
     data() {
       return {
         templateType: 'label',
@@ -549,9 +562,9 @@
           if (context.sku) this.sku = context.sku
         }
         this.templateType = type
-        // 业务标识：来源页优先，其次按类型兜底（商品/发货单）
+        // 业务标识：来源页优先，其次按类型兜底（商品/发货单/会员）
         this.businessType = this.$route.query.businessType || (context && context.businessType) ||
-          (type === 'delivery' ? 'delivery' : (type === 'label' ? 'product' : ''))
+          (type === 'delivery' ? 'delivery' : (type === 'label' ? 'product' : (type === 'member' ? 'member' : '')))
         this.labelWidth = cfg.defaultWidth
         this.labelHeight = cfg.defaultHeight
         this.deliveryTemplate = null
@@ -581,7 +594,8 @@
           if (!self.providerList.length) return
           var preferred = (context && context.provider) ||
             (context && context.template && context.template.provider) ||
-            (self.templateType === 'delivery' ? 'sales.delivery' : 'product.label')
+            (self.templateType === 'delivery' ? 'sales.delivery'
+              : (self.templateType === 'member' ? 'table.jsh_supplier' : 'product.label'))
           var matched = self.providerList.filter(function(p) { return p.provider === preferred })[0]
           self.provider = matched ? matched.provider : self.providerList[0].provider
           self.applyProviderData(self.provider, false)
@@ -605,7 +619,7 @@
         var documentId = this.record && this.record.id
         return Promise.all([
           fetchProviderFields(provider),
-          fetchLabelData(provider, documentId)
+          fetchLabelData(provider, documentId, null, this.businessType)
         ]).then(function(result) {
           if (self.provider !== provider) return
           var fields = result[0] || []
@@ -622,7 +636,8 @@
               value: values[field.key] == null ? '' : String(values[field.key]),
               type: field.type || 'text',
               isCustom: false,
-              group: self.templateType === 'delivery' ? '销售出库' : '可用字段'
+              group: self.templateType === 'delivery' ? '销售出库'
+                : (self.templateType === 'member' ? '会员信息' : '可用字段')
             }
           })
           var exists = {}
@@ -649,9 +664,38 @@
         switch (builder) {
           case 'delivery': return this.buildDeliveryAttrs()
           case 'receipt': return this.buildReceiptAttrs()
+          case 'member': return this.buildMemberAttrs()
           case 'label':
           default: return buildLabelAttrs(this.record, this.sku)
         }
+      },
+      /** 会员标签默认字段（key 与会员信息表 jsh_supplier 列名保持一致） */
+      buildMemberAttrs() {
+        var m = this.record || {}
+        var mk = function(key, label, value) {
+          return {
+            key: key,
+            label: label,
+            value: value == null ? '' : String(value),
+            isCustom: false,
+            group: '会员信息'
+          }
+        }
+        return [
+          mk('contacts', '联系人', m.contacts),
+          mk('telephone', '电话', m.telephone),
+          mk('phone_num', '手机', m.phoneNum),
+          mk('address', '联系地址', m.address),
+          mk('supplier', '会员卡号', m.supplier),
+          mk('email', '电子邮箱', m.email),
+          mk('wechat_account', '微信账户', m.wechatAccount),
+          mk('douyin_account', '抖音账户', m.douyinAccount),
+          mk('alipay_account', '支付宝账户', m.alipayAccount),
+          mk('other_account', '其它账户', m.otherAccount),
+          mk('advance_in', '预付款', m.advanceIn),
+          mk('description', '备注', m.description),
+          mk('enabled', '状态', m.enabled === false ? '禁用' : '启用')
+        ]
       },
       /** 统一的模板加载入口，根据 storage 类型分发 */
       loadTemplate(cfg, skipApply) {
@@ -1590,27 +1634,37 @@
       },
       handlePrint() {
         // 把当前编辑中的模板快照写入 sessionStorage，跳转打印页后恢复
+        var snapshotValues = {}
+        this.allAttrs.forEach(function(attr) {
+          if (attr.key) snapshotValues[attr.key] = attr.value == null ? '' : attr.value
+        })
         try {
           sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
             labelWidth: this.labelWidth,
             labelHeight: this.labelHeight,
             selectedAttrs: this.selectedAttrs,
             attrStyles: this.attrStyles,
-            attrLabels: this.attrLabels
+            attrLabels: this.attrLabels,
+            values: snapshotValues
           }))
         } catch (e) { /* 忽略 */ }
-        var path = '/label/print-mobile?type=' + (this.templateType || 'label')
-        // 标签模板可能有多个：带上当前模板标识，打印页从统一模板存储读取对应模板
+        // 标签模板可能有多个：带上当前模板标识，打印弹层从统一模板存储读取对应模板
+        var templateId = ''
+        var templateName = ''
         if (this.templateType === 'label') {
           var curId = this.selectedTemplateId
           var cur = curId
             ? this.templates.find(function(t) { return t.id === curId })
             : null
-          var sid = cur ? (cur.serverId || cur.id) : ''
-          if (sid) path += '&templateId=' + encodeURIComponent(sid)
-          if (cur && cur.name) path += '&name=' + encodeURIComponent(cur.name)
+          templateId = cur ? (cur.serverId || cur.id) : ''
+          templateName = cur ? cur.name : ''
         }
-        this.$router.push(path)
+        // 当前页直接弹出打印层；编辑按钮不再跳转（已在编辑页）
+        this.$refs.labelPrintModal.openByType(this.templateType || 'label', {
+          templateId: templateId,
+          name: templateName,
+          directEntry: false
+        })
       },
       openSettings() {
         this.$message.info('设置功能开发中')

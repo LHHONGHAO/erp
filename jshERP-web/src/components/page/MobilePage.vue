@@ -112,7 +112,9 @@
   .mobile-page-title {
     flex: 1 1 auto;
     min-width: 0;
-    text-align: center;
+    /* 标题左对齐：起点与商品信息页标题一致（返回按钮 58px 之后留 4px） */
+    padding-left: 4px;
+    text-align: left;
     font-size: 16px;
     font-weight: 500;
     color: #fff;

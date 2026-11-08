@@ -62,10 +62,16 @@ public class LabelProviderRegistry {
                 new TableMeta("jsh_depot_item", "销售出库明细表"),
                 new TableMeta("jsh_supplier", "会员信息表")
         ));
+        // 会员业务：会员信息表（按会员 id 直接取数）
+        BUSINESS_TABLES.put("member", Arrays.asList(
+                new TableMeta("jsh_supplier", "会员信息表")
+        ));
         // 会员信息不在单据上直接存 id，需要通过单据的 organ_id 关联
-        TABLE_LOAD_SQL.put("jsh_supplier",
-                "SELECT s.* FROM jsh_supplier s INNER JOIN jsh_depot_head h " +
-                        "ON h.organ_id = s.id WHERE h.id = ? LIMIT 1");
+        // 旧调用不带业务标识时仍按表名匹配，保持发货单原有取数行为
+        String deliverySupplierSql = "SELECT s.* FROM jsh_supplier s INNER JOIN jsh_depot_head h " +
+                "ON h.organ_id = s.id WHERE h.id = ? LIMIT 1";
+        TABLE_LOAD_SQL.put("jsh_supplier", deliverySupplierSql);
+        TABLE_LOAD_SQL.put("delivery:jsh_supplier", deliverySupplierSql);
     }
 
     private void init() {
@@ -149,6 +155,15 @@ public class LabelProviderRegistry {
 
     /** 从注册表或动态表中取数据 */
     public JSONObject loadData(String provider, String documentId, String subId) {
+        return loadData(provider, documentId, subId, null);
+    }
+
+    /**
+     * 从注册表或动态表中取数据
+     *
+     * @param businessType 业务标识，同一张表在不同业务下的取数 SQL 可能不同（如 jsh_supplier）
+     */
+    public JSONObject loadData(String provider, String documentId, String subId, String businessType) {
         init();
         LabelDataProvider p = providerMap.get(provider);
         if (p != null) {
@@ -156,7 +171,7 @@ public class LabelProviderRegistry {
         }
         if (provider != null && provider.startsWith("table.")) {
             String tableName = provider.substring("table.".length());
-            return readTableData(tableName, documentId);
+            return readTableData(tableName, documentId, businessType);
         }
         return new JSONObject();
     }
@@ -221,13 +236,19 @@ public class LabelProviderRegistry {
     }
 
     /** 按 id 查询单条数据，返回列名→值的映射 */
-    private JSONObject readTableData(String tableName, String documentId) {
+    private JSONObject readTableData(String tableName, String documentId, String businessType) {
         JSONObject result = new JSONObject();
         if (tableName == null || tableName.trim().isEmpty()
                 || documentId == null || documentId.trim().isEmpty()) {
             return result;
         }
-        String loadSql = TABLE_LOAD_SQL.get(tableName);
+        // 按「业务:表名」优先匹配专用 SQL；未指定业务时保持原有表名匹配（兼容旧调用）
+        String loadSql = null;
+        if (businessType != null && !businessType.trim().isEmpty()) {
+            loadSql = TABLE_LOAD_SQL.get(businessType.trim() + ":" + tableName);
+        } else {
+            loadSql = TABLE_LOAD_SQL.get(tableName);
+        }
         String sql = loadSql != null ? loadSql
                 : "SELECT * FROM " + tableName + " WHERE id = ? LIMIT 1";
         try (Connection conn = dataSource.getConnection();

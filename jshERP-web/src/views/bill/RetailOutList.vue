@@ -1,10 +1,23 @@
 <template>
   <div>
-    <!-- 手机端：从页面最上方开始加载当日销售单卡片 -->
-    <div v-if="isMobile()" class="rol-mobile">
+    <!-- ==================== 手机端：标准信息搜索页面（内容卡片保持原样） ==================== -->
+    <mobile-search-page
+      v-if="isNarrowScreen"
+      v-model="mobileKeyword"
+      title="零售出库"
+      placeholder="搜索单号 / 会员 / 商品"
+      :show-scan="false"
+      :show-camera="false"
+      @back="$router.back()"
+      @search="mobileSearch"
+      @filter="filterDrawerVisible = true">
+      <template #actions>
+        <mobile-header-actions :actions="mobileHeaderActions" />
+      </template>
+
       <div v-if="mobileLoading" class="rol-mobile-tip">加载中...</div>
-      <div v-else-if="mobileBills.length === 0" class="rol-mobile-tip">今日暂无销售单</div>
-      <div v-for="bill in mobileBills" :key="bill.id" class="rol-card">
+      <div v-else-if="mobileBillList.length === 0" class="rol-mobile-tip">今日暂无销售单</div>
+      <div v-for="bill in mobileBillList" :key="bill.id" class="rol-card">
         <!-- 最上方：单号 + 日期左对齐，右侧多选 -->
         <div class="rol-card-head">
           <div class="rol-card-number-wrap">
@@ -42,7 +55,7 @@
           </div>
           <div v-if="!bill.items || bill.items.length === 0" class="rol-item-empty">无商品明细</div>
         </div>
-        <!-- 最下方：合计行（数量、零售价、实付价），会员信息与发货/审核按钮同一行 -->
+        <!-- 最下方：合计行（数量、零售价、实付价），会员信息与审核按钮同一行 -->
         <div class="rol-card-foot">
           <div class="rol-totals">
             <div class="rol-item-metric">
@@ -68,7 +81,28 @@
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- 条件筛选抽屉（状态过滤，卡片数据实时过滤） -->
+      <template #overlay>
+        <a-drawer
+          :visible="filterDrawerVisible"
+          placement="right"
+          title="条件筛选"
+          width="280"
+          @close="filterDrawerVisible = false">
+          <div class="rol-filter-item">
+            <span class="rol-filter-label">单据状态</span>
+            <a-select style="width:100%" allow-clear placeholder="全部状态" v-model="mobileFilterStatus">
+              <a-select-option value="0">未审核</a-select-option>
+              <a-select-option value="1">已审核</a-select-option>
+            </a-select>
+          </div>
+          <div class="rol-filter-footer">
+            <a-button block type="primary" @click="filterDrawerVisible = false">确定</a-button>
+          </div>
+        </a-drawer>
+      </template>
+    </mobile-search-page>
     <a-row v-else :gutter="24">
     <a-col :md="24">
       <a-card :style="cardStyle" :bordered="false">
@@ -243,6 +277,8 @@
       </a-card>
     </a-col>
     </a-row>
+    <!-- 发货单打印弹层：手机端点「发货」直接打开，不再跳转发货单页面 -->
+    <label-print-modal ref="deliveryPrintModal" />
   </div>
 </template>
 <!-- create ji sheng hua-->
@@ -251,6 +287,9 @@
   import RetailBackModal from './modules/RetailBackModal'
   import BillDetail from './dialog/BillDetail'
   import BillExcelIframe from '@/components/tools/BillExcelIframe'
+  import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+  import MobileSearchPage from '@/components/mobile/MobileSearchPage'
+  import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import JEllipsis from '@/components/jeecg/JEllipsis'
@@ -259,6 +298,7 @@
   import Vue from 'vue'
   import moment from 'moment'
   import { getAction, postAction } from '@/api/manage'
+  import { findBillDetailByNumber } from '@/api/api'
   import { getMpListShort } from '@/utils/util'
   export default {
     name: "RetailOutList",
@@ -268,9 +308,12 @@
       RetailBackModal,
       BillDetail,
       BillExcelIframe,
+      LabelPrintModal,
       JEllipsis,
       JDate,
       DataTable,
+      MobileSearchPage,
+      MobileHeaderActions,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -293,9 +336,15 @@
         },
         prefixNo: 'LSCK',
         urlPath: '/bill/retail_out',
+        // 手机端：是否窄屏（与商品信息页/会员信息页标准页一致）
+        isNarrowScreen: false,
         // 手机端：当日销售单卡片数据
         mobileBills: [],
         mobileLoading: false,
+        // 手机端搜索关键字与筛选状态
+        mobileKeyword: '',
+        mobileFilterStatus: undefined,
+        filterDrawerVisible: false,
         // 手机端卡片多选
         mobileSelectedIds: [],
         labelCol: {
@@ -357,6 +406,38 @@
       summaryEnabled() {
         const pageSize = this.ipagination && this.ipagination.pageSize
         return this.dataSource && this.dataSource.length > 0 && pageSize % 10 === 1
+      },
+      // 手机端顶栏图标按钮（与商品信息页/会员信息页共用 MobileHeaderActions 标准顺序）
+      mobileHeaderActions() {
+        const can = this.btnEnableList
+        return [
+          { key: 'add', icon: 'plus', title: '新增', visible: can.indexOf(1) > -1, click: this.myHandleAdd },
+          { key: 'delete', icon: 'delete', title: '删除', visible: can.indexOf(1) > -1, click: this.mobileBatchDel },
+          { key: 'enable', icon: 'check-square', title: '审核', visible: this.checkFlag && can.indexOf(2) > -1, click: () => this.mobileBatchSetStatus(1) },
+          { key: 'disable', icon: 'close-square', title: '反审核', visible: this.checkFlag && can.indexOf(7) > -1, click: () => this.mobileBatchSetStatus(0) },
+          { key: 'export', icon: 'download', title: '导出', visible: this.isShowExcel && can.indexOf(3) > -1, click: this.handleExport }
+        ]
+      },
+      // 手机端卡片列表：按关键字（单号/会员/商品/备注）与单据状态过滤
+      mobileBillList() {
+        const kw = (this.mobileKeyword || '').trim().toLowerCase()
+        const status = this.mobileFilterStatus
+        return (this.mobileBills || []).filter(bill => {
+          if (status !== undefined && status !== null && status !== '' && String(bill.status) !== String(status)) {
+            return false
+          }
+          if (!kw) return true
+          const member = this.billMember(bill) || {}
+          const text = [
+            bill.number,
+            bill.organName,
+            member.contacts,
+            member.telephone,
+            bill.remark
+          ].concat((bill.items || []).map(item => item.materialName || item.name || ''))
+            .filter(Boolean).join(' ').toLowerCase()
+          return text.indexOf(kw) > -1
+        })
       }
     },
     created () {
@@ -369,9 +450,19 @@
       this.getDepotByCurrentUser()
     },
     mounted () {
-      // 手机端：进入页面即从最上方加载当日销售单卡片
-      if (this.isMobile()) {
+      // 手机端：与标准搜索页一致的窄屏判定（<=768px），进入页面即加载当日销售单卡片
+      this.isNarrowScreen = window.innerWidth <= 768
+      this._onResize = () => {
+        this.isNarrowScreen = window.innerWidth <= 768
+      }
+      window.addEventListener('resize', this._onResize)
+      if (this.isNarrowScreen) {
         this.loadTodayBills()
+      }
+    },
+    beforeDestroy () {
+      if (this._onResize) {
+        window.removeEventListener('resize', this._onResize)
       }
     },
     methods: {
@@ -487,29 +578,72 @@
         if (checked) ids.push(bill.id)
         this.mobileSelectedIds = ids
       },
-      // 发货：打开发货单页面（按发货模板渲染）
+      // 发货：直接打开发货单打印弹层（不再跳转发货单页面）
       mobileDeliver (bill) {
         if (!bill || !bill.number) {
-          this.$message.warning('单据编号缺失，无法打开发货单')
+          this.$message.warning('单据编号缺失，无法打印发货单')
           return
         }
-        var self = this
-        var target = { path: '/bill/deliveryNote', query: { number: bill.number } }
-        // 路由表是旧缓存时 $router.push 会被静默吞掉（页面无反应）→ 整页跳转兜底
-        var matched = this.$router.resolve(target).route.matched
-        if (!matched || !matched.length) {
-          this.gotoDeliveryNote(bill.number)
-          return
-        }
-        this.$router.push(target)
-        // 组件 chunk 加载失败时 push 同样会被静默吞掉，这里兜底
-        setTimeout(function() {
-          if (self.$route.path !== target.path) self.gotoDeliveryNote(bill.number)
-        }, 1500)
+        const that = this
+        // 取单据详情补全主表字段（收货人/电话/地址等），失败时回退列表行数据
+        findBillDetailByNumber({ number: bill.number }).then(res => {
+          const detail = (res && res.code === 200 && res.data) ? Object.assign({}, bill, res.data) : bill
+          that.openDeliveryPrint(detail)
+        }).catch(() => that.openDeliveryPrint(bill))
       },
-      gotoDeliveryNote (number) {
-        var base = (this.$router.options && this.$router.options.base) || '/'
-        window.location.href = base.replace(/\/+$/, '') + '/bill/deliveryNote?number=' + encodeURIComponent(number)
+      // 组装发货单打印数据（字段 key 与发货单模板一致），写入快照后打开打印弹层
+      openDeliveryPrint (bill) {
+        const member = this.billMember(bill) || {}
+        const items = bill.items || []
+        const num = v => { const n = Number(v); return isNaN(n) ? 0 : n }
+        const money = v => num(v).toFixed(2)
+        const totalQty = items.reduce((sum, item) => sum + num(item.operNumber), 0)
+        const totalAmount = items.reduce((sum, item) => sum + (num(item.allPrice) || num(item.unitPrice) * num(item.operNumber)), 0)
+        const paidAmount = bill.changeAmount == null ? totalAmount : num(bill.changeAmount)
+        const statusMap = { '0': '未审核', '1': '已审核', '2': '已完成', '3': '已关闭' }
+        const values = {
+          dn_title: '发货单',
+          dn_no: bill.number || '--',
+          dn_date: bill.operTimeStr || '--',
+          dn_member: bill.organName || member.name || '散客',
+          dn_receiver: bill.contacts || member.contacts || member.name || '散客',
+          dn_phone: bill.telephone || member.telephone || '--',
+          dn_address: bill.address || member.address || '--',
+          dn_depot: bill.depotName || '--',
+          dn_paytype: bill.payType || '--',
+          dn_account: bill.accountName || '--',
+          dn_operator: bill.userName || '--',
+          dn_salesman: bill.salesManStr || '--',
+          dn_remark: bill.remark || '',
+          dn_attach: bill.fileName || '无',
+          dn_qty_total: Number.isInteger(totalQty) ? String(totalQty) : totalQty.toFixed(2),
+          dn_amount_total: '¥' + money(totalAmount),
+          dn_paid_total: '¥' + money(paidAmount),
+          dn_discount: bill.discount == null ? '--' : String(bill.discount),
+          dn_discount_amount: bill.discountMoney == null ? '--' : money(bill.discountMoney),
+          dn_real_amount: bill.discountLastMoney == null ? money(totalAmount) : money(bill.discountLastMoney),
+          dn_back_amount: bill.backAmount == null ? '0.00' : money(bill.backAmount),
+          dn_status: statusMap[String(bill.status)] || (bill.status == null ? '--' : String(bill.status))
+        }
+        const rows = items.map(item => {
+          const amount = num(item.allPrice) || num(item.unitPrice) * num(item.operNumber)
+          return {
+            name: item.materialName || item.name || '',
+            spec: this.itemSpec(item),
+            qty: Number.isInteger(num(item.operNumber)) ? String(num(item.operNumber)) : num(item.operNumber).toFixed(2),
+            price: money(item.unitPrice),
+            amount: money(amount)
+          }
+        })
+        try {
+          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
+            type: 'delivery',
+            number: bill.number,
+            values: values,
+            rows: rows
+          }))
+        } catch (e) { /* 忽略存储异常 */ }
+        this.$refs.deliveryPrintModal.openByType('delivery')
       },
       // 审核 / 反审核
       mobileSetStatus (bill, status) {
@@ -530,6 +664,58 @@
             })
           }
         })
+      },
+      // 手机端搜索：关键字实时过滤卡片（单号/会员/商品/备注）
+      mobileSearch (keyword) {
+        this.mobileKeyword = (keyword || '').trim()
+      },
+      // 手机端批量删除
+      mobileBatchDel () {
+        if (this.mobileSelectedIds.length === 0) {
+          this.$message.warning('请选择一条记录！')
+          return
+        }
+        const that = this
+        this.$confirm({
+          title: '确认操作',
+          content: '是否删除选中数据?',
+          onOk () {
+            return postAction(that.url.deleteBatch, { ids: that.mobileSelectedIds.join(',') }).then(res => {
+              if (res && res.code === 200) {
+                that.$message.success('删除成功')
+                that.mobileSelectedIds = []
+                that.loadTodayBills()
+                that.loadData()
+              } else if (res && res.data) {
+                that.$message.warning(res.data.message || res.data)
+              }
+            })
+          }
+        })
+      },
+      // 手机端批量审核 / 反审核
+      mobileBatchSetStatus (status) {
+        if (this.mobileSelectedIds.length === 0) {
+          this.$message.warning('请选择一条记录！')
+          return
+        }
+        const that = this
+        this.$confirm({
+          title: '确认操作',
+          content: status === 1 ? '是否审核选中单据?' : '是否反审核选中单据?',
+          onOk () {
+            return postAction(that.url.batchSetStatusUrl, { status: status, ids: that.mobileSelectedIds.join(',') + ',' }).then(res => {
+              if (res && res.code === 200) {
+                that.$message.success(status === 1 ? '审核成功' : '反审核成功')
+                that.mobileSelectedIds = []
+                that.loadTodayBills()
+                that.loadData()
+              } else if (res && res.data) {
+                that.$message.warning(res.data.message || res.data)
+              }
+            })
+          }
+        })
       }
     }
   }
@@ -537,18 +723,25 @@
 <style scoped>
   @import '~@assets/less/common.less'
 
-  /* 手机端：当日销售单卡片 */
-  .rol-mobile {
-    min-height: 100vh;
-    padding: 10px 12px 16px;
-    background: #f5f5f5;
-    box-sizing: border-box;
-  }
+  /* 手机端：当日销售单卡片（列表容器与内边距由标准搜索页统一提供） */
   .rol-mobile-tip {
     padding: 30px 0;
     text-align: center;
     font-size: 13px;
     color: #999;
+  }
+  /* 手机端条件筛选抽屉 */
+  .rol-filter-item {
+    margin-bottom: 16px;
+  }
+  .rol-filter-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #666;
+  }
+  .rol-filter-footer {
+    margin-top: 24px;
   }
   .rol-card {
     margin-bottom: 10px;

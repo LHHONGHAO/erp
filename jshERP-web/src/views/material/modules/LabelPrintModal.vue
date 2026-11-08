@@ -9,23 +9,27 @@
   <div>
   <!-- 手机端：两个全屏页面（打印标签页 / 设备列表页） -->
   <template v-if="isMobile">
-    <!-- 页面 1：打印标签预览 -->
-    <div v-if="visible && !showPrinterSheet" class="lp-mobile-page">
-      <!-- 顶栏：蓝底 + 白色返回 + 标题 + 设置 -->
-      <div class="lmp-header lmp-header-blue">
-        <a-icon class="lmp-back" type="arrow-left" @click="handleCancel" />
-        <div class="lmp-title-block">
-          <div class="lmp-title">{{ mobileTitle }}</div>
-          <div class="lmp-subtitle">{{ mobileSubtitle }}</div>
-        </div>
-        <a-icon v-if="template || isRoutePrintPage" class="lmp-settings" type="setting" @click="handleEdit" />
-        <span v-else class="lmp-settings placeholder" />
-      </div>
+    <!-- 页面 1：打印标签预览（标准页面弹层：标题居中 + 右侧关闭，无返回） -->
+    <mobile-modal-page
+      :visible="visible && !showPrinterSheet"
+      :title="mobileTitle"
+      :subtitle="mobileSubtitle"
+      @close="handleCancel">
+      <template #actions>
+        <a-icon v-if="template || directEntry" class="mmp-icon" type="edit" title="编辑模板" @click="handleEdit" />
+      </template>
 
       <!-- 主内容 -->
       <div class="lmp-content" :class="{ 'lmp-empty': !template }">
         <template v-if="!template">
-          <a-alert type="info" show-icon :message="emptyMessage" description="可点击右上角设置图标创建模板" />
+          <a-alert type="info" show-icon :message="emptyMessage" description="可点击右上角编辑图标创建模板" />
+          <a-button
+            v-if="type === 'member'"
+            type="primary"
+            size="large"
+            class="lmp-empty-create"
+            icon="plus"
+            @click="handleCreateTemplate">创建会员标签模板</a-button>
         </template>
         <template v-else>
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
@@ -107,18 +111,20 @@
       </div>
 
       <!-- 底部打印按钮 -->
-      <div class="lmp-footer">
-        <a-button
-          type="primary"
-          block
-          size="large"
-          class="lmp-print-btn"
-          :disabled="!template || !canPrintMobile"
-          :loading="printing"
-          @click="handlePrint"
-        >打印</a-button>
-      </div>
-    </div>
+      <template #footer>
+        <div class="lmp-footer">
+          <a-button
+            type="primary"
+            block
+            size="large"
+            class="lmp-print-btn"
+            :disabled="!template || !canPrintMobile"
+            :loading="printing"
+            @click="handlePrint"
+          >打印</a-button>
+        </div>
+      </template>
+    </mobile-modal-page>
 
     <!-- 页面 2：设备列表（蓝顶栏 + 下划线 tab + 打印机列表） -->
     <div v-if="visible && showPrinterSheet && !wifiAddStep" class="lp-mobile-page">
@@ -560,6 +566,7 @@
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
   import LabelPaper from '@/views/material/modules/LabelPaper'
+  import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { getAction, postAction } from '@/api/manage'
   import {
     DEFAULT_PRINTER_PORT,
@@ -576,7 +583,7 @@
   var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
-    components: { LabelPaper },
+    components: { LabelPaper, MobileModalPage },
     data() {
       return {
         visible: false,
@@ -678,16 +685,12 @@
       // 手机端顶栏标题：模板名，无模板时取 SKU 名称
       mobileTitle() {
         if (this.template) return this.template.name || '标签打印'
-        var titles = { delivery: '发货单打印', receipt: '小票打印' }
+        var titles = { delivery: '发货单打印', receipt: '小票打印', member: '会员打印' }
         return titles[this.type] || '标签打印'
-      },
-      // 路由页（/label/print-mobile）：顶栏设置图标始终可用，用于跳转统一编辑页
-      isRoutePrintPage() {
-        return !!(this.$route && this.$route.path === '/label/print-mobile')
       },
       // 空状态提示：按模板类型区分文案
       emptyMessage() {
-        var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板' }
+        var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板', member: '暂无可用会员标签模板' }
         return msgs[this.type] || '该商品暂无可用标签模板'
       },
       // 手机端顶栏副标题：尺寸 + 列数
@@ -883,46 +886,6 @@
         if (self.isMobile && self.visible) self.updatePreviewScale()
       }
       window.addEventListener('resize', this._onResize)
-      // 路由入口（/label/print-mobile）→ 自动打开
-      if (this.$route && this.$route.path === '/label/print-mobile') {
-        var q = this.$route.query || {}
-        this.visible = true
-        this.record = {}
-        this.sku = {}
-        this.allAttrs = this.buildAttrList()
-        this.type = q.type || 'delivery'
-        // 统一逻辑：优先按类型从统一模板存储读取模板，读不到再用编辑页快照兜底
-        // 关键：预览只接受标准化后的模板结构（selectedAttrs/attrStyles/attrLabels/尺寸），
-        // 模板存储里可能是 v3 elements、旧 platformConfig 或编辑器快照，先规整再渲染
-        this.loadRouteTemplate(q).then(function(raw) {
-          var tpl = self.normalizeTemplate(raw)
-          if (tpl) {
-            self.applyTemplate(tpl, true)
-            // 发货单/小票的字段不在 label 的 allAttrs 里 → 补回缺失字段为自定义条目
-            self.restoreMissingAttrs(self.selectedAttrs)
-            // 模板只提供布局，业务值由上一页快照带入（结构与模板分离）
-            self.applySnapshotValues()
-          } else {
-            self.applySnapshot()
-          }
-          self.$nextTick(function() { self.updatePreviewScale() })
-        }).catch(function() {
-          // 模板读取异常不能把整页打空，退回编辑快照/空状态
-          self.applySnapshot()
-          self.$nextTick(function() { self.updatePreviewScale() })
-        })
-        // 恢复上次使用的打印机并加载设备列表，保证“打印”按钮可用
-        var last = null
-        try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e2) { last = null }
-        if (last && last.type) {
-          this.printerType = last.type
-          if (last.type === 'backend') this.selectedPrinter = last.name || undefined
-          else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
-          else this.selectedPrinter = undefined
-        }
-        this.loadPrinters()
-        this.loadWifiPrinters()
-      }
     },
     beforeDestroy() {
       if (!this._mql) return
@@ -1000,7 +963,58 @@
           if (!alive[key]) self.$delete(self.codeImages, key)
         })
       },
+      // 以弹层方式直接打开（不跳路由）：零售出库「发货」、会员打印、标签编辑页「打印」等场景调用
+      // 数据来源：模板取模板存储，业务值取 sessionStorage 快照
+      // options.templateId / options.name：指定标签模板（编辑页打印时传入当前模板）
+      // options.directEntry === false：编辑按钮不做路由跳转（由父页面自行处理）
+      openByType(type, options) {
+        var self = this
+        var opts = options || {}
+        this.directEntry = opts.directEntry !== false
+        this.type = type || 'delivery'
+        this.record = {}
+        this.sku = {}
+        this.allAttrs = this.buildAttrList()
+        this.copies = 1
+        this.printRotation = 0
+        this.discoveredPrinter = null
+        this.btDevice = null
+        this.activeWifiId = null
+        this.showPrinterSheet = false
+        this.wifiAddStep = ''
+        this.visible = true
+        this.loadRouteTemplate({ type: this.type, templateId: opts.templateId, name: opts.name }).then(function(raw) {
+          var tpl = self.normalizeTemplate(raw)
+          if (tpl) {
+            self.applyTemplate(tpl, true)
+            self.restoreMissingAttrs(self.selectedAttrs)
+            self.applySnapshotValues()
+          } else {
+            self.applySnapshot()
+          }
+          self.$nextTick(function() { self.updatePreviewScale() })
+        }).catch(function() {
+          self.applySnapshot()
+          self.$nextTick(function() { self.updatePreviewScale() })
+        })
+        // 恢复上次使用的打印机并加载设备列表，保证「打印」按钮可用
+        var last = null
+        try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e) { last = null }
+        if (last && last.type) {
+          this.printerType = last.type
+          if (last.type === 'backend') this.selectedPrinter = last.name || undefined
+          else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
+          else this.selectedPrinter = undefined
+        }
+        this.loadPrinters()
+        this.loadWifiPrinters()
+        if (this.isMobile) {
+          this.$nextTick(function() { self.updatePreviewScale() })
+          setTimeout(function() { self.updatePreviewScale() }, 300)
+        }
+      },
       open(record, sku, categoryTree, preferredTpl) {
+        this.directEntry = false
         this.record = record || {}
         this.sku = sku || {}
         this.categoryTree = categoryTree || []
@@ -1396,8 +1410,13 @@
             return tpl || null
           }).catch(function() { return null })
         }
-        if (this.type === 'receipt') {
-          return getAction('/platformConfig/getUiConfig', { key: 'receipt_layout' }).then(function(res) {
+        if (this.type === 'receipt' || this.type === 'member') {
+          var isMember = this.type === 'member'
+          var cfgKey = isMember ? 'member_layout' : 'receipt_layout'
+          var defaultName = isMember ? '会员标签模板' : '小票模板'
+          var defaultWidth = isMember ? 320 : 380
+          var defaultHeight = isMember ? 240 : 600
+          return getAction('/platformConfig/getUiConfig', { key: cfgKey }).then(function(res) {
             var cfg = res && res.code === 200 ? res.data : null
             if (typeof cfg === 'string') {
               try { cfg = JSON.parse(cfg) } catch (e) { cfg = null }
@@ -1405,14 +1424,14 @@
             if (cfg && cfg.config != null && !cfg.selectedAttrs && !cfg.elements) cfg = cfg.config
             if (!cfg || !cfg.selectedAttrs || !cfg.selectedAttrs.length) return null
             return {
-              id: 'receipt_layout',
-              name: cfg.name || '小票模板',
-              businessType: 'receipt.layout',
+              id: cfgKey,
+              name: cfg.name || defaultName,
+              businessType: isMember ? 'member.layout' : 'receipt.layout',
               selectedAttrs: cfg.selectedAttrs,
               attrStyles: cfg.attrStyles || {},
               attrLabels: cfg.attrLabels || {},
-              labelWidth: cfg.width || cfg.labelWidth || 380,
-              labelHeight: cfg.height || cfg.labelHeight || 600
+              labelWidth: cfg.width || cfg.labelWidth || defaultWidth,
+              labelHeight: cfg.height || cfg.labelHeight || defaultHeight
             }
           }).catch(function() { return null })
         }
@@ -1433,7 +1452,7 @@
       // 模板结构标准化：把「统一模板表 v3 elements / 旧 platformConfig / 编辑器快照」
       // 统一转换成本页预览使用的编辑器结构，避免预览模块先于标准化读原始结构导致不兼容
       normalizeTemplate(raw) {
-        var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板' }
+        var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板', member: '会员标签模板' }
         var src = raw
         if (typeof src === 'string') {
           try { src = JSON.parse(src) } catch (e) { return null }
@@ -1459,7 +1478,7 @@
         // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
         if (!selectedAttrs.length) return null
         var size = (schema && schema.size) || {}
-        var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600] }
+        var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600], member: [320, 240] }
         var fallback = defaults[this.type] || defaults.label
         var width = size.width ? mmToPx(size.width) : (base.labelWidth || base.width)
         var height = size.height ? mmToPx(size.height) : (base.labelHeight || base.height)
@@ -1635,6 +1654,22 @@
           exists[key] = true
         })
       },
+      // 无模板时：带会员数据进入统一标签编辑页，编辑页自动加载会员数据表与字段
+      handleCreateTemplate() {
+        var ctx = null
+        try { ctx = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { ctx = null }
+        try {
+          sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
+            record: (ctx && ctx.record) || this.record || {},
+            sku: {},
+            template: null,
+            provider: 'table.jsh_supplier',
+            businessType: 'member'
+          }))
+        } catch (e) { /* 忽略 */ }
+        this.visible = false
+        this.$router.push({ path: '/label/edit-mobile', query: { type: 'member', businessType: 'member' } })
+      },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
       handleEdit() {
@@ -1645,19 +1680,19 @@
           templateId: this.template ? this.template.id : null
         }
         this.visible = false
-        // 路由页没有父组件监听 edit → 直接跳转统一标签编辑页
-        if (this.isRoutePrintPage && !(this.$listeners && this.$listeners.edit)) {
+        // 弹层直达方式（无父组件监听 edit）→ 直接跳转统一标签编辑页
+        if (this.directEntry && !(this.$listeners && this.$listeners.edit)) {
           // 把商品数据和当前模板带到编辑页，否则编辑页拿不到 record/sku，字段会全部为空
           try {
             sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
               record: this.record || {},
               sku: this.sku || {},
               template: this.template || null,
-              provider: (this.template && this.template.provider) || (this.type === 'delivery' ? 'sales.delivery' : 'product.label'),
-              businessType: this.type === 'delivery' ? 'delivery' : 'product'
+              provider: (this.template && this.template.provider) || (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label')),
+              businessType: this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product')
             }))
           } catch (e) { /* 忽略 */ }
-          var query = { type: this.type || 'label', businessType: this.type === 'delivery' ? 'delivery' : 'product' }
+          var query = { type: this.type || 'label', businessType: this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product') }
           if (payload.templateId) query.templateId = payload.templateId
           this.$router.push({ path: '/label/edit-mobile', query: query })
           return
@@ -2466,7 +2501,9 @@
   }
   .lmp-header-blue .lmp-title,
   .lmp-header-blue .lmp-back,
-  .lmp-header-blue .lmp-settings {
+  .lmp-header-blue .lmp-settings,
+  .lmp-header-blue .lmp-edit,
+  .lmp-header-blue .lmp-close {
     color: #fff;
   }
   .lmp-header-blue .lmp-subtitle {
@@ -2474,7 +2511,9 @@
   }
   /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
   .lmp-back,
-  .lmp-settings {
+  .lmp-settings,
+  .lmp-edit,
+  .lmp-close {
     font-size: 22px;
     color: #333;
     cursor: pointer;
@@ -2486,10 +2525,17 @@
     align-items: center;
     justify-content: center;
   }
+  /* 右侧「编辑」「关闭」：两个按钮并排，尺寸略小于返回按钮，避免挤压标题 */
+  .lmp-edit,
+  .lmp-close {
+    width: 44px;
+    font-size: 21px;
+  }
   .lmp-back {
     margin-left: 0;
   }
-  .lmp-settings.placeholder {
+  .lmp-settings.placeholder,
+  .lmp-edit.placeholder {
     visibility: hidden;
   }
   .lmp-title-block {
@@ -2526,7 +2572,16 @@
   }
   .lmp-content.lmp-empty {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 空状态提示占满宽度，创建模板按钮居中显示 */
+  .lmp-content.lmp-empty .ant-alert {
+    align-self: stretch;
+  }
+  .lmp-empty-create {
+    margin-top: 16px;
   }
   /* 预览区：flex 撑满剩余空间，Math.min 完整显示 */
   .lmp-preview-area {

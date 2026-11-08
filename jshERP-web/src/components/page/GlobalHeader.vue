@@ -16,17 +16,10 @@
       <span v-if="device === 'desktop'" class="company-name">{{ companyName }}</span>
       <span v-else-if="device !== 'mobile'">{{ systemTitle }}</span>
       <!-- 手机端页面级顶部按钮（由各页面注册，如设置图标、保存等），主页不注册即为默认按钮 -->
-      <div v-if="device === 'mobile' && mobileHeaderActions.length > 0" class="mobile-header-actions">
-        <span
-          v-for="act in mobileHeaderActions"
-          :key="act.key"
-          class="mha-btn"
-          :class="{ 'mha-primary': act.type === 'primary' }"
-          @click="act.handler && act.handler()">
-          <a-icon v-if="act.icon" :type="act.icon" />
-          <span v-if="act.text" class="mha-text">{{ act.text }}</span>
-        </span>
-      </div>
+      <!-- 复用标准页顶栏按钮组，保证与标准搜索页的按钮尺寸/图标/顺序完全一致 -->
+      <mobile-header-actions
+        v-if="device === 'mobile' && mobileHeaderActions.length > 0"
+        :actions="mobileBarActions" />
       <jump-info ref="jumpModal"></jump-info>
       <!-- 手机端标准功能页不渲染 UserMenu（搜索/主页/提醒/退出登录），仅主页保留；桌面端不受影响 -->
       <user-menu v-if="device !== 'mobile' || isHomePage" :theme="theme" @searchGlobalHeader="searchGlobalHeader" />
@@ -60,6 +53,7 @@
   import UserMenu from '../tools/UserMenu'
   import SMenu from '../menu/'
   import Logo from '../tools/Logo'
+  import MobileHeaderActions from '../mobile/MobileHeaderActions'
   import { getCurrentSystemConfig } from '@/api/api'
   import { mixin } from '@/utils/mixin.js'
   import { mobilePageHeader } from '@/utils/mobilePageHeader'
@@ -70,7 +64,8 @@
       JumpInfo,
       UserMenu,
       SMenu,
-      Logo
+      Logo,
+      MobileHeaderActions
     },
     mixins: [mixin],
     props: {
@@ -131,6 +126,20 @@
       // 当前页面注册的手机端顶部按钮
       mobileHeaderActions() {
         return mobilePageHeader.actions
+      },
+      // 转换为标准顶栏按钮组格式：{ key, icon, title, text, primary, visible, click }
+      mobileBarActions() {
+        return (this.mobileHeaderActions || []).map(function (act) {
+          return {
+            key: act.key,
+            icon: act.icon,
+            text: act.text,
+            title: act.title || act.text || '',
+            primary: act.type === 'primary',
+            visible: act.visible !== false,
+            click: act.handler
+          }
+        })
       }
     },
     watch: {
@@ -306,45 +315,19 @@
       vertical-align: middle;
     }
 
+    /* 标题：与标准顶栏（MobileTopBar）完全一致，左对齐、16px/500、返回区后留 4px */
     .mobile-title {
       flex: 1 1 auto;
       min-width: 0;
-      text-align: center;
+      padding-left: 4px;
+      text-align: left;
       font-size: 16px;
       font-weight: 500;
       color: #fff;
-    }
-
-    /* 页面级顶部按钮（右侧，位于默认按钮左侧） */
-    .mobile-header-actions {
-      float: right;
-      height: @height;
-      display: flex;
-      align-items: center;
-
-      .mha-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        padding: 0 12px;
-        color: #fff;
-        font-size: 15px;
-        cursor: pointer;
-
-        .anticon {
-          font-size: 20px;
-        }
-        .mha-text {
-          margin-left: 4px;
-        }
-        &.mha-primary {
-          font-weight: 500;
-        }
-        &:active {
-          background: rgba(255, 255, 255, 0.2);
-        }
-      }
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   }
 
@@ -355,12 +338,13 @@
 
   .mobile-title {
     display: inline-block;
-    max-width: 42vw;
+    max-width: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     vertical-align: middle;
     font-size: 16px;
+    font-weight: 500;
     padding-left: 4px;
   }
 

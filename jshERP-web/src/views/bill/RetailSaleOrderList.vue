@@ -182,18 +182,12 @@
         <canvas ref="scanOverlay" class="rso-scan-overlay"></canvas>
       </div>
       <a-icon type="close" class="rso-scan-close" @click="closeScanner" />
-      <!-- 手动输入条码搜索：取景框下方 -->
-      <div v-if="!multiScanMode" class="rso-scan-manual" :class="{ 'rso-scan-manual-focused': manualFocused }">
-        <a-input v-model="manualCode" placeholder="手动输入条码搜索" allowClear
-                 class="rso-scan-manual-input" @focus="manualFocused = true" @blur="manualFocused = false"
-                 @pressEnter="submitManualCode" />
-        <a-button type="primary" @click="submitManualCode">搜索</a-button>
-      </div>
       <!-- 页面内文字提示：识别结果、商品是否存在、异常都在这里显示，不再弹框 -->
       <div class="rso-scan-tip" :class="scanTipClass">{{ scanTip }}</div>
-      <!-- 拍照识别：只分析取景框内的图像 -->
+      <!-- 条码扫描 / 文字识别：都只分析取景框内的图像 -->
       <div v-if="!multiScanMode" class="rso-scan-capture">
-        <a-button type="primary" size="large" block :loading="capturing" @click="shoot">拍照识别</a-button>
+        <a-button type="primary" size="large" class="rso-scan-btn" :loading="capturing" @click="shoot">条码扫描</a-button>
+        <a-button type="primary" size="large" class="rso-scan-btn" :loading="ocrLoading" @click="recognizeText">文字识别</a-button>
       </div>
       <!-- 焦距调节：默认后置摄像头，初始焦距为原生焦距的三分之一 -->
       <div v-if="!multiScanMode && zoomSupported" class="rso-scan-zoom">
@@ -340,9 +334,9 @@
         // 商品选择
         materialVisible: false,
         scanBarCode: '',
-        // 扫码页手动输入条码
-        manualCode: '',
-        manualFocused: false,
+        // 文字识别（OCR）状态与结果
+        ocrLoading: false,
+        ocrText: '',
         // 结算弹窗（单据信息）
         settleVisible: false
       }
@@ -375,6 +369,7 @@
           return `画面中有 ${this.detectedCodes.length} 个码，请点击要使用的方框`
         }
         if (this.scanState === 'SUCCESS') {
+          if (this.ocrText) return `识别文字：${this.ocrText}`
           const name = this.scanResult && this.scanResult.name
           return name ? `商品添加成功：${name}` : '商品添加成功'
         }
@@ -384,12 +379,12 @@
             : (this.scanError || '条码未识别，请将条码完整放入框内后重试')
         }
         if (this.scanState === 'ERROR') {
-          return this.scanError || '摄像头或识别异常，可点击「手动输入」'
+          return this.scanError || '摄像头或识别异常，请重试'
         }
         const tips = {
           INITIAL: '正在准备扫码...',
           REQUESTING: '正在请求摄像头权限...',
-          SCANNING: '将条码/二维码完整放入框内，点击「拍照识别」',
+          SCANNING: '将条码/二维码完整放入框内，点击「条码扫描」或「文字识别」',
           RECOGNIZING: '正在识别框内图像...',
           SEARCHING: '正在搜索商品...',
           STOPPED: '已停止扫描'
@@ -440,6 +435,8 @@
         this.scanError = ''
         this.scanState = SCANNER_STATE.INITIAL
         this.searching = false
+        this.ocrLoading = false
+        this.ocrText = ''
         this.certGuideVisible = false
         this.$nextTick(() => {
           this.startScan()
@@ -491,7 +488,7 @@
           })
         } catch (e) {}
       },
-      // 启动摄像头：只做预览，不自动解码；识别在点击「拍照识别」时只分析取景框区域
+      // 启动摄像头：只做预览，不自动解码；识别在点击「条码扫描」或「文字识别」时只分析取景框区域
       startScan () {
         // 统一申请摄像头权限：非 HTTPS 安全连接下浏览器不会提供摄像头，直接展示证书安装说明
         if (!this.cameraAvailable()) {
@@ -505,6 +502,7 @@
         this.stopScan()
         this.scanResult = null
         this.scanError = ''
+        this.ocrText = ''
         this.detectedCodes = []
         this.screenBoxes = []
         this.multiScanMode = false
@@ -575,13 +573,25 @@
       changeZoom (direction) {
         this.applyZoom(this.zoomValue + direction * this.zoomStepValue)
       },
-      // 拍照入口：截取取景框内的画面交给后端识别
+      // 条码扫描入口：截取取景框内的画面交给条码识别模块
       shoot () {
         // 拍照是用户点击动作，这里解锁音频，后续提示音才能正常播放
         this.unlockAudio()
         this.captureFrame()
       },
-      // 拍照识别：只截取取景框内的画面，放大后交给后端识别
+      // 截取取景框内的画面（base64 JPEG），供条码识别与文字识别共用
+      captureFrameImage () {
+        const video = this.$refs.scanVideo
+        const rect = this.getFrameSourceRect(video)
+        // 框内区域放大后再识别，小条码/小文字更容易解出
+        const scale = Math.min(3, Math.max(1, 1280 / rect.w))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(rect.w * scale)
+        canvas.height = Math.round(rect.h * scale)
+        canvas.getContext('2d').drawImage(video, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height)
+        return canvas.toDataURL('image/jpeg', 0.92)
+      },
+      // 条码扫描：只截取取景框内的画面，放大后交给后端条码识别模块
       captureFrame () {
         if (this.searching || this.capturing) return
         const video = this.$refs.scanVideo
@@ -591,16 +601,10 @@
           return
         }
         this.capturing = true
+        this.ocrText = ''
         this.scanState = SCANNER_STATE.RECOGNIZING
         try {
-          const rect = this.getFrameSourceRect(video)
-          // 框内区域放大后再识别，小条码更容易解出
-          const scale = Math.min(3, Math.max(1, 1280 / rect.w))
-          const canvas = document.createElement('canvas')
-          canvas.width = Math.round(rect.w * scale)
-          canvas.height = Math.round(rect.h * scale)
-          canvas.getContext('2d').drawImage(video, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height)
-          const image = canvas.toDataURL('image/jpeg', 0.92)
+          const image = this.captureFrameImage()
           postAction('/material/scanFrame', { image }).then(response => {
             this.capturing = false
             if (!this.scanVisible) return
@@ -632,24 +636,70 @@
           this.playFeedbackSound(false)
         }
       },
-      // 取景框：宽度不变（屏幕内容宽 86%），高度缩为原来高度的 2/3，中线位于屏幕高度 1/3 处
+      // 文字识别：调用 OCR 接口识别取景框内的图像文字
+      recognizeText () {
+        this.unlockAudio()
+        if (this.searching || this.ocrLoading) return
+        const video = this.$refs.scanVideo
+        if (!video || !video.videoWidth) {
+          this.scanState = SCANNER_STATE.ERROR
+          this.scanError = '摄像头尚未就绪，请稍候再试'
+          return
+        }
+        this.ocrLoading = true
+        this.ocrText = ''
+        this.scanState = SCANNER_STATE.RECOGNIZING
+        try {
+          const image = this.captureFrameImage()
+          postAction('/ocr/recognizeProductByBase64', { imageBase64: image }).then(response => {
+            this.ocrLoading = false
+            if (!this.scanVisible) return
+            const data = (response && response.data) || {}
+            const text = data.rawText || ''
+            if (!text) {
+              if (response && response.code !== 200) {
+                this.scanState = SCANNER_STATE.ERROR
+                this.scanError = '文字识别失败：' + (data.message || 'OCR服务不可用')
+              } else {
+                this.scanState = SCANNER_STATE.NOT_FOUND
+                this.scanError = '未识别到文字，请将文字完整放入框内后重试'
+              }
+              this.playFeedbackSound(false)
+              return
+            }
+            this.ocrText = text
+            this.scanState = SCANNER_STATE.SUCCESS
+            this.playFeedbackSound(true)
+          }).catch(error => {
+            this.ocrLoading = false
+            if (!this.scanVisible) return
+            this.scanState = SCANNER_STATE.ERROR
+            this.scanError = '文字识别失败：' + (error && error.message ? error.message : '未知错误')
+            this.playFeedbackSound(false)
+          })
+        } catch (error) {
+          this.ocrLoading = false
+          this.scanState = SCANNER_STATE.ERROR
+          this.scanError = '截取画面失败：' + (error && error.message ? error.message : '未知错误')
+          this.playFeedbackSound(false)
+        }
+      },
+      // 取景框：宽度与屏幕对齐，高度缩为原来高度的 2/3，中线位于屏幕高度 1/3 处
       getGuideBox (elW, elH) {
         const video = this.$refs.scanVideo
         const vw = (video && video.videoWidth) || elW
         const vh = (video && video.videoHeight) || elH
         const scale = Math.min(elW / vw, elH / vh)
-        const dispW = vw * scale
         const dispH = vh * scale
-        const offX = (elW - dispW) / 2
-        // 宽度保持原值，只压缩高度
-        const w = dispW * 0.86
+        // 宽度与屏幕宽度对齐，只压缩高度
+        const w = elW
         const oldH = Math.min(w / 2.2, dispH * 0.52)
         const h = oldH * 2 / 3
         // 取景框垂直中线对齐屏幕高度的三分之一处
         let y = elH / 3 - h / 2
         if (y < 0) y = 0
         if (y + h > elH - 8) y = Math.max(0, elH - h - 8)
-        return { x: offX + (dispW - w) / 2, y, w, h }
+        return { x: 0, y, w, h }
       },
       // 取景框对应的视频原始像素区域（拍照时按这个区域裁剪）
       getFrameSourceRect (video) {
@@ -819,17 +869,8 @@
         this.stopScan(SCANNER_STATE.STOPPED)
         this.scanVisible = false
         this.certGuideVisible = false
-        this.manualCode = ''
-      },
-      // 手动输入条码搜索：与扫码识别走同一套搜索逻辑
-      submitManualCode () {
-        const code = (this.manualCode || '').trim()
-        if (!code) {
-          this.scanError = '请输入条码'
-          this.scanState = SCANNER_STATE.ERROR
-          return
-        }
-        this.handleScannedContent(code, 'MANUAL', 'MANUAL')
+        this.ocrText = ''
+        this.ocrLoading = false
       },
       // 关闭证书安装说明
       closeCertGuide () {
@@ -843,7 +884,7 @@
         this.$nextTick(() => this.startScan())
       },
       /**
-       * 识别内容统一入口（拍照识别、多码框选共用）。
+       * 识别内容统一入口（条码扫描、多码框选共用）。
        * content 原样提交，不截断、不转换、不删除前导零。
        */
       handleScannedContent (content, format, type) {
@@ -1709,6 +1750,8 @@
     left: 50%;
     transform: translateX(-50%);
     max-width: 86%;
+    max-height: 46vh;
+    overflow-y: auto;
     z-index: 2;
     padding: 6px 12px;
     border-radius: 6px;
@@ -1747,40 +1790,19 @@
       color: #fff;
     }
   }
-  /* 手动输入条码搜索：取景框下方，输入时自动上移避开软键盘 */
-  .rso-scan-manual {
-    position: absolute;
-    left: 50%;
-    bottom: 210px;
-    transform: translateX(-50%);
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    width: 86%;
-    gap: 8px;
-    transition: bottom 0.2s;
-    .rso-scan-manual-input {
-      flex: 1;
-      height: 36px !important;
-      padding: 0 10px !important;
-      border: 1px solid rgba(255, 255, 255, 0.6) !important;
-      border-radius: 6px !important;
-      background: #fff !important;
-      box-shadow: none !important;
-      color: #333;
-    }
-    &.rso-scan-manual-focused {
-      bottom: 45%;
-    }
-  }
-  /* 拍照识别按钮：页面底部居中 */
+  /* 条码扫描 / 文字识别按钮：页面底部居中，两个按钮等宽并排 */
   .rso-scan-capture {
     position: absolute;
     bottom: 96px;
     left: 50%;
-    width: 60%;
+    width: 86%;
     transform: translateX(-50%);
     z-index: 3;
+    display: flex;
+    gap: 12px;
+    .rso-scan-btn {
+      flex: 1;
+    }
   }
 }
 </style>

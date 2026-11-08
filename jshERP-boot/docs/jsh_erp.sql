@@ -668,7 +668,7 @@ CREATE TABLE `jsh_platform_config`  (
   `id` bigint(0) NOT NULL AUTO_INCREMENT,
   `platform_key` varchar(100) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '关键词',
   `platform_key_info` varchar(100) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '关键词名称',
-  `platform_value` varchar(200) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '值',
+  `platform_value` text CHARACTER SET utf8 COLLATE utf8_general_ci NULL COMMENT '值',
   PRIMARY KEY (`id`) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 23 CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '平台参数' ROW_FORMAT = Dynamic;
 

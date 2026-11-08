@@ -22,10 +22,11 @@ export function fetchProviderFields(provider) {
 }
 
 /** 按业务单据 ID 取统一数据（预览与打印共用） */
-export function fetchLabelData(provider, documentId, subId) {
+export function fetchLabelData(provider, documentId, subId, businessType) {
   if (!provider || documentId == null || documentId === '') return Promise.resolve({})
   var params = { provider: provider, documentId: documentId }
   if (subId != null && subId !== '') params.subId = subId
+  if (businessType) params.businessType = businessType
   return getAction('/labelProvider/data', params).then(function(res) {
     return res && res.code === 200 ? (res.data || {}) : {}
   }).catch(function() {

@@ -4,24 +4,27 @@
     <mobile-search-page
       v-if="isNarrowScreen"
       v-model="mobileKeyword"
-      title="会员信息"
+      title="会员管理"
       placeholder="搜索姓名 / 电话"
       :show-scan="false"
       :show-camera="false"
-      :show-filter="false"
       @back="$router.back()"
-      @search="mobileSearch">
+      @search="mobileSearch"
+      @filter="filterDrawerVisible = true">
       <template #actions>
-        <div class="mm-header-actions">
-          <a-button v-if="btnEnableList.indexOf(1)>-1" type="primary" size="small" icon="plus" title="新增" @click="handleAdd" />
-          <a-button v-if="btnEnableList.indexOf(1)>-1" size="small" icon="import" title="导入" @click="handleImportXls" />
-          <a-button v-if="btnEnableList.indexOf(3)>-1" size="small" icon="download" title="导出" @click="handleExportXls('会员信息')" />
-        </div>
+        <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
 
       <!-- 会员卡片：姓名 + 电话 一行，地址换行 -->
       <div class="mm-list">
         <div v-for="item in dataSource" :key="item.id" class="mm-card">
+          <!-- 多选：与商品信息页一致，无外框仅勾图标 -->
+          <span
+            class="mm-card-check"
+            :class="{ 'is-checked': isMobileSelected(item) }"
+            @click.stop="toggleMobileSelect(item)">
+            <a-icon type="check" />
+          </span>
           <div class="mm-card-main">
             <div class="mm-card-line">
               <span class="mm-card-name">{{ item.contacts || item.supplier || '-' }}</span>
@@ -30,8 +33,14 @@
             </div>
             <div class="mm-card-address">{{ item.address || '暂无地址' }}</div>
           </div>
-          <div v-if="btnEnableList.indexOf(1)>-1" class="mm-card-edit" @click.stop="handleEdit(item)">
-            <a-icon type="edit" />
+          <!-- 操作按钮：查看（会员详情）+ 打印（直接弹打印层） -->
+          <div class="mm-card-actions">
+            <div class="mm-card-btn" @click.stop="openPreview(item)">
+              <a-icon type="eye" />
+            </div>
+            <div class="mm-card-btn" @click.stop="printMember(item)">
+              <a-icon type="printer" />
+            </div>
           </div>
         </div>
         <div v-if="!loading && dataSource.length === 0" class="mm-empty">暂无会员</div>
@@ -47,8 +56,32 @@
       </div>
 
       <template #overlay>
+        <!-- 条件筛选抽屉 -->
+        <a-drawer
+          :visible="filterDrawerVisible"
+          placement="right"
+          title="条件筛选"
+          width="280"
+          @close="filterDrawerVisible = false">
+          <div class="mb-filter-item">
+            <span class="mb-filter-label">会员卡号</span>
+            <a-input v-model="queryParam.supplier" placeholder="请输入会员卡号" allow-clear />
+          </div>
+          <div class="mb-filter-item">
+            <span class="mb-filter-label">联系人</span>
+            <a-input v-model="queryParam.contacts" placeholder="请输入联系人" allow-clear />
+          </div>
+          <div class="mb-filter-item">
+            <span class="mb-filter-label">电话</span>
+            <a-input v-model="queryParam.telephone" placeholder="请输入电话" allow-clear />
+          </div>
+          <div class="mb-filter-footer">
+            <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
+          </div>
+        </a-drawer>
         <member-modal ref="modalForm" @ok="modalFormOk"></member-modal>
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
+        <member-preview ref="memberPreview"></member-preview>
       </template>
     </mobile-search-page>
 
@@ -163,8 +196,10 @@
 <!-- f r o m 7 5  2 7 1  8 9 2 0 -->
 <script>
   import MemberModal from './modules/MemberModal'
+  import MemberPreview from './modules/MemberPreview'
   import ImportFileModal from '@/components/tools/ImportFileModal'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
+  import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import { postAction } from '@/api/manage'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import JDate from '@/components/jeecg/JDate'
@@ -174,15 +209,19 @@
     mixins:[JeecgListMixin],
     components: {
       MemberModal,
+      MemberPreview,
       ImportFileModal,
       JDate,
-      MobileSearchPage
+      MobileSearchPage,
+      MobileHeaderActions
     },
     data () {
       return {
         // 手机端：是否窄屏 + 搜索关键字
         isNarrowScreen: false,
         mobileKeyword: '',
+        // 手机端条件筛选抽屉
+        filterDrawerVisible: false,
         labelCol: {
           span: 5
         },
@@ -264,6 +303,18 @@
     computed: {
       importExcelUrl: function () {
         return `${window._CONFIG['domianURL']}${this.url.importExcelUrl}`;
+      },
+      // 手机端顶栏图标按钮（与商品信息页共用 MobileHeaderActions 组件）
+      mobileHeaderActions() {
+        const can = this.btnEnableList
+        return [
+          { key: 'add', icon: 'plus', title: '新增', primary: true, visible: can.indexOf(1) > -1, click: this.handleAdd },
+          { key: 'delete', icon: 'delete', title: '删除', visible: can.indexOf(1) > -1, click: this.batchDel },
+          { key: 'enable', icon: 'check-square', title: '启用', visible: can.indexOf(1) > -1, click: () => this.batchSetStatus(true) },
+          { key: 'disable', icon: 'close-square', title: '禁用', visible: can.indexOf(1) > -1, click: () => this.batchSetStatus(false) },
+          { key: 'import', icon: 'import', title: '导入', visible: can.indexOf(1) > -1, click: () => this.handleImportXls() },
+          { key: 'export', icon: 'download', title: '导出', visible: can.indexOf(3) > -1, click: () => this.handleExportXls('会员信息') }
+        ]
       }
     },
     methods: {
@@ -294,6 +345,11 @@
         this.ipagination.current = page
         this.loadData(page)
       },
+      // 手机端筛选抽屉：按条件重新查询
+      applyMobileFilter() {
+        this.filterDrawerVisible = false
+        this.loadData(1)
+      },
       searchReset() {
         this.queryParam = {
           type:'会员',
@@ -314,6 +370,32 @@
         if(this.btnEnableList.indexOf(1)===-1) {
           this.$refs.modalForm.isReadOnly = true
         }
+      },
+      // 手机端：打开会员信息详情页（查看）
+      openPreview(item) {
+        this.$refs.memberPreview.open(item)
+      },
+      // 手机端：卡片「打印」直接弹出打印层，不再进入会员信息预览页
+      printMember(item) {
+        this.$refs.memberPreview.openPrint(item)
+      },
+      // 手机端卡片多选：当前行是否已选
+      isMobileSelected(item) {
+        return this.selectedRowKeys.indexOf(item.id) > -1
+      },
+      // 手机端卡片多选：切换勾选状态（复用弹窗/表格共用的 selectedRowKeys）
+      toggleMobileSelect(item) {
+        var keys = this.selectedRowKeys.slice()
+        var idx = keys.indexOf(item.id)
+        if (idx > -1) {
+          keys.splice(idx, 1)
+        } else {
+          keys.push(item.id)
+        }
+        var rows = this.dataSource.filter(function(row) {
+          return keys.indexOf(row.id) > -1
+        })
+        this.onSelectChange(keys, rows)
       },
       batchSetAdvanceIn() {
         if (this.selectedRowKeys.length <= 0) {
@@ -354,43 +436,36 @@
   .member-list-page {
     min-height: 100%;
   }
-  /* 顶栏右侧图标按钮 */
-  .mm-header-actions {
-    display: flex;
-    align-items: center;
-    height: 49px;
-  }
-  .mm-header-actions .ant-btn {
-    width: 36px;
-    height: 36px;
-    margin-left: 6px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-    color: #fff;
-    font-size: 18px;
-  }
-  .mm-header-actions .ant-btn:hover,
-  .mm-header-actions .ant-btn:focus,
-  .mm-header-actions .ant-btn:active {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: transparent;
-    color: #fff;
-  }
+  /* 顶栏右侧图标按钮：统一由 MobileHeaderActions 组件提供样式，与商品信息页共用 */
   .mm-list {
     padding: 0;
   }
   .mm-card {
     display: flex;
-    align-items: center;
-    padding: 16px;
+    align-items: flex-start;
+    padding: 10px 14px;
     margin-bottom: 10px;
     background: #fff;
     border-radius: 12px;
+  }
+  /* 多选勾图标：与商品信息页卡片一致（未选灰色、选中主题色） */
+  .mm-card-check {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-top: 1px;
+    margin-right: 4px;
+    font-size: 20px;
+    line-height: 1;
+    color: #c8c9cc;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .mm-card-check.is-checked {
+    color: #1890ff;
   }
   .mm-card-main {
     flex: 1;
@@ -421,23 +496,35 @@
     border-radius: 4px;
   }
   .mm-card-address {
-    margin-top: 8px;
+    margin-top: 4px;
     font-size: 14px;
     line-height: 1.5;
     color: #888;
     word-break: break-all;
   }
-  .mm-card-edit {
+  /* 查看/打印按钮：横向排列并顶部对齐，整体上移、压缩卡片高度 */
+  .mm-card-actions {
     flex-shrink: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: flex-end;
+    align-self: flex-start;
+    margin-top: -3px;
+    margin-left: 6px;
+  }
+  .mm-card-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 34px;
     height: 34px;
-    margin-left: 8px;
     font-size: 18px;
     color: #999;
     cursor: pointer;
+  }
+  .mm-card-btn + .mm-card-btn {
+    margin-left: 2px;
   }
   .mm-empty {
     padding: 40px 0;
@@ -449,5 +536,21 @@
     display: flex;
     justify-content: center;
     padding: 6px 0 12px;
+  }
+</style>
+
+<style>
+  /* 筛选抽屉挂载到 document.body，需使用全局样式 */
+  .mb-filter-item {
+    margin-bottom: 16px;
+  }
+  .mb-filter-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: #666;
+  }
+  .mb-filter-footer {
+    margin-top: 8px;
   }
 </style>

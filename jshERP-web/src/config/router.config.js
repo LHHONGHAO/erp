@@ -89,18 +89,6 @@ export const constantRouterMap = [
     }
   ] : []),
   {
-    path: '/bill/deliveryNote',
-    component: BlankLayout,
-    children: [
-      {
-        path: '',
-        name: 'DeliveryNote',
-        meta: { title: '发货单' },
-        component: () => import(/* webpackChunkName: "bill-delivery-note" */ '@/views/bill/DeliveryNote')
-      }
-    ]
-  },
-  {
     path: '/bill/deliveryNote/template',
     component: BlankLayout,
     children: [
@@ -117,12 +105,6 @@ export const constantRouterMap = [
     name: 'LabelEditMobile',
     component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelEditMobile'),
     meta: { title: '标签编辑' }
-  },
-  {
-    path: '/label/print-mobile',
-    name: 'LabelPrintMobile',
-    component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelPrintModal'),
-    meta: { title: '标签打印' }
   },
   {
     path: '/material/edit',

@@ -785,8 +785,13 @@
           letterSpacing: (s.letterSpacing || 0) + 'px',
           lineHeight: String(s.lineHeight || 1.3)
         }
-        // 未手动指定宽高时边框随文字自适应，字号/行距/字距变化时自动跟随
-        if (s.width) style.width = s.width + 'px'
+        // 指定宽度时文字按框内宽度自动换行（与打印一致）
+        if (s.width) {
+          style.width = s.width + 'px'
+          style.whiteSpace = 'pre-wrap'
+          style.wordBreak = 'break-all'
+          style.overflowWrap = 'anywhere'
+        }
         if (s.height) style.height = s.height + 'px'
         return style
       },

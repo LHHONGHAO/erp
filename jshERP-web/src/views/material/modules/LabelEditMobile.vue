@@ -386,6 +386,16 @@
       platformConfigKey: 'member_layout',
       defaultKeys: ['contacts', 'telephone', 'address'],
       successMsg: '会员标签模版已保存'
+    },
+    address: {
+      title: '地址打印',
+      defaultWidth: 320,
+      defaultHeight: 240,
+      attrsBuilder: 'address',
+      storage: 'platformConfig',
+      platformConfigKey: 'address_layout',
+      defaultKeys: ['contacts', 'telephone', 'address'],
+      successMsg: '地址打印模版已保存'
     }
   }
 
@@ -665,6 +675,7 @@
           case 'delivery': return this.buildDeliveryAttrs()
           case 'receipt': return this.buildReceiptAttrs()
           case 'member': return this.buildMemberAttrs()
+          case 'address': return this.buildAddressAttrs()
           case 'label':
           default: return buildLabelAttrs(this.record, this.sku)
         }
@@ -695,6 +706,26 @@
           mk('advance_in', '预付款', m.advanceIn),
           mk('description', '备注', m.description),
           mk('enabled', '状态', m.enabled === false ? '禁用' : '启用')
+        ]
+      },
+      /** 地址打印字段：只取地址识别页面输入框的数据（联系人/电话/邮箱/地址/公司） */
+      buildAddressAttrs() {
+        var m = this.record || {}
+        var mk = function(key, label, value) {
+          return {
+            key: key,
+            label: label,
+            value: value == null ? '' : String(value),
+            isCustom: false,
+            group: '地址信息'
+          }
+        }
+        return [
+          mk('contacts', '联系人', m.contacts),
+          mk('telephone', '电话', m.telephone),
+          mk('email', '电子邮箱', m.email),
+          mk('address', '地址', m.address),
+          mk('company', '公司', m.company)
         ]
       },
       /** 统一的模板加载入口，根据 storage 类型分发 */
@@ -894,7 +925,13 @@
           letterSpacing: (style.letterSpacing || 0) + 'px',
           lineHeight: style.lineHeight || 1.2
         }
-        if (style.width) result.width = style.width + 'px'
+        // 指定宽度时文字按框内宽度自动换行（与打印一致）
+        if (style.width) {
+          result.width = style.width + 'px'
+          result.whiteSpace = 'pre-wrap'
+          result.wordBreak = 'break-all'
+          result.overflowWrap = 'anywhere'
+        }
         if (style.height) result.height = style.height + 'px'
         return result
       },

@@ -40,6 +40,26 @@ function injectPrintAgentRoute(routes) {
   }
 }
 
+// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表
+function injectAddressRecognizeMenu(menuData) {
+  if (!Array.isArray(menuData)) return
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA' || item.text === '基础资料')
+  if (!target) return
+  if (!Array.isArray(target.children)) target.children = []
+  const exists = target.children.some(item => item.url === '/system/address-recognize')
+  if (!exists) {
+    target.children.push({
+      id: 'address-recognize',
+      text: '地址识别',
+      icon: 'environment',
+      url: '/system/address-recognize',
+      component: '/system/AddressRecognize',
+      route: '1',
+      children: []
+    })
+  }
+}
+
 NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
@@ -72,6 +92,7 @@ router.beforeEach((to, from, next) => {
             Vue.ls.set('winBtnStrList', res.data.userBtn, 7 * 24 * 60 * 60 * 1000)
           })
           let constRoutes = [];
+          injectAddressRecognizeMenu(menuData);
           constRoutes = generateIndexRouter(menuData);
           injectMobilePageRoutes(constRoutes)
           injectPrintAgentRoute(constRoutes)

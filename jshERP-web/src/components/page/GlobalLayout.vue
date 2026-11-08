@@ -282,6 +282,8 @@
 
   .layout {
     min-height: 100vh !important;
+    /* 手机端可视高度由 scrollBlank 模块写入 CSS 变量；不支持 CSS 变量时沿用上面的 vh */
+    min-height: var(--scroll-blank-vh, 100vh) !important;
     overflow-x: hidden;
 
     &.mobile {

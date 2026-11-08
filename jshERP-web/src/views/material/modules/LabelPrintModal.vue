@@ -24,12 +24,12 @@
         <template v-if="!template">
           <a-alert type="info" show-icon :message="emptyMessage" description="可点击右上角编辑图标创建模板" />
           <a-button
-            v-if="type === 'member'"
+            v-if="type === 'member' || type === 'address'"
             type="primary"
             size="large"
             class="lmp-empty-create"
             icon="plus"
-            @click="handleCreateTemplate">创建会员标签模板</a-button>
+            @click="handleCreateTemplate">{{ type === 'address' ? '创建地址打印模板' : '创建会员标签模板' }}</a-button>
         </template>
         <template v-else>
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
@@ -366,7 +366,7 @@
   <!-- 桌面端：保留原有 modal 布局 -->
   <a-modal
     v-if="!isMobile"
-    title="打印标签"
+    :title="printTitle || '打印标签'"
     :width="modalWidth"
     :visible="visible"
     :maskClosable="false"
@@ -592,6 +592,8 @@
         categoryTree: [],
         // 当前模板业务类型：label / delivery / receipt
         type: 'label',
+        // 打印页标题（调用方可覆盖，如地址识别页传「地址打印」）
+        printTitle: '',
         template: null,
         allAttrs: [],
         selectedAttrs: [],
@@ -682,15 +684,16 @@
           { value: 180, label: '180°', icon: 'edit' }
         ]
       },
-      // 手机端顶栏标题：模板名，无模板时取 SKU 名称
+      // 手机端顶栏标题：调用方指定标题优先，其次模板名，无模板时取业务类型
       mobileTitle() {
+        if (this.printTitle) return this.printTitle
         if (this.template) return this.template.name || '标签打印'
-        var titles = { delivery: '发货单打印', receipt: '小票打印', member: '会员打印' }
+        var titles = { delivery: '发货单打印', receipt: '小票打印', member: '会员打印', address: '地址打印' }
         return titles[this.type] || '标签打印'
       },
       // 空状态提示：按模板类型区分文案
       emptyMessage() {
-        var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板', member: '暂无可用会员标签模板' }
+        var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板', member: '暂无可用会员标签模板', address: '暂无可用地址打印模板' }
         return msgs[this.type] || '该商品暂无可用标签模板'
       },
       // 手机端顶栏副标题：尺寸 + 列数
@@ -967,10 +970,12 @@
       // 数据来源：模板取模板存储，业务值取 sessionStorage 快照
       // options.templateId / options.name：指定标签模板（编辑页打印时传入当前模板）
       // options.directEntry === false：编辑按钮不做路由跳转（由父页面自行处理）
+      // options.title：打印页标题（不传则按业务类型显示）
       openByType(type, options) {
         var self = this
         var opts = options || {}
         this.directEntry = opts.directEntry !== false
+        this.printTitle = opts.title || ''
         this.type = type || 'delivery'
         this.record = {}
         this.sku = {}
@@ -1015,6 +1020,7 @@
       },
       open(record, sku, categoryTree, preferredTpl) {
         this.directEntry = false
+        this.printTitle = ''
         this.record = record || {}
         this.sku = sku || {}
         this.categoryTree = categoryTree || []
@@ -1404,18 +1410,21 @@
         })
       },
       // 路由页：按类型从统一模板存储读取模板（label 支持按 templateId/name 定位）
+      // 会员标签 / 地址打印 / 小票各自独立的 platformConfig key，互不复用
       loadRouteTemplate(q) {
         if (this.type === 'delivery') {
           return fetchDeliveryTemplate().then(function(tpl) {
             return tpl || null
           }).catch(function() { return null })
         }
-        if (this.type === 'receipt' || this.type === 'member') {
-          var isMember = this.type === 'member'
-          var cfgKey = isMember ? 'member_layout' : 'receipt_layout'
-          var defaultName = isMember ? '会员标签模板' : '小票模板'
-          var defaultWidth = isMember ? 320 : 380
-          var defaultHeight = isMember ? 240 : 600
+        var configs = {
+          member: { key: 'member_layout', name: '会员标签模板', width: 320, height: 240, businessType: 'member.layout' },
+          address: { key: 'address_layout', name: '地址打印模板', width: 320, height: 240, businessType: 'address.layout' },
+          receipt: { key: 'receipt_layout', name: '小票模板', width: 380, height: 600, businessType: 'receipt.layout' }
+        }
+        var cfgInfo = configs[this.type]
+        if (cfgInfo) {
+          var cfgKey = cfgInfo.key
           return getAction('/platformConfig/getUiConfig', { key: cfgKey }).then(function(res) {
             var cfg = res && res.code === 200 ? res.data : null
             if (typeof cfg === 'string') {
@@ -1425,13 +1434,13 @@
             if (!cfg || !cfg.selectedAttrs || !cfg.selectedAttrs.length) return null
             return {
               id: cfgKey,
-              name: cfg.name || defaultName,
-              businessType: isMember ? 'member.layout' : 'receipt.layout',
+              name: cfg.name || cfgInfo.name,
+              businessType: cfgInfo.businessType,
               selectedAttrs: cfg.selectedAttrs,
               attrStyles: cfg.attrStyles || {},
               attrLabels: cfg.attrLabels || {},
-              labelWidth: cfg.width || cfg.labelWidth || defaultWidth,
-              labelHeight: cfg.height || cfg.labelHeight || defaultHeight
+              labelWidth: cfg.width || cfg.labelWidth || cfgInfo.width,
+              labelHeight: cfg.height || cfg.labelHeight || cfgInfo.height
             }
           }).catch(function() { return null })
         }
@@ -1452,7 +1461,7 @@
       // 模板结构标准化：把「统一模板表 v3 elements / 旧 platformConfig / 编辑器快照」
       // 统一转换成本页预览使用的编辑器结构，避免预览模块先于标准化读原始结构导致不兼容
       normalizeTemplate(raw) {
-        var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板', member: '会员标签模板' }
+        var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板', member: '会员标签模板', address: '地址打印模板' }
         var src = raw
         if (typeof src === 'string') {
           try { src = JSON.parse(src) } catch (e) { return null }
@@ -1478,7 +1487,7 @@
         // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
         if (!selectedAttrs.length) return null
         var size = (schema && schema.size) || {}
-        var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600], member: [320, 240] }
+        var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600], member: [320, 240], address: [320, 240] }
         var fallback = defaults[this.type] || defaults.label
         var width = size.width ? mmToPx(size.width) : (base.labelWidth || base.width)
         var height = size.height ? mmToPx(size.height) : (base.labelHeight || base.height)
@@ -1632,14 +1641,44 @@
           letterSpacing: (s.letterSpacing || 0) + 'px',
           lineHeight: String(s.lineHeight || 1.3)
         }
-        // 未手动指定宽高时由文字撑开，保证多行规格完整显示
-        if (s.width) style.width = s.width + 'px'
-        if (s.height) style.height = s.height + 'px'
+        // 指定宽度：文字按框宽自动换行；指定高度：超出部分不打印（裁剪）
+        if (s.width) {
+          style.width = s.width + 'px'
+          style.whiteSpace = 'pre-wrap'
+          style.wordBreak = 'break-all'
+          style.overflowWrap = 'anywhere'
+        }
+        if (s.height) {
+          style.height = s.height + 'px'
+          style.overflow = 'hidden'
+        }
         return style
       },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
+        // 地址打印：字段只取地址识别页面的输入框数据
+        if (this.type === 'address') return this.buildAddressAttrs()
         return buildLabelAttrs(this.record, this.sku)
+      },
+      /** 地址打印字段（key 与地址识别页面 form 字段一致） */
+      buildAddressAttrs() {
+        var r = this.record || {}
+        var mk = function(key, label, value) {
+          return {
+            key: key,
+            label: label,
+            value: value == null ? '' : String(value),
+            isCustom: false,
+            group: '地址信息'
+          }
+        }
+        return [
+          mk('contacts', '联系人', r.contacts),
+          mk('telephone', '电话', r.telephone),
+          mk('email', '电子邮箱', r.email),
+          mk('address', '地址', r.address),
+          mk('company', '公司', r.company)
+        ]
       },
       // 发货单/小票模板里的字段不在 label attrs 里 → 补回缺失 key
       restoreMissingAttrs(keys) {
@@ -1654,8 +1693,10 @@
           exists[key] = true
         })
       },
-      // 无模板时：带会员数据进入统一标签编辑页，编辑页自动加载会员数据表与字段
+      // 无模板时：带当前业务数据进入统一标签编辑页，编辑页按类型加载字段
+      // 会员标签 → 会员数据表字段；地址打印 → 只取地址识别页面输入框字段
       handleCreateTemplate() {
+        var isAddress = this.type === 'address'
         var ctx = null
         try { ctx = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { ctx = null }
         try {
@@ -1663,12 +1704,14 @@
             record: (ctx && ctx.record) || this.record || {},
             sku: {},
             template: null,
-            provider: 'table.jsh_supplier',
-            businessType: 'member'
+            provider: isAddress ? '' : 'table.jsh_supplier',
+            businessType: isAddress ? '' : 'member'
           }))
         } catch (e) { /* 忽略 */ }
         this.visible = false
-        this.$router.push({ path: '/label/edit-mobile', query: { type: 'member', businessType: 'member' } })
+        var query = { type: isAddress ? 'address' : 'member' }
+        if (!isAddress) query.businessType = 'member'
+        this.$router.push({ path: '/label/edit-mobile', query: query })
       },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
@@ -1682,17 +1725,24 @@
         this.visible = false
         // 弹层直达方式（无父组件监听 edit）→ 直接跳转统一标签编辑页
         if (this.directEntry && !(this.$listeners && this.$listeners.edit)) {
+          var isAddress = this.type === 'address'
+          // 打开弹层时未携带 record（如地址识别页）→ 沿用进入打印前写入的上下文数据，避免编辑时字段为空
+          var prevRecord = null
+          try { prevRecord = (JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') || {}).record } catch (e) { prevRecord = null }
           // 把商品数据和当前模板带到编辑页，否则编辑页拿不到 record/sku，字段会全部为空
           try {
             sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-              record: this.record || {},
+              record: (this.record && Object.keys(this.record).length) ? this.record : (prevRecord || {}),
               sku: this.sku || {},
               template: this.template || null,
-              provider: (this.template && this.template.provider) || (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label')),
-              businessType: this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product')
+              provider: (this.template && this.template.provider) || (isAddress ? '' : (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label'))),
+              businessType: isAddress ? '' : (this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product'))
             }))
           } catch (e) { /* 忽略 */ }
-          var query = { type: this.type || 'label', businessType: this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product') }
+          var query = { type: this.type || 'label' }
+          if (!isAddress) {
+            query.businessType = this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product')
+          }
           if (payload.templateId) query.templateId = payload.templateId
           this.$router.push({ path: '/label/edit-mobile', query: query })
           return
@@ -1945,16 +1995,24 @@
             return
           }
           var sizeStyle = ''
-          if (item.width) sizeStyle += 'width:' + item.width + 'px;'
-          if (item.height) sizeStyle += 'height:' + item.height + 'px;'
+          var wrapStyle = ''
+          if (item.width) {
+            sizeStyle += 'width:' + item.width + 'px;'
+            // 指定宽度：按框宽自动换行
+            wrapStyle += 'white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;'
+          }
+          if (item.height) {
+            sizeStyle += 'height:' + item.height + 'px;'
+            // 指定高度：超出部分不打印
+            wrapStyle += 'overflow:hidden;'
+          }
           bodyHtml += '<div style="' + boxStyle +
             sizeStyle +
             'font-size:' + item.fontSize + 'px;' +
             'font-weight:' + item.fontWeight + ';' +
             'letter-spacing:' + (item.letterSpacing || 0) + 'px;' +
             'line-height:' + (item.lineHeight || 1.3) + ';' +
-            'white-space:pre-line;' +
-            'overflow:visible;' +
+            wrapStyle +
             '">' + item.text + '</div>'
         })
         printLabel({
@@ -2040,6 +2098,7 @@
         ctx.fillStyle = '#fff'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         ctx.scale(scale, scale)
+        var self = this
         var tasks = this.buildLayoutItems().map(function(item) {
           if (item.image) {
             return new Promise(function(resolve) {
@@ -2057,14 +2116,43 @@
           if ('letterSpacing' in ctx) ctx.letterSpacing = (item.letterSpacing || 0) + 'px'
           ctx.textBaseline = 'top'
           var lh = item.fontSize * (item.lineHeight || 1.3)
-          String(item.text || '').split('\n').forEach(function(line, i) {
-            ctx.fillText(line, item.x || 0, (item.y || 0) + i * lh + (lh - item.fontSize) / 2)
-          })
+          // 指定宽度时按框宽逐字换行；指定高度时只绘制框内完整行，超出部分不打印
+          var lines = self.wrapCanvasText(ctx, String(item.text || ''), item.width)
+          var maxLines = item.height ? Math.max(0, Math.floor(item.height / lh + 0.001)) : lines.length
+          if (item.width || item.height) {
+            ctx.save()
+            ctx.beginPath()
+            ctx.rect(item.x || 0, item.y || 0, item.width || 1e5, item.height || 1e5)
+            ctx.clip()
+          }
+          for (var i = 0; i < Math.min(lines.length, maxLines); i++) {
+            ctx.fillText(lines[i], item.x || 0, (item.y || 0) + i * lh + (lh - item.fontSize) / 2)
+          }
+          if (item.width || item.height) ctx.restore()
           return Promise.resolve()
         })
         return Promise.all(tasks).then(function() {
           return canvas.toDataURL('image/png')
         })
+      },
+      /** 画布文字换行：按元素宽度逐字折行，保留显式换行符 */
+      wrapCanvasText(ctx, text, maxWidth) {
+        if (!maxWidth) return text.split('\n')
+        var result = []
+        text.split('\n').forEach(function(segment) {
+          var line = ''
+          for (var i = 0; i < segment.length; i++) {
+            var next = line + segment.charAt(i)
+            if (line && ctx.measureText(next).width > maxWidth) {
+              result.push(line)
+              line = segment.charAt(i)
+            } else {
+              line = next
+            }
+          }
+          result.push(line)
+        })
+        return result
       }
     }
   }

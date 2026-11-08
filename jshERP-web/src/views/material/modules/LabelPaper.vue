@@ -105,7 +105,13 @@
           var value = el.field ? self.textOf(self.values[el.field]) : self.textOf(el.text)
           var display = el.label ? el.label + ': ' + value : value
           var style = self.baseStyle(el)
-          if (el.width) style.whiteSpace = 'pre-wrap'
+          // 指定宽度：按框宽自动换行；指定高度：超出部分不打印（裁剪）
+          if (el.width) {
+            style.whiteSpace = 'pre-wrap'
+            style.wordBreak = 'break-all'
+            style.overflowWrap = 'anywhere'
+          }
+          if (el.height) style.overflow = 'hidden'
           return {
             id: el.id,
             display: display,

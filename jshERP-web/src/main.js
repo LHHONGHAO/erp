@@ -43,6 +43,7 @@ import DictData from '@/components/DictData'
 import DictTag from '@/components/DictTag'
 import DataTablePro from '@/components/DataTablePro'
 import { initModalDrag } from '@/utils/dragModal'
+import { installScrollBlank } from '@/utils/scrollBlank'
 
 Vue.config.productionTip = false
 Vue.component('DictTag', DictTag)
@@ -65,6 +66,8 @@ new Vue({
   mounted () {
     // 初始化全局弹窗拖动功能
     initModalDrag()
+    // 全局页面上下空白检测：所有页面加载、路由切换、尺寸/内容变化、滚动停止后自动执行
+    installScrollBlank(router)
     // store.commit('SET_SIDEBAR_TYPE', Vue.ls.get(SIDEBAR_TYPE, true))
     store.commit('SET_SIDEBAR_TYPE', true)
     store.commit('TOGGLE_THEME', Vue.ls.get(DEFAULT_THEME, config.navTheme))

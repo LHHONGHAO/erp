@@ -329,7 +329,7 @@ if (-not $SkipBuild -and -not $SkipWeb) {
         Write-Host "    首次构建，安装依赖 ..." -ForegroundColor DarkGray
         Invoke-External -File $npmCmd -CmdArgs @('install') -WorkDir $WebDir -Desc 'npm install'
     }
-    $env:NODE_OPTIONS = '--max-old-space-size=4096'
+    $env:NODE_OPTIONS = '--openssl-legacy-provider --max-old-space-size=4096'
     Invoke-External -File $npmCmd -CmdArgs @('run','build') -WorkDir $WebDir -Desc 'npm run build'
     Write-Ok "前端构建完成 -> $(Join-Path $WebDir 'dist')"
 }

@@ -30,8 +30,10 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -373,7 +375,8 @@ public class LabelPrinterService {
     }
 
     /**
-     * 文字：硬件字库 TEXT 指令，按前端字号换算出字体放大倍数
+     * 文字：硬件字库 TEXT 指令，按前端字号换算出字体放大倍数；
+     * 指定宽度时按框宽逐字换行，指定高度时只打印框内完整行（超出部分不打印）
      */
     private void appendText(ByteArrayOutputStream out, JSONObject item) throws IOException {
         String text = item.getString("text");
@@ -389,14 +392,62 @@ public class LabelPrinterService {
             lineHeight = 1.3;
         }
         int lineStep = (int) Math.round(fontSize * lineHeight * PX_TO_DOT);
-        String[] lines = text.split("\n", -1);
-        for (String line : lines) {
+        if (lineStep <= 0) {
+            lineStep = Math.max(1, 24 * scale);
+        }
+        int widthDots = item.getIntValue("width") > 0 ? toDots(item.getIntValue("width")) : 0;
+        int heightDots = item.getIntValue("height") > 0 ? toDots(item.getIntValue("height")) : 0;
+        List<String> lines = wrapText(text, widthDots, scale);
+        int maxLines = heightDots > 0 ? Math.max(0, heightDots / lineStep) : lines.size();
+        for (int i = 0; i < lines.size() && i < maxLines; i++) {
+            String line = lines.get(i);
             if (!line.isEmpty()) {
                 writeLine(out, "TEXT " + x + "," + y + ",\"" + TEXT_FONT + "\",0," + scale + "," + scale
                         + ",\"" + escape(line) + "\"");
             }
             y += lineStep;
         }
+    }
+
+    /**
+     * 按打印宽度逐字折行（保留显式换行符）：TSS24 字库全角字符约 24*scale 点，半角约 12*scale 点
+     */
+    private List<String> wrapText(String text, int widthDots, int scale) {
+        List<String> result = new ArrayList<>();
+        String[] segments = text.split("\n", -1);
+        for (String segment : segments) {
+            if (widthDots <= 0) {
+                result.add(segment);
+                continue;
+            }
+            StringBuilder line = new StringBuilder();
+            int lineWidth = 0;
+            for (int i = 0; i < segment.length(); i++) {
+                char ch = segment.charAt(i);
+                int charWidth = isFullWidth(ch) ? 24 * scale : 12 * scale;
+                if (line.length() > 0 && lineWidth + charWidth > widthDots) {
+                    result.add(line.toString());
+                    line.setLength(0);
+                    lineWidth = 0;
+                }
+                line.append(ch);
+                lineWidth += charWidth;
+            }
+            result.add(line.toString());
+        }
+        return result;
+    }
+
+    /** 全角字符判断（中文/全角标点等按双倍宽度计算） */
+    private boolean isFullWidth(char ch) {
+        return ch >= 0x1100 && (ch <= 0x115F
+                || ch == 0x2329 || ch == 0x232A
+                || (ch >= 0x2E80 && ch <= 0xA4CF && ch != 0x303F)
+                || (ch >= 0xAC00 && ch <= 0xD7A3)
+                || (ch >= 0xF900 && ch <= 0xFAFF)
+                || (ch >= 0xFE30 && ch <= 0xFE6F)
+                || (ch >= 0xFF00 && ch <= 0xFF60)
+                || (ch >= 0xFFE0 && ch <= 0xFFE6));
     }
 
     /**

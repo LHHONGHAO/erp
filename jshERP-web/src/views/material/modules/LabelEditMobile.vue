@@ -1365,10 +1365,8 @@
               this.currentAttrKey = prevFocus
             }
           } else {
-            // 之前未选中 → 累加选中 + 设为焦点
-            var next2 = prevKeys.slice()
-            next2.push(pKey)
-            this.selectedKeys = next2
+            // 之前未选中 → 单选，不再累加到已有选中项
+            this.selectedKeys = [pKey]
             this.currentAttrKey = pKey
           }
         }

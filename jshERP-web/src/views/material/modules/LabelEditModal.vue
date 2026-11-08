@@ -1208,7 +1208,8 @@
             this.selectedKeys.splice(idx, 1)
             if (this.currentAttrKey === info.key) this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
           } else {
-            this.selectedKeys.push(info.key)
+            // 点击未选中项：单选，不再累加到已有选中项
+            this.selectedKeys = [info.key]
             this.currentAttrKey = info.key
           }
         }

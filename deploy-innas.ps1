@@ -10,7 +10,7 @@
 .EXAMPLE
   .\deploy-innas.ps1
   .\deploy-innas.ps1 -Frontend
-  .\deploy-innas.ps1 -Server 192.168.100.10 -SshPass 'xxx' -Frontend
+  .\deploy-innas.ps1 -Server 192.168.100.10 -HostKey 'SHA256:...' -Frontend
 #>
 param(
     [switch]$Frontend,
@@ -18,7 +18,6 @@ param(
     [string]$Server    = 'www.innas.xyz',
     [int]   $Port      = 22,
     [string]$SshUser   = 'root',
-    [string]$SshPass   = 'password',
     [string]$RemoteDir = '/root/jsherp',
     [string]$HostKey   = '',
     [int]   $WebPort   = 9999,
@@ -56,30 +55,12 @@ function Ensure-Tools {
             Expand-Archive $zip -DestinationPath $toolsDir -Force
         }
     }
-    # 首次连接自动信任主机密钥（未显式提供 -HostKey 时）
     if (-not $script:HostKey) {
-        Write-Host "==> 首次连接 $Server，接收主机密钥 ..."
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            $out = "y`n" | & $plink -ssh -P $Port "$SshUser@$Server" -pw $SshPass "exit" 2>&1
-            $code = $LASTEXITCODE
-        } finally { $ErrorActionPreference = $prev }
-        if ($code -ne 0) {
-            throw @"
-SSH 连接 ${Server}:${Port} 失败（握手后连接被关闭）。
-可能原因：
-  1) 域名在本机被代理/VPN 解析成了假 IP（如 198.18.x.x），请改用真实局域网 IP：-Server 192.168.100.x
-  2) SSH 端口不是 ${Port}，用 -Port 指定
-  3) 目标主机未开启 SSH，或需要先连 VPN
-plink 输出: $($out -join ' ')
-"@
-        }
+        throw '请先核实服务器 SSH 主机指纹，并通过 -HostKey 显式指定；部署脚本不会自动信任未知主机。'
     }
 }
 function Invoke-Plink([string]$RemoteCmd) {
-    $argList = @('-ssh', '-P', $Port, "$SshUser@$Server", '-pw', $SshPass, '-batch')
-    if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
+    $argList = @('-ssh', '-P', $Port, "$SshUser@$Server", '-batch', '-hostkey', $script:HostKey)
     $argList += $RemoteCmd
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -88,8 +69,7 @@ function Invoke-Plink([string]$RemoteCmd) {
     if ($code -ne 0) { throw "远程命令执行失败（退出码 $code）: $RemoteCmd" }
 }
 function Invoke-Pscp([string[]]$Local, [string]$Remote) {
-    $argList = @('-batch', '-P', $Port, '-pw', $SshPass)
-    if ($script:HostKey) { $argList += @('-hostkey', $script:HostKey) }
+    $argList = @('-batch', '-P', $Port, '-hostkey', $script:HostKey)
     $argList += $Local
     $argList += "$SshUser@$Server`:$Remote"
     $prev = $ErrorActionPreference

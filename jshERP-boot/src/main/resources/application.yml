@@ -22,15 +22,15 @@ spring:
   resources:
     static-locations: classpath:/static/,file:./frontend-dist/
   datasource:
-    # 数据库连接
-    url: jdbc:mysql://127.0.0.1:3306/jsh_erp?useUnicode=true&characterEncoding=utf8&useCursorFetch=true&defaultFetchSize=500&allowMultiQueries=true&rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true
+    # 数据库连接通过部署环境注入；生产账号应使用仅访问 jsh_erp 的专用账号
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/jsh_erp?useUnicode=true&characterEncoding=utf8&useCursorFetch=true&defaultFetchSize=500&allowMultiQueries=true&rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true}
     driver-class-name: com.mysql.cj.jdbc.Driver
-    username: root
-    password: 123456
+    username: ${SPRING_DATASOURCE_USERNAME:jsherp}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
   redis:
-    host: 127.0.0.1
-    port: 6379
-    #password: 1234abcd
+    host: ${SPRING_REDIS_HOST:127.0.0.1}
+    port: ${SPRING_REDIS_PORT:6379}
+    # 无密码时保持未设置；需要认证时由 SPRING_REDIS_PASSWORD 环境变量注入
   servlet:
     multipart:
       # 文件上传限制 (byte)
@@ -60,13 +60,13 @@ plugin:
 file:
   # 文件上传方式 1-本机 2-oss
   uploadType: 1
-  # 统一数据目录：数据库备份、图片、导出缓存、外部配置都放这里，重新部署不影响数据
-  # 可用启动参数 -Djsh.data.dir=... 覆盖，未指定时用下面的默认值
-  dataDir: ${jsh.data.dir:E:/huaxia/jshERP-data}
+  # 应用持久化目录：上传文件、导出缓存和外部配置；数据库由外部 MySQL 管理
+  # 可用启动参数 -Djsh.data.dir=... 或环境变量 JSH_DATA_DIR 覆盖
+  dataDir: ${jsh.data.dir:${JSH_DATA_DIR:./data}}
   # 文件上传根目录（商品图片等）
-  path: ${jsh.data.dir:E:/huaxia/jshERP-data}/upload
+  path: ${file.dataDir}/upload
   # 文件导出缓存
-  exportTmp: ${jsh.data.dir:E:/huaxia/jshERP-data}/export
+  exportTmp: ${file.dataDir}/export
 
 # 百度OCR配置（密钥不写死在这里，统一在页面设置中配置，
 # 落盘到 <数据目录>/config/ocr-config.properties，避免换机部署误用失效默认值）

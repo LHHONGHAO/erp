@@ -3,7 +3,8 @@
   "//publicUrl": "对外访问地址（后端直接以 HTTPS 提供服务，端口即 backendPort）",
   "publicUrl": "https://192.168.100.157:9999",
   "backendPort": 9999,
-  "dataDir": "D:/erp/data",
+  "dataDir": "D:/jshERP/data",
+  "backupDir": "D:/jshERP/backup",
   "backendJar": "jshERP-boot/target/jshERP.jar",
   "frontendDist": "jshERP-boot/frontend-dist"
 }

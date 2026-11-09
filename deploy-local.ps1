@@ -56,9 +56,20 @@ $ErrLog  = Join-Path $BootDir 'deploy-backend.err.log'
 $HttpPort = 9998
 # application.yml 中配置的外部静态资源目录（相对 jshERP-boot 启动目录）
 $StaticLink = Join-Path $BootDir 'frontend-dist'
-# 统一数据目录：图片、导出缓存、外部配置、数据库备份都放在这里，重新部署不受影响
-$DataDir = Join-Path (Split-Path -Parent $Root) 'jshERP-data'
-$DataDirs = @('upload', 'export', 'config', 'backup', 'logs')
+# 应用数据与数据库备份分开存放，重新发布程序时不触碰这两个目录
+$DeployConfig = Get-Content (Join-Path $Root 'deploy.config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$DataDir = [string]$DeployConfig.dataDir
+$BackupDir = [string]$DeployConfig.backupDir
+if (-not $DataDir -or -not [IO.Path]::IsPathRooted($DataDir)) { throw 'deploy.config.json 的 dataDir 必须是绝对路径' }
+if (-not $BackupDir -or -not [IO.Path]::IsPathRooted($BackupDir)) { throw 'deploy.config.json 的 backupDir 必须是绝对路径' }
+$DataDirFull = [IO.Path]::GetFullPath($DataDir).TrimEnd('\', '/')
+$BackupDirFull = [IO.Path]::GetFullPath($BackupDir).TrimEnd('\', '/')
+if (($DataDirFull -ieq $BackupDirFull) -or
+    $DataDirFull.StartsWith($BackupDirFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+    $BackupDirFull.StartsWith($DataDirFull + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'dataDir 和 backupDir 必须是互相独立的目录'
+}
+$DataDirs = @('upload', 'export', 'config', 'logs')
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  JSH_ERP 本地部署脚本" -ForegroundColor Cyan
@@ -89,10 +100,23 @@ function Initialize-DataDir {
         New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
         Write-Ok "已创建数据目录"
     }
+    # 旧版本把数据放在仓库根目录 data/；仅当新目录为空时复制，并保留旧目录作为回退副本。
+    $legacyDataDir = Join-Path $Root 'data'
+    $targetItems = @(Get-ChildItem -LiteralPath $DataDir -Force -ErrorAction SilentlyContinue)
+    if ((Test-Path $legacyDataDir) -and ($legacyDataDir -ne $DataDir) -and ($targetItems.Count -eq 0)) {
+        $legacyItems = @(Get-ChildItem -LiteralPath $legacyDataDir -Force)
+        foreach ($item in $legacyItems) {
+            Copy-Item -LiteralPath $item.FullName -Destination $DataDir -Recurse -Force
+        }
+        if ($legacyItems.Count -gt 0) { Write-Ok "旧数据已复制到新目录，原目录保留: $legacyDataDir" }
+    }
     foreach ($sub in $DataDirs) {
         $p = Join-Path $DataDir $sub
         if (-not (Test-Path $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
     }
+    New-Item -ItemType Directory -Path (Join-Path $BackupDir 'mysql') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $BackupDir 'files') -Force | Out-Null
+    Write-Ok "数据库与文件备份目录就绪: $BackupDir"
     Write-Ok "子目录就绪: $($DataDirs -join ', ')"
     # 首次部署：把项目内的 OCR 等配置迁移到统一数据目录（之后更新部署不会覆盖）
     $srcCfg = Join-Path $BootDir 'config\ocr-config.properties'

@@ -38,6 +38,10 @@ verify.txt
 data/
 **/frontend-dist/
 .screenshots/
+deploy/.env
+deploy/config/
+deploy/data/
+deploy/backup/
 
 ## ide
 **/.trae

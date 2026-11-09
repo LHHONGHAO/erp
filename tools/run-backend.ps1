@@ -24,6 +24,7 @@ function Find-Java {
 $javaExe   = Find-Java
 $rootPath  = $Root -replace '\\', '/'
 $dataDir   = $cfg.dataDir -replace '\\', '/'
+if (-not $dataDir) { throw 'deploy.config.json 未配置 dataDir' }
 $staticDir = '-Dspring.resources.static-locations=file:' + $rootPath + '/jshERP-boot/frontend-dist/'
 $dataDirArg = '-Djsh.data.dir=' + $dataDir
 $logsHomeArg = '-Dlogs.home=' + $dataDir + '/logs'

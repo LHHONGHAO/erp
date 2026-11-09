@@ -9,7 +9,7 @@
       config/jsh-root-ca.crt   可发给客户端安装的根证书（授权文件）
       config/jsh-https.p12     Tomcat 使用的服务端密钥库（密码 changeit）
 .PARAMETER DataDir
-  数据目录，默认 e:\huaxia\jshERP-data
+  数据目录，默认读取 deploy.config.json 中的 dataDir
 .PARAMETER JavaHome
   JDK 路径，不传则自动探测
 .PARAMETER RenewServer
@@ -35,7 +35,13 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $DataDir) { $DataDir = Join-Path (Split-Path -Parent $Root) 'jshERP-data' }
+if (-not $DataDir) {
+    $deployConfig = Join-Path $Root 'deploy.config.json'
+    if (Test-Path $deployConfig) {
+        $DataDir = (Get-Content $deployConfig -Raw -Encoding UTF8 | ConvertFrom-Json).dataDir
+    }
+    if (-not $DataDir) { throw '请通过 -DataDir 或 deploy.config.json 指定数据目录' }
+}
 $CfgDir = Join-Path $DataDir 'config'
 New-Item -ItemType Directory -Path $CfgDir -Force | Out-Null
 

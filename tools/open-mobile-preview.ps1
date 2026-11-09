@@ -1,4 +1,4 @@
-﻿param(
+﻿﻿param(
     [string]$Path = '/dashboard/analysis',
     [ValidateSet('iPhoneSE', 'iPhone12', 'iPhone14ProMax', 'Android360', 'iPadMini')]
     [string]$Device = 'iPhone12',

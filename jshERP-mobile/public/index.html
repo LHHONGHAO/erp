@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>管伊佳ERP</title>
+  <meta name="description" content="进销存、零售、财务一体化管理移动端">
+  <!-- PWA：添加到主屏幕后以独立窗口运行 -->
+  <link rel="manifest" href="<%= BASE_URL %>manifest.json">
+  <meta name="theme-color" content="#1890ff">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="管伊佳ERP">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="<%= BASE_URL %>icons/pwa-192.png">
+  <link rel="icon" href="<%= BASE_URL %>icons/pwa-192.png">
+  <style>
+    html, body, #app {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #1890ff;
+    }
+
+    .mobile-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="mobile-loading">正在加载...</div>
+</div>
+<script>
+  // 注册 Service Worker（满足 PWA 安装条件），失败不影响正常使用
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('<%= BASE_URL %>sw.js').catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>

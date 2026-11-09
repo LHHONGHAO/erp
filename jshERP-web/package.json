@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build"
+    "serve:mobile": "node ../jshERP-mobile/scripts/serve.js",
+    "build": "vue-cli-service build && node ../jshERP-mobile/scripts/build.js",
+    "build:pc": "vue-cli-service build",
+    "build:mobile": "node ../jshERP-mobile/scripts/build.js"
   },
   "dependencies": {
     "@antv/data-set": "^0.11.2",

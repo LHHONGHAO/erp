@@ -106,6 +106,12 @@ if ($Frontend) {
 # 容器编排与 nginx 配置一并同步，避免端口约定变更后远端仍用旧配置
 Write-Host '==> 上传 compose / nginx 配置 ...'
 Invoke-Pscp @((Join-Path $toolsDir 'deploy\docker-compose.yml'), (Join-Path $toolsDir 'deploy\nginx.conf')) "$RemoteDir/"
+# HTTPS 证书（存在时同步，避免更换证书后远端仍使用旧文件）
+$certDir = Join-Path $toolsDir 'deploy\config'
+if (Test-Path $certDir) {
+    Write-Host '==> 上传 HTTPS 证书 ...'
+    Invoke-Pscp @('-r', $certDir) "$RemoteDir/"
+}
 
 # 3. 重启并验证
 Write-Host '==> 重建远端 app / nginx 容器 ...'

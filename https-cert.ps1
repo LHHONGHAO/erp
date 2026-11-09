@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿<#
+﻿<#
 .SYNOPSIS
   生成局域网 HTTPS 使用的「根证书 + 服务端证书」，客户端安装一次根证书即可长期信任。
 .DESCRIPTION
@@ -68,7 +68,10 @@ function Find-Keytool([string]$Hint) {
 }
 
 function Invoke-Keytool([string[]]$CmdArgs, [string]$Desc) {
-    & $keytool @CmdArgs | Out-Null
+    # keytool 会把提示信息写到 stderr，全局 Stop 策略下会被当成异常，这里局部放宽
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $keytool @CmdArgs *>&1 | Out-Null } finally { $ErrorActionPreference = $prev }
     if ($LASTEXITCODE -ne 0) { throw "$Desc 失败（keytool 退出码 $LASTEXITCODE）" }
 }
 
@@ -77,7 +80,8 @@ function Get-SanList {
     $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
         Select-Object -ExpandProperty IPAddress
-    foreach ($ip in $ips) { $parts += "ip:$ip" }
+    # 注意：循环变量不能叫 $ip，否则会覆盖同名参数 $Ip
+    foreach ($localIp in $ips) { $parts += "ip:$localIp" }
     if ($env:COMPUTERNAME) { $parts += "dns:$($env:COMPUTERNAME)" }
     foreach ($d in $Dns) { if ($d) { $parts += "dns:$d" } }
     foreach ($i in $Ip) { if ($i) { $parts += "ip:$i" } }

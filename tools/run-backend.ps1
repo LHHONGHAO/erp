@@ -27,12 +27,12 @@ $dataDir   = $cfg.dataDir -replace '\\', '/'
 $staticDir = '-Dspring.resources.static-locations=file:' + $rootPath + '/jshERP-boot/frontend-dist/'
 $dataDirArg = '-Djsh.data.dir=' + $dataDir
 $logsHomeArg = '-Dlogs.home=' + $dataDir + '/logs'
-$portArg   = '-Dserver.port=' + $cfg.backendPort
-# 后端直接对外提供 HTTPS，证书由 https-cert.ps1 生成在数据目录 config 下
-# 用 SPRING_APPLICATION_JSON 注入，避免 -D 参数在 PowerShell 中被拆分
-$env:SPRING_APPLICATION_JSON = '{"server":{"ssl":{"enabled":true,"key-store":"file:' + $dataDir + '/config/jsh-https.p12","key-store-type":"PKCS12","key-store-password":"changeit"}}}'
+# HTTP 端口固定 9998（用于证书安装与兼容），HTTPS 由 HttpsConnectorConfig 按 jsh.https.port 额外开启
+# 证书由 https-cert.ps1 生成在数据目录 config 下，无需在此注入 server.ssl
+$httpArg   = '-Dserver.port=9998'
+$httpsArg  = '-Djsh.https.port=' + $cfg.backendPort
 $logFile   = Join-Path $Root 'jshERP-boot\local-backend.log'
 $jar       = Join-Path $Root 'jshERP-boot\target\jshERP.jar'
 
 Set-Location (Join-Path $Root 'jshERP-boot')
-& $javaExe '-Xms256m' '-Xmx1024m' '-Dspring.profiles.active=dev' $portArg '-Dfile.encoding=UTF-8' $staticDir $dataDirArg $logsHomeArg '-jar' $jar *> $logFile
+& $javaExe '-Xms256m' '-Xmx1024m' '-Dspring.profiles.active=dev' $httpArg $httpsArg '-Dfile.encoding=UTF-8' $staticDir $dataDirArg $logsHomeArg '-jar' $jar *> $logFile

@@ -48,6 +48,10 @@ public class SpaForwardFilter implements Filter {
         if ("GET".equalsIgnoreCase(req.getMethod())
                 && req.getRequestURI().indexOf('.') < 0
                 && accept != null && accept.contains("text/html")) {
+            if (isMobileEntry(req.getRequestURI())) {
+                req.getRequestDispatcher("/mobile/index.html").forward(req, res);
+                return;
+            }
             RequestMappingHandlerMapping mapping = mappingProvider.getIfAvailable();
             if (mapping != null && !hasHandler(mapping, req)) {
                 req.getRequestDispatcher("/index.html").forward(req, res);
@@ -55,6 +59,13 @@ public class SpaForwardFilter implements Filter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * 手机端为独立入口：/mobile、/mobile/ 及其页面地址统一回退到 /mobile/index.html
+     */
+    private boolean isMobileEntry(String uri) {
+        return "/mobile".equals(uri) || uri.startsWith("/mobile/");
     }
 
     private boolean hasHandler(RequestMappingHandlerMapping mapping, HttpServletRequest req) {

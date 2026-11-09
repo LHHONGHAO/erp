@@ -229,17 +229,20 @@
       loginSuccess (res) {
         let that = this
         this.$router.push({ path: "/dashboard/analysis" })
-        this.$notification.success({
-          message: '欢迎',
-          description: `${timeFix()}，欢迎回来`,
-        })
-        if(res.data.pwdSimple) {
-          setTimeout(function () {
-            that.$notification.warning({
-              message: '友情提醒',
-              description: '密码过于简单，请尽快修改',
-            })
-          },3000)
+        // 手机端不弹欢迎与密码提醒，避免遮挡页面（电脑端保持不变）
+        if (!this.isMobileTerminal()) {
+          this.$notification.success({
+            message: '欢迎',
+            description: `${timeFix()}，欢迎回来`,
+          })
+          if(res.data.pwdSimple) {
+            setTimeout(function () {
+              that.$notification.warning({
+                message: '友情提醒',
+                description: '密码过于简单，请尽快修改',
+              })
+            },3000)
+          }
         }
         if(res.data && res.data.user) {
           if(res.data.user.loginName === 'admin'){
@@ -390,7 +393,17 @@
           }
         })
       },
+      //是否手机/平板等移动终端
+      isMobileTerminal() {
+        const ua = navigator.userAgent
+        return /iPhone|iPod|Android|Mobile/i.test(ua) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+      },
       checkScreen() {
+        // 移动端无浏览器缩放概念，不提示调整缩放比例
+        if (this.isMobileTerminal()) {
+          return
+        }
         let percentage = '100%'
         let basicWidth = 1920
         const currentWidth = window.screen.width

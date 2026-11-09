@@ -50,7 +50,7 @@
               <a-icon type="delete" class="mca-spec-value-del" @click="removeSpecValue(mIndex, vIndex)" />
             </div>
             <div class="mca-spec-card-bottom">
-              <a-button type="dashed" size="small" icon="plus" @click="addSpecValue(mIndex)">添加规格值</a-button>
+              <a-button type="dashed" size="small" icon="plus" @click="addSpecValue(mIndex)">添加组内规格项</a-button>
               <div v-if="savedValues(module).length > 0" class="mca-spec-saved">
                 <span class="mca-spec-saved-label">已保存：</span>
                 <a-tag

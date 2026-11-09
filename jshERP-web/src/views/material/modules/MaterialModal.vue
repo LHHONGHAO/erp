@@ -260,7 +260,7 @@
                 <div class="spec-bottom">
                   <a-button type="link" @click="addSpecValue(mIndex)" class="spec-add-value-btn">
                     <a-icon type="plus" />
-                    <span>添加规格值</span>
+                    <span>添加规格值组</span>
                   </a-button>
                   <div class="spec-value-suggestions" v-if="getSpecValueSuggestions(mIndex).length">
                     <span class="spec-suggestions-label">已保存：</span>
@@ -1347,6 +1347,21 @@
           /** 一次性验证主表和所有的次表 */
           return validateFormAndTables(this.form, tables)
         }).then(allValues => {
+          const hasIncompleteSpecGroup = this.specModules.some(function(module) {
+            const childNames = module.childNames || []
+            if (childNames.length === 0) return false
+            return (module.values || []).some(function(value) {
+              const parts = childNames.map(function(name) {
+                return String((value.subValues || {})[name] || '').trim()
+              })
+              return parts.some(Boolean) && !parts.every(Boolean)
+            })
+          })
+          if (hasIncompleteSpecGroup) {
+            this.activeKey = '2'
+            this.$message.warning('请补全每组规格值，或清空未完成的组')
+            return
+          }
           let formData = this.classifyIntoFormData(allValues)
           formData.sortList = [];
           if(formData.unit === undefined) {formData.unit = ''}
@@ -1760,30 +1775,27 @@
         }
         return result
       },
-      // 按类别规格配置构建规格模块：childNames 作为只读标题，值由商品页输入
+      // 按类别规格配置构建规格模块：childNames 是一组规格字段，每条 values 记录代表一个规格值组
       buildSpecModulesFromCategory(categorySpecs) {
         return categorySpecs.map(function(item) {
           if (typeof item === 'string') {
-            return { name: item, enableImage: false, childNames: [], titleValueMode: false, values: [{ text: '', image: '', subValues: {} }] }
+            return { name: item, enableImage: false, childNames: [], values: [{ text: '', image: '', subValues: {} }] }
           }
-          // 类别中的 childNames 是规格值标题，页面上只读展示，每个标题对应一个值输入框
+          // 类别配置的 childNames 组成一个规格值组；每组分别填写被套、床单、枕套等子规格值
           let rawValues = Array.isArray(item.childNames) ? item.childNames : []
-          let categoryTitles = rawValues
+          let childNames = rawValues
             .map(function(v) {
               if (typeof v === 'string') return v
               return (v && (v.name || v.value || v.text)) || ''
             })
             .filter(function(v) { return !!v })
+          let subValues = {}
+          childNames.forEach(function(name) { subValues[name] = '' })
           return {
             name: item.name || '',
             enableImage: !!item.enableImage,
-            childNames: [],
-            titleValueMode: categoryTitles.length > 0,
-            values: categoryTitles.length
-              ? categoryTitles.map(function(v) {
-                  return { label: v, lockedTitle: true, text: '', image: '', subValues: {} }
-                })
-              : [{ text: '', image: '', subValues: {} }]
+            childNames: childNames,
+            values: [{ text: '', image: '', subValues: subValues }]
           }
         })
       },
@@ -1868,16 +1880,17 @@
           this.$message.warning('单个规格最多50个值')
           return
         }
-        module.values.push(module.titleValueMode
-          ? { label: '', lockedTitle: false, text: '', image: '', subValues: {} }
-          : { text: '', image: '', subValues: {} })
+        let subValues = {}
+        ;(module.childNames || []).forEach(function(name) { subValues[name] = '' })
+        module.values.push({ text: '', image: '', subValues: subValues })
       },
       onSubSpecChange(mIndex, vIndex, childName, value) {
         const item = this.specModules[mIndex].values[vIndex]
         if (!item.subValues) this.$set(item, 'subValues', {})
         this.$set(item.subValues, childName, value)
         const names = this.specModules[mIndex].childNames || []
-        item.text = names.map(name => (item.subValues[name] || '').trim()).join('/')
+        const parts = names.map(name => (item.subValues[name] || '').trim())
+        item.text = parts.length > 0 && parts.every(Boolean) ? parts.join('/') : ''
         this.onSpecChange()
       },
       removeSpecValue(mIndex, vIndex) {

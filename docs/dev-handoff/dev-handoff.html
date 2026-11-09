@@ -558,6 +558,12 @@ clearMobileHeaderActions(); clearMobileHeaderTitle()</code></pre>
         <li>前端产物：<code>jshERP-web/dist</code> → <code>jshERP-boot/frontend-dist</code>。</li>
         <li>应用数据和数据库备份位于独立目录，数据库凭据由部署环境注入；Compose 不对外映射 MySQL 端口。详见 <code>docs/部署数据与备份.md</code>。</li>
       </ul>
+      <h4>远端一键发布（192.168.100.1）</h4>
+      <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1 -Frontend</code></pre>
+      <ul>
+        <li>脚本先检查外置数据卷并创建 SQL 备份，再发布前后端；只重建应用与 Nginx，不重启 MySQL / Redis。</li>
+        <li>部署详情、SSH 凭据放置、备份位置与恢复说明见 Markdown 交接文档及 <code>docs/部署数据与备份.md</code>。</li>
+      </ul>
 
       <h4>验证清单</h4>
       <div class="table-wrap">
@@ -619,7 +625,7 @@ clearMobileHeaderActions(); clearMobileHeaderTitle()</code></pre>
           <thead><tr><th>文档</th><th>位置</th><th>内容</th></tr></thead>
           <tbody>
             <tr><td>本页</td><td><code>docs/dev-handoff/dev-handoff.html</code></td><td>模块/页面/规范概要；详细部署与开发约定以 Markdown 交接文档为准</td></tr>
-            <tr><td>调用交接文档（唯一交接文件）</td><td><code>docs/开发约定与模块调用交接文档.md</code></td><td>逐模块调用示例、页面接入步骤、规范全文、交付自检</td></tr>
+            <tr><td>详细交接文档（唯一交接文件）</td><td><code>docs/开发约定与模块调用交接文档.md</code></td><td>逐模块调用示例、页面接入步骤、开发规范、部署及交付自检</td></tr>
             <tr><td>归档附录</td><td>同上文档第 11 节</td><td>原商品字段精简、商品表格列抽离、滚动空白专项、标签编辑说明、手机模拟器说明、扫码验收报告（原文件已删除）</td></tr>
           </tbody>
         </table>

@@ -551,11 +551,12 @@ clearMobileHeaderActions(); clearMobileHeaderTitle()</code></pre>
     <section id="deploy">
       <h2><span class="num">03.2</span>构建、部署与验证</h2>
       <h4>本地部署（仅前端）</h4>
-      <pre><code>powershell -ExecutionPolicy Bypass -File <span class="c-str">"e:\huaxia\JSH_ERP\deploy-local.ps1"</span> -SkipBoot -NoPull</code></pre>
+      <pre><code>powershell -ExecutionPolicy Bypass -File <span class="c-str">"D:\erp\deploy-local.ps1"</span> -SkipBoot -NoPull</code></pre>
       <ul>
         <li><code>-SkipBoot</code>：跳过后端打包；<code>-NoPull</code>：不拉取远端代码。</li>
         <li>脚本会重启 9999 端口服务；若进程随终端退出被回收，需独立拉起后端。</li>
         <li>前端产物：<code>jshERP-web/dist</code> → <code>jshERP-boot/frontend-dist</code>。</li>
+        <li>应用数据和数据库备份位于独立目录，数据库凭据由部署环境注入；Compose 不对外映射 MySQL 端口。详见 <code>docs/部署数据与备份.md</code>。</li>
       </ul>
 
       <h4>验证清单</h4>
@@ -617,7 +618,7 @@ clearMobileHeaderActions(); clearMobileHeaderTitle()</code></pre>
         <table>
           <thead><tr><th>文档</th><th>位置</th><th>内容</th></tr></thead>
           <tbody>
-            <tr><td>本页</td><td><code>docs/dev-handoff/dev-handoff.html</code></td><td>模块/页面/规范总览（按类归类），是调用交接文档的网页版</td></tr>
+            <tr><td>本页</td><td><code>docs/dev-handoff/dev-handoff.html</code></td><td>模块/页面/规范概要；详细部署与开发约定以 Markdown 交接文档为准</td></tr>
             <tr><td>调用交接文档（唯一交接文件）</td><td><code>docs/开发约定与模块调用交接文档.md</code></td><td>逐模块调用示例、页面接入步骤、规范全文、交付自检</td></tr>
             <tr><td>归档附录</td><td>同上文档第 11 节</td><td>原商品字段精简、商品表格列抽离、滚动空白专项、标签编辑说明、手机模拟器说明、扫码验收报告（原文件已删除）</td></tr>
           </tbody>

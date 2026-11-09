@@ -1,14 +1,16 @@
 <template>
   <div class="home">
-    <div class="home-header">
-      <div class="home-header__top">
-        <div>
-          <div class="home-header__greeting">{{ greeting }}，{{ userName || '你好' }}</div>
-          <div class="home-header__date">{{ today }}</div>
-        </div>
-        <a class="home-header__pc" href="/">电脑版</a>
+    <NavBar title="工作台" show-avatar :avatar-text="avatarText" @avatar="goMine" />
+
+    <div class="home-hero">
+      <div class="home-hero__main">
+        <div class="home-hero__greeting">{{ greeting }}，{{ userName || '你好' }}</div>
+        <div class="home-hero__date">{{ today }}</div>
       </div>
+      <a class="home-hero__pc" href="/">电脑版</a>
     </div>
+
+    <PwaInstall />
 
     <div v-if="loading" class="home-loading">功能加载中...</div>
 
@@ -18,19 +20,40 @@
     </div>
 
     <template v-else>
-      <div v-for="group in groups" :key="group.id" class="home-group">
-        <div class="home-group__title">{{ group.text }}</div>
-        <div class="home-group__grid">
+      <div v-if="quickItems.length" class="home-card">
+        <div class="home-card__head">
+          <span class="home-card__title">常用功能</span>
+        </div>
+        <div class="home-grid">
+          <div
+            v-for="item in quickItems"
+            :key="'quick-' + item.url"
+            class="home-entry"
+            @click="open(item)">
+            <span class="home-entry__icon">{{ initialLetter(item.text) }}</span>
+            <span class="home-entry__text">{{ item.text }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="groups.length" class="home-section-title">全部功能</div>
+
+      <div v-for="group in groups" :key="group.id" class="home-card">
+        <div class="home-card__head">
+          <span class="home-card__title">{{ group.text }}</span>
+        </div>
+        <div class="home-grid">
           <div
             v-for="item in group.items"
             :key="item.url"
             class="home-entry"
             @click="open(item)">
-            <span class="home-entry__icon">{{ initial(item.text) }}</span>
+            <span class="home-entry__icon">{{ initialLetter(item.text) }}</span>
             <span class="home-entry__text">{{ item.text }}</span>
           </div>
         </div>
       </div>
+
       <div v-if="groups.length === 0" class="home-empty">当前账号暂无可访问的功能菜单</div>
       <div class="home-tip">业务页面当前沿用电脑版的移动适配页面，后续将逐步迁移到手机端。</div>
     </template>
@@ -41,9 +64,12 @@
 import ls from '../utils/storage'
 import { getMenu } from '../api/auth'
 import { USER_ID } from '../store/mutation-types'
+import NavBar from '../components/NavBar.vue'
+import PwaInstall from '../components/PwaInstall.vue'
 
 export default {
   name: 'MobileHome',
+  components: { NavBar, PwaInstall },
   data () {
     return {
       groups: [],
@@ -54,6 +80,16 @@ export default {
   computed: {
     userName () {
       return this.$store.getters.userName
+    },
+    avatarText () {
+      return (this.userName || '我').charAt(0).toUpperCase()
+    },
+    quickItems () {
+      const items = []
+      this.groups.forEach(group => {
+        group.items.forEach(item => items.push(item))
+      })
+      return items.slice(0, 8)
     },
     greeting () {
       const hour = new Date().getHours()
@@ -107,8 +143,11 @@ export default {
       })
       return groups
     },
-    initial (text) {
+    initialLetter (text) {
       return (text || '').charAt(0)
+    },
+    goMine () {
+      this.$router.push('/mine')
     },
     open (item) {
       if (/^https?:\/\//.test(item.url)) {
@@ -128,35 +167,37 @@ export default {
     background: #f5f6f8;
   }
 
-  .home-header {
-    padding: calc(20px + env(safe-area-inset-top)) 18px 26px;
-    background: linear-gradient(135deg, #1890ff, #0d6fd8);
-    color: #fff;
-  }
-
-  .home-header__top {
+  .home-hero {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
+    margin: 12px 12px 0;
+    padding: 16px 18px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #eaf4ff, #f6fbff);
+    border: 1px solid #d8ecff;
   }
 
-  .home-header__greeting {
-    font-size: 18px;
+  .home-hero__greeting {
+    color: #1f2329;
+    font-size: 17px;
     font-weight: 600;
   }
 
-  .home-header__date {
+  .home-hero__date {
     margin-top: 6px;
+    color: #64748b;
     font-size: 12px;
-    opacity: 0.8;
   }
 
-  .home-header__pc {
+  .home-hero__pc {
+    flex: 0 0 auto;
     padding: 5px 12px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: #fff;
+    color: #1890ff;
     font-size: 12px;
+    border: 1px solid #bcdcff;
   }
 
   .home-loading {
@@ -186,21 +227,34 @@ export default {
     font-size: 13px;
   }
 
-  .home-group {
+  .home-section-title {
+    padding: 18px 18px 8px;
+    color: #1f2329;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .home-card {
     margin: 12px 12px 0;
     padding: 14px 8px 6px;
     border-radius: 12px;
     background: #fff;
   }
 
-  .home-group__title {
+  .home-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 0 6px 10px;
+  }
+
+  .home-card__title {
     color: #1f2329;
     font-size: 14px;
     font-weight: 600;
   }
 
-  .home-group__grid {
+  .home-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 4px 0;

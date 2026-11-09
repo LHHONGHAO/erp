@@ -1,5 +1,7 @@
 <template>
   <div class="mine">
+    <NavBar title="个人中心" />
+
     <div class="mine-header">
       <div class="mine-avatar">{{ initial }}</div>
       <div class="mine-info">
@@ -17,6 +19,7 @@
         <span>手机端版本</span>
         <span class="mine-item__value">{{ version }}</span>
       </div>
+      <PwaInstall variant="item" />
     </div>
 
     <button class="mine-logout" type="button" @click="handleLogout">退出登录</button>
@@ -24,8 +27,12 @@
 </template>
 
 <script>
+import NavBar from '../components/NavBar.vue'
+import PwaInstall from '../components/PwaInstall.vue'
+
 export default {
   name: 'MobileMine',
+  components: { NavBar, PwaInstall },
   data () {
     return {
       version: '3.5.0'
@@ -66,7 +73,7 @@ export default {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: calc(24px + env(safe-area-inset-top)) 18px 28px;
+    padding: 20px 18px 24px;
     background: linear-gradient(135deg, #1890ff, #0d6fd8);
     color: #fff;
   }

@@ -15,7 +15,6 @@
       <div class="ocr-member-title">
         <a-icon v-if="isMobileView" type="arrow-left" class="ocr-member-back" @click="handleCancel" />
         <span class="ocr-member-title__text">地址识别</span>
-        <a-icon v-if="isMobileView" type="setting" class="ocr-member-setting" @click="showConfig = true" />
       </div>
     </template>
 
@@ -92,42 +91,11 @@
       <a-button size="small" @click="handleCancel" style="margin-right:8px">取消</a-button>
       <a-button size="small" type="primary" :disabled="!hasOcrResult" @click="applyResult">应用</a-button>
     </div>
-
-    <!-- 地址识别参数配置：独立弹层，挂到 body 避免嵌套层叠上下文遮挡，z-index 高于地址识别页 -->
-    <a-modal
-      :visible="showConfig"
-      title="地址识别参数"
-      :width="isMobileView ? '100%' : 480"
-      :footer="null"
-      :maskClosable="false"
-      :zIndex="2000"
-      :wrapClassName="isMobileView ? 'ocr-config-modal-mobile' : ''"
-      @cancel="showConfig = false">
-      <div class="ocr-config-form">
-        <div class="ocr-config-row">
-          <span class="ocr-config-row__label">启用</span>
-          <a-switch v-model="cfg.enabled" checkedChildren="启用" unCheckedChildren="禁用" />
-        </div>
-        <div class="ocr-config-row">
-          <span class="ocr-config-row__label">API Key</span>
-          <a-input v-model="cfg.apiKey" :bordered="false" allowClear
-                   :placeholder="cfg.maskedApiKey ? ('已保存 ' + cfg.maskedApiKey + '，留空则沿用') : '请输入 API Key'" />
-        </div>
-        <div class="ocr-config-row">
-          <span class="ocr-config-row__label">Secret Key</span>
-          <a-input v-model="cfg.secretKey" type="password" :bordered="false" allowClear
-                   :placeholder="cfg.maskedSecretKey ? ('已保存 ' + cfg.maskedSecretKey + '，留空则沿用') : '请输入 Secret Key'" />
-        </div>
-        <div class="ocr-config-actions">
-          <a-button type="primary" :loading="cfgSaving" @click="saveConfig">保存</a-button>
-        </div>
-      </div>
-    </a-modal>
   </a-modal>
 </template>
 
 <script>
-import { getAction, postAction } from '@/api/manage'
+import { postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
 import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
 
@@ -147,7 +115,6 @@ export default {
   },
   data() {
     return {
-      showConfig: false,
       ocrLoading: false,
       pasteLoading: false,
       hasOcrResult: false,
@@ -155,14 +122,6 @@ export default {
       imageUrl: '',
       previewVisible: false,
       pasteText: '',
-      cfgSaving: false,
-      cfg: {
-        enabled: false,
-        apiKey: '',
-        secretKey: '',
-        maskedApiKey: '',
-        maskedSecretKey: ''
-      },
       ocrFields: {
         rawText: '',
         contacts: '',
@@ -219,48 +178,10 @@ export default {
     visible(val) {
       if (val) {
         this.resetOcrFields()
-        this.loadConfig()
       }
     }
   },
   methods: {
-    /** 读取地址识别参数配置（独立于图片识别的 API Key） */
-    loadConfig() {
-      getAction('/ocr/addressConfig').then(res => {
-        if (res && res.code === 200 && res.data) {
-          this.cfg.enabled = !!res.data.enabled
-          this.cfg.maskedApiKey = res.data.apiKey || ''
-          this.cfg.maskedSecretKey = res.data.secretKey || ''
-          this.cfg.apiKey = ''
-          this.cfg.secretKey = ''
-        }
-      }).catch(() => {
-        this.$message.error('读取地址识别配置失败')
-      })
-    },
-    /** 保存地址识别参数配置 */
-    saveConfig() {
-      this.cfgSaving = true
-      postAction('/ocr/saveAddressConfig', {
-        enabled: this.cfg.enabled,
-        apiKey: this.cfg.apiKey,
-        secretKey: this.cfg.secretKey
-      }).then(res => {
-        this.cfgSaving = false
-        if (res && res.code === 200) {
-          this.$message.success('地址识别参数保存成功')
-          this.cfg.apiKey = ''
-          this.cfg.secretKey = ''
-          this.loadConfig()
-          this.showConfig = false
-        } else {
-          this.$message.error((res && res.data && res.data.message) ? res.data.message : '保存失败')
-        }
-      }).catch(err => {
-        this.cfgSaving = false
-        this.$message.error('保存请求失败：' + (err && err.message ? err.message : '未知错误'))
-      })
-    },
     handleCancel() {
       this.$emit('cancel')
     },
@@ -391,42 +312,6 @@ export default {
 .ocr-prop-item {
   padding: 4px 0;
 }
-/* 地址识别参数配置弹窗：表单行 */
-.ocr-config-form {
-  padding: 4px 0;
-}
-.ocr-config-row {
-  display: flex;
-  align-items: center;
-  min-height: 48px;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-.ocr-config-row__label {
-  width: 100px;
-  flex-shrink: 0;
-  font-size: 14px;
-  color: #595959;
-  text-align: right;
-  padding-right: 12px;
-  white-space: nowrap;
-}
-.ocr-config-row .ant-input,
-.ocr-config-row .ant-input-affix-wrapper {
-  flex: 1;
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  font-size: 14px;
-}
-.ocr-config-row .ant-input::placeholder {
-  color: #bfbfbf;
-}
-.ocr-config-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 16px;
-}
 .ocr-file-input {
   display: none;
 }
@@ -490,12 +375,6 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .ocr-member-setting {
-    font-size: 18px;
-    color: #fff;
-    padding: 0 16px;
-    cursor: pointer;
   }
   .ocr-member-card {
     margin-bottom: 12px;
@@ -569,58 +448,6 @@ export default {
     height: 46px;
     border-radius: 23px;
     font-size: 16px;
-  }
-}
-
-/* 手机端：地址识别参数配置弹窗 —— 跟随唤出页面（地址识别页本身全屏），底部弹出 */
-.ocr-config-modal-mobile {
-  .ant-modal-wrap {
-    position: fixed !important;
-    inset: 0;
-    z-index: 2000 !important;
-  }
-  .ant-modal {
-    width: 100% !important;
-    max-width: 100% !important;
-    top: auto;
-    bottom: 0;
-    margin: 0;
-    padding-bottom: 0;
-  }
-  .ant-modal-content {
-    border-radius: 16px 16px 0 0;
-    height: auto;
-    max-height: 70vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .ant-modal-header {
-    border-bottom: 1px solid #f0f0f0;
-    padding: 14px 16px;
-  }
-  .ant-modal-title {
-    font-size: 16px;
-    font-weight: 600;
-  }
-  .ant-modal-body {
-    padding: 8px 16px 16px;
-    overflow-y: auto;
-  }
-  .ocr-config-row {
-    min-height: 52px;
-  }
-  .ocr-config-row__label {
-    font-size: 15px;
-  }
-  .ocr-config-row .ant-input,
-  .ocr-config-row .ant-input-affix-wrapper {
-    font-size: 16px;
-  }
-  .ocr-config-actions .ant-btn {
-    height: 40px;
-    padding: 0 24px;
-    font-size: 15px;
-    border-radius: 20px;
   }
 }
 </style>

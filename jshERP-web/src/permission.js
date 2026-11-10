@@ -60,6 +60,47 @@ function injectAddressRecognizeMenu(menuData) {
   }
 }
 
+// AI配置页面由前端内置，注入到「系统管理」菜单分组下，不依赖后台菜单表
+function injectAiConfigMenu(menuData) {
+  if (!Array.isArray(menuData)) return
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/system')
+  if (!target) return
+  if (!Array.isArray(target.children)) target.children = []
+  const exists = target.children.some(item => item.url === '/system/ai-config')
+  if (!exists) {
+    target.children.push({
+      id: 'ai-config',
+      text: 'AI配置',
+      icon: 'setting',
+      url: '/system/ai-config',
+      component: '/system/AiConfig',
+      route: '1',
+      children: []
+    })
+  }
+}
+
+// 远程打印配置页面由前端内置，注入到「系统设置 / 系统管理」菜单分组下，不依赖后台菜单表
+function injectRemotePrintMenu(menuData) {
+  if (!Array.isArray(menuData)) return
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/system'
+    || item.text === '系统设置' || item.text === '系统管理')
+  if (!target) return
+  if (!Array.isArray(target.children)) target.children = []
+  const exists = target.children.some(item => item.url === '/system/remote-print')
+  if (!exists) {
+    target.children.push({
+      id: 'remote-print-config',
+      text: '远程打印配置',
+      icon: 'printer',
+      url: '/system/remote-print',
+      component: '/print/RemotePrintConfig',
+      route: '1',
+      children: []
+    })
+  }
+}
+
 NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
@@ -93,6 +134,8 @@ router.beforeEach((to, from, next) => {
           })
           let constRoutes = [];
           injectAddressRecognizeMenu(menuData);
+          injectAiConfigMenu(menuData);
+          injectRemotePrintMenu(menuData);
           constRoutes = generateIndexRouter(menuData);
           injectMobilePageRoutes(constRoutes)
           injectPrintAgentRoute(constRoutes)

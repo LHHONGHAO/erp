@@ -144,26 +144,33 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
+  min-height: 48px;
   border-top: 1px solid #f0f0f0;
 }
 .ir-box__toolbar-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   font-size: 14px;
   color: #595959;
 }
+/* 图标与文字同高、同行中线对齐：固定行高并让图标成为 flex 项，抵消 antd 的基线偏移 */
 .ir-box__toolbar-left a {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  height: 28px;
+  line-height: 28px;
   color: #595959;
-  line-height: 20px;
+  white-space: nowrap;
 }
 .ir-box__toolbar-left .anticon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  height: 1em;
+  margin-right: 4px;
+  font-size: 15px;
   line-height: 1;
-  vertical-align: middle;
+  vertical-align: 0;
 }
 .ir-box__clear {
   color: #bfbfbf !important;

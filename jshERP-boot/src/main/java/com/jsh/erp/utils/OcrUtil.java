@@ -2,24 +2,17 @@ package com.jsh.erp.utils;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.jsh.erp.config.BaiduOcrConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Base64Utils;
 
-import javax.annotation.PostConstruct;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,182 +21,79 @@ public class OcrUtil {
     private static final Logger logger = LoggerFactory.getLogger(OcrUtil.class);
     /** 手机号 */
     private static final Pattern PHONE_PATTERN = Pattern.compile("1[3-9]\\d{9}");
-    /** 百度地址识别（自然语言）API */
-    private static final String ADDRESS_TEXT_URL = "https://aip.baidubce.com/rpc/2.0/nlp/v1/address";
-
-    @Autowired
-    private BaiduOcrConfig baiduOcrConfig;
-
-    private static BaiduOcrConfig config;
+    /** 百度开放平台令牌地址 */
+    private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
+    /** 百度通用文字识别（图片转文字），可在 AI 配置中覆盖 */
+    private static final String DEFAULT_OCR_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic";
+    /** 百度地址识别（自然语言），可在 AI 配置中覆盖 */
+    private static final String DEFAULT_ADDRESS_URL = "https://aip.baidubce.com/rpc/2.0/nlp/v1/address";
 
     private static String accessToken;
+    private static String accessTokenKey;
     private static long tokenExpireTime;
-
-    private static Boolean runtimeEnabled;
-    private static String runtimeApiKey;
-    private static String runtimeSecretKey;
-
-    /** 地址识别独立配置（与图片识别使用不同的 API Key） */
-    private static Boolean runtimeAddressEnabled;
-    private static String runtimeAddressApiKey;
-    private static String runtimeAddressSecretKey;
-    private static String addressAccessToken;
-    private static long addressTokenExpireTime;
-
-    @PostConstruct
-    public void init() {
-        config = baiduOcrConfig;
-        loadConfigFromFile();
-    }
 
     /** 密钥判空：null 或仅空白字符都视为未配置 */
     private static boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
     }
 
-    /** OCR 配置文件路径：优先取统一数据目录（-Djsh.data.dir），否则退回启动目录下 config/ */
-    private static String getOcrConfigPath() {
-        String dataDir = System.getProperty("jsh.data.dir");
-        if (dataDir != null && !dataDir.trim().isEmpty()) {
-            return dataDir.replace('\\', '/') + "/config/ocr-config.properties";
-        }
-        return System.getProperty("user.dir") + "/config/ocr-config.properties";
+    /** 文字识别配置：AI配置中「能力=文字识别」，未配置时回退「图片识别」 */
+    private static JSONObject ocrEntry() {
+        return AiApiConfig.find("text", "image");
     }
 
-    private static void loadConfigFromFile() {
-        try {
-            String configPath = getOcrConfigPath();
-            Path path = Paths.get(configPath);
-            if (Files.exists(path)) {
-                Properties props = new Properties();
-                try (FileInputStream fis = new FileInputStream(path.toString())) {
-                    props.load(fis);
-                }
-                String enabledStr = props.getProperty("ocr.baidu.enabled", "");
-                String apiKey = props.getProperty("ocr.baidu.apiKey", "");
-                String secretKey = props.getProperty("ocr.baidu.secretKey", "");
-                // 仅当配置文件中显式存在 ocr.baidu.enabled 时才覆盖，否则沿用 application.yml 的配置
-                if (enabledStr != null && !enabledStr.isEmpty()) {
-                    runtimeEnabled = Boolean.parseBoolean(enabledStr);
-                }
-                if (apiKey != null && !apiKey.isEmpty()) {
-                    runtimeApiKey = apiKey;
-                }
-                if (secretKey != null && !secretKey.isEmpty()) {
-                    runtimeSecretKey = secretKey;
-                }
-                // 地址识别独立配置
-                if (props.containsKey("ocr.address.enabled")) {
-                    runtimeAddressEnabled = Boolean.parseBoolean(props.getProperty("ocr.address.enabled", "false"));
-                }
-                String addressApiKey = props.getProperty("ocr.address.apiKey", "");
-                String addressSecretKey = props.getProperty("ocr.address.secretKey", "");
-                if (addressApiKey != null && !addressApiKey.isEmpty()) {
-                    runtimeAddressApiKey = addressApiKey;
-                }
-                if (addressSecretKey != null && !addressSecretKey.isEmpty()) {
-                    runtimeAddressSecretKey = addressSecretKey;
-                }
-                logger.info("Loaded OCR config from file: {}", configPath);
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to load OCR config from file, using default config", e);
-        }
+    /** 地址识别配置：AI配置中「能力=地址识别」 */
+    private static JSONObject addressEntry() {
+        return AiApiConfig.find("address");
     }
 
     public static boolean isEnabled() {
-        if (runtimeEnabled != null) {
-            return runtimeEnabled;
-        }
-        return config != null && config.isEnabled();
+        return AiApiConfig.hasKeys(ocrEntry());
+    }
+
+    /** 地址识别是否可用：图片转文字需要文字识别密钥，地址解析需要地址识别密钥 */
+    public static boolean isAddressEnabled() {
+        return AiApiConfig.hasKeys(ocrEntry()) || AiApiConfig.hasKeys(addressEntry());
     }
 
     public static String getAccessToken() throws Exception {
-        if (accessToken != null && System.currentTimeMillis() < tokenExpireTime) {
+        JSONObject entry = ocrEntry();
+        if (!AiApiConfig.hasKeys(entry)) {
+            throw new RuntimeException("未配置百度文字识别密钥，请到「系统管理 - AI配置」添加：服务商选百度，能力选文字识别");
+        }
+        return getToken(entry.getString("apiKey"), entry.getString("apiSecret"));
+    }
+
+    /**
+     * 获取百度访问令牌，按密钥缓存，密钥变更后自动重新获取
+     */
+    private static String getToken(String apiKey, String apiSecret) throws Exception {
+        String cacheKey = apiKey + "|" + apiSecret;
+        if (!isBlank(accessToken) && cacheKey.equals(accessTokenKey) && System.currentTimeMillis() < tokenExpireTime) {
             return accessToken;
         }
-        if (!isEnabled()) {
-            throw new RuntimeException("OCR功能未启用，请在配置文件中配置百度OCR的API Key和Secret Key");
-        }
-        String apiKey = runtimeApiKey != null ? runtimeApiKey : config.getApiKey();
-        String secretKey = runtimeSecretKey != null ? runtimeSecretKey : config.getSecretKey();
-        if (isBlank(apiKey) || isBlank(secretKey)) {
-            throw new RuntimeException("未配置百度OCR的API Key和Secret Key，请在图片识别页右上角设置中填写");
-        }
-        String tokenUrl = config.getTokenUrl();
-
-        String params = "grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
-        String result = postForm(tokenUrl, params);
+        String params = "grant_type=client_credentials&client_id=" + URLEncoder.encode(apiKey, "UTF-8")
+                + "&client_secret=" + URLEncoder.encode(apiSecret, "UTF-8");
+        String result = postForm(TOKEN_URL, params);
         JSONObject json = JSON.parseObject(result);
         if (json.containsKey("access_token")) {
             accessToken = json.getString("access_token");
+            accessTokenKey = cacheKey;
             int expiresIn = json.getIntValue("expires_in");
             tokenExpireTime = System.currentTimeMillis() + (expiresIn - 3600) * 1000L;
             return accessToken;
-        } else {
-            throw new RuntimeException("获取OCR访问令牌失败：" + result);
         }
-    }
-
-    /** 地址识别是否启用：独立配置优先，未单独配置时沿用图片识别配置 */
-    public static boolean isAddressEnabled() {
-        if (runtimeAddressEnabled != null) {
-            return runtimeAddressEnabled;
-        }
-        return isEnabled();
-    }
-
-    /** 地址识别的 API Key：未单独配置时沿用图片识别配置 */
-    public static String getAddressApiKey() {
-        if (runtimeAddressApiKey != null && !runtimeAddressApiKey.trim().isEmpty()) {
-            return runtimeAddressApiKey;
-        }
-        return runtimeApiKey != null ? runtimeApiKey : (config != null ? config.getApiKey() : null);
-    }
-
-    /** 地址识别的 Secret Key：未单独配置时沿用图片识别配置 */
-    public static String getAddressSecretKey() {
-        if (runtimeAddressSecretKey != null && !runtimeAddressSecretKey.trim().isEmpty()) {
-            return runtimeAddressSecretKey;
-        }
-        return runtimeSecretKey != null ? runtimeSecretKey : (config != null ? config.getSecretKey() : null);
-    }
-
-    /** 地址识别独立令牌缓存，与图片识别区分 */
-    public static String getAddressAccessToken() throws Exception {
-        if (addressAccessToken != null && System.currentTimeMillis() < addressTokenExpireTime) {
-            return addressAccessToken;
-        }
-        if (!isAddressEnabled()) {
-            throw new RuntimeException("地址识别未启用，请先配置地址识别的API Key和Secret Key");
-        }
-        String apiKey = getAddressApiKey();
-        String secretKey = getAddressSecretKey();
-        if (isBlank(apiKey) || isBlank(secretKey)) {
-            throw new RuntimeException("未配置地址识别的API Key和Secret Key，请在地址识别页右上角设置中填写");
-        }
-        String tokenUrl = config.getTokenUrl();
-
-        String params = "grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
-        String result = postForm(tokenUrl, params);
-        JSONObject json = JSON.parseObject(result);
-        if (json.containsKey("access_token")) {
-            addressAccessToken = json.getString("access_token");
-            int expiresIn = json.getIntValue("expires_in");
-            addressTokenExpireTime = System.currentTimeMillis() + (expiresIn - 3600) * 1000L;
-            return addressAccessToken;
-        } else {
-            throw new RuntimeException("获取地址识别访问令牌失败：" + result);
-        }
+        String error = json.getString("error_description");
+        throw new RuntimeException("获取百度访问令牌失败：" + (isBlank(error) ? result : error));
     }
 
     public static Map<String, String> recognizeProductImage(String imageBase64) throws Exception {
         Map<String, String> result = new HashMap<>();
         if (!isEnabled()) {
-            throw new RuntimeException("OCR功能未启用，请在配置文件中配置百度OCR的API Key和Secret Key");
+            throw new RuntimeException("未配置百度文字识别密钥，请到「系统管理 - AI配置」添加：服务商选百度，能力选文字识别");
         }
         String accessToken = getAccessToken();
-        String ocrUrl = config.getOcrUrl() + "?access_token=" + accessToken;
+        String ocrUrl = AiApiConfig.urlOrDefault(ocrEntry(), DEFAULT_OCR_URL) + "?access_token=" + accessToken;
 
         String encodedImage = URLEncoder.encode(imageBase64, "UTF-8");
         String params = "image=" + encodedImage + "&detect_direction=false&detect_language=false&paragraph=false&probability=false";
@@ -232,17 +122,23 @@ public class OcrUtil {
     public static Map<String, String> recognizeAddressImage(String imageBase64) throws Exception {
         Map<String, String> result = new HashMap<>();
         if (!isAddressEnabled()) {
-            throw new RuntimeException("地址识别未启用，请先配置地址识别的API Key和Secret Key");
+            throw new RuntimeException("未配置识别密钥，请到「系统管理 - AI配置」添加：文字识别、地址识别");
         }
-        // OCR 识图步骤：地址识别应用通常只开通了 NLP 地址服务，未开通 OCR 服务。
-        // 因此优先使用主 OCR 配置的令牌调用 general_basic，主 OCR 未启用时回退到地址令牌。
+        // 图片转文字用的是「通用文字识别」API，地址解析用的是「地址识别」API，两者密钥各用各的：
+        // 优先使用文字识别密钥；未配置时才退回地址识别密钥（同一百度应用开通了两项也能用）。
+        JSONObject ocrEntry = ocrEntry();
+        JSONObject addressEntry = addressEntry();
+        boolean hasOcrKeys = AiApiConfig.hasKeys(ocrEntry);
         String ocrAccessToken;
-        if (isEnabled()) {
-            ocrAccessToken = getAccessToken();
+        String ocrUrl;
+        if (hasOcrKeys) {
+            ocrAccessToken = getToken(ocrEntry.getString("apiKey"), ocrEntry.getString("apiSecret"));
+            ocrUrl = AiApiConfig.urlOrDefault(ocrEntry, DEFAULT_OCR_URL);
         } else {
-            ocrAccessToken = getAddressAccessToken();
+            ocrAccessToken = getToken(addressEntry.getString("apiKey"), addressEntry.getString("apiSecret"));
+            ocrUrl = DEFAULT_OCR_URL;
         }
-        String ocrUrl = config.getOcrUrl() + "?access_token=" + ocrAccessToken;
+        ocrUrl = ocrUrl + "?access_token=" + ocrAccessToken;
 
         String encodedImage = URLEncoder.encode(imageBase64, "UTF-8");
         String params = "image=" + encodedImage + "&detect_direction=false&detect_language=false&paragraph=false&probability=false";
@@ -260,6 +156,10 @@ public class OcrUtil {
             result.put("rawText", allText.toString().trim());
             result.putAll(parseAddressText(allText.toString().trim()));
         } else {
+            String errorMsg = json.getString("error_msg");
+            if (errorMsg != null && !errorMsg.isEmpty()) {
+                throw new RuntimeException("OCR识别失败：" + errorMsg + "（error_code=" + json.getString("error_code") + "）");
+            }
             throw new RuntimeException("OCR识别失败：" + response);
         }
         return result;
@@ -285,8 +185,12 @@ public class OcrUtil {
      */
     public static Map<String, String> parseAddressTextByApi(String text) throws Exception {
         Map<String, String> result = new HashMap<>();
-        String accessToken = getAddressAccessToken();
-        String url = ADDRESS_TEXT_URL + "?access_token=" + accessToken;
+        JSONObject entry = addressEntry();
+        if (!AiApiConfig.hasKeys(entry)) {
+            throw new RuntimeException("未配置百度地址识别密钥，请到「系统管理 - AI配置」添加");
+        }
+        String accessToken = getToken(entry.getString("apiKey"), entry.getString("apiSecret"));
+        String url = AiApiConfig.urlOrDefault(entry, DEFAULT_ADDRESS_URL) + "?access_token=" + accessToken;
 
         JSONObject body = new JSONObject();
         body.put("text", text);
@@ -771,102 +675,4 @@ public class OcrUtil {
         return Base64Utils.encodeToString(data);
     }
 
-    public static void updateConfig(boolean enabled, String apiKey, String secretKey) {
-        runtimeEnabled = enabled;
-        runtimeApiKey = apiKey;
-        runtimeSecretKey = secretKey;
-        accessToken = null;
-        tokenExpireTime = 0;
-    }
-
-    /** 更新地址识别（独立 API）配置 */
-    public static void updateAddressConfig(boolean enabled, String apiKey, String secretKey) {
-        runtimeAddressEnabled = enabled;
-        runtimeAddressApiKey = apiKey;
-        runtimeAddressSecretKey = secretKey;
-        addressAccessToken = null;
-        addressTokenExpireTime = 0;
-    }
-
-    /** 将指定前缀（如 ocr.baidu / ocr.address）的配置写入配置文件，保留其他配置项 */
-    public static synchronized void saveConfigToFile(String prefix, boolean enabled, String apiKey, String secretKey) throws Exception {
-        String configPath = getOcrConfigPath();
-        Path path = Paths.get(configPath);
-        if (!Files.exists(path.getParent())) {
-            Files.createDirectories(path.getParent());
-        }
-        Properties props = new Properties();
-        if (Files.exists(path)) {
-            try (InputStream in = Files.newInputStream(path)) {
-                props.load(in);
-            }
-        }
-        props.setProperty(prefix + ".enabled", String.valueOf(enabled));
-        if (apiKey != null && !apiKey.trim().isEmpty()) {
-            props.setProperty(prefix + ".apiKey", apiKey.trim());
-        }
-        if (secretKey != null && !secretKey.trim().isEmpty()) {
-            props.setProperty(prefix + ".secretKey", secretKey.trim());
-        }
-        props.setProperty(prefix + ".tokenUrl", "https://aip.baidubce.com/oauth/2.0/token");
-        if (!props.containsKey(prefix + ".ocrUrl")) {
-            props.setProperty(prefix + ".ocrUrl", "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic");
-        }
-        try (OutputStream out = Files.newOutputStream(path)) {
-            props.store(out, "JSH ERP OCR config");
-        }
-        logger.info("OCR config saved: {}", configPath);
-    }
-
-    /** 地址识别 API Key（脱敏） */
-    public static String getMaskedAddressApiKey() {
-        return maskKey(getAddressApiKey());
-    }
-
-    /** 地址识别 Secret Key（脱敏） */
-    public static String getMaskedAddressSecretKey() {
-        return maskKey(getAddressSecretKey());
-    }
-
-    private static String maskKey(String key) {
-        if (key == null || key.isEmpty()) {
-            return "";
-        }
-        if (key.length() <= 8) {
-            return key;
-        }
-        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
-    }
-
-    public static String getConfiguredApiKey() {
-        return runtimeApiKey != null && !runtimeApiKey.trim().isEmpty()
-                ? runtimeApiKey : (config != null ? config.getApiKey() : null);
-    }
-
-    public static String getConfiguredSecretKey() {
-        return runtimeSecretKey != null && !runtimeSecretKey.trim().isEmpty()
-                ? runtimeSecretKey : (config != null ? config.getSecretKey() : null);
-    }
-
-    public static String getMaskedApiKey() {
-        String key = runtimeApiKey != null ? runtimeApiKey : (config != null ? config.getApiKey() : null);
-        if (key == null || key.isEmpty()) {
-            return "";
-        }
-        if (key.length() <= 8) {
-            return key;
-        }
-        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
-    }
-
-    public static String getMaskedSecretKey() {
-        String key = runtimeSecretKey != null ? runtimeSecretKey : (config != null ? config.getSecretKey() : null);
-        if (key == null || key.isEmpty()) {
-            return "";
-        }
-        if (key.length() <= 8) {
-            return key;
-        }
-        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
-    }
 }

@@ -113,12 +113,31 @@ export default {
       this.loading = true
       this.errorText = ''
       getMenu({ pNumber: 0, userId: ls.get(USER_ID) }).then(res => {
-        this.groups = this.buildGroups(res)
+        this.groups = this.buildGroups(this.injectRemotePrint(res))
       }).catch(() => {
         this.errorText = '功能菜单加载失败，请检查网络后重试'
       }).finally(() => {
         this.loading = false
       })
+    },
+    // 远程打印配置页面由前端内置，挂到「系统设置 / 系统管理」菜单分组下
+    injectRemotePrint (nodes) {
+      const list = Array.isArray(nodes) ? nodes : []
+      const target = list.find(node => (node.url || '').replace(/\/$/, '') === '/system'
+        || node.text === '系统设置' || node.text === '系统管理')
+      if (!target) return list
+      if (!Array.isArray(target.children)) target.children = []
+      const exists = target.children.some(node => node.url === '/system/remote-print')
+      if (!exists) {
+        target.children.push({
+          id: 'remote-print-config',
+          text: '远程打印配置',
+          url: '/system/remote-print',
+          route: '1',
+          children: []
+        })
+      }
+      return list
     },
     buildGroups (nodes) {
       const groups = []

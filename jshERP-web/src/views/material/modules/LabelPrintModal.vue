@@ -61,8 +61,21 @@
                   <template v-if="item.isCode">
                     <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
                   </template>
+                  <template v-else-if="isGoodsTable(item.key)">
+                    <div class="lp-goods-table">
+                      <div class="lp-goods-row lp-goods-head" :style="{ height: (goodsTableData ? goodsTableData.headHeight : 0) + 'px' }">
+                        <span v-for="(col, ci) in goodsTableColumns" :key="ci" class="lp-goods-cell"
+                              :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ col }}</span>
+                      </div>
+                      <div class="lp-goods-row" v-for="(row, ri) in (goodsTableData ? goodsTableData.rows : [])" :key="ri"
+                           :style="{ height: getGoodsRowHeight(ri) + 'px' }">
+                        <span v-for="(cell, ci) in row.cells" :key="ci" class="lp-goods-cell"
+                              :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ cell }}</span>
+                      </div>
+                    </div>
+                  </template>
                   <template v-else>
-                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}
                   </template>
                 </div>
               </template>
@@ -135,7 +148,7 @@
     </mobile-modal-page>
 
     <!-- 页面 2：设备列表（蓝顶栏 + 下划线 tab + 打印机列表） -->
-    <div v-if="visible && showPrinterSheet && !wifiAddStep" class="lp-mobile-page">
+    <div v-if="visible && showPrinterSheet && !wifiAddStep && !printerEditVisible" class="lp-mobile-page">
       <!-- 顶栏：蓝底 + 白色返回 + 标题 -->
       <div class="lmp-header lmp-header-blue">
         <a-icon class="lmp-back" type="arrow-left" @click="showPrinterSheet = false" />
@@ -173,11 +186,36 @@
       </div>
 
       <!-- 列表区 -->
-      <a-spin :spinning="loadingPrinters" tip="加载中...">
+      <a-spin :spinning="loadingPrinters || loadingAgents" tip="加载中...">
         <div class="lmpl-list">
           <!-- 后端打印机 -->
           <template v-if="printerType === 'backend'">
+            <!-- 远程打印机：ERP 打印代理设备上的打印机 -->
+            <template v-if="agentPrinterItems.length > 0">
+              <div class="lmpl-section-title">远程打印机</div>
+              <div
+                v-for="p in agentPrinterItems"
+                :key="p.key"
+                class="lmpl-item"
+                :class="{ active: selectedPrinter === p.key }"
+                @click="selectPrinterAndClose(p.key)"
+              >
+                <div class="lmpl-item-left">
+                  <a-icon type="printer" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ p.printerName }}</div>
+                    <div class="lmpl-item-sub">
+                      {{ p.deviceName }} · {{ p.cmdSet || 'TSPL' }}<template v-if="p.host"> · {{ p.host }}:{{ p.port }}</template>
+                    </div>
+                  </div>
+                </div>
+                <span class="lmpl-status" :class="p.online ? 'online' : 'offline'">{{ p.online ? '在线' : '离线' }}</span>
+                <a class="lmpl-edit" @click.stop="openPrinterEdit(p)">编辑</a>
+                <a-icon v-if="selectedPrinter === p.key" type="check-circle" theme="filled" class="lmpl-check" />
+              </div>
+            </template>
             <template v-if="printers.length > 0">
+              <div v-if="agentPrinterItems.length > 0" class="lmpl-section-title">本机打印机</div>
               <div
                 v-for="p in printers"
                 :key="p.name"
@@ -195,10 +233,10 @@
                 <a-icon v-if="selectedPrinter === p.name" type="check-circle" theme="filled" class="lmpl-check" />
               </div>
             </template>
-            <div v-else class="lmpl-empty">
+            <div v-if="printers.length === 0 && agentPrinterItems.length === 0" class="lmpl-empty">
               <div class="lmpl-empty-icon"><a-icon type="printer" /></div>
               <div class="lmpl-empty-text">暂无可用打印机</div>
-              <div class="lmpl-empty-sub">请在后端电脑安装打印机后刷新</div>
+              <div class="lmpl-empty-sub">请在 ERP「打印代理设备」中添加设备，或在后端电脑安装打印机后刷新</div>
             </div>
           </template>
 
@@ -369,6 +407,15 @@
         >保存</a-button>
       </div>
     </div>
+
+    <!-- 页面 5：编辑设备（打印机设备 / 打印机 / 品牌与指令集） -->
+    <printer-device-config
+      :visible="visible && showPrinterSheet && printerEditVisible"
+      :devices="agentDevices"
+      :device-id="printerEditDeviceId"
+      :printer-id="printerEditPrinterId"
+      @close="printerEditVisible = false"
+      @saved="handlePrinterSaved" />
   </template>
 
   <!-- 桌面端：保留原有 modal 布局 -->
@@ -419,8 +466,21 @@
                   <template v-if="item.isCode">
                     <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
                   </template>
+                  <template v-else-if="isGoodsTable(item.key)">
+                    <div class="lp-goods-table">
+                      <div class="lp-goods-row lp-goods-head" :style="{ height: (goodsTableData ? goodsTableData.headHeight : 0) + 'px' }">
+                        <span v-for="(col, ci) in goodsTableColumns" :key="ci" class="lp-goods-cell"
+                              :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ col }}</span>
+                      </div>
+                      <div class="lp-goods-row" v-for="(row, ri) in (goodsTableData ? goodsTableData.rows : [])" :key="ri"
+                           :style="{ height: getGoodsRowHeight(ri) + 'px' }">
+                        <span v-for="(cell, ci) in row.cells" :key="ci" class="lp-goods-cell"
+                              :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ cell }}</span>
+                      </div>
+                    </div>
+                  </template>
                   <template v-else>
-                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ item.attr.value }}
+                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}
                   </template>
                 </div>
               </template>
@@ -573,6 +633,7 @@
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveGoodsLayout } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { getAction, postAction } from '@/api/manage'
@@ -588,10 +649,12 @@
     printToWifiPrinter
   } from '@/utils/printerSearch'
   import { fetchLocalPrinters, printToLocalPrinter, isLocalPrinter, localPrinterName, LOCAL_PRINTER_PREFIX, detectLocalAgent, LOCAL_AGENT_DOWNLOAD_URL } from '@/utils/localPrintAgent'
+  import { getPrintAgentList, printViaAgent } from '@/api/printAgent'
+  import PrinterDeviceConfig from '@/views/print/agent/PrinterDeviceConfig'
   var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
-    components: { LabelPaper, MobileModalPage },
+    components: { LabelPaper, MobileModalPage, PrinterDeviceConfig },
     data() {
       return {
         visible: false,
@@ -607,6 +670,8 @@
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 商品信息（组合值）显示哪些字段：由模板保存，缺省显示全部
+        goodsFields: null,
         // 数据源明细行（新版模板 table 元素循环渲染用）
         detailRows: [],
         // 条码/二维码图片缓存（key → dataURL）
@@ -637,6 +702,13 @@
         wifiPrinters: [],
         activeWifiId: null,
         wifiStatus: {},
+        // 远程打印机（ERP 打印代理设备）
+        agentDevices: [],
+        loadingAgents: false,
+        // 打印机编辑（品牌/指令集）
+        printerEditVisible: false,
+        printerEditDeviceId: '',
+        printerEditPrinterId: '',
         // 网络打印机测试状态
         addWifiTesting: false,
         addWifiForm: { name: '', ip: '', port: DEFAULT_PRINTER_PORT },
@@ -685,6 +757,34 @@
           return t.key === 'backend' || caps[t.key]
         })
       },
+      // 远程打印机（打印代理设备下的打印机，扁平化成可选卡片）
+      agentPrinterItems() {
+        var list = []
+        ;(this.agentDevices || []).forEach(function(dev) {
+          if (dev.enabled === 0 || dev.enabled === '0' || dev.enabled === false) return
+          var printers = dev.printers
+          if (typeof printers === 'string') {
+            try { printers = JSON.parse(printers) } catch (e) { printers = [] }
+          }
+          if (!printers || !printers.length) return
+          printers.forEach(function(p) {
+            list.push({
+              key: 'agent:' + dev.deviceId + ':' + p.id,
+              deviceRowId: dev.id,
+              deviceId: dev.deviceId,
+              deviceName: dev.name || dev.deviceId,
+              printerId: p.id,
+              printerName: p.name || p.id,
+              host: p.host || '',
+              port: p.port || '',
+              brand: p.brand || '',
+              cmdSet: p.cmdSet || 'TSPL',
+              online: !!dev.online
+            })
+          })
+        })
+        return list
+      },
       rotationOptions() {
         return [
           { value: 0, label: '0°', icon: 'edit' },
@@ -712,8 +812,8 @@
       // 手机端：当前打印机显示名
       mobileDeviceLabel() {
         if (this.printerType === 'backend') {
-          if (this.selectedPrinter) return this.selectedPrinter
-          return ''
+          // 远程打印机使用友好的「远程：打印机名」，不直接显示 agent: 内部标识
+          return this.currentPrinterLabel
         }
         if (this.printerType === 'wifi' && this.activeWifiId) {
           var p = this.wifiPrinters.find(function(x) { return x.id === this.activeWifiId }.bind(this))
@@ -727,6 +827,12 @@
       mobileDeviceOnline() {
         if (this.printerType === 'wifi' && this.activeWifiId) {
           return !!this.wifiStatus[this.activeWifiId]
+        }
+        // 远程打印机按打印代理设备的在线状态显示
+        if (this.printerType === 'backend' && this.selectedPrinter
+          && String(this.selectedPrinter).indexOf('agent:') === 0) {
+          var agent = this.agentPrinterItems.find(function(p) { return p.key === this.selectedPrinter }.bind(this))
+          return !!(agent && agent.online)
         }
         return !!this.mobileDeviceLabel
       },
@@ -760,6 +866,10 @@
         }
         if (this.printerType === 'bluetooth') return this.btDevice ? this.btDevice.name : ''
         if (this.selectedPrinter === '__browser__') return '浏览器打印（系统对话框）'
+        if (this.selectedPrinter && String(this.selectedPrinter).indexOf('agent:') === 0) {
+          var agent = this.agentPrinterItems.find(function(p) { return p.key === this.selectedPrinter }.bind(this))
+          return agent ? '远程：' + agent.printerName : '远程打印机'
+        }
         if (this.selectedPrinter) {
           return isLocalPrinter(this.selectedPrinter)
             ? '本机：' + localPrinterName(this.selectedPrinter)
@@ -852,6 +962,31 @@
           map[attr.key] = attr.value == null ? '' : attr.value
         })
         return map
+      },
+      // 地址打印商品明细行：优先取快照 rows，其次取 record.goodsRows
+      goodsRowsForLayout() {
+        if (this.detailRows && this.detailRows.length) return this.detailRows
+        return (this.record && this.record.goodsRows) || []
+      },
+      /**
+       * 商品明细表/商品组合的动态排版：
+       * 表格及组合元素按商品行数变高，下方元素顺移（预览与打印共用同一结果）
+       */
+      goodsLayout() {
+        return resolveGoodsLayout({
+          selectedAttrs: this.selectedAttrs,
+          attrStyles: this.attrStyles,
+          values: Object.assign({}, this.attrValues, { goodsRows: this.goodsRowsForLayout }),
+          paperWidth: this.labelWidth,
+          goodsLabel: this.attrLabels[GOODS_KEY] || '',
+          goodsFields: this.goodsFields
+        })
+      },
+      goodsTableData() {
+        return this.goodsLayout.table
+      },
+      goodsTableColumns() {
+        return GOODS_TABLE_COLUMNS
       },
       renderItems() {
         var items = []
@@ -1194,6 +1329,8 @@
       loadPrinters() {
         var self = this
         this.loadingPrinters = true
+        // 手机端「后端」页同时展示 ERP 上的远程打印机（打印代理设备）
+        if (this.isMobile) this.loadAgentPrinters()
         // 电脑端同时探测本地打印助手，获取本机打印机
         var localTask = this.isMobile
           ? Promise.resolve({ online: false, list: [] })
@@ -1224,6 +1361,9 @@
             // 已有有效选择则保留（实现「回显设置页选中的打印机」）
             var keep = self.selectedPrinter
             if (keep === '__browser__') return
+            // 远程打印机（agent:xxx）由 loadAgentPrinters 校验：它异步加载，此处不能按
+            // 后端打印机列表判断，否则上次选中的远程打印机在页面加载时会被默认打印机覆盖
+            if (keep && String(keep).indexOf('agent:') === 0) return
             if (keep && (isLocalPrinter(keep)
               ? self.localPrinters.indexOf(localPrinterName(keep)) >= 0
               : list.some(function(p) { return p.name === keep }))) {
@@ -1242,6 +1382,64 @@
             }
           })
         })
+      },
+      // 加载远程打印机（ERP 打印代理设备），供「后端」页展示与选择
+      loadAgentPrinters() {
+        var self = this
+        this.loadingAgents = true
+        return getPrintAgentList().then(function(res) {
+          self.loadingAgents = false
+          var data = (res && res.data) || []
+          if (!Array.isArray(data)) data = []
+          self.agentDevices = data
+          // 已选中的远程打印机失效时清空，避免指向不存在的设备/打印机
+          var selected = self.selectedPrinter
+          if (selected && String(selected).indexOf('agent:') === 0) {
+            var exists = self.agentPrinterItems.some(function(p) { return p.key === selected })
+            if (!exists) self.selectedPrinter = undefined
+          }
+        }).catch(function() {
+          self.loadingAgents = false
+        })
+      },
+      // 远程打印：前端渲染整张标签，后端生成 TSPL 指令经打印代理下发
+      printViaAgentPrinter(agentPrinter) {
+        var self = this
+        var items = this.buildLayoutItems()
+        this.printing = true
+        this.renderLabelToPng().then(function(image) {
+          return printViaAgent({
+            deviceId: agentPrinter.deviceId,
+            printerId: agentPrinter.printerId,
+            copies: self.copies,
+            width: self.labelWidth,
+            height: self.labelHeight,
+            image: image,
+            items: items
+          })
+        }).then(function(res) {
+          self.printing = false
+          var data = (res && res.data) || {}
+          if (res && res.code === 200) {
+            self.$message.success('已发送到远程打印机：' + agentPrinter.printerName)
+          } else {
+            self.$message.error((typeof data === 'string' ? data : data.message) || '远程打印失败')
+          }
+        }).catch(function(err) {
+          self.printing = false
+          self.$message.error((err && err.message) || '远程打印失败，请检查打印代理是否在线')
+        })
+      },
+      // 打开打印机配置页（仅远程打印机卡片可用）
+      openPrinterEdit(p) {
+        this.printerEditDeviceId = p.deviceId
+        this.printerEditPrinterId = p.printerId
+        this.printerEditVisible = true
+      },
+      // 配置页保存成功后刷新远程打印机列表
+      handlePrinterSaved() {
+        this.printerEditVisible = false
+        this.loadAgentPrinters()
       },
       // 切换打印机类型
       switchPrinterType(type) {
@@ -1401,6 +1599,7 @@
         this.selectDiscoveredPrinter(cloud)
       },
       handleCancel() {
+        this.printerEditVisible = false
         this.visible = false
       },
       // 模板优先级：当前商品的普通模板 > 品类的默认模板（云端读取，本地缓存兜底）
@@ -1448,7 +1647,8 @@
               attrStyles: cfg.attrStyles || {},
               attrLabels: cfg.attrLabels || {},
               labelWidth: cfg.width || cfg.labelWidth || cfgInfo.width,
-              labelHeight: cfg.height || cfg.labelHeight || cfgInfo.height
+              labelHeight: cfg.height || cfg.labelHeight || cfgInfo.height,
+              goodsFields: cfg.goodsFields
             }
           }).catch(function() { return null })
         }
@@ -1515,6 +1715,7 @@
           labelHeight: height || fallback[1],
           width: width || fallback[0],
           height: height || fallback[1],
+          goodsFields: Array.isArray(base.goodsFields) ? base.goodsFields : ((src && src.goodsFields) || null),
           schema: schema
         }
       },
@@ -1536,6 +1737,8 @@
         var exists = {}
         this.allAttrs.forEach(function(attr) { exists[attr.key] = true })
         Object.keys(s.values).forEach(function(key) {
+          // 商品明细行数组不是普通字段，只通过 detailRows 参与明细表排版
+          if (key === 'goodsRows') return
           if (exists[key]) {
             var attr = self.allAttrs.find(function(a) { return a.key === key })
             if (attr) attr.value = s.values[key]
@@ -1553,6 +1756,8 @@
         this.attrStyles = {}
         this.attrLabels = {}
         this.detailRows = []
+        // 商品组合字段：模板未配置（旧模板）时为空 = 显示全部
+        this.goodsFields = tpl && Array.isArray(tpl.goodsFields) ? tpl.goodsFields.slice() : null
         if (!tpl) return
         // 自定义标签的值保存在模板里，需要合并回属性列表
         if (tpl.customLabels && tpl.customLabels.length > 0) {
@@ -1629,7 +1834,8 @@
         })
       },
       itemStyle(key) {
-        var s = this.attrStyles[key]
+        // 商品明细表/商品组合按商品行数动态变高，使用重排后的坐标
+        var s = this.goodsLayout.styles[key] || this.attrStyles[key]
         if (!s) return {}
         // 独立编码元素：宽高即图形实际可打印尺寸
         if (isCodeKey(key)) {
@@ -1639,6 +1845,16 @@
             top: (s.y || 0) + 'px',
             width: codeSize.imgWidth + 'px',
             height: codeSize.imgHeight + 'px'
+          }
+        }
+        if (key === GOODS_TABLE_KEY) {
+          var table = this.goodsTableData
+          return {
+            left: (s.x || 0) + 'px',
+            top: (s.y || 0) + 'px',
+            width: ((table && table.width) || 0) + 'px',
+            fontSize: (s.fontSize || 12) + 'px',
+            lineHeight: String(s.lineHeight || 1.3)
           }
         }
         var style = {
@@ -1662,6 +1878,24 @@
         }
         return style
       },
+      isGoodsTable(key) {
+        return key === GOODS_TABLE_KEY
+      },
+      getGoodsColumnWidth(index) {
+        var table = this.goodsTableData
+        return table && table.widths[index] ? table.widths[index] : 0
+      },
+      getGoodsRowHeight(index) {
+        var table = this.goodsTableData
+        if (table && table.rows[index]) return table.rows[index].height
+        var s = this.attrStyles[GOODS_TABLE_KEY] || {}
+        return Math.round((s.fontSize || 12) * (s.lineHeight || 1.3)) + 4
+      },
+      // 商品组合元素按商品行逐行显示（名称 + 规格值1/2/3）
+      getItemText(item) {
+        if (item.attr.key === GOODS_KEY) return this.goodsLayout.goodsText
+        return item.attr.value
+      },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
         // 地址打印：字段只取地址识别页面的输入框数据
@@ -1683,9 +1917,18 @@
         return [
           mk('contacts', '联系人', r.contacts),
           mk('telephone', '电话', r.telephone),
-          mk('email', '电子邮箱', r.email),
+          mk('account', '账号', r.account),
+          mk('platform', '平台', r.platform),
+          mk('remark', '备注', r.remark),
           mk('address', '地址', r.address),
-          mk('company', '公司', r.company)
+          mk('goods', '商品信息', r.goods),
+          {
+            key: GOODS_TABLE_KEY,
+            label: '商品明细表',
+            value: '',
+            isCustom: false,
+            group: '地址信息'
+          }
         ]
       },
       // 发货单/小票模板里的字段不在 label attrs 里 → 补回缺失 key
@@ -1849,9 +2092,24 @@
           this.printViaWifi()
           return
         }
+        // 远程打印机（打印代理设备）：由后端转 TSPL 指令，经 WebSocket 下发到代理
+        if (this.selectedPrinter && String(this.selectedPrinter).indexOf('agent:') === 0) {
+          var agentPrinter = this.agentPrinterItems.find(function(p) { return p.key === self.selectedPrinter })
+          if (!agentPrinter) {
+            this.$message.warning('请先选择打印机')
+            return
+          }
+          if (!agentPrinter.online) {
+            this.$message.warning('打印代理「' + agentPrinter.deviceName + '」当前离线，请检查设备网络')
+            return
+          }
+          this.printViaAgentPrinter(agentPrinter)
+          return
+        }
         if (!this.selectedPrinter) {
           // 远程部署时后端枚举不到本机打印机，此时应引导安装本地打印助手
-          if (this.printerType === 'backend' && !this.localAgentOnline && this.printers.length === 0) {
+          if (this.printerType === 'backend' && !this.localAgentOnline && this.printers.length === 0
+            && this.agentPrinterItems.length === 0) {
             this.showInstallGuide()
           } else {
             this.$message.warning('请先选择打印机')
@@ -1912,9 +2170,53 @@
       buildLayoutItems() {
         var self = this
         var items = []
+        var resolved = this.goodsLayout.styles
         this.renderItems.forEach(function(item) {
-          var style = self.attrStyles[item.key]
+          var style = resolved[item.key] || self.attrStyles[item.key]
           if (!style) return
+          // 多行顺移后超出标签底边的内容直接裁掉
+          if ((style.y || 0) >= self.labelHeight) return
+          // 商品明细表：按行展开为“表头 + 每行各列”文字项，行高按实际折行行数
+          if (item.key === GOODS_TABLE_KEY) {
+            var table = self.goodsTableData
+            if (!table) return
+            var left = style.x || 0
+            var colLeft = 0
+            table.columns.forEach(function(col, ci) {
+              items.push({
+                x: left + colLeft,
+                y: style.y || 0,
+                width: table.widths[ci],
+                height: table.headHeight,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                letterSpacing: style.letterSpacing || 0,
+                lineHeight: style.lineHeight || 1.3,
+                text: col
+              })
+              colLeft += table.widths[ci]
+            })
+            var rowY = (style.y || 0) + table.headHeight
+            table.rows.forEach(function(row) {
+              var cellLeft = 0
+              row.cells.forEach(function(cell, ci) {
+                items.push({
+                  x: left + cellLeft,
+                  y: rowY,
+                  width: table.widths[ci],
+                  height: row.height,
+                  fontSize: style.fontSize,
+                  fontWeight: style.fontWeight,
+                  letterSpacing: style.letterSpacing || 0,
+                  lineHeight: style.lineHeight || 1.3,
+                  text: cell
+                })
+                cellLeft += table.widths[ci]
+              })
+              rowY += row.height
+            })
+            return
+          }
           if (item.isCode) {
             // 编码元素：宽高取与预览一致的可打印尺寸
             var layout = self.codeLayout(item.key)
@@ -1936,7 +2238,10 @@
           }
           var attr = item.attr
           var labelText = self.attrLabels[attr.key] || ''
-          var value = attr.value == null ? '' : attr.value
+          // 商品组合：每个商品一行（名称 + 规格值1/2/3）
+          var value = attr.key === GOODS_KEY
+            ? self.goodsLayout.goodsText
+            : (attr.value == null ? '' : attr.value)
           var displayText = labelText ? labelText + ': ' + value : value
           items.push({
             x: style.x || 0,
@@ -1962,7 +2267,8 @@
         }
         this.printing = true
         var self2 = this
-        // TSPL / DDPL 走打印机内置字库的文本+条码指令（数据量小、出纸稳定）；
+        var items = this.buildLayoutItems()
+        // TSPL / DDPL 走打印机内置字库的文本+条码指令（数据量小、出纸稳定，后端已按框宽折行、按框高截断）；
         // CPCL / ESC/POS 只支持位图，才需要把整张标签渲染成图片
         var cmdSet = String(printer.cmdSet || 'TSPL').toUpperCase()
         var needsImage = cmdSet === 'CPCL' || cmdSet === 'ESC/POS'
@@ -1972,7 +2278,7 @@
             copies: self.copies,
             width: self.labelWidth,
             height: self.labelHeight,
-            items: self.buildLayoutItems()
+            items: items
           }
           if (image) payload.image = image
           return printToWifiPrinter(printer, payload)
@@ -2265,6 +2571,29 @@
   .lp-item.is-code {
     overflow: visible;
     white-space: normal;
+  }
+  /* 商品明细表：列宽/行高由商品行数计算，单元格内折行 */
+  .lp-goods-table {
+    width: 100%;
+  }
+  .lp-goods-row {
+    display: flex;
+    align-items: flex-start;
+    padding: 0;
+    border-top: 1px solid #eee;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .lp-goods-head {
+    color: #999;
+    border-top: none;
+  }
+  .lp-goods-cell {
+    flex: 0 0 auto;
+    padding: 2px;
+    box-sizing: border-box;
+    word-break: break-all;
+    overflow: hidden;
   }
   /* 条码 / 二维码：独立元素，只渲染图形 */
   .lp-code-img {
@@ -2898,6 +3227,55 @@
     color: #1890ff;
     flex: none;
   }
+  .lmpl-section-title {
+    padding: 4px 2px 8px;
+    font-size: 13px;
+    color: #8c8c8c;
+  }
+  .lmpl-status {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+  .lmpl-status.online {
+    color: #52c41a;
+    background: #f6ffed;
+    border: 1px solid #b7eb8f;
+  }
+  .lmpl-status.offline {
+    color: #8c8c8c;
+    background: #fafafa;
+    border: 1px solid #d9d9d9;
+  }
+  .lmpl-edit {
+    flex: none;
+    margin-left: 8px;
+    padding: 1px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 18px;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+    background: #e6f7ff;
+  }
+  /* ===== 编辑设备页（lme = label mobile edit） ===== */
+  .lme-info {
+    padding: 10px 10px 0;
+  }
+  .lme-section {
+    padding: 14px 4px 6px;
+    font-size: 13px;
+    color: #8c8c8c;
+  }
+  .lme-grid {
+    padding-top: 6px;
+  }
+  .lmb-cell.active {
+    background: #e6f7ff;
+    border-radius: 10px;
+  }
   .lmpl-item-text {
     flex: 1;
     min-width: 0;
@@ -3049,6 +3427,10 @@
   }
   .lmb-sheet-item:last-child {
     border-bottom: none;
+  }
+  .lmb-sheet-item.active {
+    font-weight: 600;
+    background: #f0f8ff;
   }
   .lmb-sheet-cancel {
     margin-top: 8px;

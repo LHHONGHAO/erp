@@ -84,6 +84,19 @@
               </div>
             </div>
           </template>
+          <template v-else-if="isGoodsTable(key)">
+            <div class="lem-mini-table lem-goods-table" :style="goodsTableStyle">
+              <div class="lem-goods-row lem-mini-head" :style="{ height: (goodsTableData ? goodsTableData.headHeight : 0) + 'px' }">
+                <span v-for="(col, ci) in goodsTableColumns" :key="ci" class="lem-goods-cell"
+                      :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ col }}</span>
+              </div>
+              <div class="lem-goods-row" v-for="(row, ri) in goodsTablePreviewRows" :key="ri"
+                   :style="{ height: getGoodsRowHeight(ri) + 'px' }">
+                <span v-for="(cell, ci) in row" :key="ci" class="lem-goods-cell"
+                      :style="{ width: getGoodsColumnWidth(ci) + 'px' }">{{ cell }}</span>
+              </div>
+            </div>
+          </template>
           <template v-else-if="isDetailColumn(key)">
             <div class="lem-col-stack">
               <div class="lem-col-line" v-for="n in 2" :key="n">{{ getDetailSample(key, n) }}</div>
@@ -162,7 +175,7 @@
           @input="updateCurrentLabel"
         />
       </div>
-      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0])">
+      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
         <a-input
           :value="currentValue"
           placeholder="文本内容"
@@ -170,6 +183,13 @@
           @input="updateCurrentValue"
         />
         <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+      </div>
+      <!-- 商品信息：组合值由勾选的字段拼接（如只勾商品名称+规格值2） -->
+      <div class="lem-goods-field-row" v-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
+        <span class="lem-style-label">组合字段</span>
+        <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
+          <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
+        </a-checkbox-group>
       </div>
       <!-- 样式编辑：多选时不一致的项显示为空，修改后应用到全部 -->
       <div class="lem-style-grid">
@@ -337,9 +357,15 @@
   import { fetchProviders, fetchProviderFields, fetchLabelData } from '@/views/material/utils/labelProviderApi'
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
-  import { computeSpacer, centerScroll, setupLabelScroll } from '@/utils/label-scroll'
+  import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, resolveGoodsLayout } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
+  // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
+  const LABEL_FIT_PADDING = 20
+  // 默认缩放上限与放大按钮上限保持一致
+  const LABEL_MAX_ZOOM = 3
+  const LABEL_MIN_ZOOM = 0.3
 
   /**
    * 模板类型配置表
@@ -415,6 +441,8 @@
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 商品组合（商品信息）显示哪些字段：默认全部，可在属性面板按需勾选
+        goodsFields: ['name', 'spec1', 'spec2', 'spec3'],
         currentAttrKey: null,
         labelWidth: 320,
         labelHeight: 240,
@@ -487,6 +515,42 @@
       // 标签居中 + 对称滑动：从 label-scroll 模块计算单侧 spacer 宽度
       scrollSpacer() {
         return computeSpacer(this.labelWidth, this.zoom)
+      },
+      // 商品明细行数据（地址识别页带回的多行商品）
+      goodsRowsData() {
+        return resolveGoodsLayout({
+          selectedAttrs: this.selectedAttrs,
+          attrStyles: this.attrStyles,
+          values: this.record || {},
+          paperWidth: this.labelWidth,
+          goodsLabel: this.attrLabels.goods || '',
+          goodsFields: this.goodsFields
+        })
+      },
+      // 商品组合可勾选的字段（商品名称 / 规格值1-3）
+      goodsFieldOptions() {
+        return GOODS_FIELD_OPTIONS
+      },
+      // 商品明细表：列宽/行高/总高度（按商品行数动态计算）
+      goodsTableData() {
+        return this.goodsRowsData.table
+      },
+      goodsTableColumns() {
+        return GOODS_TABLE_COLUMNS
+      },
+      // 表格预览行：没有商品数据时给一行占位，便于调整样式
+      goodsTablePreviewRows() {
+        var table = this.goodsTableData
+        if (table && table.rows.length) return table.rows.map(function(row) { return row.cells })
+        return [['商品名称', '规格值1', '规格值2', '规格值3']]
+      },
+      goodsTableStyle() {
+        var style = this.attrStyles[GOODS_TABLE_KEY] || {}
+        return {
+          width: (this.goodsTableData ? this.goodsTableData.width : 0) + 'px',
+          fontSize: (style.fontSize || 12) + 'px',
+          lineHeight: style.lineHeight || 1.2
+        }
       },
       // handle / delete 反缩放：同时抵消尺寸 AND 偏移量
       // 外层 label scale(zoom) 会把子元素的尺寸和偏移都放大 zoom 倍
@@ -708,7 +772,7 @@
           mk('enabled', '状态', m.enabled === false ? '禁用' : '启用')
         ]
       },
-      /** 地址打印字段：只取地址识别页面输入框的数据（联系人/电话/邮箱/地址/公司） */
+      /** 地址打印字段：只取地址识别页面输入框的数据（联系人/电话/账号/平台/备注/地址/商品） */
       buildAddressAttrs() {
         var m = this.record || {}
         var mk = function(key, label, value) {
@@ -723,9 +787,20 @@
         return [
           mk('contacts', '联系人', m.contacts),
           mk('telephone', '电话', m.telephone),
-          mk('email', '电子邮箱', m.email),
+          mk('account', '账号', m.account),
+          mk('platform', '平台', m.platform),
+          mk('remark', '备注', m.remark),
           mk('address', '地址', m.address),
-          mk('company', '公司', m.company)
+          // 商品信息：每个商品一行（名称 + 规格值1/2/3）
+          mk('goods', '商品信息', m.goods),
+          // 商品明细表：按商品行数动态排版
+          {
+            key: GOODS_TABLE_KEY,
+            label: '商品明细表',
+            value: '',
+            isCustom: false,
+            group: '地址信息'
+          }
         ]
       },
       /** 统一的模板加载入口，根据 storage 类型分发 */
@@ -791,9 +866,12 @@
         this.selectedAttrs = JSON.parse(JSON.stringify(snap.selectedAttrs))
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        // 旧模板没有 goodsFields：保留当前默认（全部字段）
+        if (Array.isArray(snap.goodsFields)) this.goodsFields = snap.goodsFields.slice()
         if (snap.width) this.labelWidth = snap.width
         if (snap.height) this.labelHeight = snap.height
         this.restoreMissingAttrs(snap.selectedAttrs)
+        this.fitLabelAfterLoad()
       },
       /** getUiConfig 返回值可能是字符串或已解析对象，统一处理 */
       parseConfigData(data) {
@@ -898,6 +976,7 @@
         this.selectedAttrs = selected
         this.attrStyles = styles
         this.attrLabels = labels
+        this.fitLabelAfterLoad()
       },
       // 模板里的自定义标签不在固定字段清单中，需补回 allAttrs 才能在编辑器预览/编辑
       restoreMissingAttrs(keys) {
@@ -912,11 +991,15 @@
         })
       },
       getAttrValue(key) {
+        // 商品信息按勾选的组合字段拼接显示（与打印一致）
+        if (key === GOODS_KEY && this.goodsRowsData.goodsText) return this.goodsRowsData.goodsText
         var attr = this.allAttrs.find(function(a) { return a.key === key })
         return attr ? attr.value : ''
       },
       getElementStyle(key) {
-        var style = this.attrStyles[key] || {}
+        // 商品明细表/商品组合会按商品行数变高，使用运行时重排后的坐标与高度
+        var resolved = this.goodsRowsData.styles[key]
+        var style = resolved || this.attrStyles[key] || {}
         var result = {
           left: (style.x || 0) + 'px',
           top: (style.y || 0) + 'px',
@@ -925,18 +1008,55 @@
           letterSpacing: (style.letterSpacing || 0) + 'px',
           lineHeight: style.lineHeight || 1.2
         }
+        if (key === GOODS_TABLE_KEY) {
+          var table = this.goodsTableData
+          result.width = ((table && table.width) || style.width || 0) + 'px'
+          result.padding = '0'
+          result.whiteSpace = 'normal'
+          return result
+        }
         // 指定宽度时文字按框内宽度自动换行（与打印一致）
         if (style.width) {
           result.width = style.width + 'px'
           result.whiteSpace = 'pre-wrap'
           result.wordBreak = 'break-all'
           result.overflowWrap = 'anywhere'
+          // 块级排版：属性名与属性值连续折行，而不是各自成块
+          result.display = 'block'
+          result.padding = '0'
         }
-        if (style.height) result.height = style.height + 'px'
+        // 指定高度时超出部分裁掉（与打印一致：只打印框内完整行）
+        if (style.height) {
+          result.height = style.height + 'px'
+          result.overflow = 'hidden'
+        }
         return result
       },
       isCode(key) {
         return isCodeKey(key)
+      },
+      isGoodsTable(key) {
+        return key === GOODS_TABLE_KEY
+      },
+      isGoodsKey(key) {
+        return key === GOODS_KEY
+      },
+      // 勾选/取消商品组合字段：顺序固定为 商品名称 → 规格值1 → 规格值2 → 规格值3
+      onGoodsFieldsChange(values) {
+        var list = Array.isArray(values) ? values : []
+        this.goodsFields = GOODS_FIELD_OPTIONS
+          .map(function(f) { return f.key })
+          .filter(function(key) { return list.indexOf(key) > -1 })
+      },
+      getGoodsColumnWidth(index) {
+        var table = this.goodsTableData
+        return table && table.widths[index] ? table.widths[index] : 0
+      },
+      getGoodsRowHeight(index) {
+        var table = this.goodsTableData
+        if (table && table.rows[index]) return table.rows[index].height
+        var style = this.attrStyles[GOODS_TABLE_KEY] || {}
+        return Math.round((style.fontSize || 12) * (style.lineHeight || 1.2)) + 4
       },
       isSelected(key) {
         return this.selectedKeys.indexOf(key) > -1
@@ -1195,13 +1315,35 @@
         this.labelHeight = snap.labelHeight != null ? snap.labelHeight : this.labelHeight
       },
       zoomIn() {
-        this.zoom = Math.min(3, this.zoom + 0.1)
+        this.zoom = Math.min(LABEL_MAX_ZOOM, this.zoom + 0.1)
       },
       zoomOut() {
-        this.zoom = Math.max(0.3, this.zoom - 0.1)
+        this.zoom = Math.max(LABEL_MIN_ZOOM, this.zoom - 0.1)
       },
+      // 全屏图标：1:1 与「按窗口适配」之间切换
       toggleZoom() {
-        this.zoom = this.zoom === 1 ? 1.5 : 1
+        if (Math.abs(this.zoom - 1) < 0.01) this.fitLabelToView()
+        else this.zoom = 1
+      },
+      /**
+       * 按预览区尺寸等比缩放标签（复用 label-scroll 的 computeFitScale）
+       * 默认放大到适应屏幕宽度，四周留白 20px；超高标签按高度收敛，避免超出可视区
+       * 缩放后由 setupLabelScroll 负责居中/滑动
+       */
+      fitLabelToView() {
+        var wrap = this.$refs.previewWrap
+        if (!wrap || !this.labelWidth || !this.labelHeight) return
+        var wrapW = wrap.clientWidth || window.innerWidth
+        var wrapH = wrap.clientHeight || window.innerHeight
+        var scale = computeFitScale(this.labelWidth, this.labelHeight, wrapW, wrapH, LABEL_FIT_PADDING, LABEL_MAX_ZOOM)
+        this.zoom = Math.min(LABEL_MAX_ZOOM, Math.max(LABEL_MIN_ZOOM, Math.round(scale * 100) / 100))
+      },
+      // 模板加载完成后等一帧再适配，确保预览区已完成布局
+      fitLabelAfterLoad() {
+        var self = this
+        this.$nextTick(function() {
+          self.fitLabelToView()
+        })
       },
       // 拖拽移动/缩放：统一用 Pointer Events + setPointerCapture，
       // 手指移出元素后事件仍持续派发到捕获元素，不依赖 touch passive 机制
@@ -1311,27 +1453,11 @@
             this.$set(this.attrStyles[d.key], 'y', Math.round(newY))
           }
         } else if (d.mode === 'resize') {
-          // 调整元素尺寸
-          var newW = d.origW + dx / this.zoom
-          var newH = d.origH + dy / this.zoom
-          // 动态获取内容自然尺寸（元素 shrink-wrap 时的最小尺寸）
-          var el = document.querySelector('.lem-elem[data-key="' + d.key + '"]')
-          var minW = 0, minH = 0
-          if (el) {
-            minW = Math.round(el.scrollWidth / this.zoom)
-            minH = Math.round(el.scrollHeight / this.zoom)
-          }
-          // 允许缩到内容自然尺寸；低于则清除显式 width/height，让元素 shrink-wrap
-          if (newW <= minW) {
-            this.$delete(this.attrStyles[d.key], 'width')
-          } else {
-            this.$set(this.attrStyles[d.key], 'width', Math.round(newW))
-          }
-          if (newH <= minH) {
-            this.$delete(this.attrStyles[d.key], 'height')
-          } else {
-            this.$set(this.attrStyles[d.key], 'height', Math.round(newH))
-          }
+          // 调整文字框尺寸：宽度变小时文字按框宽自动折行，高度之外的部分裁掉不打印
+          var newW = Math.max(12, Math.round(d.origW + dx / this.zoom))
+          var newH = Math.max(12, Math.round(d.origH + dy / this.zoom))
+          this.$set(this.attrStyles[d.key], 'width', newW)
+          this.$set(this.attrStyles[d.key], 'height', newH)
         }
       },
       onPointerUp() {
@@ -1486,6 +1612,7 @@
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
           attrStyles: JSON.parse(JSON.stringify(this.attrStyles)),
           attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
+          goodsFields: this.goodsFields.slice(),
           width: this.labelWidth,
           height: this.labelHeight
         }
@@ -1580,6 +1707,7 @@
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
           attrStyles: cleanStyles,
           attrLabels: cleanLabels,
+          goodsFields: this.goodsFields.slice(),
           customLabels: customLabels,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight
@@ -1716,6 +1844,8 @@
         this.labelWidth = Math.round(this.editWidthMm * PX_PER_MM)
         this.labelHeight = Math.round(this.editHeightMm * PX_PER_MM)
         this.sizeEditorVisible = false
+        // 尺寸变化后重新按窗口适配
+        this.fitLabelAfterLoad()
       },
       applyPreset(wMm, hMm) {
         this.editWidthMm = wMm
@@ -1779,7 +1909,8 @@
 .lem-preview-wrap {
   flex: 1;
   overflow: auto;
-  padding: 24px 0;
+  /* 与默认适配缩放的四周边距保持一致（20px） */
+  padding: 20px 0;
   display: flex;
   align-items: flex-start;
 }
@@ -1810,7 +1941,8 @@
 .lem-elem {
   position: absolute;
   cursor: move;
-  padding: 2px 4px;
+  /* 左右不留内边距：文字始终从元素 x 起始，与指定宽度的元素、打印位置保持一致 */
+  padding: 2px 0;
   border: 1px solid transparent;
   white-space: nowrap;
   touch-action: none;
@@ -1847,6 +1979,24 @@
   font-size: 12px;
   line-height: 1.2;
   white-space: normal;
+}
+
+/* 商品明细表：列宽/行高由商品行数计算，行内折行不裁切 */
+.lem-goods-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 0;
+  border-top: 1px solid #eee;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.lem-goods-cell {
+  flex: 0 0 auto;
+  padding: 2px;
+  box-sizing: border-box;
+  word-break: break-all;
+  overflow: hidden;
 }
 
 .lem-mini-row {
@@ -2174,6 +2324,26 @@
 
 .lem-text-input {
   flex: 1;
+}
+
+/* 商品信息组合字段勾选 */
+.lem-goods-field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lem-goods-field-row .lem-style-label {
+  flex-shrink: 0;
+  line-height: 24px;
+}
+
+.lem-goods-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  line-height: 24px;
 }
 
 .lem-ocr-btn {

@@ -100,6 +100,13 @@ public class LabelPrinterService {
     }
 
     /**
+     * 按打印机配置的指令集构建标签数据（TSPL / CPCL / DDPL / ESC-POS），供远程代理下发
+     */
+    public byte[] buildLabel(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+        return buildJob(cmdSet, widthPx, heightPx, items, copies, image);
+    }
+
+    /**
      * 测试网络打印机连通性（TCP 连接 ip:port，默认原始打印端口 9100）
      */
     public boolean testNetworkPrinter(String ip, int port) {
@@ -212,7 +219,8 @@ public class LabelPrinterService {
                 int value = 0;
                 for (int bit = 0; bit < 8; bit++) {
                     int x = byteIndex * 8 + bit;
-                    if (x < dotsWidth && isBlack(target.getRGB(x, y))) {
+                    // 汉印固件的 BITMAP 位图 1=白 0=黑，与标准 TSPL 相反；行尾补白，避免右侧出现黑边
+                    if (x >= dotsWidth || !isBlack(target.getRGB(x, y))) {
                         value |= (0x80 >> bit);
                     }
                 }
@@ -243,7 +251,8 @@ public class LabelPrinterService {
                 int value = 0;
                 for (int bit = 0; bit < 8; bit++) {
                     int x = byteIndex * 8 + bit;
-                    if (x < dotsWidth && isBlack(target.getRGB(x, y))) {
+                    // CPCL 的 EG 位图 1=白 0=黑，与 TSPL 相反；行尾补白，避免右侧出现黑边
+                    if (x >= dotsWidth || !isBlack(target.getRGB(x, y))) {
                         value |= (0x80 >> bit);
                     }
                 }

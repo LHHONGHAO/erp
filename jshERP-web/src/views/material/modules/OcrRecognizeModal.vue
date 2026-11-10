@@ -13,15 +13,11 @@
       <div v-if="isMobileView" class="ocr-mobile-header">
         <a-icon type="arrow-left" class="ocr-mobile-back" @click="handleCancel" />
         <span class="ocr-mobile-title">{{ extractOnly ? '图片文字提取' : '图片识别' }}</span>
-        <a-icon v-if="!extractOnly" type="setting" class="ocr-mobile-action" @click="apiConfigVisible=true" />
         <a-icon v-if="!extractOnly" type="control" class="ocr-mobile-action ocr-mobile-action-last" @click="openPropertyConfig" />
       </div>
       <div v-else>
         <span>{{ extractOnly ? '图片文字提取' : '图片识别' }}</span>
-        <a-button v-if="!extractOnly" size="small" style="margin-left:12px" @click="apiConfigVisible=true">
-          <a-icon type="setting" />API 配置
-        </a-button>
-        <a-button v-if="!extractOnly" size="small" style="margin-left:8px" @click="openPropertyConfig">
+        <a-button v-if="!extractOnly" size="small" style="margin-left:12px" @click="openPropertyConfig">
           <a-icon type="control" />属性显示设置
         </a-button>
       </div>
@@ -93,9 +89,6 @@
       </div>
     </a-modal>
 
-    <!-- API 配置弹层 -->
-    <ocr-api-config-modal :visible="apiConfigVisible" @cancel="apiConfigVisible=false" />
-
     <!-- 属性显示设置弹层 -->
     <a-modal
       title="属性显示设置"
@@ -117,7 +110,6 @@
 import Vue from 'vue'
 import { postAction, getAction } from '@/api/manage'
 import { axios as uploadHttp } from '@/utils/request'
-import OcrApiConfigModal from './OcrApiConfigModal'
 import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
 import { recognizeTextFromImage, parseProductText } from '@/views/material/utils/productTextScan'
 
@@ -151,7 +143,6 @@ var BASE_PROPERTIES = [
 export default {
   name: 'OcrRecognizeModal',
   components: {
-    OcrApiConfigModal,
     ImageRecognizeBox
   },
   props: {
@@ -180,7 +171,6 @@ export default {
       specImagePath: '',
       cameraVisible: false,
       cameraStream: null,
-      apiConfigVisible: false,
       propertyConfigVisible: false,
       propertyConfigData: [],
       ocrPropertyList: [],

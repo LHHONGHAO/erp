@@ -447,7 +447,6 @@
         resizeStartY: 0,
         resizeOrigW: 0,
         resizeOrigH: 0,
-        resizeOrigFont: 14,
         // 属性名快速选择
         presetLabelNames: [
           '品名', '商品名称', '规格', '条码', '货号', '价格', '零售价',
@@ -791,8 +790,15 @@
           style.whiteSpace = 'pre-wrap'
           style.wordBreak = 'break-all'
           style.overflowWrap = 'anywhere'
+          // 块级排版：属性名与属性值连续折行，而不是各自成块
+          style.display = 'block'
+          style.padding = '0'
         }
-        if (s.height) style.height = s.height + 'px'
+        // 指定高度时超出部分裁掉（与打印一致：只打印框内完整行）
+        if (s.height) {
+          style.height = s.height + 'px'
+          style.overflow = 'hidden'
+        }
         return style
       },
       // 是否为独立编码元素
@@ -1236,7 +1242,6 @@
         var el = document.querySelector('.label-preview-item[data-key="' + key + '"]')
         this.resizeOrigW = (this.attrStyles[key] && this.attrStyles[key].width) || (el ? el.offsetWidth : 120)
         this.resizeOrigH = (this.attrStyles[key] && this.attrStyles[key].height) || (el ? el.offsetHeight : 24)
-        this.resizeOrigFont = (this.attrStyles[key] && this.attrStyles[key].fontSize) || 14
         this.bindDragEvents()
       },
       // 拖拽过程绑定到 document，缩放后移出预览区也能继续拖拽
@@ -1277,18 +1282,15 @@
             }
           }
         }
-        // 拖拽resize
+        // 拖拽resize：只改文字框尺寸，文字按框宽自动折行（字号用右侧「字号」单独调）
         if (this.resizeKey) {
           var rdx = (e.clientX - this.resizeStartX) / this.zoom
           var rdy = (e.clientY - this.resizeStartY) / this.zoom
-          var newW = Math.max(30, this.resizeOrigW + rdx)
-          var newH = Math.max(12, this.resizeOrigH + rdy)
+          var newW = Math.max(30, Math.round(this.resizeOrigW + rdx))
+          var newH = Math.max(12, Math.round(this.resizeOrigH + rdy))
           if (this.attrStyles[this.resizeKey]) {
-            // 外框与字号等比缩放：字体随外框放大/缩小
-            var ratio = newH / this.resizeOrigH
-            this.$set(this.attrStyles[this.resizeKey], 'width', Math.round(newW))
-            this.$set(this.attrStyles[this.resizeKey], 'height', Math.round(newH))
-            this.$set(this.attrStyles[this.resizeKey], 'fontSize', Math.max(6, Math.round(this.resizeOrigFont * ratio)))
+            this.$set(this.attrStyles[this.resizeKey], 'width', newW)
+            this.$set(this.attrStyles[this.resizeKey], 'height', newH)
           }
         }
       },

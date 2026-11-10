@@ -81,6 +81,10 @@ export function legacyToSchema(tpl) {
     }
     if (style.width) element.width = pxToMm(style.width)
     if (style.height) element.height = pxToMm(style.height)
+    // 商品组合（商品信息）的组成字段随元素保存，缺省表示显示全部
+    if (key === 'goods' && Array.isArray(source.goodsFields)) {
+      element.goodsFields = source.goodsFields.slice()
+    }
     if (custom) {
       element.text = custom.value
       element.custom = true
@@ -180,6 +184,9 @@ export function schemaToLegacy(schema) {
     if (element.height) style.height = mmToPx(element.height)
     result.attrStyles[key] = style
     result.attrLabels[key] = element.label == null ? '' : element.label
+    if (key === 'goods' && Array.isArray(element.goodsFields)) {
+      result.goodsFields = element.goodsFields.slice()
+    }
     if (element.custom || (!element.field && element.text != null)) {
       result.customLabels.push({
         key: key,

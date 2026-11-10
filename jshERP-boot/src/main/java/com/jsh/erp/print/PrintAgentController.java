@@ -184,7 +184,8 @@ public class PrintAgentController {
         JSONArray items = body.getJSONArray("items");
         String image = body.getString("image");
         try {
-            byte[] data = labelPrinterService.buildTspl(width, height, items, copies, image);
+            String cmdSet = resolvePrinterCmdSet(deviceId, printerId);
+            byte[] data = labelPrinterService.buildLabel(cmdSet, width, height, items, copies, image);
             JSONObject task = dispatcher.dispatch(deviceId, printerId, data, 15000);
             res.code = 200;
             res.data = task;
@@ -233,6 +234,31 @@ public class PrintAgentController {
             }
         }
         return "default";
+    }
+
+    /**
+     * 读取打印机配置的指令集（TSPL / CPCL / DDPL / ESC-POS），未配置时默认 TSPL
+     */
+    private String resolvePrinterCmdSet(String deviceId, String printerId) {
+        if (deviceId == null) {
+            return "TSPL";
+        }
+        JSONObject agent = store.findByDeviceId(deviceId);
+        if (agent == null) {
+            return "TSPL";
+        }
+        JSONArray printers = agent.getJSONArray("printers");
+        if (printers == null) {
+            return "TSPL";
+        }
+        for (int i = 0; i < printers.size(); i++) {
+            JSONObject printer = printers.getJSONObject(i);
+            if (printerId != null && printerId.equals(printer.getString("id"))) {
+                String cmdSet = printer.getString("cmdSet");
+                return cmdSet == null || cmdSet.trim().isEmpty() ? "TSPL" : cmdSet.trim();
+            }
+        }
+        return "TSPL";
     }
 
     /**

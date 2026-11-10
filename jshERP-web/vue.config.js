@@ -18,6 +18,10 @@ module.exports = {
         }
     },
     chainWebpack: (config) => {
+        // 删除 Vue CLI 默认注入的 prefetch：它会给每个异步 chunk 都塞一条 <link rel=prefetch>，
+        // 本项目有 400+ 个懒加载模块，首页会因此后台下载十几 MB 资源，拖慢首屏。
+        // 路由仍按需懒加载，只是不再提前预下载。
+        config.plugins.delete('prefetch')
         config.resolve.alias
             .set('@$', resolve('src'))
             .set('@api', resolve('src/api'))

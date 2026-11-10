@@ -1,5 +1,5 @@
 <template>
-  <div class="mobile-bottom-bar" :class="{ 'mbb-left-auto': leftAuto }">
+  <div class="mobile-bottom-bar" :class="{ 'mbb-left-auto': leftAuto, 'mbb-static': !fixed }">
     <div class="mbb-left">
       <slot name="left"></slot>
     </div>
@@ -22,6 +22,11 @@ export default {
     leftAuto: {
       type: Boolean,
       default: false
+    },
+    /** 是否固定在视口底部；弹层内使用时传 false，跟随弹层布局 */
+    fixed: {
+      type: Boolean,
+      default: true
     }
   }
 }
@@ -52,6 +57,14 @@ export default {
   /* 左侧不占剩余空间，把宽度让给中间搜索区 */
   &.mbb-left-auto .mbb-left {
     flex: 0 0 auto;
+  }
+  /* 弹层内使用：不脱离文档流 */
+  &.mbb-static {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: 1;
   }
   .mbb-right {
     flex: 0 0 auto;

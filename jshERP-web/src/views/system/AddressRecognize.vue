@@ -51,7 +51,7 @@
         <div class="addr-row addr-goods-row" :class="{ 'is-first': idx === 0 }"
              v-for="(g, idx) in goodsRows" :key="'goods-' + idx" :ref="'goodsRow' + idx">
           <span class="addr-row__label">{{ idx === 0 ? '商品' : '' }}</span>
-          <div class="addr-goods-box" @click="openGoodsSheet(idx)">
+          <div class="addr-goods-box" @click="openGoodsPicker(idx)">
             <span v-if="g.name" class="addr-goods-text">{{ g.name }}<template v-if="g.spec"> · {{ g.spec }}</template></span>
             <span v-else class="addr-goods-placeholder">请选择商品</span>
           </div>
@@ -68,56 +68,13 @@
       <a-button type="primary" block class="addr-print-btn" @click="printResult">打印</a-button>
     </div>
 
-    <!-- 商品选择弹层：默认展示近 7 天最近使用的前五名 -->
-    <div v-if="goodsSheet" class="addr-mask" @click.self="goodsSheet = false">
-      <div class="addr-sheet">
-        <div class="addr-sheet__head">
-          <span class="addr-sheet__title">选择商品</span>
-          <a-icon type="close" class="addr-sheet__close" @click="goodsSheet = false" />
-        </div>
-        <div class="addr-sheet__body">
-          <div class="addr-sheet__subtitle">最近使用（近 7 天，按使用次数排序）</div>
-          <div v-if="recentGoods.length === 0" class="addr-sheet__empty">暂无最近使用的商品，请点击下方「添加」选择</div>
-          <div v-for="g in recentGoods" :key="'recent-' + g.key" class="addr-sheet__item" @click="pickGoods(g)">
-            <div class="addr-sheet__item-main">
-              <div class="addr-sheet__item-name">{{ g.name }}</div>
-              <div v-if="g.spec" class="addr-sheet__item-spec">{{ g.spec }}</div>
-            </div>
-            <span class="addr-sheet__item-count">{{ g.count }} 次</span>
-          </div>
-        </div>
-        <div class="addr-sheet__footer">
-          <a-button type="primary" block class="addr-sheet__add-btn" @click="openGoodsPicker">添加</a-button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 商品选择卡片：搜索并选择商品 -->
-    <div v-if="goodsPickerVisible" class="addr-mask addr-mask--top" @click.self="goodsPickerVisible = false">
-      <div class="addr-picker">
-        <div class="addr-sheet__head">
-          <a-icon type="arrow-left" class="addr-sheet__back" @click="goodsPickerVisible = false" />
-          <span class="addr-sheet__title">选择商品</span>
-          <span class="addr-sheet__placeholder"></span>
-        </div>
-        <div class="addr-picker__search">
-          <a-input v-model="goodsPickerKeyword" placeholder="搜索商品名称 / 规格 / 条码" allowClear
-                   @pressEnter="loadGoodsPicker()" />
-          <a-button type="primary" @click="loadGoodsPicker()">搜索</a-button>
-        </div>
-        <div class="addr-picker__list">
-          <div v-for="item in goodsPickerList" :key="goodsItemKey(item)" class="addr-picker__item"
-               @click="pickGoods(formatGoods(item))">
-            <div class="addr-picker__name">{{ item.name }}</div>
-            <div v-if="getGoodsSpec(item)" class="addr-picker__spec">{{ getGoodsSpec(item) }}</div>
-          </div>
-          <div v-if="!goodsPickerLoading && goodsPickerList.length === 0" class="addr-sheet__empty">暂无商品</div>
-          <div v-if="goodsPickerHasMore" class="addr-picker__more">
-            <a-button :loading="goodsPickerLoading" @click="loadGoodsPicker(true)">加载更多</a-button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 商品选择：标准整页弹层（白底顶栏 + 标题居中 + 右侧关闭），复用后可跨页面使用 -->
+    <mobile-product-picker
+      :visible="goodsPickerVisible"
+      title="添加商品"
+      @pick="handlePickGoods"
+      @confirm="handleConfirmGoods"
+      @close="goodsPickerVisible = false" />
 
     <!-- 图片放大预览 -->
     <a-modal
@@ -136,19 +93,12 @@
 </template>
 
 <script>
-import { postAction, getAction } from '@/api/manage'
+import { postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
-import { getMpListShort, filterObj } from '@/utils/util'
-import { getSpecDisplay } from '@/views/material/utils/materialDisplay'
 import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
 import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
-import Vue from 'vue'
-
-// 地址识别页商品使用历史（用于「最近使用」排序），仅存本地
-const GOODS_HISTORY_KEY = 'jsh.addressRecognize.goodsHistory'
-const GOODS_RECENT_DAYS = 7
-const GOODS_RECENT_LIMIT = 5
+import MobileProductPicker from '@/components/mobile/MobileProductPicker'
 
 /**
  * 地址识别独立页面：界面与识别逻辑与 OcrMemberRecognizeModal 保持一致，
@@ -157,7 +107,7 @@ const GOODS_RECENT_LIMIT = 5
 export default {
   name: 'AddressRecognize',
   mixins: [mixinDevice, scrollBlankMixin],
-  components: { LabelPrintModal, ImageRecognizeBox },
+  components: { LabelPrintModal, ImageRecognizeBox, MobileProductPicker },
   data() {
     return {
       ocrLoading: false,
@@ -187,16 +137,8 @@ export default {
       // 商品行：每行一个已选商品
       goodsRows: [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }],
       goodsTargetIndex: 0,
-      // 商品选择弹层（最近使用）
-      goodsSheet: false,
-      recentGoods: [],
-      // 商品选择卡片（全部商品）
-      goodsPickerVisible: false,
-      goodsPickerKeyword: '',
-      goodsPickerList: [],
-      goodsPickerLoading: false,
-      goodsPickerPage: 1,
-      goodsPickerTotal: 0
+      // 商品选择整页弹层
+      goodsPickerVisible: false
     }
   },
   beforeDestroy() {
@@ -330,18 +272,6 @@ export default {
       // 一个商品一行，打印时按行数换行排版
       return list.join('\n')
     },
-    /** 规格展示文本拆成最多 3 个规格值：去掉「规格名：」，逐行取值 */
-    splitSpecValues(spec) {
-      var values = []
-      String(spec || '').split('\n').forEach(function(line) {
-        var text = line.trim()
-        if (!text) return
-        var idx = text.search(/[：:]/)
-        if (idx > -1) text = text.slice(idx + 1).trim()
-        if (text) values.push(text)
-      })
-      return values.slice(0, 3)
-    },
     /** 商品多行数据（打印/模板编辑用）：名称 + 规格值1/2/3 */
     goodsRowList() {
       return this.goodsRows.filter(function(g) {
@@ -441,132 +371,45 @@ export default {
       }
       return null
     },
-    openGoodsSheet(index) {
+    /** 打开标准商品选择弹层，记录当前要回填的商品行 */
+    openGoodsPicker(index) {
       this.goodsTargetIndex = index
-      this.recentGoods = this.computeRecentGoods()
-      this.goodsSheet = true
+      this.goodsPickerVisible = true
     },
-    goodsItemKey(item) {
-      var id = (item.id === 0 || item.id) ? item.id : item.name
-      return String(id) + '_' + (item.meId || 0)
-    },
-    getGoodsSpec(item) {
-      try {
-        return getSpecDisplay(item) || ''
-      } catch (e) {
-        return ''
-      }
-    },
-    formatGoods(item) {
-      var spec = this.getGoodsSpec(item)
-      var values = this.splitSpecValues(spec)
+    /** 转为商品行数据结构 */
+    toGoodsRow(goods) {
       return {
-        key: this.goodsItemKey(item),
-        name: item.name || '',
-        spec: spec,
-        spec1: values[0] || '',
-        spec2: values[1] || '',
-        spec3: values[2] || ''
+        key: goods.key || '',
+        name: goods.name || '',
+        spec: goods.spec || '',
+        spec1: goods.spec1 || '',
+        spec2: goods.spec2 || '',
+        spec3: goods.spec3 || ''
       }
     },
-    pickGoods(goods) {
+    /** 单选：弹层已由组件关闭，这里回填当前行 */
+    handlePickGoods(goods) {
       if (!goods || !goods.name) return
-      // 最近使用里可能只存了名称+规格展示文本，这里再拆一次规格值
-      var values = [goods.spec1, goods.spec2, goods.spec3]
-      if (!values[0] && !values[1] && !values[2] && goods.spec) {
-        values = this.splitSpecValues(goods.spec)
-      }
-      this.$set(this.goodsRows, this.goodsTargetIndex, {
-        key: goods.key || '',
-        name: goods.name,
-        spec: goods.spec || '',
-        spec1: values[0] || '',
-        spec2: values[1] || '',
-        spec3: values[2] || ''
-      })
-      this.recordGoodsHistory(goods)
-      this.goodsSheet = false
+      this.$set(this.goodsRows, this.goodsTargetIndex, this.toGoodsRow(goods))
       this.goodsPickerVisible = false
       // 商品名过长会折行加高，重新计算页面高度
       this.syncPageHeight()
     },
-    // 记录商品使用历史：最近 7 天按次数排序取前五
-    recordGoodsHistory(goods) {
-      var history = []
-      try {
-        history = JSON.parse(Vue.ls.get(GOODS_HISTORY_KEY) || '[]') || []
-      } catch (e) {
-        history = []
-      }
-      history.push({
-        key: goods.key || (goods.name + '_' + (goods.spec || '')),
-        name: goods.name,
-        spec: goods.spec || '',
-        time: Date.now()
-      })
-      // 只保留最近 200 条，避免本地存储无限增长
-      if (history.length > 200) history = history.slice(history.length - 200)
-      try {
-        Vue.ls.set(GOODS_HISTORY_KEY, JSON.stringify(history))
-      } catch (e) { /* 忽略 */ }
-    },
-    computeRecentGoods() {
-      var history = []
-      try {
-        history = JSON.parse(Vue.ls.get(GOODS_HISTORY_KEY) || '[]') || []
-      } catch (e) {
-        history = []
-      }
-      var now = Date.now()
-      var week = GOODS_RECENT_DAYS * 24 * 60 * 60 * 1000
-      var map = {}
-      history.forEach(function(h) {
-        if (!h || !h.name) return
-        if (now - (h.time || 0) > week) return
-        var k = h.key || (h.name + '_' + (h.spec || ''))
-        if (!map[k]) map[k] = { key: k, name: h.name, spec: h.spec || '', count: 0, last: 0 }
-        map[k].count++
-        map[k].last = Math.max(map[k].last, h.time || 0)
-      })
-      return Object.keys(map).map(function(k) { return map[k] }).sort(function(a, b) {
-        return b.count - a.count || b.last - a.last
-      }).slice(0, GOODS_RECENT_LIMIT)
-    },
-    openGoodsPicker() {
-      this.goodsPickerVisible = true
-      this.goodsPickerKeyword = ''
-      this.loadGoodsPicker()
-    },
-    loadGoodsPicker(more) {
+    /** 多选：从当前行开始依次回填，超出已有行则追加 */
+    handleConfirmGoods(list) {
+      if (!list || list.length === 0) return
       var self = this
-      if (more && (this.goodsPickerLoading || this.goodsPickerList.length >= this.goodsPickerTotal)) return
-      this.goodsPickerLoading = true
-      if (!more) {
-        this.goodsPickerPage = 1
-        this.goodsPickerList = []
-      }
-      var searchObj = {
-        materialParam: this.goodsPickerKeyword,
-        mpList: getMpListShort(Vue.ls.get('materialPropertyList'))
-      }
-      getAction('/material/listSku', {
-        search: JSON.stringify(filterObj(searchObj)),
-        currentPage: this.goodsPickerPage,
-        pageSize: 20
-      }).then(function(res) {
-        if (res && res.code === 200) {
-          var rows = (res.data && res.data.rows) || []
-          self.goodsPickerList = more ? self.goodsPickerList.concat(rows) : rows
-          self.goodsPickerTotal = (res.data && res.data.total) || self.goodsPickerList.length
-          self.goodsPickerPage++
+      list.forEach(function(goods, i) {
+        var index = self.goodsTargetIndex + i
+        var row = self.toGoodsRow(goods)
+        if (index < self.goodsRows.length) {
+          self.$set(self.goodsRows, index, row)
         } else {
-          self.$message.error((res && res.data && res.data.message) || '商品加载失败')
+          self.goodsRows.push(row)
         }
-      }).catch(function() {
-        self.$message.error('商品加载失败')
-      }).finally(function() {
-        self.goodsPickerLoading = false
       })
+      this.goodsPickerVisible = false
+      this.syncPageHeight()
     },
     printResult() {
       var self = this
@@ -768,143 +611,6 @@ export default {
 }
 .addr-goods-del {
   color: #ff4d4f;
-}
-.addr-mask {
-  position: fixed;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2100;
-  display: flex;
-  align-items: flex-end;
-  background: rgba(0, 0, 0, 0.45);
-}
-.addr-mask--top {
-  z-index: 2200;
-  align-items: stretch;
-}
-.addr-sheet {
-  width: 100%;
-  max-height: 70vh;
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border-radius: 14px 14px 0 0;
-}
-.addr-sheet__head {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 48px;
-  border-bottom: 1px solid #f0f0f0;
-}
-.addr-sheet__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #222;
-}
-.addr-sheet__close,
-.addr-sheet__back {
-  position: absolute;
-  right: 14px;
-  top: 14px;
-  font-size: 18px;
-  color: #666;
-}
-.addr-sheet__back {
-  right: auto;
-  left: 14px;
-}
-.addr-sheet__placeholder {
-  width: 18px;
-}
-.addr-sheet__body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-.addr-sheet__subtitle {
-  padding: 6px 16px;
-  font-size: 12px;
-  color: #999;
-}
-.addr-sheet__empty {
-  padding: 30px 16px;
-  text-align: center;
-  font-size: 13px;
-  color: #999;
-}
-.addr-sheet__item {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.addr-sheet__item-main {
-  flex: 1;
-  min-width: 0;
-}
-.addr-sheet__item-name {
-  font-size: 15px;
-  color: #333;
-}
-.addr-sheet__item-spec {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #999;
-}
-.addr-sheet__item-count {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: #1890ff;
-}
-.addr-sheet__footer {
-  padding: 10px 16px;
-  border-top: 1px solid #f0f0f0;
-}
-.addr-sheet__add-btn {
-  height: 42px;
-  border-radius: 21px;
-}
-.addr-picker {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  background: #fff;
-}
-.addr-picker__search {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid #f0f0f0;
-}
-.addr-picker__search /deep/ .ant-input-affix-wrapper {
-  flex: 1;
-  margin-right: 8px;
-}
-.addr-picker__list {
-  flex: 1;
-  overflow-y: auto;
-}
-.addr-picker__item {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f5f5f5;
-}
-.addr-picker__name {
-  font-size: 15px;
-  color: #333;
-}
-.addr-picker__spec {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #999;
-}
-.addr-picker__more {
-  padding: 12px;
-  text-align: center;
 }
 .addr-print-btn {
   height: 46px;

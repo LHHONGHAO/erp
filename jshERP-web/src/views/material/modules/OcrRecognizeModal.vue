@@ -1,6 +1,7 @@
 <template>
   <a-modal
     :visible="visible"
+    :zIndex="zIndex"
     :width="modalWidth"
     :footer="null"
     :maskClosable="false"
@@ -47,7 +48,7 @@
       :visible="previewVisible"
       :footer="null"
       :width="'96%'"
-      :zIndex="1200"
+      :zIndex="zIndex + 200"
       wrapClassName="ocr-preview-modal"
       @cancel="previewVisible = false">
       <img :src="previewImage" class="ocr-preview-full" @click="previewVisible = false" />
@@ -76,6 +77,7 @@
     <a-modal
       title="拍照识别"
       :visible="cameraVisible"
+      :zIndex="zIndex + 100"
       :footer="null"
       :width="isMobileView ? '94%' : 560"
       :maskClosable="false"
@@ -93,6 +95,7 @@
     <a-modal
       title="属性显示设置"
       :visible="propertyConfigVisible"
+      :zIndex="zIndex + 100"
       :width="isMobileView ? '94%' : 500"
       :maskClosable="false"
       @ok="savePropertyConfig"
@@ -157,6 +160,11 @@ export default {
     extractOnly: {
       type: Boolean,
       default: false
+    },
+    // 弹窗层级：在高层级弹层（如手机端标准弹层）内使用时需显式提高
+    zIndex: {
+      type: Number,
+      default: 1000
     }
   },
   data() {

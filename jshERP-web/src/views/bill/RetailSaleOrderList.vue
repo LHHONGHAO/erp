@@ -36,7 +36,7 @@
         </div>
       </div>
     </div>
-    <!-- 底部栏（标准手机底栏）：数量/金额左对齐 + 居中扫码 + 右侧结算按钮 -->
+    <!-- 底部栏（标准手机底栏）：数量/金额左对齐 + 右侧结算按钮 -->
     <mobile-bottom-bar>
       <template #left>
         <div class="rso-bottom-item">
@@ -48,13 +48,12 @@
           <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
         </div>
       </template>
-      <div class="rso-bottom-scan" @click="openScanner">
-        <a-icon type="scan" />
-      </div>
       <template #right>
         <a-button type="primary" @click="openSettle">结算</a-button>
       </template>
     </mobile-bottom-bar>
+    <!-- 标准底部操作栏：选择添加在左，扫码添加在右，固定在底栏正上方 -->
+    <mobile-bottom-actions :buttons="bottomActions" @click="onBottomAction" />
 
     <!-- 结算页面：标准手机全屏页面（顶栏返回/标题 + 单据信息置顶 + 商品明细 + 合计实收 + 底部提交） -->
     <div v-if="settleVisible" class="rso-settle-page">
@@ -173,22 +172,15 @@
     <!-- 新增会员 -->
     <member-modal ref="memberModalForm" attach-to-body full-screen :z-index="1200" @ok="onMemberAdded"></member-modal>
 
-    <!-- 标准扫码页（全屏）：所有扫码入口统一复用 -->
-    <mobile-scan-page ref="standardScanner" :visible="scanVisible" @close="closeScanner" @result="onStandardScanResult" />
-
-    <!-- 商品选择页面（共用页面，弹窗形式加载） -->
-    <a-modal
-      :visible="materialVisible"
-      title="选择商品"
-      @cancel="materialVisible = false"
-      :footer="null"
-      width="90%"
-      centered
-      destroyOnClose
-      :bodyStyle="{ padding: 0, height: 'calc(100vh - 120px)', overflow: 'hidden' }"
-    >
-      <material-select-page :bar-code="scanBarCode" @back="materialVisible = false" @select="handleMaterialSelect" />
-    </a-modal>
+    <!-- 标准添加商品弹层（与打印弹层同一套样式，含近 7 天前 20 名） -->
+    <mobile-product-picker
+      :visible="productPickerVisible"
+      title="添加商品"
+      :initial-keyword="pickerKeyword"
+      recent-require-raw
+      @pick="onPickerPick"
+      @confirm="onPickerConfirm"
+      @close="productPickerVisible = false" />
 
     <!-- 单据弹窗（复用零售出库业务逻辑） -->
     <retail-out-modal ref="modalForm" @ok="modalFormOk" @close="modalFormClose"></retail-out-modal>
@@ -199,9 +191,9 @@
 <script>
   import RetailOutModal from './modules/RetailOutModal'
   import BillDetail from './dialog/BillDetail'
-  import MaterialSelectPage from '@/views/material/MaterialSelectPage'
   import MemberModal from '@/views/system/modules/MemberModal'
-  import MobileScanPage from '@/components/mobile/MobileScanPage'
+  import MobileProductPicker from '@/components/mobile/MobileProductPicker'
+  import MobileBottomActions from '@/components/mobile/MobileBottomActions'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import { BillListMixin } from './mixins/BillListMixin'
   import { getAction, postAction } from '@/api/manage'
@@ -211,7 +203,6 @@
   import MobileBottomBar from '@/components/mobile/MobileBottomBar'
   import MobileTopBar from '@/components/mobile/MobileTopBar'
   import moment from 'moment'
-  import { searchContentByCode } from '@/services/search/contentSearch'
   import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
 
   export default {
@@ -220,9 +211,9 @@
     components: {
       RetailOutModal,
       BillDetail,
-      MaterialSelectPage,
       MemberModal,
-      MobileScanPage,
+      MobileProductPicker,
+      MobileBottomActions,
       DataTable,
       MobileBottomBar,
       MobileTopBar
@@ -279,18 +270,13 @@
         memberKeyword: '',
         memberOptions: [],
         selectedMember: null,
-        // 扫码相关（取景与识别由标准 MobileScanPage 负责）
-        scanVisible: false,
-        scanResult: null,
-        scanError: '',
-        searching: false,
-        // 成功提示自动消失的定时器
-        successTimer: null,
-        // 扫描反馈提示音（Web Audio 合成，不依赖音频文件）
-        audioContext: null,
         // 商品选择
-        materialVisible: false,
-        scanBarCode: '',
+        productPickerVisible: false,
+        pickerKeyword: '',
+        // 标准底部操作按钮：添加商品
+        bottomActions: [
+          { key: 'select', text: '添加商品' }
+        ],
         // 结算弹窗（单据信息）
         settleVisible: false
       }
@@ -334,181 +320,38 @@
       this.queryParam.endTime = today
       this.queryParam.createTimeRange = [moment(today), moment(today)]
     },
-    beforeDestroy () {
-      if (this.successTimer) {
-        clearTimeout(this.successTimer)
-        this.successTimer = null
-      }
-      if (this.audioContext) {
-        try { this.audioContext.close() } catch (e) {}
-        this.audioContext = null
-      }
-    },
     methods: {
-      // 打开标准扫码页（识别与取景由 MobileScanPage 负责）
-      openScanner () {
-        this.scanVisible = true
-        // 点击扫码图标即解锁音频，保证后续扫描反馈提示音可播放
-        this.unlockAudio()
-        this.scanResult = null
-        this.scanError = ''
-        this.searching = false
-      },
-      // 标准扫码页识别结果：条码走商品查询并加入明细，文字仅在扫码页内提示
-      onStandardScanResult (payload) {
-        const text = ((payload && payload.text) || '').trim()
-        if (!text) return
-        this.unlockAudio()
-        if (payload.type === 'barcode') {
-          this.handleScannedContent(text, payload.format, payload.type)
-          return
-        }
-        const scanner = this.$refs.standardScanner
-        if (scanner && scanner.setTip) {
-          scanner.setTip('识别文字：' + text, false)
-        }
-        this.playFeedbackSound(true)
-      },
-      // 初始化/唤醒音频上下文（iOS 需在用户点击手势中解锁）
-      unlockAudio () {
-        if (this.audioContext) return this.audioContext
-        const Ctx = window.AudioContext || window.webkitAudioContext
-        if (!Ctx) return null
-        try {
-          this.audioContext = new Ctx()
-        } catch (e) {
-          return null
-        }
-        return this.audioContext
-      },
-      // 扫描反馈提示音：识别成功为两声上扬短音，识别失败为两声下沉短音
-      playFeedbackSound (success) {
-        const ctx = this.unlockAudio()
-        if (!ctx) return
-        if (ctx.state === 'suspended') {
-          ctx.resume().catch(() => {})
-        }
-        try {
-          const now = ctx.currentTime
-          const tones = success
-            ? [[880, 0], [1320, 0.1]]
-            : [[440, 0], [300, 0.14]]
-          tones.forEach(tone => {
-            const freq = tone[0]
-            const delay = tone[1]
-            const duration = success ? 0.11 : 0.16
-            const osc = ctx.createOscillator()
-            const gain = ctx.createGain()
-            osc.type = 'sine'
-            osc.frequency.value = freq
-            gain.gain.setValueAtTime(0.0001, now + delay)
-            gain.gain.exponentialRampToValueAtTime(0.22, now + delay + 0.02)
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + duration)
-            osc.connect(gain)
-            gain.connect(ctx.destination)
-            osc.start(now + delay)
-            osc.stop(now + delay + duration + 0.02)
-          })
-        } catch (e) {}
-      },
-      closeScanner () {
-        if (this.successTimer) {
-          clearTimeout(this.successTimer)
-          this.successTimer = null
-        }
-        this.scanVisible = false
-        this.searching = false
-      },
-      // 识别内容统一入口（扫描条码）：精确查询商品并加入明细
-      handleScannedContent (content, format, type) {
-        if (!content || this.searching) return
-        this.searching = true
-        const scanner = this.$refs.standardScanner
-        this.scanResult = {
-          content: content,
-          format: format || 'UNKNOWN',
-          type: type || 'UNKNOWN',
-          timestamp: Date.now()
-        }
-        if (navigator.vibrate) navigator.vibrate(60)
-        if (scanner && scanner.setTip) scanner.setTip('正在搜索商品…', false)
-        searchContentByCode({
-          content: content,
-          format: this.scanResult.format,
-          type: this.scanResult.type,
-          organId: this.queryParam.organId,
-          prefixNo: this.prefixNo
-        }).then(result => {
-          this.searching = false
-          if (!this.scanVisible) return
-          if (!result.success || result.rows.length === 0) {
-            if (scanner && scanner.setTip) scanner.setTip('条码 ' + content + ' 商品不存在，请继续扫描', true)
-            this.playFeedbackSound(false)
-            return
-          }
-          if (result.rows.length === 1) {
-            this.addMaterialToCart(result.rows[0])
-            this.scanResult = Object.assign({}, this.scanResult, { name: result.rows[0].name })
-            if (scanner && scanner.setTip) scanner.setTip('商品添加成功：' + result.rows[0].name, false)
-            this.playFeedbackSound(true)
-            // 识别成功：短暂展示成功提示后退出扫码页面
-            this.scheduleScanClose(600)
-            return
-          }
-          this.playFeedbackSound(true)
-          this.closeScanner()
-          this.openMaterialSelect(content)
-        }).catch(error => {
-          this.searching = false
-          if (!this.scanVisible) return
-          if (scanner && scanner.setTip) scanner.setTip('搜索商品失败：' + (error && error.message ? error.message : '未知错误'), true)
-          this.playFeedbackSound(false)
-        })
-      },
-      // 将搜索结果加入欲售商品列表
-      addMaterialToCart (mInfo) {
-        const exist = this.cartList.find(r => String(r.meId) === String(mInfo.meId))
-        if (exist) {
-          exist.operNumber = (exist.operNumber - 0) + 1
-        } else {
-          this.cartList.push({
-            id: mInfo.meId || mInfo.id,
-            meId: mInfo.meId,
-            mId: mInfo.id,
-            name: mInfo.name,
-            standard: mInfo.standard,
-            model: mInfo.model,
-            unitPrice: mInfo.commodityDecimal,
-            commodityDecimal: mInfo.commodityDecimal,
-            operNumber: 1,
-            skuCode: mInfo.skuCode,
-            sku: mInfo.sku,
-            barCode: mInfo.barCode,
-            depotId: mInfo.depotId,
-            stock: mInfo.stock,
-            unit: mInfo.unit,
-            // 卡片展示用：图片与规格明细（与商品信息页一致）
-            imgName: mInfo.imgName,
-            attribute: mInfo.attribute,
-            specValues: mInfo.specValues,
-            specJson: mInfo.specJson,
-            specSummary: mInfo.specSummary,
-            retailPrice: mInfo.retailPrice
-          })
+      // 标准底部操作栏：添加商品
+      onBottomAction (key) {
+        if (key === 'select') {
+          this.openMaterialSelect('')
         }
       },
-      // 识别成功后延时退出扫码页面
-      scheduleScanClose (delay) {
-        if (this.successTimer) clearTimeout(this.successTimer)
-        this.successTimer = setTimeout(() => {
-          this.successTimer = null
-          this.closeScanner()
-        }, delay)
-      },
-      // 打开商品选择页面（共用页面）
+      // 打开标准添加商品弹层
       openMaterialSelect (barCode) {
-        this.scanBarCode = barCode || ''
-        this.materialVisible = true
+        this.pickerKeyword = barCode || ''
+        this.productPickerVisible = true
+      },
+      // 弹层单选：点击商品直接加入并关闭
+      onPickerPick (goods) {
+        this.addPickedGoods([goods])
+        this.productPickerVisible = false
+      },
+      // 弹层多选：点「确定」后批量加入并关闭
+      onPickerConfirm (list) {
+        this.addPickedGoods(list)
+        this.productPickerVisible = false
+      },
+      // 标准商品弹层回传数据转购物车数据（保留原始 SKU 完整字段）
+      addPickedGoods (list) {
+        if (!Array.isArray(list)) return
+        const items = []
+        list.forEach(goods => {
+          const raw = goods && goods.raw
+          if (!raw) return
+          items.push(Object.assign({}, raw, { operNumber: 1 }))
+        })
+        this.handleMaterialSelect(items)
       },
       // 商品页面选择商品回调（接收已选商品数组，含 operNumber 数量）
       handleMaterialSelect (items) {
@@ -777,8 +620,8 @@
 .retail-sale-order {
   min-height: 100vh;
   background: #f5f5f5;
-  // 给底部固定金额栏留出空间
-  padding-bottom: 92px;
+  // 给底部固定金额栏 + 标准双按钮操作栏留出空间
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
 }
 // 结算页面顶部单据信息：单列对齐（卡片）
 .rso-billinfo {
@@ -1002,27 +845,6 @@
     text-align: center;
   }
 }
-// 扫码入口：固定在底栏中间，直径与底栏高度一致
-.rso-bottom-scan {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  transform: translateX(-50%);
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: #1890ff;
-  color: #fff;
-  font-size: 26px;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.35);
-  cursor: pointer;
-}
 // 结算页面：固定全屏，顶栏与全局手机页面顶栏一致（49px 蓝底）
 .rso-settle-page {
   position: fixed;
@@ -1229,112 +1051,6 @@
   }
   .rso-search {
     margin-bottom: 10px;
-  }
-}
-/* 全屏扫码界面样式 */
-.rso-scan-fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  background: #000;
-  overflow: hidden;
-  /* 扫码舞台：视频 + 隐藏解码画布 + 识别框绘制层 */
-  .rso-scan-stage {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: #000;
-    z-index: 1;
-  }
-  .rso-scan-video {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    background: #000;
-  }
-  /* 显示层：只负责绘制取景框，不拦截点击（点击由 stage 处理） */
-  .rso-scan-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 2;
-  }
-  .rso-scan-close {
-    position: absolute;
-    top: 12px;
-    right: 16px;
-    z-index: 3;
-    color: #fff;
-    font-size: 24px;
-  }
-  .rso-scan-tip {
-    position: absolute;
-    top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    max-width: 86%;
-    max-height: 46vh;
-    overflow-y: auto;
-    z-index: 2;
-    padding: 6px 12px;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.45);
-    text-align: center;
-    font-size: 14px;
-    line-height: 20px;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-    word-break: break-all;
-    &.rso-scan-tip-success {
-      color: #52c41a;
-      font-weight: 600;
-    }
-    &.rso-scan-tip-error {
-      color: #ff7875;
-      font-weight: 600;
-    }
-  }
-  /* 焦距（变焦）调节：取景框右下角，圆形按钮 + 当前倍数 */
-  .rso-scan-zoom {
-    position: absolute;
-    right: 12px;
-    bottom: 170px;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: 20px;
-    background: rgba(0, 0, 0, 0.45);
-    .rso-scan-zoom-value {
-      min-width: 36px;
-      text-align: center;
-      font-size: 12px;
-      color: #fff;
-    }
-  }
-  /* 条码扫描 / 文字识别按钮：页面底部居中，两个按钮等宽并排 */
-  .rso-scan-capture {
-    position: absolute;
-    bottom: 96px;
-    left: 50%;
-    width: 86%;
-    transform: translateX(-50%);
-    z-index: 3;
-    display: flex;
-    gap: 12px;
-    .rso-scan-btn {
-      flex: 1;
-    }
   }
 }
 </style>

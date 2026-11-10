@@ -39,6 +39,7 @@ data/
 **/frontend-dist/
 .screenshots/
 deploy/.env
+deploy/center/.env
 deploy/config/
 deploy/data/
 deploy/backup/

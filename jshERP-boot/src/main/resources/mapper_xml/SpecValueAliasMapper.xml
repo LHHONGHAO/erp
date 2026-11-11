@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.SpecValueAliasMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.SpecValueAlias">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+    <result column="sample_id" jdbcType="BIGINT" property="sampleId" />
+    <result column="raw_text" jdbcType="VARCHAR" property="rawText" />
+    <result column="norm_key" jdbcType="VARCHAR" property="normKey" />
+    <result column="hit_count" jdbcType="INTEGER" property="hitCount" />
+    <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+    <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, tenant_id, sample_id, raw_text, norm_key, hit_count, create_time, delete_flag
+  </sql>
+
+  <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.SpecValueAlias"
+          useGeneratedKeys="true" keyProperty="id">
+    insert into jsh_spec_value_alias
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="sampleId != null">sample_id,</if>
+      <if test="rawText != null">raw_text,</if>
+      <if test="normKey != null">norm_key,</if>
+      <if test="hitCount != null">hit_count,</if>
+      <if test="deleteFlag != null">delete_flag,</if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="sampleId != null">#{sampleId,jdbcType=BIGINT},</if>
+      <if test="rawText != null">#{rawText,jdbcType=VARCHAR},</if>
+      <if test="normKey != null">#{normKey,jdbcType=VARCHAR},</if>
+      <if test="hitCount != null">#{hitCount,jdbcType=INTEGER},</if>
+      <if test="deleteFlag != null">#{deleteFlag,jdbcType=VARCHAR},</if>
+    </trim>
+  </insert>
+
+  <select id="selectByNormKey" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_alias
+    where norm_key = #{normKey,jdbcType=VARCHAR}
+      and delete_flag &lt;&gt; '1'
+    order by hit_count desc, id asc
+    limit 1
+  </select>
+
+  <update id="increaseHitCount">
+    update jsh_spec_value_alias
+    set hit_count = hit_count + 1
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+</mapper>

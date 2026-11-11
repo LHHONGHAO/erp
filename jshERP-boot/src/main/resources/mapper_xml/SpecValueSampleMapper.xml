@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.SpecValueSampleMapper">
+  <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.SpecValueSample">
+    <id column="id" jdbcType="BIGINT" property="id" />
+    <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+    <result column="category_id" jdbcType="BIGINT" property="categoryId" />
+    <result column="attribute_id" jdbcType="BIGINT" property="attributeId" />
+    <result column="canonical_value" jdbcType="VARCHAR" property="canonicalValue" />
+    <result column="norm_key" jdbcType="VARCHAR" property="normKey" />
+    <result column="attr_value_id" jdbcType="BIGINT" property="attrValueId" />
+    <result column="source" jdbcType="VARCHAR" property="source" />
+    <result column="confidence" jdbcType="DECIMAL" property="confidence" />
+    <result column="hit_count" jdbcType="INTEGER" property="hitCount" />
+    <result column="status" jdbcType="VARCHAR" property="status" />
+    <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+    <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
+    <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
+  </resultMap>
+
+  <sql id="Base_Column_List">
+    id, tenant_id, category_id, attribute_id, canonical_value, norm_key, attr_value_id,
+    source, confidence, hit_count, status, create_time, update_time, delete_flag
+  </sql>
+
+  <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.SpecValueSample"
+          useGeneratedKeys="true" keyProperty="id">
+    insert into jsh_spec_value_sample
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="categoryId != null">category_id,</if>
+      <if test="attributeId != null">attribute_id,</if>
+      <if test="canonicalValue != null">canonical_value,</if>
+      <if test="normKey != null">norm_key,</if>
+      <if test="attrValueId != null">attr_value_id,</if>
+      <if test="source != null">source,</if>
+      <if test="confidence != null">confidence,</if>
+      <if test="hitCount != null">hit_count,</if>
+      <if test="status != null">status,</if>
+      <if test="deleteFlag != null">delete_flag,</if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
+      <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
+      <if test="canonicalValue != null">#{canonicalValue,jdbcType=VARCHAR},</if>
+      <if test="normKey != null">#{normKey,jdbcType=VARCHAR},</if>
+      <if test="attrValueId != null">#{attrValueId,jdbcType=BIGINT},</if>
+      <if test="source != null">#{source,jdbcType=VARCHAR},</if>
+      <if test="confidence != null">#{confidence,jdbcType=DECIMAL},</if>
+      <if test="hitCount != null">#{hitCount,jdbcType=INTEGER},</if>
+      <if test="status != null">#{status,jdbcType=VARCHAR},</if>
+      <if test="deleteFlag != null">#{deleteFlag,jdbcType=VARCHAR},</if>
+    </trim>
+  </insert>
+
+  <update id="updateByPrimaryKeySelective" parameterType="com.jsh.erp.datasource.entities.SpecValueSample">
+    update jsh_spec_value_sample
+    <set>
+      <if test="categoryId != null">category_id = #{categoryId,jdbcType=BIGINT},</if>
+      <if test="attributeId != null">attribute_id = #{attributeId,jdbcType=BIGINT},</if>
+      <if test="canonicalValue != null">canonical_value = #{canonicalValue,jdbcType=VARCHAR},</if>
+      <if test="normKey != null">norm_key = #{normKey,jdbcType=VARCHAR},</if>
+      <if test="attrValueId != null">attr_value_id = #{attrValueId,jdbcType=BIGINT},</if>
+      <if test="source != null">source = #{source,jdbcType=VARCHAR},</if>
+      <if test="confidence != null">confidence = #{confidence,jdbcType=DECIMAL},</if>
+      <if test="hitCount != null">hit_count = #{hitCount,jdbcType=INTEGER},</if>
+      <if test="status != null">status = #{status,jdbcType=VARCHAR},</if>
+      <if test="deleteFlag != null">delete_flag = #{deleteFlag,jdbcType=VARCHAR},</if>
+    </set>
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <select id="selectByPrimaryKey" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_sample
+    where id = #{id,jdbcType=BIGINT}
+  </select>
+
+  <select id="selectByNormKey" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_sample
+    where norm_key = #{normKey,jdbcType=VARCHAR}
+      and delete_flag &lt;&gt; '1'
+      and status = '0'
+      <if test="attributeId != null">
+        and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
+      </if>
+    order by hit_count desc, id asc
+    limit 1
+  </select>
+
+  <select id="selectByNumericKey" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_sample
+    where (norm_key = #{numericKey,jdbcType=VARCHAR}
+           or norm_key like concat(#{numericKey,jdbcType=VARCHAR}, '|%'))
+      and delete_flag &lt;&gt; '1'
+      and status = '0'
+      <if test="attributeId != null">
+        and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
+      </if>
+    order by hit_count desc, confidence desc, id asc
+    limit 1
+  </select>
+
+  <select id="selectList" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_sample
+    where delete_flag &lt;&gt; '1'
+    <if test="keyword != null and keyword != ''">
+      and (canonical_value like concat('%', #{keyword,jdbcType=VARCHAR}, '%')
+           or norm_key like concat('%', #{keyword,jdbcType=VARCHAR}, '%'))
+    </if>
+    order by hit_count desc, id desc
+    limit #{limit,jdbcType=INTEGER}
+  </select>
+
+  <update id="increaseHitCount">
+    update jsh_spec_value_sample
+    set hit_count = hit_count + 1
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+</mapper>

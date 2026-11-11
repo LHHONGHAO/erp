@@ -1,6 +1,7 @@
 package com.jsh.erp.controller;
 
 import com.alibaba.fastjson.JSONObject;
+import com.jsh.erp.service.SpecValueSampleService;
 import com.jsh.erp.utils.ErpInfo;
 import com.jsh.erp.utils.OcrUtil;
 import io.swagger.annotations.Api;
@@ -11,6 +12,7 @@ import org.springframework.util.Base64Utils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,6 +24,9 @@ import static com.jsh.erp.utils.ResponseJsonUtil.returnJson;
 @Api(tags = {"OCR图片识别"})
 public class OcrController {
     private Logger logger = LoggerFactory.getLogger(OcrController.class);
+
+    @Resource
+    private SpecValueSampleService specValueSampleService;
 
     @PostMapping(value = "/recognizeProduct")
     @ApiOperation(value = "识别商品图片信息")
@@ -39,6 +44,7 @@ public class OcrController {
             byte[] bytes = file.getBytes();
             String imageBase64 = Base64Utils.encodeToString(bytes);
             Map<String, String> result = OcrUtil.recognizeProductImage(imageBase64);
+            specValueSampleService.enhanceRecognizedStandard(result);
             logger.info("OCR result: {}", result);
             objectMap.putAll(result);
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
@@ -68,6 +74,7 @@ public class OcrController {
             }
             logger.info("imageBase64 length: {}", imageBase64.length());
             Map<String, String> result = OcrUtil.recognizeProductImage(imageBase64);
+            specValueSampleService.enhanceRecognizedStandard(result);
             logger.info("OCR result: {}", result);
             objectMap.putAll(result);
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
@@ -128,6 +135,7 @@ public class OcrController {
                 return returnJson(objectMap, "请输入文本内容", ErpInfo.ERROR.code);
             }
             Map<String, String> result = OcrUtil.parseProductText(text);
+            specValueSampleService.enhanceRecognizedStandard(result);
             objectMap.putAll(result);
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
         } catch (Exception e) {

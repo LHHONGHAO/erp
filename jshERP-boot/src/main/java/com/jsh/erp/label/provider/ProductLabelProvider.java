@@ -138,11 +138,11 @@ public class ProductLabelProvider implements LabelDataProvider {
     private Map<String, String> queryExtend(Connection conn, String materialId, String subId) throws Exception {
         if (subId != null && !subId.trim().isEmpty()) {
             return queryOne(conn,
-                    "SELECT * FROM jsh_material_extend WHERE id = ? AND material_id = ? AND IFNULL(delete_Flag,'0') <> '1'",
+                    "SELECT * FROM sku WHERE id = ? AND spu_id = ? AND deleted_at IS NULL",
                     subId.trim(), materialId);
         }
         return queryOne(conn,
-                "SELECT * FROM jsh_material_extend WHERE material_id = ? AND IFNULL(delete_Flag,'0') <> '1' " +
+                "SELECT * FROM sku WHERE spu_id = ? AND deleted_at IS NULL " +
                         "ORDER BY CASE WHEN default_flag = '1' THEN 0 ELSE 1 END, id ASC LIMIT 1",
                 materialId);
     }

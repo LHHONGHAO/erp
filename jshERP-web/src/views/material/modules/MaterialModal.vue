@@ -2236,12 +2236,19 @@
           }
         })
       },
-      // 安全解析 SKU 的规格值 JSON
+      // 安全解析 SKU 的规格值 JSON（兼容后端 spec_json 的 name/value 与录入时的 attributeName/valueText）
       parseSpecValuesJson(specValues) {
         if (!specValues) return []
         try {
           let arr = JSON.parse(specValues)
-          return Array.isArray(arr) ? arr : []
+          if (!Array.isArray(arr)) return []
+          return arr.map(function(v) {
+            return Object.assign({}, v, {
+              attributeName: v.attributeName || v.name || '',
+              valueText: v.valueText || v.value || '',
+              image: v.image || ''
+            })
+          })
         } catch (e) {
           return []
         }

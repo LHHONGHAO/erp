@@ -27,6 +27,18 @@ public class Sku {
     /** 划线价 */
     private BigDecimal marketPrice;
 
+    /** 销售价 */
+    private BigDecimal wholesaleDecimal;
+
+    /** 最低售价 */
+    private BigDecimal lowDecimal;
+
+    /** SKU图片 */
+    private String imageUrl;
+
+    /** 默认SKU标记：1是 0否 */
+    private String defaultFlag;
+
     private Long tenantId;
 
     private Integer version;
@@ -111,6 +123,38 @@ public class Sku {
 
     public void setMarketPrice(BigDecimal marketPrice) {
         this.marketPrice = marketPrice;
+    }
+
+    public BigDecimal getWholesaleDecimal() {
+        return wholesaleDecimal;
+    }
+
+    public void setWholesaleDecimal(BigDecimal wholesaleDecimal) {
+        this.wholesaleDecimal = wholesaleDecimal;
+    }
+
+    public BigDecimal getLowDecimal() {
+        return lowDecimal;
+    }
+
+    public void setLowDecimal(BigDecimal lowDecimal) {
+        this.lowDecimal = lowDecimal;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl == null ? null : imageUrl.trim();
+    }
+
+    public String getDefaultFlag() {
+        return defaultFlag;
+    }
+
+    public void setDefaultFlag(String defaultFlag) {
+        this.defaultFlag = defaultFlag == null ? null : defaultFlag.trim();
     }
 
     public Long getTenantId() {

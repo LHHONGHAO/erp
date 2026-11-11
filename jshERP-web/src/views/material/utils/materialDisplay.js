@@ -112,7 +112,7 @@ export function getSpecValueMerged(sku) {
   try {
     const arr = JSON.parse(sku.specValues)
     if (!Array.isArray(arr)) return sku.specValues || ''
-    return arr.map(function(item) { return item.valueText || '' }).filter(function(v) { return v !== '' }).join('/')
+    return arr.map(function(item) { return item.valueText || item.value || '' }).filter(function(v) { return v !== '' }).join('/')
   } catch (e) {
     return sku.specValues || ''
   }

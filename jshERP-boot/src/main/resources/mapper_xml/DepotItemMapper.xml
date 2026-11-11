@@ -5,7 +5,7 @@
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="header_id" jdbcType="BIGINT" property="headerId" />
     <result column="material_id" jdbcType="BIGINT" property="materialId" />
-    <result column="material_extend_id" jdbcType="BIGINT" property="materialExtendId" />
+    <result column="sku_id" jdbcType="BIGINT" property="materialExtendId" />
     <result column="material_unit" jdbcType="VARCHAR" property="materialUnit" />
     <result column="sku" jdbcType="VARCHAR" property="sku" />
     <result column="oper_number" jdbcType="DECIMAL" property="operNumber" />
@@ -89,7 +89,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, header_id, material_id, material_extend_id, material_unit, sku, oper_number, 
+    id, header_id, material_id, sku_id, material_unit, sku, oper_number, 
     basic_number, unit_price, real_unit_price, purchase_unit_price, tax_unit_price, all_price, real_amount, remark, 
     depot_id, another_depot_id, tax_rate, tax_money, tax_last_money, material_type, sn_list, 
     batch_number, expiration_date, link_id, tenant_id, delete_flag
@@ -126,7 +126,7 @@
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.DepotItem">
     insert into jsh_depot_item (id, header_id, material_id, 
-      material_extend_id, material_unit, sku, 
+      sku_id, material_unit, sku, 
       oper_number, basic_number, unit_price, real_unit_price, 
       purchase_unit_price, tax_unit_price, all_price, real_amount, 
       remark, depot_id, another_depot_id, 
@@ -157,7 +157,7 @@
         material_id,
       </if>
       <if test="materialExtendId != null">
-        material_extend_id,
+        sku_id,
       </if>
       <if test="materialUnit != null">
         material_unit,
@@ -332,7 +332,7 @@
         material_id = #{record.materialId,jdbcType=BIGINT},
       </if>
       <if test="record.materialExtendId != null">
-        material_extend_id = #{record.materialExtendId,jdbcType=BIGINT},
+        sku_id = #{record.materialExtendId,jdbcType=BIGINT},
       </if>
       <if test="record.materialUnit != null">
         material_unit = #{record.materialUnit,jdbcType=VARCHAR},
@@ -413,7 +413,7 @@
     set id = #{record.id,jdbcType=BIGINT},
       header_id = #{record.headerId,jdbcType=BIGINT},
       material_id = #{record.materialId,jdbcType=BIGINT},
-      material_extend_id = #{record.materialExtendId,jdbcType=BIGINT},
+      sku_id = #{record.materialExtendId,jdbcType=BIGINT},
       material_unit = #{record.materialUnit,jdbcType=VARCHAR},
       sku = #{record.sku,jdbcType=VARCHAR},
       oper_number = #{record.operNumber,jdbcType=DECIMAL},
@@ -451,7 +451,7 @@
         material_id = #{materialId,jdbcType=BIGINT},
       </if>
       <if test="materialExtendId != null">
-        material_extend_id = #{materialExtendId,jdbcType=BIGINT},
+        sku_id = #{materialExtendId,jdbcType=BIGINT},
       </if>
       <if test="materialUnit != null">
         material_unit = #{materialUnit,jdbcType=VARCHAR},
@@ -529,7 +529,7 @@
     update jsh_depot_item
     set header_id = #{headerId,jdbcType=BIGINT},
       material_id = #{materialId,jdbcType=BIGINT},
-      material_extend_id = #{materialExtendId,jdbcType=BIGINT},
+      sku_id = #{materialExtendId,jdbcType=BIGINT},
       material_unit = #{materialUnit,jdbcType=VARCHAR},
       sku = #{sku,jdbcType=VARCHAR},
       oper_number = #{operNumber,jdbcType=DECIMAL},

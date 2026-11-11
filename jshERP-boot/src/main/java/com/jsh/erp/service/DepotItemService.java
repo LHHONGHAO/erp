@@ -60,6 +60,8 @@ public class DepotItemService {
     @Resource
     private MaterialCurrentStockMapperEx materialCurrentStockMapperEx;
     @Resource
+    private MaterialInitialStockMapper materialInitialStockMapper;
+    @Resource
     private LogService logService;
 
     public DepotItem getDepotItem(long id)throws Exception {
@@ -1007,14 +1009,14 @@ public class DepotItemService {
         DepotItemVo4Stock stockObj = depotItemMapperEx.getSkuStockByParamWithDepotList(depotList, meId, forceFlag, inOutManageFlag, beginTime, endTime);
         BigDecimal stockSum = BigDecimal.ZERO;
         if(stockObj!=null) {
-            BigDecimal inTotal = stockObj.getInTotal();
-            BigDecimal transfInTotal = stockObj.getTransfInTotal();
-            BigDecimal assemInTotal = stockObj.getAssemInTotal();
-            BigDecimal disAssemInTotal = stockObj.getDisAssemInTotal();
-            BigDecimal outTotal = stockObj.getOutTotal();
-            BigDecimal transfOutTotal = stockObj.getTransfOutTotal();
-            BigDecimal assemOutTotal = stockObj.getAssemOutTotal();
-            BigDecimal disAssemOutTotal = stockObj.getDisAssemOutTotal();
+            BigDecimal inTotal = stockObj.getInTotal()!=null?stockObj.getInTotal():BigDecimal.ZERO;
+            BigDecimal transfInTotal = stockObj.getTransfInTotal()!=null?stockObj.getTransfInTotal():BigDecimal.ZERO;
+            BigDecimal assemInTotal = stockObj.getAssemInTotal()!=null?stockObj.getAssemInTotal():BigDecimal.ZERO;
+            BigDecimal disAssemInTotal = stockObj.getDisAssemInTotal()!=null?stockObj.getDisAssemInTotal():BigDecimal.ZERO;
+            BigDecimal outTotal = stockObj.getOutTotal()!=null?stockObj.getOutTotal():BigDecimal.ZERO;
+            BigDecimal transfOutTotal = stockObj.getTransfOutTotal()!=null?stockObj.getTransfOutTotal():BigDecimal.ZERO;
+            BigDecimal assemOutTotal = stockObj.getAssemOutTotal()!=null?stockObj.getAssemOutTotal():BigDecimal.ZERO;
+            BigDecimal disAssemOutTotal = stockObj.getDisAssemOutTotal()!=null?stockObj.getDisAssemOutTotal():BigDecimal.ZERO;
             stockSum = inTotal.add(transfInTotal).add(assemInTotal).add(disAssemInTotal)
                     .subtract(outTotal).subtract(transfOutTotal).subtract(assemOutTotal).subtract(disAssemOutTotal);
         }
@@ -1052,14 +1054,14 @@ public class DepotItemService {
         DepotItemVo4Stock stockObj = depotItemMapperEx.getStockByParamWithDepotList(depotList, mId, forceFlag, inOutManageFlag, beginTime, endTime);
         BigDecimal stockSum = BigDecimal.ZERO;
         if(stockObj!=null) {
-            BigDecimal inTotal = stockObj.getInTotal();
-            BigDecimal transfInTotal = stockObj.getTransfInTotal();
-            BigDecimal assemInTotal = stockObj.getAssemInTotal();
-            BigDecimal disAssemInTotal = stockObj.getDisAssemInTotal();
-            BigDecimal outTotal = stockObj.getOutTotal();
-            BigDecimal transfOutTotal = stockObj.getTransfOutTotal();
-            BigDecimal assemOutTotal = stockObj.getAssemOutTotal();
-            BigDecimal disAssemOutTotal = stockObj.getDisAssemOutTotal();
+            BigDecimal inTotal = stockObj.getInTotal()!=null?stockObj.getInTotal():BigDecimal.ZERO;
+            BigDecimal transfInTotal = stockObj.getTransfInTotal()!=null?stockObj.getTransfInTotal():BigDecimal.ZERO;
+            BigDecimal assemInTotal = stockObj.getAssemInTotal()!=null?stockObj.getAssemInTotal():BigDecimal.ZERO;
+            BigDecimal disAssemInTotal = stockObj.getDisAssemInTotal()!=null?stockObj.getDisAssemInTotal():BigDecimal.ZERO;
+            BigDecimal outTotal = stockObj.getOutTotal()!=null?stockObj.getOutTotal():BigDecimal.ZERO;
+            BigDecimal transfOutTotal = stockObj.getTransfOutTotal()!=null?stockObj.getTransfOutTotal():BigDecimal.ZERO;
+            BigDecimal assemOutTotal = stockObj.getAssemOutTotal()!=null?stockObj.getAssemOutTotal():BigDecimal.ZERO;
+            BigDecimal disAssemOutTotal = stockObj.getDisAssemOutTotal()!=null?stockObj.getDisAssemOutTotal():BigDecimal.ZERO;
             stockSum = inTotal.add(transfInTotal).add(assemInTotal).add(disAssemInTotal)
                     .subtract(outTotal).subtract(transfOutTotal).subtract(assemOutTotal).subtract(disAssemOutTotal);
         }
@@ -1113,9 +1115,9 @@ public class DepotItemService {
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public void updateCurrentStock(DepotItem depotItem) throws Exception {
         BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(depotItem.getMaterialId());
-        updateCurrentStockFun(depotItem.getMaterialId(), depotItem.getDepotId(), currentUnitPrice);
+        updateCurrentStockFun(depotItem.getMaterialId(), depotItem.getMaterialExtendId(), depotItem.getDepotId(), currentUnitPrice);
         if(depotItem.getAnotherDepotId()!=null){
-            updateCurrentStockFun(depotItem.getMaterialId(), depotItem.getAnotherDepotId(), currentUnitPrice);
+            updateCurrentStockFun(depotItem.getMaterialId(), depotItem.getMaterialExtendId(), depotItem.getAnotherDepotId(), currentUnitPrice);
         }
     }
 
@@ -1194,29 +1196,69 @@ public class DepotItemService {
     }
 
     /**
-     * 根据商品和仓库来更新当前库存
+     * 根据商品、SKU和仓库来更新当前库存
      * @param mId
+     * @param skuId
      * @param dId
      */
-    public void updateCurrentStockFun(Long mId, Long dId, BigDecimal currentUnitPrice) throws Exception {
+    public void updateCurrentStockFun(Long mId, Long skuId, Long dId, BigDecimal currentUnitPrice) throws Exception {
         if(mId!=null && dId!=null) {
             MaterialCurrentStockExample example = new MaterialCurrentStockExample();
             example.createCriteria().andMaterialIdEqualTo(mId).andDepotIdEqualTo(dId)
                     .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
             List<MaterialCurrentStock> list = materialCurrentStockMapper.selectByExample(example);
+            MaterialCurrentStock exist = null;
+            if(list!=null) {
+                for(MaterialCurrentStock mcs: list) {
+                    boolean sameSku = skuId==null ? mcs.getMaterialExtendId()==null : skuId.equals(mcs.getMaterialExtendId());
+                    if(sameSku) {
+                        exist = mcs;
+                        break;
+                    }
+                }
+            }
             MaterialCurrentStock materialCurrentStock = new MaterialCurrentStock();
             materialCurrentStock.setMaterialId(mId);
+            materialCurrentStock.setMaterialExtendId(skuId);
             materialCurrentStock.setDepotId(dId);
-            materialCurrentStock.setCurrentNumber(getStockByParam(dId,mId,null,null));
+            materialCurrentStock.setCurrentNumber(getCurrentStockBySku(mId, skuId, dId));
             materialCurrentStock.setCurrentUnitPrice(currentUnitPrice);
-            if(list!=null && list.size()>0) {
-                Long mcsId = list.get(0).getId();
-                materialCurrentStock.setId(mcsId);
+            if(exist!=null) {
+                materialCurrentStock.setId(exist.getId());
                 materialCurrentStockMapper.updateByPrimaryKeySelective(materialCurrentStock);
             } else {
                 materialCurrentStockMapper.insertSelective(materialCurrentStock);
             }
         }
+    }
+
+    /**
+     * 根据商品和仓库来更新当前库存（商品维度）
+     */
+    public void updateCurrentStockFun(Long mId, Long dId, BigDecimal currentUnitPrice) throws Exception {
+        updateCurrentStockFun(mId, null, dId, currentUnitPrice);
+    }
+
+    /**
+     * SKU维度当前库存 = 该仓库期初库存 + 单据出入库汇总
+     */
+    private BigDecimal getCurrentStockBySku(Long mId, Long skuId, Long dId) throws Exception {
+        if(skuId==null) {
+            return getStockByParam(dId, mId, null, null);
+        }
+        BigDecimal initStock = BigDecimal.ZERO;
+        MaterialInitialStockExample example = new MaterialInitialStockExample();
+        example.createCriteria().andMaterialIdEqualTo(mId).andDepotIdEqualTo(dId)
+                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        List<MaterialInitialStock> misList = materialInitialStockMapper.selectByExample(example);
+        if(misList!=null) {
+            for(MaterialInitialStock mis: misList) {
+                if(skuId.equals(mis.getMaterialExtendId()) && mis.getNumber()!=null) {
+                    initStock = initStock.add(mis.getNumber());
+                }
+            }
+        }
+        return initStock.add(getSkuStockByParam(dId, skuId, null, null));
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)

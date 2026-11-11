@@ -5,10 +5,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.Sku;
 import com.jsh.erp.datasource.entities.SkuSpec;
 import com.jsh.erp.datasource.entities.User;
-import com.jsh.erp.datasource.mappers.MaterialExtendMapperEx;
 import com.jsh.erp.datasource.mappers.SkuMapper;
 import com.jsh.erp.datasource.mappers.SkuSpecMapper;
-import com.jsh.erp.datasource.vo.MaterialExtendVo4List;
 import com.jsh.erp.utils.SkuSpecUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,11 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * SKU 保存服务
@@ -43,9 +37,6 @@ public class SkuService {
 
     @Resource
     private SkuSpecMapper skuSpecMapper;
-
-    @Resource
-    private MaterialExtendMapperEx materialExtendMapperEx;
 
     @Resource
     private UserService userService;
@@ -121,6 +112,10 @@ public class SkuService {
         update.setPurchaseDecimal(sku.getPurchaseDecimal());
         update.setCommodityDecimal(sku.getCommodityDecimal());
         update.setMarketPrice(sku.getMarketPrice());
+        update.setWholesaleDecimal(sku.getWholesaleDecimal());
+        update.setLowDecimal(sku.getLowDecimal());
+        update.setImageUrl(sku.getImageUrl());
+        update.setDefaultFlag(sku.getDefaultFlag());
         update.setUpdateSerial(sku.getUpdateSerial());
 
         // 5. 乐观锁更新主表
@@ -144,93 +139,6 @@ public class SkuService {
             return;
         }
         skuMapper.softDelete(id);
-    }
-
-    /**
-     * 商品保存后，把 SKU 明细（jsh_material_extend）同步到 sku / sku_spec 新模型。
-     * - 展示名 / 规格JSON / 规格摘要 由扩展行的 spec_values 按规格录入顺序生成；
-     * - 首次插入时 create_time 取保存时的系统时间（数据库默认值），
-     *   后续每次编辑保存都会更新 sku 记录，update_time 由数据库自动刷新为本次保存时间；
-     * - 已不存在的 SKU 执行软删除，避免列表出现脏数据。
-     */
-    @Transactional(value = "transactionManager", rollbackFor = Exception.class)
-    public void syncFromMaterialExtend(Long spuId) throws Exception {
-        if (spuId == null) {
-            return;
-        }
-        List<MaterialExtendVo4List> extendList = materialExtendMapperEx.getDetailList(spuId);
-        Long tenantId = getCurrentTenantId();
-        Map<String, Sku> existMap = new HashMap<>();
-        List<Sku> existing = skuMapper.selectBySpuId(spuId, tenantId);
-        if (existing != null) {
-            for (Sku sku : existing) {
-                if (!isBlank(sku.getSkuCode())) {
-                    existMap.put(sku.getSkuCode(), sku);
-                }
-            }
-        }
-        Set<String> keepCodes = new HashSet<>();
-        if (extendList != null) {
-            for (MaterialExtendVo4List extend : extendList) {
-                String skuCode = extend.getSkuCode();
-                if (isBlank(skuCode)) {
-                    continue;
-                }
-                keepCodes.add(skuCode);
-                Sku payload = new Sku();
-                Sku exist = existMap.get(skuCode);
-                if (exist != null) {
-                    payload.setId(exist.getId());
-                }
-                payload.setSpuId(spuId);
-                payload.setSkuCode(skuCode);
-                payload.setTenantId(tenantId);
-                payload.setPurchaseDecimal(extend.getPurchaseDecimal());
-                payload.setCommodityDecimal(extend.getCommodityDecimal());
-                payload.setMarketPrice(extend.getMarketPrice());
-                saveSku(payload, buildSpecsFromSpecValues(extend.getSpecValues()));
-            }
-        }
-        for (Sku sku : existMap.values()) {
-            if (!keepCodes.contains(sku.getSkuCode())) {
-                skuMapper.softDelete(sku.getId());
-            }
-        }
-    }
-
-    /**
-     * 从扩展行 spec_values 还原规格明细，顺序与录入顺序一致（saveSku 会重排 sort_no）
-     * spec_values 元素格式：{attributeName, valueText, image, ...}
-     */
-    private List<SkuSpec> buildSpecsFromSpecValues(String specValues) {
-        List<SkuSpec> specs = new ArrayList<>();
-        if (isBlank(specValues)) {
-            return specs;
-        }
-        try {
-            JSONArray array = JSONArray.parseArray(specValues);
-            for (int i = 0; i < array.size(); i++) {
-                JSONObject item = array.getJSONObject(i);
-                if (item == null || isBlank(item.getString("valueText"))) {
-                    continue;
-                }
-                String specName = item.getString("attributeName");
-                SkuSpec spec = new SkuSpec();
-                spec.setSpecName(isBlank(specName) ? ("规格" + (i + 1)) : specName);
-                spec.setSpecValue(item.getString("valueText"));
-                spec.setImageUrl(item.getString("image"));
-                specs.add(spec);
-            }
-        } catch (Exception e) {
-            logger.error("解析商品规格值失败 specValues={}", specValues, e);
-        }
-        return specs;
-    }
-
-    /** 当前登录用户租户ID */
-    private Long getCurrentTenantId() throws Exception {
-        User user = userService.getCurrentUser();
-        return user != null ? user.getTenantId() : null;
     }
 
     private boolean isBlank(String value) {

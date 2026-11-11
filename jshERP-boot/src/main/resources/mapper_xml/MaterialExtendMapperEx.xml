@@ -1,76 +1,171 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.jsh.erp.datasource.mappers.MaterialExtendMapperEx" >
-    <resultMap extends="com.jsh.erp.datasource.mappers.MaterialExtendMapper.BaseResultMap" id="ResultMapList" type="com.jsh.erp.datasource.vo.MaterialExtendVo4List">
+
+    <!-- 以 sku 为唯一存储，列名映射回旧的扩展对象字段 -->
+    <sql id="ExtendColumns">
+        s.id,
+        s.spu_id as material_id,
+        s.spec_json as spec_values,
+        s.sku_code,
+        s.purchase_decimal,
+        s.commodity_decimal,
+        s.wholesale_decimal,
+        s.market_price,
+        s.low_decimal,
+        s.default_flag,
+        s.image_url as img_url,
+        s.create_time,
+        s.create_serial,
+        s.update_serial,
+        UNIX_TIMESTAMP(s.update_time)*1000 as update_time,
+        s.tenant_id,
+        case when s.deleted_at is null then '0' else '1' end as delete_flag
+    </sql>
+
+    <resultMap id="ResultMapList" type="com.jsh.erp.datasource.vo.MaterialExtendVo4List">
+        <id column="id" jdbcType="BIGINT" property="id" />
+        <result column="material_id" jdbcType="BIGINT" property="materialId" />
+        <result column="spec_values" jdbcType="VARCHAR" property="specValues" />
+        <result column="sku" jdbcType="VARCHAR" property="sku" />
+        <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
+        <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
+        <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
+        <result column="wholesale_decimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
+        <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
+        <result column="low_decimal" jdbcType="DECIMAL" property="lowDecimal" />
+        <result column="default_flag" jdbcType="VARCHAR" property="defaultFlag" />
+        <result column="img_url" jdbcType="VARCHAR" property="imgUrl" />
         <result column="bar_code" jdbcType="VARCHAR" property="barCode" />
         <result column="commodity_unit" jdbcType="VARCHAR" property="commodityUnit" />
-        <result column="sku" jdbcType="VARCHAR" property="sku" />
         <result column="current_stock" jdbcType="DECIMAL" property="currentStock" />
         <result column="low_safe_stock" jdbcType="DECIMAL" property="lowSafeStock" />
         <result column="high_safe_stock" jdbcType="DECIMAL" property="highSafeStock" />
         <result column="depot_id" jdbcType="BIGINT" property="depotId" />
+        <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
     </resultMap>
 
-    <select id="getDetailList" parameterType="com.jsh.erp.datasource.entities.MaterialExtendExample" resultMap="ResultMapList">
-        select d.id,d.spec_values,m.bar_code as bar_code,m.unit as commodity_unit,d.spec_values as sku,d.sku_code,d.commodity_decimal,d.purchase_decimal,d.wholesale_decimal,d.market_price,
-               d.low_decimal,d.default_flag,d.img_url,
-               IFNULL(s.current_stock,0) as current_stock,
+    <resultMap id="ExtendResult" type="com.jsh.erp.datasource.entities.MaterialExtend">
+        <id column="id" jdbcType="BIGINT" property="id" />
+        <result column="material_id" jdbcType="BIGINT" property="materialId" />
+        <result column="spec_values" jdbcType="VARCHAR" property="specValues" />
+        <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
+        <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
+        <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
+        <result column="wholesale_decimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
+        <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
+        <result column="low_decimal" jdbcType="DECIMAL" property="lowDecimal" />
+        <result column="default_flag" jdbcType="VARCHAR" property="defaultFlag" />
+        <result column="img_url" jdbcType="VARCHAR" property="imgUrl" />
+        <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
+        <result column="create_serial" jdbcType="VARCHAR" property="createSerial" />
+        <result column="update_serial" jdbcType="VARCHAR" property="updateSerial" />
+        <result column="update_time" jdbcType="BIGINT" property="updateTime" />
+        <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
+        <result column="delete_flag" jdbcType="VARCHAR" property="deleteFlag" />
+    </resultMap>
+
+    <select id="getDetailList" resultMap="ResultMapList">
+        select s.id, s.spec_json as spec_values, m.bar_code as bar_code, m.unit as commodity_unit,
+               s.spec_json as sku, s.sku_code, s.commodity_decimal, s.purchase_decimal, s.wholesale_decimal, s.market_price,
+               s.low_decimal, s.default_flag, s.image_url as img_url, s.tenant_id,
+               IFNULL(cs.current_stock,0) as current_stock,
                w.low_safe_stock as low_safe_stock, w.high_safe_stock as high_safe_stock, w.depot_id as depot_id
-        from jsh_material_extend d
-        left join jsh_material m on d.material_id = m.id
+        from sku s
+        left join jsh_material m on s.spu_id = m.id
         left join (
-            select material_extend_id, sum(current_number) as current_stock
+            select sku_id, sum(current_number) as current_stock
             from jsh_material_current_stock
             where ifnull(delete_flag,'0') !='1'
-            and material_extend_id is not null
-            group by material_extend_id
-        ) s on d.id = s.material_extend_id
+            and sku_id is not null
+            group by sku_id
+        ) cs on s.id = cs.sku_id
         left join (
-            select material_extend_id, max(depot_id) as depot_id, max(low_safe_stock) as low_safe_stock, max(high_safe_stock) as high_safe_stock
+            select sku_id, max(depot_id) as depot_id, max(low_safe_stock) as low_safe_stock, max(high_safe_stock) as high_safe_stock
             from jsh_material_initial_stock
             where ifnull(delete_flag,'0') !='1'
-            and material_extend_id is not null
-            group by material_extend_id
-        ) w on d.id = w.material_extend_id
-        where d.material_id = #{materialId}
-        and ifnull(d.delete_flag,'0') !='1'
-        order by d.default_flag desc,d.id asc
+            and sku_id is not null
+            group by sku_id
+        ) w on s.id = w.sku_id
+        where s.spu_id = #{materialId}
+        and s.deleted_at is null
+        order by s.default_flag desc, s.id asc
     </select>
 
     <select id="getMaxTimeByTenantAndTime" resultType="java.lang.Long">
-        select max(update_time) from
-        (
-        select update_time from jsh_material_extend
-        where 1=1
+        select max(UNIX_TIMESTAMP(update_time)*1000) from sku
+        where deleted_at is null
+        <if test="tenantId != null">
+            and tenant_id = #{tenantId}
+        </if>
         <if test="lastTime != null">
-            and update_time > #{lastTime}
+            and UNIX_TIMESTAMP(update_time)*1000 &gt; #{lastTime}
         </if>
-        order by update_time asc
-        <if test="syncNum != null">
-            limit 0,#{syncNum}
-        </if>
-        ) time_list
     </select>
 
-    <select id="getListByMId" resultType="com.jsh.erp.datasource.entities.MaterialExtend">
-        select
-        <include refid="com.jsh.erp.datasource.mappers.MaterialExtendMapper.Base_Column_List" />
-        from jsh_material_extend
-        where 1=1
-        and ifnull(delete_Flag,'0') !='1'
-        and material_id in (
+    <select id="getListByMId" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.deleted_at is null
+        and s.spu_id in (
         <foreach collection="ids" item="id" separator=",">
             #{id}
         </foreach>
         )
-        group by material_id
+        group by s.spu_id
+    </select>
+
+    <select id="selectListBySpuId" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.spu_id = #{materialId} and s.deleted_at is null
+        order by s.default_flag desc, s.id asc
+    </select>
+
+    <select id="selectListBySpuIdAndDefaultFlag" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.spu_id = #{materialId} and s.deleted_at is null
+        and s.default_flag = #{defaultFlag}
+        order by s.id asc
+    </select>
+
+    <select id="selectIdBySpuIdAndDefaultFlag" resultType="java.lang.Long">
+        select s.id from sku s
+        where s.spu_id = #{materialId} and s.deleted_at is null
+        and s.default_flag = #{defaultFlag}
+        order by s.id asc
+        limit 1
+    </select>
+
+    <select id="selectBySkuCode" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.sku_code = #{skuCode} and s.deleted_at is null
+        order by s.id asc
+        limit 1
+    </select>
+
+    <select id="selectByTenantAndUpdateTime" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.deleted_at is null
+        <if test="tenantId != null">
+            and s.tenant_id = #{tenantId}
+        </if>
+        <if test="lastTime != null">
+            and UNIX_TIMESTAMP(s.update_time)*1000 &gt; #{lastTime}
+        </if>
+        <if test="maxTime != null">
+            and UNIX_TIMESTAMP(s.update_time)*1000 &lt;= #{maxTime}
+        </if>
+        order by s.id asc
     </select>
 
     <update id="batchDeleteMaterialExtendByIds">
-        update jsh_material_extend
-        set delete_Flag='1'
-        where 1=1
-        and ifnull(delete_Flag,'0') !='1'
+        update sku
+        set deleted_at = now(), version = version + 1
+        where deleted_at is null
         and id in (
         <foreach collection="ids" item="id" separator=",">
             #{id}
@@ -79,11 +174,10 @@
     </update>
 
     <update id="batchDeleteMaterialExtendByMIds">
-        update jsh_material_extend
-        set delete_Flag='1'
-        where 1=1
-        and ifnull(delete_Flag,'0') !='1'
-        and material_id in (
+        update sku
+        set deleted_at = now(), version = version + 1
+        where deleted_at is null
+        and spu_id in (
         <foreach collection="ids" item="id" separator=",">
             #{id}
         </foreach>
@@ -91,19 +185,23 @@
     </update>
 
     <update id="specialUpdatePrice" parameterType="com.jsh.erp.datasource.entities.MaterialExtend">
-        update jsh_material_extend
+        update sku
         set purchase_decimal = #{purchaseDecimal,jdbcType=DECIMAL},
             commodity_decimal = #{commodityDecimal,jdbcType=DECIMAL},
             wholesale_decimal = #{wholesaleDecimal,jdbcType=DECIMAL},
-            low_decimal = #{lowDecimal,jdbcType=DECIMAL}
+            low_decimal = #{lowDecimal,jdbcType=DECIMAL},
+            market_price = #{marketPrice,jdbcType=DECIMAL},
+            version = version + 1
         where id = #{id,jdbcType=BIGINT}
-        and ifnull(delete_flag,'0') !='1'
+        and deleted_at is null
     </update>
 
-    <select id="getBasicInfoByMid" resultType="com.jsh.erp.datasource.entities.MaterialExtend">
-        select * from jsh_material_extend
-        where material_id=#{materialId} and default_flag='1'
-        and ifnull(delete_Flag,'0') !='1'
+    <select id="getBasicInfoByMid" resultMap="ExtendResult">
+        select <include refid="ExtendColumns" />
+        from sku s
+        where s.spu_id = #{materialId} and s.default_flag = '1'
+        and s.deleted_at is null
+        limit 1
     </select>
 
 </mapper>

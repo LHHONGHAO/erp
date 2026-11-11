@@ -180,6 +180,23 @@ public class FunctionService {
         return list==null?0:list.size();
     }
 
+    /**
+     * 一次性查询全部启用且未删除的菜单，供内存中组装菜单树使用，避免逐级递归查询数据库
+     */
+    public List<Function> getAllEnabledFunctions()throws Exception {
+        FunctionExample example = new FunctionExample();
+        example.createCriteria().andEnabledEqualTo(true)
+                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
+        example.setOrderByClause("Sort");
+        List<Function> list=null;
+        try{
+            list = functionsMapper.selectByExample(example);
+        }catch(Exception e){
+            JshException.readFail(logger, e);
+        }
+        return list;
+    }
+
     public List<Function> getRoleFunction(String pNumber)throws Exception {
         FunctionExample example = new FunctionExample();
         example.createCriteria().andEnabledEqualTo(true).andParentNumberEqualTo(pNumber)

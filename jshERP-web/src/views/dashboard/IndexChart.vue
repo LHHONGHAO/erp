@@ -204,10 +204,12 @@
     },
     created() {
       setTimeout(() => {
-        this.loading = !this.loading
+        this.loading = false
       }, 1000)
+      // 只先加载首屏渲染必需的统计数据
       this.initInfo()
-      this.initWithTenant()
+      // 租户信息、续费链接等非首屏数据，等页面渲染完成后再后台加载
+      this.loadDeferredData()
     },
     mounted() {
       handleIntroJs('indexChart', 1)
@@ -226,6 +228,19 @@
             this.retailPriceData = res.data.retailPriceList
           }
         })
+      },
+      loadDeferredData () {
+        const run = () => {
+          this.initWithTenant()
+          this.initPayFeeUrl()
+        }
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(run, { timeout: 2000 })
+        } else {
+          setTimeout(run, 300)
+        }
+      },
+      initPayFeeUrl () {
         getPlatformConfigByKey({"platformKey": "pay_fee_url"}).then((res)=> {
           if (res && res.code === 200) {
             this.payFeeUrl = res.data.platformValue

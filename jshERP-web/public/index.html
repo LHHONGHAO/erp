@@ -272,12 +272,15 @@
     document.title = window.SYS_TITLE;
     //statistics
     var _hmt = _hmt || [];
-    (function() {
-      var hm = document.createElement("script");
-      hm.src = window._statistics;
-      var s = document.getElementsByTagName("script")[0];
-      s.parentNode.insertBefore(hm, s);
-    })();
+    // 百度统计脚本属非首屏数据，页面加载完成后再后台加载，避免外网脚本阻塞首屏
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        var hm = document.createElement("script");
+        hm.src = window._statistics;
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(hm, s);
+      }, 2000);
+    });
   </script>
 </head>
 
@@ -305,33 +308,30 @@
 </body>
 
 <!-- 全局配置-多语言切换-开始 -->
-<script src="<%= BASE_URL %>static/translate.js"></script>
 <script>
-//设置本地语种（当前网页的语种）。如果不设置，默认就是 'chinese_simplified' 简体中文
-translate.language.setLocal('chinese_simplified');
-translate.service.use('client.edge');
-//翻译自定义
-translate.nomenclature.append('chinese_simplified','english',`
-管伊佳ERP=GuanYiJia
-`)
-translate.nomenclature.append('chinese_simplified','vietnamese',`
-管伊佳ERP=ỐngYijia
-`)
-//开启html页面变化的监控，对变化部分会进行自动翻译
-translate.listener.start();
-//不显示语言选择标签
-translate.selectLanguageTag.show = false;
-//执行翻译初始化操作，显示出select语言选择
-//translate.execute();
-
-//VUE的渲染需要时间，所以留出一点点时间来进行翻译切换
-document.addEventListener('DOMContentLoaded', function () {
-    //页面 DOM 已渲染完毕，当然最好是能监控到整个vue渲染完毕后触发最好
+// 翻译脚本(241KB)及其初始化属非首屏数据，页面加载完成后再后台加载，避免拖慢首屏
+window.addEventListener('load', function () {
+  var s = document.createElement('script');
+  s.src = '<%= BASE_URL %>static/translate.js';
+  s.onload = function () {
+    //设置本地语种（当前网页的语种）。如果不设置，默认就是 'chinese_simplified' 简体中文
+    translate.language.setLocal('chinese_simplified');
+    translate.service.use('client.edge');
+    //翻译自定义
+    translate.nomenclature.append('chinese_simplified','english','\n管伊佳ERP=GuanYiJia\n');
+    translate.nomenclature.append('chinese_simplified','vietnamese','\n管伊佳ERP=ỐngYijia\n');
+    //开启html页面变化的监控，对变化部分会进行自动翻译
+    translate.listener.start();
+    //不显示语言选择标签
+    translate.selectLanguageTag.show = false;
+    //执行翻译初始化操作
     translate.execute();
     //2秒后再一次，避免有遗漏
     setTimeout(function(){
     	translate.execute();
     },2000);
+  };
+  document.body.appendChild(s);
 });
 </script>
 <!-- 全局配置-多语言切换-结束 -->

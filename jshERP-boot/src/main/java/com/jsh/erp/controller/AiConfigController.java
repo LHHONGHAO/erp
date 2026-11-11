@@ -3,6 +3,7 @@ package com.jsh.erp.controller;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.jsh.erp.utils.AiApiConfig;
 import com.jsh.erp.utils.BaseResponseInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -299,14 +300,10 @@ public class AiConfigController {
     }
 
     /**
-     * 配置文件路径：优先取统一数据目录（-Djsh.data.dir），否则退回启动目录下 config/
+     * 配置文件路径：与 AiApiConfig 共用同一实现，保证只有一条路径
      */
     private String getConfigPath() {
-        String dataDir = System.getProperty("jsh.data.dir");
-        if (dataDir != null && !dataDir.trim().isEmpty()) {
-            return dataDir.replace('\\', '/') + "/config/ai-api-config.json";
-        }
-        return System.getProperty("user.dir") + "/config/ai-api-config.json";
+        return AiApiConfig.getConfigPath();
     }
 
     private String trim(String value) {

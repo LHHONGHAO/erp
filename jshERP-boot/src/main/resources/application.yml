@@ -1,6 +1,11 @@
 # 服务端口：约定 HTTPS 默认使用 9999 对外访问，HTTP 仅保留 9998 用于证书安装与兼容
 server:
   port: 9998
+  # 开启响应压缩：前端打包产物约 4MB，远程访问时压缩后体积可降到约 1MB
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json,image/svg+xml
+    min-response-size: 2048
   servlet:
     # 登录超时 - 秒
     session:

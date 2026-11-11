@@ -5,7 +5,6 @@
 export const DB_TABLES = [
   // 商品相关
   { table: 'jsh_material', name: '商品信息', role: 'main' },
-  { table: 'jsh_material_extend', name: '商品SKU', role: 'sub' },
   { table: 'sku', name: 'SKU表', role: 'sub' },
   { table: 'sku_spec', name: 'SKU规格表', role: 'sub' },
   { table: 'jsh_material_category', name: '商品类别', role: 'main' },
@@ -42,8 +41,8 @@ export const DB_TABLES = [
 // 表格场景清单：key=场景标识(tableKey)，name=页面名，remark=备注（主表名或功能）
 export const TABLE_SCENES = [
   // 商品
-  { key: 'material_list', name: '商品信息', remark: '商品列表', tables: ['jsh_material', 'jsh_material_extend'] },
-  { key: 'material_select', name: '选择商品', remark: '选择商品弹窗', tables: ['jsh_material', 'jsh_material_extend'], physical: true },
+  { key: 'material_list', name: '商品信息', remark: '商品列表', tables: ['jsh_material', 'sku'] },
+  { key: 'material_select', name: '选择商品', remark: '选择商品弹窗', tables: ['jsh_material', 'sku'], physical: true },
   { key: 'material_category', name: '商品类别', remark: '商品类别', tables: ['jsh_material_category'] },
   { key: 'material_attribute', name: '多属性', remark: '商品属性', tables: ['jsh_material_attribute'] },
   // 零售

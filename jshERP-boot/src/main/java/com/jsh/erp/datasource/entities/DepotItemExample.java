@@ -287,62 +287,62 @@ public class DepotItemExample {
         }
 
         public Criteria andMaterialExtendIdIsNull() {
-            addCriterion("material_extend_id is null");
+            addCriterion("sku_id is null");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdIsNotNull() {
-            addCriterion("material_extend_id is not null");
+            addCriterion("sku_id is not null");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdEqualTo(Long value) {
-            addCriterion("material_extend_id =", value, "materialExtendId");
+            addCriterion("sku_id =", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdNotEqualTo(Long value) {
-            addCriterion("material_extend_id <>", value, "materialExtendId");
+            addCriterion("sku_id <>", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdGreaterThan(Long value) {
-            addCriterion("material_extend_id >", value, "materialExtendId");
+            addCriterion("sku_id >", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdGreaterThanOrEqualTo(Long value) {
-            addCriterion("material_extend_id >=", value, "materialExtendId");
+            addCriterion("sku_id >=", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdLessThan(Long value) {
-            addCriterion("material_extend_id <", value, "materialExtendId");
+            addCriterion("sku_id <", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdLessThanOrEqualTo(Long value) {
-            addCriterion("material_extend_id <=", value, "materialExtendId");
+            addCriterion("sku_id <=", value, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdIn(List<Long> values) {
-            addCriterion("material_extend_id in", values, "materialExtendId");
+            addCriterion("sku_id in", values, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdNotIn(List<Long> values) {
-            addCriterion("material_extend_id not in", values, "materialExtendId");
+            addCriterion("sku_id not in", values, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdBetween(Long value1, Long value2) {
-            addCriterion("material_extend_id between", value1, value2, "materialExtendId");
+            addCriterion("sku_id between", value1, value2, "materialExtendId");
             return (Criteria) this;
         }
 
         public Criteria andMaterialExtendIdNotBetween(Long value1, Long value2) {
-            addCriterion("material_extend_id not between", value1, value2, "materialExtendId");
+            addCriterion("sku_id not between", value1, value2, "materialExtendId");
             return (Criteria) this;
         }
 

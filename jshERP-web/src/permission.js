@@ -103,6 +103,42 @@ function injectRemotePrintMenu(menuData) {
 
 NProgress.configure({ showSpinner: false }) // NProgress Configuration
 
+// 菜单本地缓存：登录态不变时先用缓存渲染，避免首屏等待菜单接口（后端为多级递归查询）
+const MENU_CACHE_KEY = 'MENU_CACHE'
+const MENU_CACHE_TTL = 7 * 24 * 60 * 60 * 1000
+
+function readMenuCache(userId) {
+  const cache = Vue.ls.get(MENU_CACHE_KEY)
+  if (!cache || !Array.isArray(cache.data) || cache.data.length === 0) return null
+  if (String(cache.userId) !== String(userId)) return null
+  if (!cache.ts || Date.now() - cache.ts > MENU_CACHE_TTL) return null
+  return cache.data
+}
+
+function saveMenuCache(userId, menuData) {
+  if (!Array.isArray(menuData) || menuData.length === 0) return
+  Vue.ls.set(MENU_CACHE_KEY, { userId: userId, ts: Date.now(), data: menuData }, MENU_CACHE_TTL)
+}
+
+// 把后台菜单转成路由表并注册
+function applyMenuRoutes(menuData) {
+  injectAddressRecognizeMenu(menuData);
+  injectAiConfigMenu(menuData);
+  injectRemotePrintMenu(menuData);
+  const constRoutes = generateIndexRouter(menuData);
+  injectMobilePageRoutes(constRoutes)
+  injectPrintAgentRoute(constRoutes)
+  return store.dispatch('UpdateAppRouter', { constRoutes }).then(() => {
+    router.addRoutes(store.getters.addRouters)
+  })
+}
+
+function refreshUserBtnList() {
+  store.dispatch('GetUserBtnList').then(res => {
+    Vue.ls.set('winBtnStrList', res.data.userBtn, 7 * 24 * 60 * 60 * 1000)
+  }).catch(() => {})
+}
+
 const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
 
 // 本地开发时手机端预览页不强制登录，业务页面在 iframe 内仍按正常登录态校验
@@ -119,6 +155,23 @@ router.beforeEach((to, from, next) => {
       NProgress.done()
     } else {
       if (store.getters.permissionList.length === 0) {
+        const userId = Vue.ls.get(USER_ID)
+        const cachedMenu = readMenuCache(userId)
+        if (cachedMenu) {
+          // 命中本地缓存：立刻渲染，不再等待菜单接口
+          applyMenuRoutes(JSON.parse(JSON.stringify(cachedMenu))).then(() => {
+            const cachedRedirect = decodeURIComponent(from.query.redirect || to.fullPath)
+            next(cachedRedirect)
+          })
+          // 后台静默刷新菜单与按钮权限，只更新缓存，不打断当前渲染
+          store.dispatch('GetPermissionList').then(res => {
+            if (res) {
+              saveMenuCache(userId, res)
+              refreshUserBtnList()
+            }
+          }).catch(() => {})
+          return
+        }
         store.dispatch('GetPermissionList').then(res => {
           const menuData = res;
           if (menuData === null || menuData === "" || menuData === undefined) {
@@ -128,10 +181,10 @@ router.beforeEach((to, from, next) => {
             })
             return;
           }
+          // 先落盘原始菜单，再注入前端内置页面（注入会修改数组）
+          saveMenuCache(userId, menuData)
           // 缓存用户的按钮权限
-          store.dispatch('GetUserBtnList').then(res => {
-            Vue.ls.set('winBtnStrList', res.data.userBtn, 7 * 24 * 60 * 60 * 1000)
-          })
+          refreshUserBtnList()
           let constRoutes = [];
           injectAddressRecognizeMenu(menuData);
           injectAiConfigMenu(menuData);

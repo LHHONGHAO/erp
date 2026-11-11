@@ -4,7 +4,7 @@
   <resultMap id="BaseResultMap" type="com.jsh.erp.datasource.entities.MaterialInitialStock">
     <id column="id" jdbcType="BIGINT" property="id" />
     <result column="material_id" jdbcType="BIGINT" property="materialId" />
-    <result column="material_extend_id" jdbcType="BIGINT" property="materialExtendId" />
+    <result column="sku_id" jdbcType="BIGINT" property="materialExtendId" />
     <result column="sku_code" jdbcType="VARCHAR" property="skuCode" />
     <result column="depot_id" jdbcType="BIGINT" property="depotId" />
     <result column="number" jdbcType="DECIMAL" property="number" />
@@ -72,7 +72,7 @@
     </where>
   </sql>
   <sql id="Base_Column_List">
-    id, material_id, material_extend_id, sku_code, depot_id, number, low_safe_stock, high_safe_stock, tenant_id, delete_flag
+    id, material_id, sku_id, sku_code, depot_id, number, low_safe_stock, high_safe_stock, tenant_id, delete_flag
   </sql>
   <select id="selectByExample" parameterType="com.jsh.erp.datasource.entities.MaterialInitialStockExample" resultMap="BaseResultMap">
     select
@@ -105,7 +105,7 @@
     </if>
   </delete>
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.MaterialInitialStock">
-    insert into jsh_material_initial_stock (id, material_id, material_extend_id, sku_code,
+    insert into jsh_material_initial_stock (id, material_id, sku_id, sku_code,
       depot_id, number, low_safe_stock, high_safe_stock,
       tenant_id, delete_flag)
     values (#{id,jdbcType=BIGINT}, #{materialId,jdbcType=BIGINT}, #{materialExtendId,jdbcType=BIGINT}, #{skuCode,jdbcType=VARCHAR},
@@ -122,7 +122,7 @@
         material_id,
       </if>
       <if test="materialExtendId != null">
-        material_extend_id,
+        sku_id,
       </if>
       <if test="skuCode != null">
         sku_code,
@@ -195,7 +195,7 @@
         material_id = #{record.materialId,jdbcType=BIGINT},
       </if>
       <if test="record.materialExtendId != null">
-        material_extend_id = #{record.materialExtendId,jdbcType=BIGINT},
+        sku_id = #{record.materialExtendId,jdbcType=BIGINT},
       </if>
       <if test="record.skuCode != null">
         sku_code = #{record.skuCode,jdbcType=VARCHAR},
@@ -227,7 +227,7 @@
     update jsh_material_initial_stock
     set id = #{record.id,jdbcType=BIGINT},
       material_id = #{record.materialId,jdbcType=BIGINT},
-      material_extend_id = #{record.materialExtendId,jdbcType=BIGINT},
+      sku_id = #{record.materialExtendId,jdbcType=BIGINT},
       sku_code = #{record.skuCode,jdbcType=VARCHAR},
       depot_id = #{record.depotId,jdbcType=BIGINT},
       number = #{record.number,jdbcType=DECIMAL},
@@ -246,7 +246,7 @@
         material_id = #{materialId,jdbcType=BIGINT},
       </if>
       <if test="materialExtendId != null">
-        material_extend_id = #{materialExtendId,jdbcType=BIGINT},
+        sku_id = #{materialExtendId,jdbcType=BIGINT},
       </if>
       <if test="skuCode != null">
         sku_code = #{skuCode,jdbcType=VARCHAR},
@@ -275,7 +275,7 @@
   <update id="updateByPrimaryKey" parameterType="com.jsh.erp.datasource.entities.MaterialInitialStock">
     update jsh_material_initial_stock
     set material_id = #{materialId,jdbcType=BIGINT},
-      material_extend_id = #{materialExtendId,jdbcType=BIGINT},
+      sku_id = #{materialExtendId,jdbcType=BIGINT},
       sku_code = #{skuCode,jdbcType=VARCHAR},
       depot_id = #{depotId,jdbcType=BIGINT},
       number = #{number,jdbcType=DECIMAL},

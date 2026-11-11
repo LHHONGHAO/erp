@@ -144,6 +144,7 @@
           { key: 'yearBuy', label: '今年采购', icon: 'database' }
         ],
         commonPages: [],
+        savedPages: [],
         pickerVisible: false,
         keyword: '',
         pickedUrls: [],
@@ -222,11 +223,25 @@
         return STORAGE_PREFIX + userId
       }
     },
+    watch: {
+      // 菜单是异步写入 Vuex 的，晚于本组件创建时必须重新过滤，
+      // 否则常用页面会因拿不到有效菜单地址而被全部过滤成空白
+      permissionMenuList() {
+        this.applyCommonPages()
+      }
+    },
     created() {
+      // 先用本地缓存渲染，避免云端/菜单加载期间常用页面出现"清空再加载"的闪烁
+      this.savedPages = this.getCachedPages()
+      this.commonPages = this.savedPages
       this.initStatistics()
       this.initCommonPages()
     },
     methods: {
+      getCachedPages() {
+        let pages = Vue.ls.get(this.storageKey)
+        return Array.isArray(pages) ? pages : []
+      },
       initStatistics() {
         getBuyAndSaleStatistics().then(res => {
           if (res && res.code === 200) {
@@ -246,7 +261,6 @@
         return value
       },
       initCommonPages() {
-        let validUrls = this.allPages.map(item => item.url)
         // 优先从云端加载，失败时回退到本地缓存
         getCommonPages().then(res => {
           let pages = []
@@ -261,17 +275,27 @@
             // 云端无数据，尝试从本地缓存恢复
             pages = Vue.ls.get(this.storageKey) || []
           }
-          let cached = pages.filter(item => validUrls.indexOf(item.url) > -1)
-          this.commonPages = cached
+          this.savedPages = pages
+          this.applyCommonPages()
         }).catch(() => {
           // 接口失败，使用本地缓存
-          let pages = Vue.ls.get(this.storageKey) || []
-          let cached = pages.filter(item => validUrls.indexOf(item.url) > -1)
-          this.commonPages = cached
+          this.savedPages = Vue.ls.get(this.storageKey) || []
+          this.applyCommonPages()
         })
+      },
+      // 按当前菜单过滤出仍可打开的页面，菜单就绪后可重复调用
+      applyCommonPages() {
+        let validUrls = this.allPages.map(item => item.url)
+        // 菜单尚未就绪时保持原样，避免常用页面被过滤成空白
+        if (validUrls.length === 0) {
+          this.commonPages = this.savedPages
+          return
+        }
+        this.commonPages = this.savedPages.filter(item => validUrls.indexOf(item.url) > -1)
       },
       // 保存常用页面到云端（同时更新本地缓存）
       persistCommonPages() {
+        this.savedPages = this.commonPages
         Vue.ls.set(this.storageKey, this.commonPages)
         let pagesJson = JSON.stringify(this.commonPages)
         saveCommonPages({ pages: pagesJson }).catch(() => {
@@ -363,7 +387,11 @@
         }
       },
       savePicker() {
-        let selected = this.allPages.filter(item => this.pickedUrls.indexOf(item.url) > -1)
+        // 按勾选顺序生成；菜单未就绪时退回已保存数据，避免误清空
+        let pool = this.allPages.length > 0 ? this.allPages : this.savedPages
+        let selected = this.pickedUrls
+          .map(url => pool.find(item => item.url === url))
+          .filter(item => !!item)
         this.commonPages = selected
         this.persistCommonPages()
         this.pickerVisible = false
@@ -382,7 +410,9 @@
         e.dataTransfer.effectAllowed = 'move'
       },
       onDragOver(e, index) {
-        e.dataTransfer.dropEffect = 'move'
+        if (e && e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move'
+        }
         this.dragOverIndex = index
       },
       onDragEnd() {
@@ -441,6 +471,10 @@
       // 重新排序并保存到云端
       reorderPages(fromIndex, toIndex) {
         let list = this.commonPages.slice()
+        // 索引越界时直接忽略，避免 splice 拿到 undefined 导致渲染崩溃
+        if (fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) {
+          return
+        }
         let item = list.splice(fromIndex, 1)[0]
         list.splice(toIndex, 0, item)
         this.commonPages = list

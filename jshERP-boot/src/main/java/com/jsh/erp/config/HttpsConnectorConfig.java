@@ -4,11 +4,14 @@ import org.apache.catalina.connector.Connector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.Compression;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.annotation.Resource;
 import java.io.File;
 
 /**
@@ -34,6 +37,9 @@ public class HttpsConnectorConfig {
     @Value("${jsh.data.dir:}")
     private String dataDir;
 
+    @Resource
+    private ServerProperties serverProperties;
+
     @Bean
     public WebServerFactoryCustomizer<TomcatServletWebServerFactory> httpsConnectorCustomizer() {
         return factory -> {
@@ -55,8 +61,30 @@ public class HttpsConnectorConfig {
             connector.setProperty("keystorePass", keystorePassword);
             connector.setProperty("keystoreType", "PKCS12");
             connector.setProperty("clientAuth", "false");
+            applyCompression(connector);
             factory.addAdditionalTomcatConnectors(connector);
             logger.info("已开启 HTTPS 连接器，端口 {}", httpsPort);
         };
+    }
+
+    /**
+     * 附加连接器不会被 Spring Boot 自动应用 server.compression 配置，这里手动同步，
+     * 保证 HTTPS(9999) 与 HTTP(9998) 一样对前端静态资源做 gzip 压缩。
+     */
+    private void applyCompression(Connector connector) {
+        Compression compression = serverProperties.getCompression();
+        if (compression == null || !compression.getEnabled()) {
+            return;
+        }
+        connector.setProperty("compression", "on");
+        connector.setProperty("compressionMinSize", String.valueOf(compression.getMinResponseSize()));
+        String[] mimeTypes = compression.getMimeTypes();
+        if (mimeTypes != null && mimeTypes.length > 0) {
+            connector.setProperty("compressableMimeType", String.join(",", mimeTypes));
+        }
+        String[] excludedUserAgents = compression.getExcludedUserAgents();
+        if (excludedUserAgents != null && excludedUserAgents.length > 0) {
+            connector.setProperty("noCompressionUserAgents", String.join(",", excludedUserAgents));
+        }
     }
 }

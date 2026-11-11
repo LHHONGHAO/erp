@@ -54,7 +54,7 @@ public class LabelProviderRegistry {
         // 商品信息业务：商品主表 + SKU 扩展表
         BUSINESS_TABLES.put("product", Arrays.asList(
                 new TableMeta("jsh_material", "商品信息表"),
-                new TableMeta("jsh_material_extend", "SKU表")
+                new TableMeta("sku", "SKU表")
         ));
         // 发货单业务：销售出库主表 + 明细表 + 会员信息表
         BUSINESS_TABLES.put("delivery", Arrays.asList(

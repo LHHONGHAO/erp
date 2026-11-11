@@ -21,13 +21,13 @@ public class AiApiConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(AiApiConfig.class);
 
-    /** 配置文件路径：优先取统一数据目录（-Djsh.data.dir），否则退回启动目录下 config/ */
+    /** 配置路径唯一来源：数据目录下的 config/ai-api-config.json（默认 ./data/config） */
     public static String getConfigPath() {
         String dataDir = System.getProperty("jsh.data.dir");
-        if (dataDir != null && !dataDir.trim().isEmpty()) {
-            return dataDir.replace('\\', '/') + "/config/ai-api-config.json";
+        if (dataDir == null || dataDir.trim().isEmpty()) {
+            dataDir = "./data";
         }
-        return System.getProperty("user.dir") + "/config/ai-api-config.json";
+        return dataDir.replace('\\', '/') + "/config/ai-api-config.json";
     }
 
     public static JSONArray readItems() {

@@ -60,6 +60,9 @@ public class SkuSpecUtils {
             JSONObject item = new JSONObject(true);
             item.put("name", spec.getSpecName().trim());
             item.put("value", spec.getSpecValue().trim());
+            if (spec.getImageUrl() != null && !spec.getImageUrl().trim().isEmpty()) {
+                item.put("image", spec.getImageUrl().trim());
+            }
             array.add(item);
         }
         return array.toJSONString();

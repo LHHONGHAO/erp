@@ -14,6 +14,21 @@ public interface SkuMapper {
      */
     int updateSpecFields(Sku record);
 
+    /**
+     * 单独更新价格（可为空值，用于清空价格场景）
+     */
+    int updatePrices(Sku record);
+
+    /**
+     * 更新默认SKU标记
+     */
+    int updateDefaultFlag(@Param("id") Long id, @Param("defaultFlag") String defaultFlag);
+
+    /**
+     * 选择性更新扩展字段（空值不覆盖）
+     */
+    int updateExtendFields(Sku record);
+
     Sku selectByPrimaryKey(Long id);
 
     List<Sku> selectBySpuId(@Param("spuId") Long spuId, @Param("tenantId") Long tenantId);

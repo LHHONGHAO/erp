@@ -74,10 +74,10 @@ public class SalesDeliveryProvider implements LabelDataProvider {
             JSONArray items = new JSONArray();
             BigDecimal totalQuantity = BigDecimal.ZERO;
             BigDecimal totalAmount = BigDecimal.ZERO;
-            String sql = "SELECT di.*, m.name AS material_name, me.sku AS sku_text " +
+            String sql = "SELECT di.*, m.name AS material_name, me.sku_name AS sku_text " +
                     "FROM jsh_depot_item di " +
                     "LEFT JOIN jsh_material m ON m.id = di.material_id " +
-                    "LEFT JOIN jsh_material_extend me ON me.id = di.material_extend_id " +
+                    "LEFT JOIN sku me ON me.id = di.sku_id " +
                     "WHERE di.header_id = ? AND IFNULL(di.delete_flag,'0') <> '1' ORDER BY di.id ASC";
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, documentId.trim());

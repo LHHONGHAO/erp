@@ -11,6 +11,10 @@
     <result column="purchase_decimal" jdbcType="DECIMAL" property="purchaseDecimal" />
     <result column="commodity_decimal" jdbcType="DECIMAL" property="commodityDecimal" />
     <result column="market_price" jdbcType="DECIMAL" property="marketPrice" />
+    <result column="wholesale_decimal" jdbcType="DECIMAL" property="wholesaleDecimal" />
+    <result column="low_decimal" jdbcType="DECIMAL" property="lowDecimal" />
+    <result column="image_url" jdbcType="VARCHAR" property="imageUrl" />
+    <result column="default_flag" jdbcType="VARCHAR" property="defaultFlag" />
     <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
     <result column="version" jdbcType="INTEGER" property="version" />
     <result column="deleted_at" jdbcType="TIMESTAMP" property="deletedAt" />
@@ -22,7 +26,8 @@
 
   <sql id="Base_Column_List">
     id, spu_id, sku_code, sku_name, spec_json, spec_summary,
-    purchase_decimal, commodity_decimal, market_price,
+    purchase_decimal, commodity_decimal, market_price, wholesale_decimal, low_decimal,
+    image_url, default_flag,
     tenant_id, version, deleted_at, create_time, update_time, create_serial, update_serial
   </sql>
 
@@ -31,10 +36,12 @@
   <insert id="insert" parameterType="com.jsh.erp.datasource.entities.Sku" useGeneratedKeys="true" keyProperty="id">
     INSERT INTO `sku` (spu_id, sku_code, sku_name, spec_json, spec_summary,
                        purchase_decimal, commodity_decimal, market_price,
+                       wholesale_decimal, low_decimal, image_url, default_flag,
                        version, deleted_at, create_serial, update_serial)
     VALUES (#{spuId}, #{skuCode},
             IFNULL(#{skuName}, ''), IFNULL(#{specJson}, '[]'), IFNULL(#{specSummary}, ''),
             IFNULL(#{purchaseDecimal}, 0), IFNULL(#{commodityDecimal}, 0), IFNULL(#{marketPrice}, 0),
+            #{wholesaleDecimal}, #{lowDecimal}, #{imageUrl}, IFNULL(#{defaultFlag}, '1'),
             0, NULL, #{createSerial}, #{updateSerial})
   </insert>
 
@@ -47,11 +54,48 @@
         purchase_decimal  = IFNULL(#{purchaseDecimal}, purchase_decimal),
         commodity_decimal = IFNULL(#{commodityDecimal}, commodity_decimal),
         market_price      = IFNULL(#{marketPrice}, market_price),
+        wholesale_decimal = IFNULL(#{wholesaleDecimal}, wholesale_decimal),
+        low_decimal       = IFNULL(#{lowDecimal}, low_decimal),
+        image_url         = IFNULL(#{imageUrl}, image_url),
+        default_flag      = IFNULL(#{defaultFlag}, default_flag),
         update_serial     = IFNULL(#{updateSerial}, update_serial),
         version      = version + 1
     WHERE id = #{id}
       AND version = #{version}
       AND deleted_at IS NULL
+  </update>
+
+  <update id="updatePrices" parameterType="com.jsh.erp.datasource.entities.Sku">
+    UPDATE `sku`
+    SET purchase_decimal  = #{purchaseDecimal},
+        commodity_decimal = #{commodityDecimal},
+        market_price      = #{marketPrice},
+        wholesale_decimal = #{wholesaleDecimal},
+        low_decimal       = #{lowDecimal},
+        version           = version + 1
+    WHERE id = #{id} AND deleted_at IS NULL
+  </update>
+
+  <update id="updateDefaultFlag">
+    UPDATE `sku`
+    SET default_flag = #{defaultFlag}, version = version + 1
+    WHERE id = #{id} AND deleted_at IS NULL
+  </update>
+
+  <update id="updateExtendFields" parameterType="com.jsh.erp.datasource.entities.Sku">
+    UPDATE `sku`
+    SET sku_code          = IFNULL(#{skuCode}, sku_code),
+        purchase_decimal  = IFNULL(#{purchaseDecimal}, purchase_decimal),
+        commodity_decimal = IFNULL(#{commodityDecimal}, commodity_decimal),
+        market_price      = IFNULL(#{marketPrice}, market_price),
+        wholesale_decimal = IFNULL(#{wholesaleDecimal}, wholesale_decimal),
+        low_decimal       = IFNULL(#{lowDecimal}, low_decimal),
+        image_url         = IFNULL(#{imageUrl}, image_url),
+        default_flag      = IFNULL(#{defaultFlag}, default_flag),
+        update_serial     = IFNULL(#{updateSerial}, update_serial),
+        update_time       = NOW(),
+        version           = version + 1
+    WHERE id = #{id} AND deleted_at IS NULL
   </update>
 
   <select id="selectByPrimaryKey" parameterType="java.lang.Long" resultMap="BaseResultMap">

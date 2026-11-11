@@ -38,13 +38,9 @@ public class MaterialService {
     @Resource
     private MaterialMapper materialMapper;
     @Resource
-    private MaterialExtendMapper materialExtendMapper;
-    @Resource
     private MaterialMapperEx materialMapperEx;
     @Resource
     private MaterialCategoryMapperEx materialCategoryMapperEx;
-    @Resource
-    private MaterialExtendMapperEx materialExtendMapperEx;
     @Resource
     private LogService logService;
     @Resource
@@ -255,8 +251,6 @@ public class MaterialService {
             JSONArray specModules = obj.getJSONArray("specModules");
             materialSpecTemplateService.saveSpecTemplate(mId, specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"), mId, "insert");
-            // 同步 sku / sku_spec 新模型（生成展示名、规格JSON，写入创建时间）
-            skuService.syncFromMaterialExtend(mId);
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, mId, false);
             if(!hasSkuOpeningStock && obj.get("stock") instanceof JSONArray) {
                 JSONArray stockArr = obj.getJSONArray("stock");
@@ -329,8 +323,6 @@ public class MaterialService {
             JSONArray specModules = obj.getJSONArray("specModules");
             materialSpecTemplateService.saveSpecTemplate(material.getId(), specModules);
             materialExtendService.saveDetials(obj, obj.getString("sortList"),material.getId(), "update");
-            // 同步 sku / sku_spec 新模型（刷新展示名、规格JSON，更新时间为本次保存时间）
-            skuService.syncFromMaterialExtend(material.getId());
             boolean hasSkuOpeningStock = saveSkuOpeningStocks(obj, material.getId(), true);
             BigDecimal currentUnitPrice = materialCurrentStockMapperEx.getCurrentUnitPriceByMId(material.getId());
             if(!hasSkuOpeningStock && obj.get("stock") instanceof JSONArray) {
@@ -416,10 +408,11 @@ public class MaterialService {
             String rowId = row.getString("id");
             String specValues = row.getString("specValues");
             String sku = row.getString("sku");
+            String specKey = buildSpecKey(specValues);
             com.jsh.erp.datasource.vo.MaterialExtendVo4List savedSku = null;
             if (savedSkus != null) {
                 for (com.jsh.erp.datasource.vo.MaterialExtendVo4List candidate : savedSkus) {
-                    if (specValues != null && specValues.equals(candidate.getSpecValues())) {
+                    if (specKey != null && specKey.equals(buildSpecKey(candidate.getSpecValues()))) {
                         savedSku = candidate;
                         break;
                     }
@@ -452,6 +445,30 @@ public class MaterialService {
             savedAny = true;
         }
         return savedAny;
+    }
+
+    /** 规格组合的规范化键：按顺序拼接规格值，兼容 attributeName/valueText 与 name/value 两种 JSON 结构 */
+    private String buildSpecKey(String specJson) {
+        if (StringUtil.isEmpty(specJson)) {
+            return "";
+        }
+        StringBuilder key = new StringBuilder();
+        try {
+            JSONArray arr = JSONArray.parseArray(specJson);
+            for (int i = 0; i < arr.size(); i++) {
+                JSONObject item = arr.getJSONObject(i);
+                String value = item.getString("valueText");
+                if (StringUtil.isEmpty(value)) {
+                    value = item.getString("value");
+                }
+                if (StringUtil.isNotEmpty(value)) {
+                    key.append(value.trim()).append('|');
+                }
+            }
+        } catch (Exception e) {
+            return specJson;
+        }
+        return key.toString();
     }
 
     /** 更新已有 SKU 在某仓库的库存预警阈值（不存在则补一条零库存的期初记录承载阈值）。 */
@@ -555,8 +572,8 @@ public class MaterialService {
         try{
             //逻辑删除商品
             materialMapperEx.batchDeleteMaterialByIds(new Date(),userInfo==null?null:userInfo.getId(),idArray);
-            //逻辑删除商品价格扩展
-            materialExtendMapperEx.batchDeleteMaterialExtendByMIds(idArray);
+            //逻辑删除商品价格扩展（sku）
+            materialExtendService.batchDeleteMaterialExtendByMIds(String.join(",", idArray));
             //逻辑删除文件
             systemConfigService.deleteFileByPathList(pathList);
             return 1;
@@ -1296,12 +1313,12 @@ public class MaterialService {
                 meId = materialExtendService.selectIdByMaterialIdAndDefaultFlag(mId, defaultFlag);
             }
             if(meId==0L){
-                materialExtendMapper.insertSelective(materialExtend);
+                materialExtendService.insertMaterialExtend(materialExtend);
             } else {
                 materialExtend.setId(meId);
-                materialExtendMapper.updateByPrimaryKeySelective(materialExtend);
+                materialExtendService.updateMaterialExtend(materialExtend);
                 //如果金额为空，此处单独置空
-                materialExtendMapperEx.specialUpdatePrice(materialExtend);
+                materialExtendService.specialUpdatePrice(materialExtend);
             }
         }
     }

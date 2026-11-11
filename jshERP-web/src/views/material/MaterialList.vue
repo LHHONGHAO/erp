@@ -740,7 +740,7 @@
         var list = (rows || []).map(function(row) {
           return Object.assign({}, row, {
             mBarCode: row.mBarCode || row.barCode || row.mBar_code || '',
-            sku: row.sku || row.specValues || '',
+            sku: getSpecValueMerged(row) || row.sku || '',
             currentStock: row.currentStock != null ? row.currentStock : row.stock
           })
         })

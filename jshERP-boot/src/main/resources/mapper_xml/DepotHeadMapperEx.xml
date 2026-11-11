@@ -69,7 +69,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on dh.id = di.header_id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on di.material_id = m.id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on di.material_extend_id = me.id and ifnull(me.delete_flag,'0') !='1'
+        left join sku me on di.sku_id = me.id and me.deleted_at is null
         where 1=1
         <if test="type != null">
             and dh.type=#{type}
@@ -215,7 +215,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join jsh_supplier s on s.id=dh.organ_id and ifnull(s.delete_Flag,'0') !='1'
         left join (select id,name as dName,delete_Flag from jsh_depot ) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         where dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
@@ -296,7 +296,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_Flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join jsh_supplier s on s.id=dh.organ_id and ifnull(s.delete_Flag,'0') !='1'
         left join (select id,name as dName,delete_Flag from jsh_depot) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         where dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
@@ -363,7 +363,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join jsh_supplier s on s.id=dh.organ_id and ifnull(s.delete_Flag,'0') !='1'
         left join (select id,name as dName,delete_Flag from jsh_depot ) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         where dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
@@ -434,7 +434,7 @@
         left join jsh_depot_item di on dh.id=di.header_id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
         
-        left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.spu_id=m.id and me.deleted_at is null
         left join jsh_material_category mc on m.category_id=mc.Id and ifnull(mc.delete_flag,'0') !='1'
         where me.default_flag=1
         and (dh.type=#{type} or dh.sub_type='调拨') and dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
@@ -517,7 +517,7 @@
         (select di.material_id from jsh_depot_head dh
         left join jsh_depot_item di on dh.id=di.header_id  and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_flag,'0') !='1'
+        left join sku me on me.spu_id=m.id and me.deleted_at is null
         where me.default_flag=1
         and (dh.type=#{type} or dh.sub_type='调拨') and dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
         <if test="oId != null">
@@ -585,7 +585,7 @@
         left join jsh_depot_item di on dh.id=di.header_id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
         
-        left join jsh_material_extend me on me.material_id=m.id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.spu_id=m.id and me.deleted_at is null
         left join jsh_material_category mc on m.category_id=mc.Id and ifnull(mc.delete_flag,'0') !='1'
         where me.default_flag=1
         and (dh.type=#{type} or dh.sub_type='调拨') and dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
@@ -654,7 +654,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join (select id,name as dName,delete_Flag from jsh_depot ) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         <!-- 调出仓库名查询 -->
         left join (select id as aid,name as sname,delete_Flag as adelete_Flag from jsh_depot ) ddd on ddd.aid=di.another_depot_id and ifnull(ddd.adelete_Flag,'0') !='1'
@@ -725,7 +725,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_Flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join (select id,name as dName,delete_Flag from jsh_depot) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         where dh.oper_time >=#{beginTime} and dh.oper_time &lt;=#{endTime}
         <if test="depotFList.size()>0">
@@ -780,7 +780,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on di.header_id=dh.id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on m.id=di.material_id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on me.id=di.material_extend_id and ifnull(me.delete_Flag,'0') !='1'
+        left join sku me on me.id=di.sku_id and me.deleted_at is null
         left join (select id,name as dName,delete_Flag from jsh_depot ) d on d.id=di.depot_id and ifnull(d.delete_Flag,'0') !='1'
         <!-- 调出仓库名查询 -->
         left join (select id as aid,name as sname,delete_Flag as adelete_Flag from jsh_depot ) ddd on ddd.aid=di.another_depot_id and ifnull(ddd.adelete_Flag,'0') !='1'
@@ -1307,7 +1307,7 @@
         from jsh_depot_head dh
         left join jsh_depot_item di on dh.id = di.header_id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on di.material_id = m.id and ifnull(m.delete_flag,'0') !='1'
-        left join jsh_material_extend me on di.material_extend_id = me.id and ifnull(me.delete_flag,'0') !='1'
+        left join sku me on di.sku_id = me.id and me.deleted_at is null
         where 1=1
         <if test="type != null">
             and dh.type=#{type}
@@ -1373,7 +1373,7 @@
         (select distinct dh.id from jsh_depot_head dh
         left join jsh_depot_item di on dh.Id = di.header_id and ifnull(di.delete_flag,'0') !='1'
         left join jsh_material m on di.material_id = m.Id and ifnull(m.delete_Flag,'0') !='1'
-        left join jsh_material_extend me on di.material_extend_id = me.id and ifnull(me.delete_flag,'0') !='1'
+        left join sku me on di.sku_id = me.id and me.deleted_at is null
         WHERE 1=1
         <if test="type != null">
             and dh.type=#{type}

@@ -4,15 +4,15 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.jsh.erp.constants.BusinessConstants;
-import com.jsh.erp.constants.ExceptionConstants;
 import com.jsh.erp.datasource.entities.Material;
 import com.jsh.erp.datasource.entities.MaterialExample;
 import com.jsh.erp.datasource.entities.MaterialExtend;
-import com.jsh.erp.datasource.entities.MaterialExtendExample;
+import com.jsh.erp.datasource.entities.Sku;
+import com.jsh.erp.datasource.entities.SkuSpec;
 import com.jsh.erp.datasource.entities.User;
-import com.jsh.erp.datasource.mappers.MaterialExtendMapper;
 import com.jsh.erp.datasource.mappers.MaterialExtendMapperEx;
 import com.jsh.erp.datasource.mappers.MaterialMapper;
+import com.jsh.erp.datasource.mappers.SkuMapper;
 import com.jsh.erp.datasource.vo.MaterialExtendVo4List;
 import com.jsh.erp.exception.BusinessRunTimeException;
 import com.jsh.erp.exception.JshException;
@@ -29,12 +29,16 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.*;
 
 
+/**
+ * 商品 SKU 服务（唯一存储：sku / sku_spec）
+ * 对外保留原有方法签名，内部统一读写 sku，jsh_material_extend 已彻底移除。
+ */
 @Service
 public class MaterialExtendService {
     private Logger logger = LoggerFactory.getLogger(MaterialExtendService.class);
 
     @Resource
-    private MaterialExtendMapper materialExtendMapper;
+    private SkuMapper skuMapper;
     @Resource
     private MaterialExtendMapperEx materialExtendMapperEx;
     @Resource
@@ -47,16 +51,19 @@ public class MaterialExtendService {
     private MaterialMapper materialMapper;
     @Resource
     private MaterialAttrValueService materialAttrValueService;
-    
+    @Resource
+    private SkuService skuService;
+
     public MaterialExtend getMaterialExtend(long id)throws Exception {
         MaterialExtend result=null;
         try{
-            result=materialExtendMapper.selectByPrimaryKey(id);
+            result=toExtend(skuMapper.selectByPrimaryKey(id));
         }catch(Exception e){
             JshException.readFail(logger, e);
         }
         return result;
     }
+
     public List<MaterialExtendVo4List> getDetailList(Long materialId) {
         List<MaterialExtendVo4List> list=null;
         try{
@@ -98,7 +105,7 @@ public class MaterialExtendService {
                 for (int i = 0; i < meArr.size(); i++) {
                     JSONObject tempJson = meArr.getJSONObject(i);
                     String tempId = tempJson.getString("id");
-                    if(tempId.length()>19){
+                    if(!isExistingId(tempId)){
                         insertedJson.add(tempJson);
                     } else {
                         updatedJson.add(tempJson);
@@ -108,13 +115,14 @@ public class MaterialExtendService {
                 if(StringUtil.isNotEmpty(obj.getString("manySku"))) {
                     //1.先查询原来的SKU列表
                     List<MaterialExtendVo4List> meList = materialExtendMapperEx.getDetailList(materialId);
-                    //2.构造新的SKU id列表map（只保留真实ID，即长度<=19的）
+                    //2.构造新的SKU id列表map（只保留真实ID）
                     Map<Long, Long> idMap = new HashMap<>();
                     for (int i = 0; i < meArr.size(); i++) {
                         JSONObject tempJson = meArr.getJSONObject(i);
                         String tempId = tempJson.getString("id");
-                        if(tempId != null && tempId.length() <= 19) {
-                            idMap.put(tempJson.getLong("id"), tempJson.getLong("id"));
+                        if(isExistingId(tempId)) {
+                            Long existingId = Long.parseLong(tempId);
+                            idMap.put(existingId, existingId);
                         }
                     }
                     //3.如果老的SKU id在新的里面不存在，则丢入删除队列
@@ -138,179 +146,133 @@ public class MaterialExtendService {
                 this.batchDeleteMaterialExtendByIds(bf.toString(), request);
             }
         }
+        User user = userService.getCurrentUser();
+        String serial = user != null ? user.getLoginName() : null;
+        Long tenantId = user != null ? user.getTenantId() : null;
         Set<String> generatedSkuCodes = new HashSet<>();
+        Material material = materialMapper.selectByPrimaryKey(materialId);
+        String materialCode = material != null ? material.getCode() : null;
+        Long categoryId = material != null ? material.getCategoryId() : null;
         if (null != insertedJson) {
-            Material material = materialMapper.selectByPrimaryKey(materialId);
-            String materialCode = material != null ? material.getCode() : null;
-            Long categoryId = material != null ? material.getCategoryId() : null;
             for (int i = 0; i < insertedJson.size(); i++) {
-                MaterialExtend materialExtend = new MaterialExtend();
-                JSONObject tempInsertedJson = JSONObject.parseObject(insertedJson.getString(i));
-                materialExtend.setMaterialId(materialId);
-                // 设置规格值组合JSON
-                String specValues = tempInsertedJson.getString("specValues");
-                if (StringUtils.isNotEmpty(specValues)) {
-                    materialExtend.setSpecValues(specValues);
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("barCode"))) {
-                    materialExtend.setBarCode(tempInsertedJson.getString("barCode"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("commodityUnit"))) {
-                    materialExtend.setCommodityUnit(tempInsertedJson.getString("commodityUnit"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("sku"))) {
-                    materialExtend.setSku(tempInsertedJson.getString("sku"));
-                }
-                // SKU码统一由后端按新版规则生成：SPU码 + 颜色码 + 尺码码
+                JSONObject tempJson = insertedJson.getJSONObject(i);
+                String specValues = tempJson.getString("specValues");
                 String skuCode = StringUtil.isNotEmpty(materialCode)
                         ? generateSkuCode(categoryId, materialId, materialCode, specValues) : null;
-                if (StringUtil.isNotEmpty(skuCode)) {
-                    if (!generatedSkuCodes.add(skuCode)) {
-                        throw new BusinessRunTimeException(400,
-                                "商品存在重复规格组合，SKU编码重复：" + materialExtend.getSku());
-                    }
-                    materialExtend.setSkuCode(skuCode);
+                if (StringUtil.isNotEmpty(skuCode) && !generatedSkuCodes.add(skuCode)) {
+                    throw new BusinessRunTimeException(400,
+                            "商品存在重复规格组合，SKU编码重复：" + tempJson.getString("sku"));
                 }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("purchaseDecimal"))) {
-                    materialExtend.setPurchaseDecimal(tempInsertedJson.getBigDecimal("purchaseDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("commodityDecimal"))) {
-                    materialExtend.setCommodityDecimal(tempInsertedJson.getBigDecimal("commodityDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("wholesaleDecimal"))) {
-                    materialExtend.setWholesaleDecimal(tempInsertedJson.getBigDecimal("wholesaleDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("marketPrice"))) {
-                    materialExtend.setMarketPrice(tempInsertedJson.getBigDecimal("marketPrice"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("lowDecimal"))) {
-                    materialExtend.setLowDecimal(tempInsertedJson.getBigDecimal("lowDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempInsertedJson.getString("image"))) {
-                    materialExtend.setImgUrl(tempInsertedJson.getString("image"));
-                }
-                this.insertMaterialExtend(materialExtend);
+                Sku sku = new Sku();
+                sku.setSpuId(materialId);
+                sku.setSkuCode(skuCode);
+                sku.setPurchaseDecimal(tempJson.getBigDecimal("purchaseDecimal"));
+                sku.setCommodityDecimal(tempJson.getBigDecimal("commodityDecimal"));
+                sku.setWholesaleDecimal(tempJson.getBigDecimal("wholesaleDecimal"));
+                sku.setMarketPrice(tempJson.getBigDecimal("marketPrice"));
+                sku.setLowDecimal(tempJson.getBigDecimal("lowDecimal"));
+                sku.setImageUrl(tempJson.getString("image"));
+                sku.setDefaultFlag("0");
+                sku.setTenantId(tenantId);
+                sku.setCreateSerial(serial);
+                sku.setUpdateSerial(serial);
+                skuService.saveSku(sku, buildSpecs(specValues));
             }
         }
         if (null != updatedJson) {
-            Material material = materialMapper.selectByPrimaryKey(materialId);
-            String materialCode = material != null ? material.getCode() : null;
-            Long categoryId = material != null ? material.getCategoryId() : null;
             for (int i = 0; i < updatedJson.size(); i++) {
-                JSONObject tempUpdatedJson = JSONObject.parseObject(updatedJson.getString(i));
-                MaterialExtend materialExtend = new MaterialExtend();
-                materialExtend.setId(tempUpdatedJson.getLong("id"));
-                // 设置规格值组合JSON
-                String specValues = tempUpdatedJson.getString("specValues");
-                if (StringUtils.isNotEmpty(specValues)) {
-                    materialExtend.setSpecValues(specValues);
+                JSONObject tempJson = updatedJson.getJSONObject(i);
+                Long id = tempJson.getLong("id");
+                Sku current = skuMapper.selectByPrimaryKey(id);
+                if (current == null) {
+                    continue;
                 }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("barCode"))) {
-                    materialExtend.setBarCode(tempUpdatedJson.getString("barCode"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("commodityUnit"))) {
-                    materialExtend.setCommodityUnit(tempUpdatedJson.getString("commodityUnit"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("sku"))) {
-                    materialExtend.setSku(tempUpdatedJson.getString("sku"));
-                }
+                String specValues = tempJson.getString("specValues");
                 // 忽略客户端旧码，统一按新版规则生成 SKU 码
                 String skuCode = StringUtil.isNotEmpty(materialCode)
                         ? generateSkuCode(categoryId, materialId, materialCode, specValues) : null;
-                if (StringUtil.isNotEmpty(skuCode)) {
-                    if (!generatedSkuCodes.add(skuCode)) {
-                        throw new BusinessRunTimeException(400,
-                                "商品存在重复规格组合，SKU编码重复：" + materialExtend.getSku());
-                    }
-                    materialExtend.setSkuCode(skuCode);
+                if (StringUtil.isNotEmpty(skuCode) && !generatedSkuCodes.add(skuCode)) {
+                    throw new BusinessRunTimeException(400,
+                            "商品存在重复规格组合，SKU编码重复：" + tempJson.getString("sku"));
                 }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("purchaseDecimal"))) {
-                    materialExtend.setPurchaseDecimal(tempUpdatedJson.getBigDecimal("purchaseDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("commodityDecimal"))) {
-                    materialExtend.setCommodityDecimal(tempUpdatedJson.getBigDecimal("commodityDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("wholesaleDecimal"))) {
-                    materialExtend.setWholesaleDecimal(tempUpdatedJson.getBigDecimal("wholesaleDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("marketPrice"))) {
-                    materialExtend.setMarketPrice(tempUpdatedJson.getBigDecimal("marketPrice"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("lowDecimal"))) {
-                    materialExtend.setLowDecimal(tempUpdatedJson.getBigDecimal("lowDecimal"));
-                }
-                if (StringUtils.isNotEmpty(tempUpdatedJson.getString("image"))) {
-                    materialExtend.setImgUrl(tempUpdatedJson.getString("image"));
-                }
-                this.updateMaterialExtend(materialExtend);
-                //如果金额为空，此处单独置空
-                materialExtendMapperEx.specialUpdatePrice(materialExtend);
+                Sku sku = new Sku();
+                sku.setId(id);
+                sku.setSpuId(materialId);
+                sku.setSkuCode(skuCode);
+                sku.setPurchaseDecimal(tempJson.getBigDecimal("purchaseDecimal"));
+                sku.setCommodityDecimal(tempJson.getBigDecimal("commodityDecimal"));
+                sku.setWholesaleDecimal(tempJson.getBigDecimal("wholesaleDecimal"));
+                sku.setMarketPrice(tempJson.getBigDecimal("marketPrice"));
+                sku.setLowDecimal(tempJson.getBigDecimal("lowDecimal"));
+                sku.setImageUrl(tempJson.getString("image"));
+                sku.setUpdateSerial(serial);
+                skuService.saveSku(sku, buildSpecs(specValues));
+                //金额为空时此处显式置空
+                skuMapper.updatePrices(sku);
             }
         }
         //处理SKU的排序，基本单位排第一个
         if (null != sortJson && sortJson.size()>0) {
-            //此处为更新的逻辑
             for (int i = 0; i < sortJson.size(); i++) {
-                JSONObject tempSortJson = JSONObject.parseObject(sortJson.getString(i));
-                MaterialExtend materialExtend = new MaterialExtend();
-                if(StringUtil.isExist(tempSortJson.get("id"))) {
-                    materialExtend.setId(tempSortJson.getLong("id"));
+                JSONObject tempSortJson = sortJson.getJSONObject(i);
+                if(StringUtil.isExist(tempSortJson.get("id")) && StringUtil.isExist(tempSortJson.get("defaultFlag"))) {
+                    skuMapper.updateDefaultFlag(tempSortJson.getLong("id"), tempSortJson.getString("defaultFlag"));
                 }
-                if(StringUtil.isExist(tempSortJson.get("defaultFlag"))) {
-                    materialExtend.setDefaultFlag(tempSortJson.getString("defaultFlag"));
-                }
-                this.updateMaterialExtend(materialExtend);
             }
         } else {
             //新增的时候将第一条记录设置为默认基本单位
-            MaterialExtendExample example = new MaterialExtendExample();
-            example.createCriteria().andMaterialIdEqualTo(materialId).andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-            List<MaterialExtend> meList = materialExtendMapper.selectByExample(example);
+            List<MaterialExtend> meList = materialExtendMapperEx.selectListBySpuId(materialId);
             if(meList!=null) {
                 for(int i=0; i<meList.size(); i++) {
-                    MaterialExtend materialExtend = new MaterialExtend();
-                    materialExtend.setId(meList.get(i).getId());
-                    if(i==0) {
-                        materialExtend.setDefaultFlag("1"); //默认
-                    } else {
-                        materialExtend.setDefaultFlag("0"); //非默认
-                    }
-                    this.updateMaterialExtend(materialExtend);
+                    skuMapper.updateDefaultFlag(meList.get(i).getId(), i==0 ? "1" : "0");
                 }
             }
         }
         return null;
     }
 
+    /** 前端新增行的临时ID不是纯数字，仅纯数字且不超过19位视为已落库的SKU主键 */
+    private boolean isExistingId(String id) {
+        return id != null && id.matches("\\d{1,19}");
+    }
+
     /**
-     * 从 specModules 构建 "规格值文本 → valueCode" 的映射
-     * 遍历前端传来的规格模块，为每个规格值自动查找/创建属性值字典记录
+     * 从 specValues 还原规格明细，顺序与录入顺序一致（saveSku 会重排 sort_no）
+     * specValues 元素格式：{attributeName, valueText, image, valueCode, ...}
      */
-    private Map<String, String> buildValueCodeMap(JSONObject obj) {
-        Map<String, String> map = new HashMap<>();
-        if (obj == null) return map;
-        JSONArray specModules = obj.getJSONArray("specModules");
-        Long categoryId = obj.getLong("categoryId");
-        if (specModules == null || specModules.isEmpty()) return map;
-        for (int i = 0; i < specModules.size(); i++) {
-            JSONObject module = specModules.getJSONObject(i);
-            String moduleName = module.getString("name");
-            if (!StringUtil.isNotEmpty(moduleName)) continue;
-            JSONArray values = module.getJSONArray("values");
-            if (values == null || values.isEmpty()) continue;
-            for (int j = 0; j < values.size(); j++) {
-                JSONObject value = values.getJSONObject(j);
-                String text = value.getString("text");
-                if (StringUtil.isNotEmpty(text)) {
-                    String detail = value.getJSONObject("subValues") == null ? null : value.getJSONObject("subValues").toJSONString();
-                    String code = materialAttrValueService.getOrCreateValueCode(categoryId, moduleName, text, detail);
-                    if (StringUtil.isNotEmpty(code)) {
-                        map.put(text, code);
-                    }
-                }
-            }
+    private List<SkuSpec> buildSpecs(String specValues) {
+        List<SkuSpec> specs = new ArrayList<>();
+        if (StringUtil.isEmpty(specValues)) {
+            return specs;
         }
-        return map;
+        try {
+            JSONArray array = JSONArray.parseArray(specValues);
+            for (int i = 0; i < array.size(); i++) {
+                JSONObject item = array.getJSONObject(i);
+                if (item == null) {
+                    continue;
+                }
+                String valueText = item.getString("valueText");
+                if (StringUtil.isEmpty(valueText)) {
+                    valueText = item.getString("value");
+                }
+                if (StringUtil.isEmpty(valueText)) {
+                    continue;
+                }
+                String specName = item.getString("attributeName");
+                if (StringUtil.isEmpty(specName)) {
+                    specName = item.getString("name");
+                }
+                SkuSpec spec = new SkuSpec();
+                spec.setSpecName(StringUtil.isEmpty(specName) ? ("规格" + (i + 1)) : specName);
+                spec.setSpecValue(valueText);
+                spec.setImageUrl(item.getString("image"));
+                specs.add(spec);
+            }
+        } catch (Exception e) {
+            logger.error("解析商品规格值失败 specValues={}", specValues, e);
+        }
+        return specs;
     }
 
     /** Generate a variant-level SKU code: SPU + color code + size code. */
@@ -349,41 +311,72 @@ public class MaterialExtendService {
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int insertMaterialExtend(MaterialExtend materialExtend)throws Exception {
         User user = userService.getCurrentUser();
-        materialExtend.setDeleteFlag(BusinessConstants.DELETE_FLAG_EXISTS);
-        materialExtend.setCreateTime(new Date());
-        materialExtend.setUpdateTime(new Date().getTime());
-        materialExtend.setCreateSerial(user.getLoginName());
-        materialExtend.setUpdateSerial(user.getLoginName());
-        int result =0;
-        try{
-            result= materialExtendMapper.insertSelective(materialExtend);
-        }catch(Exception e){
-            JshException.writeFail(logger, e);
+        String skuCode = materialExtend.getSkuCode();
+        if (StringUtil.isEmpty(skuCode) && materialExtend.getMaterialId() != null) {
+            Material material = materialMapper.selectByPrimaryKey(materialExtend.getMaterialId());
+            if (material != null && StringUtil.isNotEmpty(material.getCode())) {
+                skuCode = generateSkuCode(material.getCategoryId(), material.getId(), material.getCode(),
+                        materialExtend.getSpecValues());
+            }
         }
-        return result;
+        Sku sku = new Sku();
+        sku.setSpuId(materialExtend.getMaterialId());
+        sku.setSkuCode(skuCode);
+        sku.setPurchaseDecimal(materialExtend.getPurchaseDecimal());
+        sku.setCommodityDecimal(materialExtend.getCommodityDecimal());
+        sku.setWholesaleDecimal(materialExtend.getWholesaleDecimal());
+        sku.setMarketPrice(materialExtend.getMarketPrice());
+        sku.setLowDecimal(materialExtend.getLowDecimal());
+        sku.setImageUrl(materialExtend.getImgUrl());
+        sku.setDefaultFlag(StringUtil.isEmpty(materialExtend.getDefaultFlag()) ? "1" : materialExtend.getDefaultFlag());
+        sku.setTenantId(materialExtend.getTenantId() != null ? materialExtend.getTenantId()
+                : (user != null ? user.getTenantId() : null));
+        sku.setCreateSerial(user != null ? user.getLoginName() : null);
+        sku.setUpdateSerial(user != null ? user.getLoginName() : null);
+        skuService.saveSku(sku, buildSpecs(materialExtend.getSpecValues()));
+        return 1;
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int updateMaterialExtend(MaterialExtend materialExtend) throws Exception{
+        if (materialExtend.getId() == null) {
+            return 0;
+        }
         User user = userService.getCurrentUser();
-        materialExtend.setUpdateTime(System.currentTimeMillis());
-        materialExtend.setUpdateSerial(user.getLoginName());
-        int res =0;
+        Sku patch = new Sku();
+        patch.setId(materialExtend.getId());
+        patch.setSkuCode(materialExtend.getSkuCode());
+        patch.setPurchaseDecimal(materialExtend.getPurchaseDecimal());
+        patch.setCommodityDecimal(materialExtend.getCommodityDecimal());
+        patch.setWholesaleDecimal(materialExtend.getWholesaleDecimal());
+        patch.setMarketPrice(materialExtend.getMarketPrice());
+        patch.setLowDecimal(materialExtend.getLowDecimal());
+        patch.setImageUrl(materialExtend.getImgUrl());
+        patch.setDefaultFlag(materialExtend.getDefaultFlag());
+        patch.setUpdateSerial(user != null ? user.getLoginName() : null);
+        int res = 0;
         try{
-            res= materialExtendMapper.updateByPrimaryKeySelective(materialExtend);
+            res = skuMapper.updateExtendFields(patch);
         }catch(Exception e){
             JshException.writeFail(logger, e);
         }
         return res;
     }
 
+    /**
+     * 价格显式覆盖（允许置空）
+     */
+    public int specialUpdatePrice(MaterialExtend materialExtend) {
+        return materialExtendMapperEx.specialUpdatePrice(materialExtend);
+    }
+
     public int checkIsBarCodeExist(Long id, String barCode)throws Exception {
         // bar_code 已移到 jsh_material 主表，改为查询主表
         Long excludeMaterialId = null;
         if (id != null && id > 0) {
-            MaterialExtend me = materialExtendMapper.selectByPrimaryKey(id);
-            if (me != null) {
-                excludeMaterialId = me.getMaterialId();
+            Sku sku = skuMapper.selectByPrimaryKey(id);
+            if (sku != null) {
+                excludeMaterialId = sku.getSpuId();
             }
         }
         MaterialExample example = new MaterialExample();
@@ -404,15 +397,8 @@ public class MaterialExtendService {
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public int deleteMaterialExtend(Long id, HttpServletRequest request)throws Exception {
         int result =0;
-        MaterialExtend materialExtend = new MaterialExtend();
-        materialExtend.setId(id);
-        materialExtend.setDeleteFlag(BusinessConstants.DELETE_FLAG_DELETED);
-        Long userId = Long.parseLong(redisService.getObjectFromSessionByKey(request,"userId").toString());
-        User user = userService.getUser(userId);
-        materialExtend.setUpdateTime(new Date().getTime());
-        materialExtend.setUpdateSerial(user.getLoginName());
         try{
-            result= materialExtendMapper.updateByPrimaryKeySelective(materialExtend);
+            result = skuMapper.softDelete(id);
         }catch(Exception e){
             JshException.writeFail(logger, e);
         }
@@ -431,26 +417,26 @@ public class MaterialExtendService {
         return result;
     }
 
-    public int insertMaterialExtend(JSONObject obj, HttpServletRequest request) throws Exception{
-        MaterialExtend materialExtend = JSONObject.parseObject(obj.toJSONString(), MaterialExtend.class);
-        int result=0;
+    @Transactional(value = "transactionManager", rollbackFor = Exception.class)
+    public int batchDeleteMaterialExtendByMIds(String ids) throws Exception{
+        String [] idArray=ids.split(",");
+        int result = 0;
         try{
-            result = materialExtendMapper.insertSelective(materialExtend);
+            result = materialExtendMapperEx.batchDeleteMaterialExtendByMIds(idArray);
         }catch(Exception e){
             JshException.writeFail(logger, e);
         }
         return result;
     }
 
+    public int insertMaterialExtend(JSONObject obj, HttpServletRequest request) throws Exception{
+        MaterialExtend materialExtend = JSONObject.parseObject(obj.toJSONString(), MaterialExtend.class);
+        return insertMaterialExtend(materialExtend);
+    }
+
     public int updateMaterialExtend(JSONObject obj, HttpServletRequest request)throws Exception {
         MaterialExtend materialExtend = JSONObject.parseObject(obj.toJSONString(), MaterialExtend.class);
-        int result=0;
-        try{
-            result = materialExtendMapper.updateByPrimaryKeySelective(materialExtend);
-        }catch(Exception e){
-            JshException.writeFail(logger, e);
-        }
-        return result;
+        return updateMaterialExtend(materialExtend);
     }
 
     public List<MaterialExtend> getMaterialExtendByTenantAndTime(Long tenantId, Long lastTime, Long syncNum)throws Exception {
@@ -459,11 +445,7 @@ public class MaterialExtendService {
             //先获取最大的时间戳，再查两个时间戳之间的数据，这样同步能够防止丢失数据（应为时间戳有重复）
             Long maxTime = materialExtendMapperEx.getMaxTimeByTenantAndTime(tenantId, lastTime, syncNum);
             if(tenantId!=null && lastTime!=null && maxTime!=null) {
-                MaterialExtendExample example = new MaterialExtendExample();
-                example.createCriteria().andTenantIdEqualTo(tenantId)
-                        .andUpdateTimeGreaterThan(lastTime)
-                        .andUpdateTimeLessThanOrEqualTo(maxTime);
-                list=materialExtendMapper.selectByExample(example);
+                list = materialExtendMapperEx.selectByTenantAndUpdateTime(tenantId, lastTime, maxTime);
             }
         }catch(Exception e){
             JshException.readFail(logger, e);
@@ -473,15 +455,8 @@ public class MaterialExtendService {
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public Long selectIdByMaterialIdAndDefaultFlag(Long materialId, String defaultFlag) {
-        Long id = 0L;
-        MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andMaterialIdEqualTo(materialId).andDefaultFlagEqualTo(defaultFlag)
-                                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
-        if(list!=null && list.size()>0) {
-            id = list.get(0).getId();
-        }
-        return id;
+        Long id = materialExtendMapperEx.selectIdBySpuIdAndDefaultFlag(materialId, defaultFlag);
+        return id != null ? id : 0L;
     }
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
@@ -492,10 +467,7 @@ public class MaterialExtendService {
 
     @Transactional(value = "transactionManager", rollbackFor = Exception.class)
     public List<MaterialExtend> getListByMaterialIdAndDefaultFlagAndBarCode(Long materialId, String defaultFlag, String barCode) {
-        MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andMaterialIdEqualTo(materialId).andDefaultFlagEqualTo(defaultFlag)
-                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        return materialExtendMapper.selectByExample(example);
+        return materialExtendMapperEx.selectListBySpuIdAndDefaultFlag(materialId, defaultFlag);
     }
 
     public MaterialExtend getInfoByBarCode(String barCode)throws Exception {
@@ -505,10 +477,7 @@ public class MaterialExtendService {
                 .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
         List<Material> materials = materialMapper.selectByExample(mExample);
         if(materials!=null && materials.size()>0) {
-            MaterialExtendExample example = new MaterialExtendExample();
-            example.createCriteria().andMaterialIdEqualTo(materials.get(0).getId())
-                    .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-            List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
+            List<MaterialExtend> list = materialExtendMapperEx.selectListBySpuId(materials.get(0).getId());
             if(list!=null && list.size()>0) {
                 return list.get(0);
             }
@@ -520,15 +489,8 @@ public class MaterialExtendService {
         if(!StringUtil.isNotEmpty(skuCode)) {
             return null;
         }
-        MaterialExtendExample example = new MaterialExtendExample();
-        example.createCriteria().andSkuCodeEqualTo(skuCode)
-                .andDeleteFlagNotEqualTo(BusinessConstants.DELETE_FLAG_DELETED);
-        List<MaterialExtend> list = materialExtendMapper.selectByExample(example);
-        if(list!=null && list.size()>0) {
-            return list.get(0);
-        } else {
-            return null;
-        }
+        List<MaterialExtend> list = materialExtendMapperEx.selectBySkuCode(skuCode);
+        return (list != null && list.size() > 0) ? list.get(0) : null;
     }
 
     /**
@@ -551,5 +513,31 @@ public class MaterialExtendService {
             }
         }
         return 0;
+    }
+
+    /** sku 实体转换为对外的 MaterialExtend 视图 */
+    private MaterialExtend toExtend(Sku sku) {
+        if (sku == null) {
+            return null;
+        }
+        MaterialExtend me = new MaterialExtend();
+        me.setId(sku.getId());
+        me.setMaterialId(sku.getSpuId());
+        me.setSpecValues(sku.getSpecJson());
+        me.setSkuCode(sku.getSkuCode());
+        me.setPurchaseDecimal(sku.getPurchaseDecimal());
+        me.setCommodityDecimal(sku.getCommodityDecimal());
+        me.setWholesaleDecimal(sku.getWholesaleDecimal());
+        me.setMarketPrice(sku.getMarketPrice());
+        me.setLowDecimal(sku.getLowDecimal());
+        me.setDefaultFlag(sku.getDefaultFlag());
+        me.setImgUrl(sku.getImageUrl());
+        me.setCreateTime(sku.getCreateTime());
+        me.setCreateSerial(sku.getCreateSerial());
+        me.setUpdateSerial(sku.getUpdateSerial());
+        me.setUpdateTime(sku.getUpdateTime() != null ? sku.getUpdateTime().getTime() : null);
+        me.setTenantId(sku.getTenantId());
+        me.setDeleteFlag(sku.getDeletedAt() == null ? BusinessConstants.DELETE_FLAG_EXISTS : BusinessConstants.DELETE_FLAG_DELETED);
+        return me;
     }
 }

@@ -171,12 +171,29 @@ public class FunctionController extends BaseController {
                 approvalFlag = list.get(0).getMultiLevelApprovalFlag();
             }
 
-            List<Function> dataList = functionService.getRoleFunction(pNumber);
+            //一次性查出全部启用菜单，在内存中按父编号组树，避免逐级递归查询数据库
+            List<Function> allFunctions = functionService.getAllEnabledFunctions();
+            Map<String, List<Function>> childrenMap = new HashMap<>();
+            if (allFunctions != null) {
+                for (Function function : allFunctions) {
+                    String parentNumber = function.getParentNumber() == null ? "" : function.getParentNumber();
+                    List<Function> children = childrenMap.get(parentNumber);
+                    if (children == null) {
+                        children = new ArrayList<>();
+                        childrenMap.put(parentNumber, children);
+                    }
+                    children.add(function);
+                }
+            }
+            List<Function> dataList = childrenMap.get(pNumber);
+            if (dataList == null) {
+                dataList = new ArrayList<>();
+            }
             if (dataList.size() != 0) {
                 User userInfo = userService.getCurrentUser();
                 //获取当前用户所属的租户所拥有的功能id的map
                 Map<Long, Long> funIdMap = functionService.getCurrentTenantFunIdMap();
-                dataArray = getMenuByFunction(dataList, fc, approvalFlag, funIdMap, userInfo);
+                dataArray = getMenuByFunction(dataList, childrenMap, fc, approvalFlag, funIdMap, userInfo);
                 //增加首页菜单项
                 JSONObject homeItem = new JSONObject();
                 homeItem.put("id", 0);
@@ -192,7 +209,7 @@ public class FunctionController extends BaseController {
         return dataArray;
     }
 
-    public JSONArray getMenuByFunction(List<Function> dataList, String fc, String approvalFlag, Map<Long, Long> funIdMap, User userInfo) throws Exception {
+    public JSONArray getMenuByFunction(List<Function> dataList, Map<String, List<Function>> childrenMap, String fc, String approvalFlag, Map<Long, Long> funIdMap, User userInfo) throws Exception {
         JSONArray dataArray = new JSONArray();
         for (Function function : dataList) {
             //如果不是超管也不是租户就需要校验，防止分配下级用户的功能权限，大于租户的权限
@@ -202,14 +219,17 @@ public class FunctionController extends BaseController {
                     continue;
                 }
                 JSONObject item = new JSONObject();
-                List<Function> newList = functionService.getRoleFunction(function.getNumber());
+                List<Function> newList = childrenMap.get(function.getNumber());
+                if(newList == null) {
+                    newList = new ArrayList<>();
+                }
                 item.put("id", function.getId());
                 item.put("text", function.getName());
                 item.put("icon", function.getIcon());
                 item.put("url", function.getUrl());
                 item.put("component", function.getComponent());
                 if (newList.size()>0) {
-                    JSONArray childrenArr = getMenuByFunction(newList, fc, approvalFlag, funIdMap, userInfo);
+                    JSONArray childrenArr = getMenuByFunction(newList, childrenMap, fc, approvalFlag, funIdMap, userInfo);
                     if(childrenArr.size()>0) {
                         item.put("children", childrenArr);
                         dataArray.add(item);

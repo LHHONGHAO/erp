@@ -54,11 +54,15 @@
       @ok="submitDevice"
       @cancel="editVisible = false">
       <a-form :form="deviceForm" class="device-form">
-        <a-form-item label="设备编号" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
-          <a-input v-model="form.deviceId" :disabled="!!form.id" placeholder="与代理配置 deviceId 一致，如 router-01" />
-        </a-form-item>
         <a-form-item label="设备名称" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
           <a-input v-model="form.name" placeholder="如 仓库标签打印机" />
+        </a-form-item>
+        <a-form-item label="设备编号" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <div class="copy-text" title="点击复制" @click="copyText(form.deviceId)">
+            <span>{{ form.deviceId }}</span>
+            <a-icon type="copy" class="copy-text-icon" />
+          </div>
+          <div class="form-tip">设备编号即代理 config.json 中的 deviceId（代理页面「设备 ID」），自动生成，点击可复制；两处必须一致</div>
         </a-form-item>
         <a-form-item label="设备 Token" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
           <a-input-group compact>
@@ -67,21 +71,60 @@
           </a-input-group>
           <div class="form-tip">请把设备编号与 Token 填入代理 /etc/erp-print-agent/config.json</div>
         </a-form-item>
+        <a-form-item label="服务器地址" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <a-input v-model="form.serverUrl" placeholder="wss://www.innas.xyz:9999/ws/print-agent" />
+          <div class="form-tip">对应代理配置 server.url，默认按当前访问地址生成</div>
+        </a-form-item>
+        <a-form-item label="证书主机名" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <a-input v-model="form.certHostname" placeholder="www.innas.xyz" />
+          <div class="form-tip">对应代理配置 server.serverName，用于校验证书 SAN；证书不含 IP 时必须与证书主机名一致</div>
+          <div class="form-tip">服务端为自签名证书，生成的配置默认跳过证书校验；如在代理页面手动填写，请勾选「跳过证书校验」</div>
+        </a-form-item>
         <a-form-item label="启用" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
           <a-switch v-model="form.enabled" checkedChildren="启用" unCheckedChildren="停用" />
         </a-form-item>
-        <a-form-item label="打印机" :labelCol="{ span: 5 }" :wrapperCol="{ span: 18 }">
-          <div v-for="(printer, index) in form.printers" :key="index" class="printer-row">
-            <a-input v-model="printer.id" placeholder="ID，如 default" style="width: 120px" />
-            <a-input v-model="printer.name" placeholder="名称" style="width: 140px" />
-            <a-input v-model="printer.host" placeholder="p910nd 主机" style="width: 130px" />
-            <a-input-number v-model="printer.port" :min="1" :max="65535" style="width: 100px" />
-            <a-button type="link" :disabled="form.printers.length <= 1" @click="removePrinter(index)">删除</a-button>
+        <a-form-item label="打印机" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <div class="printer-fields">
+            <div class="pf-item">
+              <span class="pf-label">打印机 ID</span>
+              <div class="printer-id" :title="'点击复制 ' + form.printers[0].id" @click="copyText(form.printers[0].id)">{{ form.printers[0].id }}</div>
+            </div>
+            <div class="pf-item">
+              <span class="pf-label">打印机名称</span>
+              <a-input v-model="form.printers[0].name" placeholder="如 标签打印机" />
+            </div>
+            <div class="pf-item">
+              <span class="pf-label">主机地址</span>
+              <a-input v-model="form.printers[0].host" placeholder="127.0.0.1" />
+            </div>
+            <div class="pf-item">
+              <span class="pf-label">端口</span>
+              <a-input-number v-model="form.printers[0].port" :min="1" :max="65535" style="width: 100%" />
+            </div>
           </div>
-          <a-button type="dashed" icon="plus" style="width: 100%" @click="addPrinter">添加打印机</a-button>
-          <div class="form-tip">host 为代理所在主机到 p910nd 的地址，一般填 127.0.0.1，端口 9100</div>
+          <div class="form-tip">打印机 ID 自动生成且不可编辑，点击可复制；主机地址为代理所在主机到 p910nd 的地址，一般填 127.0.0.1，端口 9100</div>
+        </a-form-item>
+        <a-form-item label="代理配置" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <a-button icon="file-text" @click="showAgentConfig">查看 / 复制 config.json</a-button>
+          <a-button icon="download" @click="downloadAgentConfig">下载 config.json</a-button>
+          <div class="form-tip">按打印代理 /etc/erp-print-agent/config.json 的字段名生成，可直接覆盖使用</div>
         </a-form-item>
       </a-form>
+    </a-modal>
+
+    <!-- 代理配置文件 -->
+    <a-modal
+      title="打印代理 config.json"
+      :visible="configVisible"
+      :width="680"
+      :footer="null"
+      @cancel="configVisible = false">
+      <a-textarea :value="agentConfigText" :rows="18" readOnly class="config-text" />
+      <div class="config-actions">
+        <a-button type="primary" icon="copy" @click="copyText(agentConfigText)">复制全部</a-button>
+        <a-button icon="download" @click="downloadAgentConfig">下载 config.json</a-button>
+      </div>
+      <div class="form-tip">保存设备后 Token 才会生成；设备未保存时配置中的 token 为空。</div>
     </a-modal>
 
     <!-- 测试打印 -->
@@ -189,6 +232,7 @@
           { title: '操作', width: 330, scopedSlots: { customRender: 'action' } }
         ],
         editVisible: false,
+        configVisible: false,
         form: this.emptyForm(),
         deviceForm: this.$form.createForm(this, 'deviceForm'),
         testVisible: false,
@@ -214,6 +258,10 @@
       wsUrl() {
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
         return protocol + window.location.host + '/ws/print-agent'
+      },
+      // 打印代理 config.json 内容，字段名与代理配置完全一致
+      agentConfigText() {
+        return JSON.stringify(this.buildAgentConfig(), null, 2)
       }
     },
     created() {
@@ -228,11 +276,15 @@
     },
     methods: {
       emptyForm() {
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
         return {
           id: null,
           deviceId: '',
           name: '',
           token: '',
+          // 默认按当前访问地址生成，字段名与代理 config.json 一致
+          serverUrl: protocol + window.location.host + '/ws/print-agent',
+          certHostname: window.location.hostname,
           enabled: true,
           printers: [{ id: 'default', name: '标签打印机', host: '127.0.0.1', port: 9100, enabled: true }]
         }
@@ -259,7 +311,13 @@
       },
       openCreate() {
         this.form = this.emptyForm()
+        // 设备编号自动生成，无需手动输入
+        this.form.deviceId = this.generateDeviceId()
         this.editVisible = true
+      },
+      // 生成设备编号：agent- + 时间戳36进制 + 随机串，保证唯一性
+      generateDeviceId() {
+        return 'agent-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
       },
       openEdit(record) {
         this.form = {
@@ -267,18 +325,60 @@
           deviceId: record.deviceId,
           name: record.name || '',
           token: record.token || '',
+          serverUrl: record.serverUrl || this.wsUrl,
+          certHostname: record.certHostname || window.location.hostname,
           enabled: record.enabled !== '0',
-          printers: JSON.parse(JSON.stringify(record.printers && record.printers.length ? record.printers : this.emptyForm().printers))
+          printers: JSON.parse(JSON.stringify((record.printers && record.printers.length) ? [record.printers[0]] : this.emptyForm().printers))
         }
         this.editVisible = true
       },
-      addPrinter() {
-        this.form.printers.push({ id: '', name: '', host: '127.0.0.1', port: 9100, enabled: true })
+      // 按打印代理 config.json 的字段结构生成配置
+      buildAgentConfig() {
+        const form = this.form || {}
+        return {
+          deviceId: form.deviceId || '',
+          token: form.token || '',
+          server: {
+            url: form.serverUrl || this.wsUrl,
+            caFile: '/etc/erp-print-agent/ca.pem',
+            // 服务端为自签名证书，默认跳过校验，避免代理一直离线
+            insecureSkipVerify: true,
+            serverName: form.certHostname || window.location.hostname
+          },
+          printers: (form.printers || []).map(function(p) {
+            return {
+              id: p.id,
+              name: p.name || p.id,
+              host: p.host,
+              port: Number(p.port) || 9100,
+              connectTimeoutMs: 3000,
+              writeTimeoutMs: 15000,
+              enabled: p.enabled !== false
+            }
+          }),
+          limits: { maxTaskBytes: 4194304, queueSize: 8 },
+          reconnect: { minMs: 1000, maxMs: 30000 },
+          log: { level: 'info', file: '', maxSizeKB: 512 }
+        }
       },
-      removePrinter(index) {
-        this.form.printers.splice(index, 1)
+      showAgentConfig() {
+        this.configVisible = true
+      },
+      downloadAgentConfig() {
+        const blob = new Blob([this.agentConfigText], { type: 'application/json' })
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = 'config.json'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
       },
       submitDevice() {
+        if (this.saving) {
+          return
+        }
         if (!this.form.deviceId || !this.form.deviceId.trim()) {
           this.$message.warning('请输入设备编号')
           return
@@ -301,14 +401,19 @@
         }
         savePrintAgent(parameter).then(res => {
           if (res && res.code === 200) {
-            this.$message.success(parameter.id ? '保存成功' : '保存成功，请点击“编辑”复制设备 Token 填入代理配置')
+            this.$message.success(parameter.id ? '保存成功' : '保存成功，请点击“编辑”复制设备编号与 Token 填入代理配置')
             this.editVisible = false
             this.loadList(false)
           } else {
-            this.$message.error((res && res.data) || '保存失败')
+            this.$message.error((typeof res.data === 'string' && res.data) ? res.data : '保存失败，请稍后重试')
           }
-        }).catch(() => {
-          this.$message.error('保存失败')
+        }).catch(err => {
+          const body = err && err.response && err.response.data
+          if (body === 'loginOut') {
+            this.$message.error('登录已过期，请重新登录后再保存')
+          } else {
+            this.$message.error('保存失败：' + ((err && err.message) || '网络异常，请稍后重试'))
+          }
         }).finally(() => {
           this.saving = false
         })
@@ -469,5 +574,106 @@
     .danger-link {
       color: #f5222d;
     }
+  }
+
+  /* 设备弹层：单列排列，压缩行间距 */
+  .device-form {
+    .ant-form-item {
+      margin-bottom: 10px;
+    }
+
+    /* 单列打印机的字段块 */
+    .printer-fields {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pf-item {
+      margin-bottom: 8px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    .pf-label {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 12px;
+      line-height: 18px;
+      color: #595959;
+    }
+  }
+
+  .form-tip {
+    margin-top: 4px;
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* 设备编号：纯文本展示，不可编辑，点击复制 */
+  .copy-text {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+    color: #262626;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .copy-text:hover {
+    background: #f0f7ff;
+    border-color: #bae0ff;
+  }
+
+  .copy-text-icon {
+    margin-left: 8px;
+    color: #1890ff;
+  }
+
+  /* 打印机 ID：自动生成，纯文本展示，点击复制 */
+  .printer-id {
+    display: block;
+    width: 100%;
+    padding: 4px 11px;
+    border-radius: 4px;
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 22px;
+    color: #262626;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    user-select: none;
+    box-sizing: border-box;
+  }
+
+  .printer-id:hover {
+    background: #f0f7ff;
+    border-color: #bae0ff;
+  }
+
+  /* 代理配置文件弹层 */
+  .config-text {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+  }
+
+  .config-actions {
+    margin-top: 12px;
+    text-align: right;
+  }
+
+  .config-actions button {
+    margin-left: 8px;
   }
 </style>

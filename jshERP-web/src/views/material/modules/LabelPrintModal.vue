@@ -139,7 +139,7 @@
             block
             size="large"
             class="lmp-print-btn"
-            :disabled="!template || !canPrintMobile"
+            :disabled="!template"
             :loading="printing"
             @click="handlePrint"
           >打印</a-button>
@@ -836,10 +836,10 @@
         }
         return !!this.mobileDeviceLabel
       },
-      canPrintMobile() {
-        if (this.printerType === 'cloud') return true
-        if (this.printerType === 'bluetooth') return !!this.btDevice
-        return !!this.selectedPrinter
+      // 是否已添加过任何可用打印机（用于点击打印时的引导判断）
+      hasAnyPrinter() {
+        return this.printers.length > 0 || this.agentPrinterItems.length > 0
+          || this.wifiPrinters.length > 0 || !!this.btDevice
       },
       printerTypeLabel() {
         var map = { backend: '后端', bluetooth: '蓝牙', wifi: 'Wi-Fi', cloud: '云打印' }
@@ -1227,6 +1227,21 @@
       closePrinterSettings() {
         this.printerSettingsVisible = false
         this.wifiAddStep = ''
+      },
+      // 未添加打印机时的提示弹层：文字按钮「添加打印机」→ 打开打印机设置 / 打印设备页面
+      showAddPrinterDialog() {
+        var self = this
+        this.$confirm({
+          title: '尚未添加打印机',
+          width: 400,
+          zIndex: 3100,
+          content: '当前还没有添加任何可用打印机，请先添加打印机后再打印。',
+          okText: '添加打印机',
+          cancelText: '取消',
+          onOk: function() {
+            self.openPrinterSettings()
+          }
+        })
       },
       // 网络添加：桌面直接进配置页，移动端先选品牌
       startAddNetwork() {
@@ -2087,6 +2102,11 @@
       handlePrint() {
         if (!this.template) return
         var self = this
+        // 尚未添加任何打印机：弹层提示，并引导进入打印机设置 / 打印设备页面
+        if (this.printerType !== 'cloud' && !this.hasAnyPrinter) {
+          this.showAddPrinterDialog()
+          return
+        }
         // Wi-Fi 打印机：由后端按 IP:端口 下发 TSPL 指令
         if (this.printerType === 'wifi') {
           this.printViaWifi()

@@ -36,16 +36,22 @@
         </div>
       </div>
     </div>
-    <!-- 底部栏（标准手机底栏）：数量/金额左对齐 + 右侧结算按钮 -->
+    <!-- 底部栏（标准手机底栏）：数量合计/金额合计/实际结算三列等宽 + 右侧结算按钮 -->
     <mobile-bottom-bar>
       <template #left>
-        <div class="rso-bottom-item">
-          <span class="rso-bottom-label">数量</span>
-          <span class="rso-bottom-value">{{ cartCount }}</span>
-        </div>
-        <div class="rso-bottom-item">
-          <span class="rso-bottom-label">金额</span>
-          <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
+        <div class="rso-bottom-metrics">
+          <div class="rso-bottom-item">
+            <span class="rso-bottom-label">数量合计</span>
+            <span class="rso-bottom-value">{{ cartCount }}</span>
+          </div>
+          <div class="rso-bottom-item">
+            <span class="rso-bottom-label">金额合计</span>
+            <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
+          </div>
+          <div class="rso-bottom-item">
+            <span class="rso-bottom-label">实际结算</span>
+            <span class="rso-bottom-value rso-bottom-amount">¥{{ cartTotal }}</span>
+          </div>
         </div>
       </template>
       <template #right>
@@ -778,6 +784,24 @@
   padding: 40px 0;
   text-align: center;
   color: #999;
+}
+// 底栏指标：数量合计/金额合计/实际结算三列等宽均分，标题与数据均按列居中对齐
+.rso-bottom-metrics {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  .rso-bottom-item {
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+  }
+  .rso-bottom-label,
+  .rso-bottom-value {
+    width: 100%;
+    text-align: center;
+  }
 }
 // 标准手机底栏内的指标：上面标题，下面数据（底栏高度与样式统一在 MobileBottomBar 组件）
 .rso-bottom-item {

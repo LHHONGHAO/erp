@@ -4,7 +4,7 @@
     <!-- 桌面端页头：操作按钮一行并列，滚动时固定在顶部；手机端由全局蓝底顶栏承载（返回+标题+顶部按钮） -->
     <div class="ma-header" v-if="device !== 'mobile'">
       <a-button icon="left" class="ma-back-btn" @click="handleBack">返回</a-button>
-      <div class="ma-actions">
+      <div class="ma-actions" v-if="!showCategoryGate">
         <a-button icon="setting" @click="handlePropertyConfig">属性设置</a-button>
         <a-button @click="handleReset">重置</a-button>
         <a-button type="primary" @click="handleOk">保存</a-button>
@@ -12,13 +12,28 @@
     </div>
     <!-- 表单直接铺在页面中，非弹窗 -->
     <div class="ma-body">
-      <material-modal ref="form" inline @close="onClose" @ok="onSaved" />
+      <!-- 新增商品第一步：页面只显示类别选择，选好类别后再显示商品录入表单 -->
+      <div v-if="showCategoryGate" class="ma-gate">
+        <div class="ma-gate__title">新增商品</div>
+        <div class="ma-gate__desc">请先选择商品类别，系统将按该类别加载规格与属性</div>
+        <a-tree-select
+          v-model="gateCategoryId"
+          class="ma-gate__select"
+          :dropdownStyle="{ maxHeight: '320px', overflow: 'auto' }"
+          :treeData="gateTreeData"
+          :treeDefaultExpandAll="true"
+          allow-clear
+          placeholder="请选择商品类别（须选二级类目，一级类目不可选）"
+          @change="handleGateCategoryChange" />
+      </div>
+      <material-modal v-else ref="form" inline @close="onClose" @ok="onSaved" />
     </div>
   </div>
 </template>
 
 <script>
   import MaterialModal from './modules/MaterialModal'
+  import { queryMaterialCategoryTreeList } from '@/api/api'
   import { mixinDevice } from '@/utils/mixin.js'
   import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
 
@@ -33,23 +48,26 @@
         // 容器高度，页面内容超出时出现纵向滚动条
         cardStyle: '',
         // 是否为编辑模式
-        isEdit: false
+        isEdit: false,
+        // 新增商品时先显示类别选择（编辑商品直接显示表单）
+        showCategoryGate: true,
+        gateCategoryId: undefined,
+        gateTreeData: []
       }
     },
     mounted () {
       this.setHeight()
       window.addEventListener('resize', this.setHeight)
-      this.registerHeaderActions()
       // 录入页禁止下拉刷新，避免手势触发页面重新加载
       document.body.classList.add('mm-no-pull-refresh')
       this.$nextTick(() => {
-        this.loadRecordFromStorage()
+        this.initPage()
       })
     },
     // keep-alive 激活时重新读取 sessionStorage 中的编辑数据，避免残留上一次编辑的商品
     activated () {
-      this.registerHeaderActions()
       document.body.classList.add('mm-no-pull-refresh')
+      this.registerHeaderActions()
       // 从「新增品类」路由页返回：保留当前商品录入内容，仅刷新类别树
       if (sessionStorage.getItem('materialCategoryAddReturn')) {
         sessionStorage.removeItem('materialCategoryAddReturn')
@@ -57,6 +75,10 @@
         if (modal && modal.loadTreeData) {
           modal.loadTreeData()
         }
+        return
+      }
+      // 仍停留在类别选择页时不重置，保留用户的选择
+      if (this.showCategoryGate) {
         return
       }
       this.loadRecordFromStorage()
@@ -73,8 +95,62 @@
       document.body.classList.remove('mm-no-pull-refresh')
     },
     methods: {
-      // 注册手机端顶部按钮：设置（属性设置）、重置、保存
+      // 页面初始化：编辑商品直接进表单；新增商品先显示类别选择
+      initPage () {
+        const recordStr = sessionStorage.getItem('materialEditRecord')
+        if (!recordStr) {
+          this.showCategoryGate = true
+          this.loadGateTree()
+          this.registerHeaderActions()
+          return
+        }
+        this.showCategoryGate = false
+        this.registerHeaderActions()
+        this.loadRecordFromStorage()
+      },
+      // 加载类别树（一级类目不可选，与表单内的类别选择保持一致）
+      loadGateTree () {
+        queryMaterialCategoryTreeList({ id: '' }).then(res => {
+          this.gateTreeData = this.disableLevelOneNodes(res || [])
+        }).catch(() => {
+          this.gateTreeData = []
+        })
+      },
+      disableLevelOneNodes (nodes) {
+        return (nodes || []).map(node => {
+          const item = Object.assign({}, node)
+          if (item.categoryLevel === 1) {
+            item.disabled = true
+          }
+          if (item.children && item.children.length > 0) {
+            item.children = this.disableLevelOneNodes(item.children)
+          }
+          return item
+        })
+      },
+      // 选择类别后进入商品录入表单，并把已选类别带入表单
+      handleGateCategoryChange (value) {
+        if (!value) {
+          return
+        }
+        const categoryId = value
+        this.showCategoryGate = false
+        this.registerHeaderActions()
+        this.$nextTick(() => {
+          this.openForm()
+          const form = this.$refs.form
+          if (form && form.applyPresetCategory) {
+            form.applyPresetCategory(categoryId)
+          }
+        })
+      },
+      // 注册手机端顶部按钮：设置（属性设置）、重置、保存（类别选择阶段不显示）
       registerHeaderActions () {
+        if (this.showCategoryGate) {
+          setMobileHeaderActions([])
+          this.updateHeaderTitle()
+          return
+        }
         setMobileHeaderActions([
           { key: 'setting', icon: 'setting', handler: this.handlePropertyConfig },
           { key: 'reset', icon: 'reload', handler: this.handleReset },
@@ -148,9 +224,16 @@
       onSaved () {
         this.$message.success('保存成功')
       },
-      // 表单关闭（取消或保存成功后）重新初始化为空白表单，便于连续录入
+      // 表单关闭（取消或保存成功后）回到类别选择，便于按类别连续录入
       onClose () {
-        this.openForm()
+        this.returnToCategoryGate()
+      },
+      // 回到类别选择步骤
+      returnToCategoryGate () {
+        this.gateCategoryId = undefined
+        this.isEdit = false
+        this.showCategoryGate = true
+        this.registerHeaderActions()
       },
       // 打开基础属性设置弹窗
       handlePropertyConfig () {
@@ -210,12 +293,37 @@
   .ma-body {
     padding-bottom: 24px;
   }
+  /* 类别选择步骤：页面只展示一个类别选择框 */
+  .ma-gate {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 48px 8px 0;
+    text-align: center;
+  }
+  .ma-gate__title {
+    color: #1f2329;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .ma-gate__desc {
+    margin: 10px 0 24px;
+    color: #8b949e;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .ma-gate__select {
+    width: 100%;
+    text-align: left;
+  }
   /* 手机端：不限制容器高度，内容随页面整体滚动到底部 */
   @media (max-width: 768px) {
     .material-add-page {
       height: auto !important;
       overflow: visible;
       padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+    .ma-gate {
+      padding-top: 32px;
     }
   }
 </style>

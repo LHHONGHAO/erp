@@ -1,9 +1,11 @@
 <template>
   <div class="tab-layout">
     <div class="tab-layout__body">
-      <router-view />
+      <keep-alive>
+        <router-view />
+      </keep-alive>
     </div>
-    <TabBar />
+    <TabBar v-if="!$route.meta.hideTabBar" />
   </div>
 </template>
 

@@ -20,22 +20,6 @@
     </div>
 
     <template v-else>
-      <div v-if="quickItems.length" class="home-card">
-        <div class="home-card__head">
-          <span class="home-card__title">常用功能</span>
-        </div>
-        <div class="home-grid">
-          <div
-            v-for="item in quickItems"
-            :key="'quick-' + item.url"
-            class="home-entry"
-            @click="open(item)">
-            <span class="home-entry__icon">{{ initialLetter(item.text) }}</span>
-            <span class="home-entry__text">{{ item.text }}</span>
-          </div>
-        </div>
-      </div>
-
       <div v-if="groups.length" class="home-section-title">全部功能</div>
 
       <div v-for="group in groups" :key="group.id" class="home-card">
@@ -84,13 +68,6 @@ export default {
     avatarText () {
       return (this.userName || '我').charAt(0).toUpperCase()
     },
-    quickItems () {
-      const items = []
-      this.groups.forEach(group => {
-        group.items.forEach(item => items.push(item))
-      })
-      return items.slice(0, 8)
-    },
     greeting () {
       const hour = new Date().getHours()
       if (hour < 6) return '凌晨好'
@@ -106,38 +83,43 @@ export default {
     }
   },
   created () {
-    this.loadMenu()
+    this.restoreCache()
+    // 有缓存时先渲染，再后台静默刷新
+    this.loadMenu(this.groups.length > 0)
   },
   methods: {
-    loadMenu () {
-      this.loading = true
-      this.errorText = ''
+    menuCacheKey () {
+      return 'mobile_menu_cache_' + (ls.get(USER_ID) || 'guest')
+    },
+    restoreCache () {
+      try {
+        const raw = sessionStorage.getItem(this.menuCacheKey())
+        const groups = raw ? JSON.parse(raw) : null
+        if (Array.isArray(groups) && groups.length) {
+          this.groups = groups
+        }
+      } catch (e) {}
+    },
+    saveCache () {
+      try {
+        sessionStorage.setItem(this.menuCacheKey(), JSON.stringify(this.groups))
+      } catch (e) {}
+    },
+    loadMenu (silent) {
+      if (!silent) {
+        this.loading = true
+        this.errorText = ''
+      }
       getMenu({ pNumber: 0, userId: ls.get(USER_ID) }).then(res => {
-        this.groups = this.buildGroups(this.injectRemotePrint(res))
+        this.groups = this.buildGroups(res)
+        this.saveCache()
       }).catch(() => {
-        this.errorText = '功能菜单加载失败，请检查网络后重试'
+        if (!this.groups.length) {
+          this.errorText = '功能菜单加载失败，请检查网络后重试'
+        }
       }).finally(() => {
         this.loading = false
       })
-    },
-    // 远程打印配置页面由前端内置，挂到「系统设置 / 系统管理」菜单分组下
-    injectRemotePrint (nodes) {
-      const list = Array.isArray(nodes) ? nodes : []
-      const target = list.find(node => (node.url || '').replace(/\/$/, '') === '/system'
-        || node.text === '系统设置' || node.text === '系统管理')
-      if (!target) return list
-      if (!Array.isArray(target.children)) target.children = []
-      const exists = target.children.some(node => node.url === '/system/remote-print')
-      if (!exists) {
-        target.children.push({
-          id: 'remote-print-config',
-          text: '远程打印配置',
-          url: '/system/remote-print',
-          route: '1',
-          children: []
-        })
-      }
-      return list
     },
     buildGroups (nodes) {
       const groups = []
@@ -156,6 +138,11 @@ export default {
         if (!items.length && node.url && node.url !== '#' && node.route !== '0') {
           items.push({ text: node.text, url: node.url })
         }
+        // 地址识别由前端内置在「基础资料」下（与电脑端 permission.js 保持一致，不依赖后台菜单表）
+        const isBaseData = node.text === '基础资料' || String(node.url || '').replace(/\/$/, '') === '/systemA'
+        if (isBaseData && !items.some(item => item.url === '/system/address-recognize')) {
+          items.push({ text: '地址识别', url: '/system/address-recognize' })
+        }
         if (items.length) {
           groups.push({ id: node.id, text: node.text, items })
         }
@@ -169,11 +156,15 @@ export default {
       this.$router.push('/mine')
     },
     open (item) {
+      if (!item || !item.url) {
+        return
+      }
       if (/^https?:\/\//.test(item.url)) {
         window.open(item.url, '_blank')
         return
       }
-      window.location.href = item.url
+      // 在移动端 SPA 内打开电脑版页面，返回时首页不销毁、不重新加载
+      this.$router.push({ path: '/web', query: { url: item.url, title: item.text } })
     }
   }
 }

@@ -520,6 +520,8 @@
         lastCategoryId: undefined, // 上一次有效的类别值（点击「新增品类」后用于还原）
         specLocked: false, // 规格是否锁定（从类别配置加载后禁止修改规格名称及增删）
         categoryImageStatePending: false, // 编辑时待按类别配置同步“添加规格图片”开关状态
+        presetCategoryId: null, // 页面级类别选择后待应用到表单的类别
+
         maxBarCodeInfo: '', //最大条码
         meDeleteIdList: [], //删除条码信息的id数组
         prefixNo: 'material',
@@ -1704,7 +1706,27 @@
               that.categoryTree.push(temp);
             }
             that.applyCategoryImageStateFromCategory();
+            that.tryApplyPresetCategory();
           }
+        })
+      },
+      /**
+       * 页面级先选类别后进入表单：记录待应用的类别。
+       * 类别树是异步加载的，加载完成后由 tryApplyPresetCategory 统一写入表单。
+       */
+      applyPresetCategory(categoryId) {
+        if (!categoryId) return
+        this.presetCategoryId = categoryId
+        this.tryApplyPresetCategory()
+      },
+      tryApplyPresetCategory() {
+        if (!this.presetCategoryId) return
+        if (!this.categoryTree || this.categoryTree.length === 0) return
+        const categoryId = this.presetCategoryId
+        this.presetCategoryId = null
+        this.$nextTick(() => {
+          this.form.setFieldsValue({ categoryId: categoryId })
+          this.handleCategoryChange(categoryId)
         })
       },
       /**

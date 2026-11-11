@@ -356,10 +356,12 @@ public class UserController extends BaseController {
     public Object addUser(@RequestBody JSONObject obj, HttpServletRequest request)throws Exception{
         JSONObject result = ExceptionConstants.standardSuccess();
         User userInfo = userService.getCurrentUser();
-        Tenant tenant = tenantService.getTenantByTenantId(userInfo.getTenantId());
+        Tenant tenant = (userInfo != null && userInfo.getTenantId() != null)
+                ? tenantService.getTenantByTenantId(userInfo.getTenantId()) : null;
         Long count = userService.countUser(null,null);
         if(tenant!=null) {
-            if(count>= tenant.getUserNumLimit()) {
+            Integer userNumLimit = tenant.getUserNumLimit();
+            if(userNumLimit!=null && count!=null && count>=userNumLimit) {
                 throw new BusinessParamCheckingException(ExceptionConstants.USER_OVER_LIMIT_FAILED_CODE,
                         ExceptionConstants.USER_OVER_LIMIT_FAILED_MSG);
             } else {

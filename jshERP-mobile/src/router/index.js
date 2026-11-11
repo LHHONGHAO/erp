@@ -32,6 +32,12 @@ const router = new Router({
           name: 'MobileMine',
           meta: { title: '我的' },
           component: () => import(/* webpackChunkName: "mine" */ '../views/Mine.vue')
+        },
+        {
+          path: 'web',
+          name: 'MobileWebView',
+          meta: { title: '业务页面', hideTabBar: true },
+          component: () => import(/* webpackChunkName: "webview" */ '../views/WebView.vue')
         }
       ]
     },

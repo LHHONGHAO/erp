@@ -1,0 +1,54 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: jsherp-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: jsh_erp
+      MYSQL_USER: jsherp
+      MYSQL_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./backup/mysql:/backup
+    restart: always
+    networks: [jsherp]
+
+  redis:
+    image: redis:7-alpine
+    container_name: jsherp-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+    restart: always
+    networks: [jsherp]
+
+  app:
+    image: eclipse-temurin:8-jre
+    container_name: jsherp-app
+    depends_on: [mysql, redis]
+    ports:
+      - "9998:9998"
+      - "9999:9999"
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/jsh_erp?useUnicode=true&characterEncoding=utf8&useCursorFetch=true&defaultFetchSize=500&allowMultiQueries=true&rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: jsherp
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      SPRING_RESOURCES_STATIC_LOCATIONS: classpath:/static/,file:/app/frontend-dist/
+      SERVER_TOMCAT_BASEDIR: /tmp/tomcat
+      FILE_PATH: /data/upload
+      FILE_EXPORTTMP: /data/export
+    volumes:
+      - ./jshERP.jar:/app/jshERP.jar:ro
+      - ./frontend-dist:/app/frontend-dist:ro
+      - ./data:/data
+    command: ["java", "-Xms256m", "-Xmx1024m", "-Djsh.data.dir=/data", "-Dlogs.home=/data/logs", "-jar", "/app/jshERP.jar"]
+    restart: always
+    networks: [jsherp]
+
+networks:
+  jsherp:

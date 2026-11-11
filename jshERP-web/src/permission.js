@@ -158,8 +158,12 @@ router.beforeEach((to, from, next) => {
         const userId = Vue.ls.get(USER_ID)
         const cachedMenu = readMenuCache(userId)
         if (cachedMenu) {
-          // 命中本地缓存：立刻渲染，不再等待菜单接口
-          applyMenuRoutes(JSON.parse(JSON.stringify(cachedMenu))).then(() => {
+          // 命中本地缓存：先同步回填权限菜单，否则守卫会因 permissionList 仍为空而反复进入本分支，导致菜单接口死循环
+          // 回填与路由使用同一份数据，注入的内置菜单（AI配置、远程打印等）才能显示在侧边栏
+          const cachedMenuData = JSON.parse(JSON.stringify(cachedMenu))
+          store.commit('SET_PERMISSIONLIST', cachedMenuData)
+          // 立刻渲染，不再等待菜单接口
+          applyMenuRoutes(cachedMenuData).then(() => {
             const cachedRedirect = decodeURIComponent(from.query.redirect || to.fullPath)
             next(cachedRedirect)
           })

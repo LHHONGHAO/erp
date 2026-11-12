@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="mmp-page">
-    <!-- 标准顶栏：蓝色底、标题居中、右侧操作与关闭 -->
+    <!-- 标准顶栏：白底、标题居中、右侧关闭（与全局 .mm-sheet-modal 同一规范） -->
     <div class="mmp-header">
       <a-icon v-if="showBack" class="mmp-icon mmp-back" type="arrow-left" @click="$emit('back')" />
       <div class="mmp-title-block">
@@ -28,7 +28,8 @@
 <script>
 /**
  * 手机端标准页面弹层
- * 全屏浮层 + 标准蓝色顶栏（标题居中、右侧关闭），内容与底部按钮通过插槽传入。
+ * 全屏浮层 + 标准顶栏（白底、标题居中、右侧关闭），内容与底部按钮通过插槽传入。
+ * a-modal 形式的弹层请使用全局样式 .mm-sheet-modal + .mm-sheet-header（同一视觉规范）。
  */
 export default {
   name: 'MobileModalPage',
@@ -52,16 +53,16 @@ export default {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  background: #f0f2f5;
+  background: #f2f4f7;
   z-index: 2900;
 }
 .mmp-header {
   position: relative;
   flex: none;
-  height: 49px;
+  height: 60px;
   padding: 0 4px;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -78,8 +79,8 @@ export default {
 }
 .mmp-title {
   max-width: 100%;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
   line-height: 1.2;
   color: rgba(0, 0, 0, 0.85);
   overflow: hidden;
@@ -87,7 +88,7 @@ export default {
   white-space: nowrap;
 }
 .mmp-subtitle {
-  margin-top: 1px;
+  margin-top: 2px;
   font-size: 11px;
   line-height: 1.2;
   color: #999;
@@ -109,9 +110,9 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
-  color: #bfbfbf;
+  color: #c8c8c8;
   cursor: pointer;
 }
 .mmp-body {

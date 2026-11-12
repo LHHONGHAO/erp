@@ -144,6 +144,61 @@ export function detectScrollBlank(options) {
 let mixinDepth = 0
 let autoState = null
 
+/* ==================== 键盘状态：展开期间暂停留白刷新 ==================== */
+
+/** 键盘判定阈值：可视区高度比窗口高度少这么多即视为键盘展开 */
+const KEYBOARD_MIN_GAP = 120
+/** 键盘是否展开，展开期间不做任何留白检测，收起后再统一刷新一次 */
+let keyboardOpen = false
+let keyboardTimer = null
+/** mixin 页面的刷新函数集合，键盘收起后统一回调 */
+const keyboardMixinRefreshers = []
+let keyboardWatchInstalled = false
+
+/** 当前键盘是否处于展开状态（供页面判断是否跳过自身滚动逻辑） */
+export function isScrollBlankKeyboardOpen() {
+  return keyboardOpen
+}
+
+function detectKeyboardOpen() {
+  const vv = window.visualViewport
+  if (!vv) return false
+  const inner = window.innerHeight || 0
+  return !!inner && inner - vv.height > KEYBOARD_MIN_GAP
+}
+
+function onKeyboardViewportChange() {
+  if (keyboardTimer) clearTimeout(keyboardTimer)
+  keyboardTimer = setTimeout(function () {
+    keyboardTimer = null
+    const open = detectKeyboardOpen()
+    if (open === keyboardOpen) return
+    keyboardOpen = open
+    if (open) {
+      // 键盘弹出动画期间视口会连续抖动，丢弃待执行的检测
+      if (autoState && autoState.timer) {
+        clearTimeout(autoState.timer)
+        autoState.timer = null
+      }
+      return
+    }
+    // 键盘收起：恢复可视高度并统一刷新一次
+    syncScrollBlankViewport()
+    queueAutoRefresh(0)
+    keyboardMixinRefreshers.slice().forEach(function (fn) { fn() })
+  }, 120)
+}
+
+/** 监听可视视口变化来识别键盘展开/收起（仅 visualViewport 能感知软键盘） */
+function watchKeyboard() {
+  if (keyboardWatchInstalled) return
+  const vv = window.visualViewport
+  if (!vv) return
+  keyboardWatchInstalled = true
+  vv.addEventListener('resize', onKeyboardViewportChange)
+  vv.addEventListener('scroll', onKeyboardViewportChange)
+}
+
 function isMobileView() {
   return window.innerWidth <= SCROLL_BLANK_MOBILE_MAX_WIDTH
 }
@@ -256,6 +311,7 @@ function teardownAuto() {
 }
 
 function queueAutoRefresh(delay) {
+  if (keyboardOpen) return
   if (!autoState || autoState.timer) return
   autoState.timer = setTimeout(function () {
     autoState.timer = null
@@ -271,6 +327,8 @@ function queueAutoRefresh(delay) {
 export function refreshAutoScrollBlank() {
   const state = autoState
   if (!state || state.busy) return null
+  // 键盘展开期间暂停检测，收起后由键盘监听统一刷新
+  if (keyboardOpen) return null
   // 页面已显式接入 mixin，交由 mixin 处理，避免重复占位
   if (mixinDepth > 0) return null
   if (!isMobileView()) { teardownAuto(); syncScrollBlankViewport(); return null }
@@ -304,6 +362,8 @@ export function refreshAutoScrollBlank() {
  */
 export function installScrollBlank(router) {
   if (autoState) return autoState
+  // 键盘展开/收起监听：展开期间暂停检测，收起后刷新
+  watchKeyboard()
   autoState = {
     spacer: null,
     container: null,
@@ -355,7 +415,9 @@ export const scrollBlankMixin = {
     // 显式接入的页面接管检测，停用全局自动模式，避免双重占位
     mixinDepth++
     teardownAuto()
+    watchKeyboard()
     this._scrollBlankHandler = this.refreshScrollBlank.bind(this)
+    keyboardMixinRefreshers.push(this._scrollBlankHandler)
     window.addEventListener('resize', this._scrollBlankHandler)
     window.addEventListener('orientationchange', this._scrollBlankHandler)
     if (typeof ResizeObserver !== 'undefined') {
@@ -374,6 +436,8 @@ export const scrollBlankMixin = {
     if (this._scrollBlankHandler) {
       window.removeEventListener('resize', this._scrollBlankHandler)
       window.removeEventListener('orientationchange', this._scrollBlankHandler)
+      const index = keyboardMixinRefreshers.indexOf(this._scrollBlankHandler)
+      if (index > -1) keyboardMixinRefreshers.splice(index, 1)
     }
     if (this._scrollBlankObserver) {
       this._scrollBlankObserver.disconnect()
@@ -395,6 +459,8 @@ export const scrollBlankMixin = {
     },
     /** 检测页面上下空白并修正底部占位，返回检测结果 */
     refreshScrollBlank() {
+      // 键盘展开期间暂停刷新，避免键盘动画与留白重排互相干扰
+      if (keyboardOpen) return this.scrollBlankInfo
       // 先同步可视高度并写入 CSS 变量，后续测量基于修正后的页面高度
       if (syncScrollBlankViewport() == null) {
         this.resetScrollBlank()

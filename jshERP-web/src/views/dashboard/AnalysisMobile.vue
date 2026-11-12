@@ -145,6 +145,8 @@
         ],
         commonPages: [],
         savedPages: [],
+        // 新用户没有保存过常用页面时，首次进入按默认加载项生成
+        defaultPending: false,
         pickerVisible: false,
         keyword: '',
         pickedUrls: [],
@@ -276,12 +278,22 @@
             pages = Vue.ls.get(this.storageKey) || []
           }
           this.savedPages = pages
+          this.defaultPending = !pages || pages.length === 0
           this.applyCommonPages()
         }).catch(() => {
           // 接口失败，使用本地缓存
-          this.savedPages = Vue.ls.get(this.storageKey) || []
+          let pages = Vue.ls.get(this.storageKey) || []
+          this.savedPages = pages
+          this.defaultPending = !pages || pages.length === 0
           this.applyCommonPages()
         })
+      },
+      // 默认加载项：新用户首次进入时自动展示的常用页面
+      buildDefaultPages() {
+        const defaultUrls = ['/system/address-recognize']
+        return defaultUrls
+          .map(url => this.allPages.find(item => item.url === url))
+          .filter(item => !!item)
       },
       // 按当前菜单过滤出仍可打开的页面，菜单就绪后可重复调用
       applyCommonPages() {
@@ -290,6 +302,17 @@
         if (validUrls.length === 0) {
           this.commonPages = this.savedPages
           return
+        }
+        // 没有历史配置时写入默认加载项，之后用户可在选择弹窗中自行增删
+        if (this.defaultPending) {
+          let defaults = this.buildDefaultPages()
+          if (defaults.length > 0) {
+            this.defaultPending = false
+            this.savedPages = defaults
+            this.commonPages = defaults
+            this.persistCommonPages()
+            return
+          }
         }
         this.commonPages = this.savedPages.filter(item => validUrls.indexOf(item.url) > -1)
       },

@@ -1,6 +1,119 @@
 <!-- by 7527_18_920 -->
 <template>
-  <a-row :gutter="10">
+  <div class="mcl-root">
+    <!-- 手机端：标准手机页面布局（全局蓝底顶栏 + 可滚动内容 + 底部操作栏） -->
+    <mobile-page v-if="device === 'mobile'" class="mcl-page" :standalone="false" body-padding="0">
+      <div class="mcl-body">
+        <!-- 当前选择 -->
+        <div class="mcl-card">
+          <a-alert type="info" :showIcon="true">
+            <div slot="message">
+              <span v-if="currSelected.title">当前选择：{{ getCurrSelectedTitle() }}</span>
+              <span v-else class="mcl-muted">未选择类别</span>
+              <a v-if="currSelected.title" class="mcl-clear" @click="onClearSelected">取消选择</a>
+            </div>
+          </a-alert>
+        </div>
+
+        <!-- 分类目录树 -->
+        <div class="mcl-card">
+          <div class="mcl-card-title">分类目录</div>
+          <a-tree
+            class="mcl-tree"
+            checkable
+            multiple
+            @select="onSelect"
+            @check="onCheck"
+            @rightClick="rightHandle"
+            :selectedKeys="selectedKeys"
+            :checkedKeys="checkedKeys"
+            :treeData="categoryTree"
+            :checkStrictly="checkStrictly"
+            :expandedKeys="iExpandedKeys"
+            :autoExpandParent="true"
+            @expand="onExpand" />
+        </div>
+
+        <!-- 树操作 -->
+        <div class="mcl-card mcl-tree-ops">
+          <a-dropdown :trigger="['click']" placement="topCenter">
+            <a-menu slot="overlay">
+              <a-menu-item key="1" @click="switchCheckStrictly(1)">父子关联</a-menu-item>
+              <a-menu-item key="2" @click="switchCheckStrictly(2)">取消关联</a-menu-item>
+              <a-menu-item key="3" @click="checkALL">全部勾选</a-menu-item>
+              <a-menu-item key="4" @click="cancelCheckALL">取消全选</a-menu-item>
+              <a-menu-item key="5" @click="expandAll">展开所有</a-menu-item>
+              <a-menu-item key="6" @click="closeAll">合并所有</a-menu-item>
+            </a-menu>
+            <a-button block class="mcl-tree-ops-btn">
+              <span>树操作</span>
+              <a-icon type="down" />
+            </a-button>
+          </a-dropdown>
+        </div>
+
+        <!-- 类别信息 -->
+        <div v-if="selectedKeys.length > 0" class="mcl-card">
+          <div class="mcl-card-title">类别信息</div>
+          <a-form :form="form" class="mcl-form">
+            <a-form-item label="名称">
+              <a-input placeholder="请输入名称" v-decorator="['name', validatorRules.name ]"/>
+            </a-form-item>
+            <a-form-item label="编号">
+              <a-input placeholder="请输入编号" v-decorator="['serialNo', validatorRules.serialNo ]"/>
+            </a-form-item>
+            <a-form-item label="上级目录">
+              <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
+                             allow-clear :treeDefaultExpandAll="true"
+                             :treeData="treeData" v-decorator="[ 'parentId' ]" placeholder="请选择上级目录">
+              </a-tree-select>
+            </a-form-item>
+            <a-form-item label="排序">
+              <a-input v-decorator="[ 'sort' ]"/>
+            </a-form-item>
+            <a-form-item label="备注">
+              <a-textarea placeholder="请输入备注" :rows="2" v-decorator.trim="[ 'remark' ]" />
+            </a-form-item>
+          </a-form>
+        </div>
+        <div v-else class="mcl-card mcl-empty">请先在上方选择一个类别</div>
+
+        <!-- 类别规格设置 -->
+        <div v-if="selectedKeys.length > 0 && hasSelectedCategory" class="mcl-card">
+          <div class="mcl-card-title">类别规格设置</div>
+          <div v-for="(module, mIndex) in specModules" :key="mIndex" class="mcl-spec-card">
+            <div class="mcl-spec-head">
+              <a-input v-model="module.name" class="mcl-spec-name" placeholder="规格大类（商品规格卡片标题）" />
+              <a-icon type="delete" class="mcl-spec-del" @click="removeSpecModule(mIndex)" />
+            </div>
+            <div class="mcl-spec-switch">
+              <a-switch size="small" v-model="module.enableImage" />
+              <span>可添加规格图片</span>
+            </div>
+            <div v-for="(child, childIndex) in module.childNames" :key="childIndex" class="mcl-spec-value">
+              <a-input
+                :value="module.childNames[childIndex]"
+                placeholder="请输入子规格名称"
+                @change="onMobileChildSpecChange(mIndex, childIndex, $event)" />
+              <a-icon type="delete" class="mcl-spec-del" @click="removeChildSpec(mIndex, childIndex)" />
+            </div>
+            <a-button type="dashed" size="small" icon="plus" class="mcl-spec-add-child" @click="addChildSpec(mIndex)">添加子规格</a-button>
+          </div>
+          <a-button type="dashed" icon="plus" block @click="addSpecModule">添加规格</a-button>
+          <div v-if="specModules.length === 0" class="mcl-muted mcl-spec-tip">规格值在商品信息页面维护</div>
+        </div>
+      </div>
+
+      <template slot="footer">
+        <div class="mcl-footer">
+          <a-button block @click="emptyCurrForm">重置</a-button>
+          <a-button type="primary" block :disabled="selectedKeys.length === 0" @click="submitCurrForm">保存</a-button>
+        </div>
+      </template>
+    </mobile-page>
+
+    <!-- 桌面端：原有左右分栏布局 -->
+    <a-row v-else :gutter="10">
     <a-col :md="12" :sm="24">
       <a-card :bordered="false">
         <!-- 按钮操作区域；手机端由全局蓝底顶栏承载（添加/刷新），批量删除仅桌面端 -->
@@ -113,8 +226,10 @@
         </a-empty>
       </a-card>
     </a-col>
-    <material-category-modal ref="materialCategoryModal" @ok="loadTree"></material-category-modal>
   </a-row>
+
+    <material-category-modal ref="materialCategoryModal" @ok="loadTree"></material-category-modal>
+  </div>
 </template>
 <script>
 import MaterialCategoryModal from '../material/modules/MaterialCategoryModal'
@@ -124,11 +239,13 @@ import {httpAction, deleteAction} from '@/api/manage'
 import {JeecgListMixin} from '@/mixins/JeecgListMixin'
 import {mixinDevice} from '@/utils/mixin.js'
 import {setMobileHeaderActions, clearMobileHeaderActions} from '@/utils/mobilePageHeader'
+import MobilePage from '@/components/page/MobilePage'
 export default {
   name: 'MaterialCategoryList',
   mixins: [JeecgListMixin, mixinDevice],
   components: {
-    MaterialCategoryModal
+    MaterialCategoryModal,
+    MobilePage
   },
   data() {
     return {
@@ -199,7 +316,7 @@ export default {
   // keep-alive 激活时重新注册手机端顶部按钮
   activated() {
     this.registerHeaderActions()
-    // 手机端从新增品类页面返回时刷新列表
+    // 手机端激活时刷新列表
     if (this.isMobile()) {
       this.loadData()
     }
@@ -480,11 +597,7 @@ export default {
       });
     },
     handleAdd() {
-      // 手机端：改为标准路由页面
-      if (this.isMobile()) {
-        this.$router.push('/material/category_add')
-        return
-      }
+      // 手机端与桌面端统一使用标准弹层
       this.$refs.materialCategoryModal.add()
       this.$refs.materialCategoryModal.title = '新增'
     },
@@ -556,6 +669,11 @@ export default {
     addChildSpec(index) { this.$set(this.specModules[index], 'childNames', (this.specModules[index].childNames || []).concat([''])) },
     removeChildSpec(index, childIndex) { this.specModules[index].childNames.splice(childIndex, 1) },
     removeSpecModule(index) { this.specModules.splice(index, 1) },
+    // 手机端子规格输入：数组下标赋值需用 $set 才能触发视图更新
+    onMobileChildSpecChange(moduleIndex, childIndex, event) {
+      const value = event && event.target ? event.target.value : ''
+      this.$set(this.specModules[moduleIndex].childNames, childIndex, value)
+    },
     // <!---- author:os_chengtgen -- date:20190827 --  for:切换父子勾选模式 =======------>
 
   },
@@ -643,5 +761,212 @@ export default {
   height: 24px;
   line-height: 24px;
   margin-left: 2px;
+}
+
+/* ==================== 手机端布局 ==================== */
+.mcl-body {
+  padding: 10px 12px 12px;
+  background: #f0f2f5;
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+.mcl-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.mcl-card-title {
+  font-size: 13px;
+  line-height: 18px;
+  color: #999;
+  margin-bottom: 6px;
+}
+
+.mcl-muted {
+  color: #999;
+  font-size: 13px;
+}
+
+.mcl-clear {
+  margin-left: 12px;
+}
+
+.mcl-empty {
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  padding: 24px 12px;
+}
+
+/* 树操作：整行可点，标题左、箭头右 */
+.mcl-tree-ops-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: 15px;
+}
+
+.mcl-tree-ops-btn:hover,
+.mcl-tree-ops-btn:focus {
+  color: inherit;
+  background: transparent;
+}
+
+/* 规格卡片 */
+.mcl-spec-card {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.mcl-spec-head {
+  display: flex;
+  align-items: center;
+}
+
+.mcl-spec-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mcl-spec-del {
+  flex: none;
+  margin-left: 10px;
+  font-size: 16px;
+  color: #ff4d4f;
+}
+
+.mcl-spec-switch {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 14px;
+  color: #333;
+}
+
+.mcl-spec-switch span {
+  margin-left: 8px;
+}
+
+.mcl-spec-value {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.mcl-spec-value .ant-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mcl-spec-add-child {
+  margin-top: 10px;
+}
+
+.mcl-spec-tip {
+  margin-top: 8px;
+}
+
+.mcl-footer {
+  display: flex;
+}
+
+.mcl-footer .ant-btn {
+  flex: 1 1 0;
+  margin: 0;
+}
+
+.mcl-footer .ant-btn + .ant-btn {
+  margin-left: 10px;
+}
+</style>
+<style>
+/* 手机端：MobilePage 内部节点与表单行样式（子组件内部结构，scoped 无法命中） */
+.mcl-page .mobile-page-body {
+  background: #f0f2f5;
+}
+
+.mcl-page .ant-tree {
+  font-size: 15px;
+}
+
+.mcl-page .ant-tree li {
+  padding: 4px 0;
+}
+
+.mcl-page .ant-tree li .ant-tree-node-content-wrapper {
+  line-height: 26px;
+}
+
+.mcl-page .ant-tree-checkbox,
+.mcl-page .ant-tree-switcher {
+  margin-right: 6px;
+}
+
+/* 表单：标题左、控件右，行间分隔线，输入控件无边框 */
+.mcl-page .mcl-tree-ops .ant-dropdown-trigger {
+  display: block;
+  width: 100%;
+}
+
+.mcl-page .mcl-form .ant-form-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.mcl-page .mcl-form .ant-form-item:last-child {
+  border-bottom: none;
+}
+
+.mcl-page .mcl-form .ant-form-item-label {
+  flex: 0 0 76px;
+  width: 76px !important;
+  max-width: 76px;
+  padding-right: 8px;
+  line-height: 24px;
+  text-align: left;
+}
+
+.mcl-page .mcl-form .ant-form-item-label > label {
+  font-size: 15px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.mcl-page .mcl-form .ant-form-item-label > label::after {
+  content: '';
+  margin: 0;
+}
+
+.mcl-page .mcl-form .ant-form-item-control-wrapper {
+  flex: 1 1 auto;
+  width: auto !important;
+  min-width: 0;
+}
+
+.mcl-page .mcl-form .ant-input,
+.mcl-page .mcl-form .ant-select-selection {
+  border: none;
+  box-shadow: none;
+  padding-left: 0;
+  font-size: 15px;
+  background: transparent;
+}
+
+.mcl-page .mcl-form .ant-select-selection__rendered {
+  margin-left: 0;
 }
 </style>

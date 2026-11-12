@@ -1,5 +1,6 @@
 package com.jsh.erp.service;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.SpecLearnLog;
 import com.jsh.erp.datasource.entities.SpecValueAlias;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +58,7 @@ public class SpecValueSampleService {
             String matchType = "exact";
             SpecValueAlias alias = null;
             if (sample == null) {
-                alias = specValueAliasMapper.selectByNormKey(normKey);
+                alias = specValueAliasMapper.selectByNormKey(normKey, attributeId);
                 if (alias != null) {
                     sample = specValueSampleMapper.selectByPrimaryKey(alias.getSampleId());
                     matchType = "alias";
@@ -86,6 +88,102 @@ public class SpecValueSampleService {
             logger.warn("规格值样本比对失败：{}", e.getMessage());
         }
         return result;
+    }
+
+    /**
+     * 以类别配置的规格值为标准，对识别文本做对齐：
+     * 配置值优先 -> 样本库命中 -> 返回近似候选
+     */
+    public JSONObject align(String rawText, Long categoryId, Long attributeId, List<String> standards) {
+        JSONObject result = new JSONObject();
+        result.put("matched", false);
+        result.put("value", "");
+        result.put("matchType", "none");
+        result.put("notConfigured", false);
+        result.put("candidates", buildCandidates(rawText, standards));
+        if (!StringUtil.isNotEmpty(rawText)) {
+            return result;
+        }
+        // 1. 类别配置的标准写法优先
+        String standard = SpecValueNormalizer.alignToStandard(rawText, standards);
+        if (standard != null) {
+            result.put("matched", true);
+            result.put("value", standard);
+            result.put("matchType", "config");
+            return result;
+        }
+        // 2. 样本库命中
+        JSONObject sample = match(rawText, categoryId, attributeId);
+        if (sample.getBooleanValue("matched")) {
+            String canonical = sample.getString("canonicalValue");
+            String configured = SpecValueNormalizer.alignToStandard(canonical, standards);
+            result.put("matched", true);
+            result.put("value", configured != null ? configured : canonical);
+            result.put("matchType", configured != null ? "sample" : "sample_unconfigured");
+            result.put("notConfigured", configured == null && standards != null && !standards.isEmpty());
+            return result;
+        }
+        return result;
+    }
+
+    /** 从配置值中挑出与原始文本相近的候选，供前端让用户选择 */
+    private List<String> buildCandidates(String rawText, List<String> standards) {
+        List<String> candidates = new ArrayList<>();
+        if (standards == null || standards.isEmpty()) {
+            return candidates;
+        }
+        String normRaw = SpecValueNormalizer.normKey(rawText);
+        String numericRaw = SpecValueNormalizer.numericKey(rawText);
+        for (String standard : standards) {
+            if (standard == null || standard.trim().isEmpty()) {
+                continue;
+            }
+            String normStd = SpecValueNormalizer.normKey(standard);
+            boolean similar = normStd.equals(normRaw)
+                    || (numericRaw != null && numericRaw.equals(SpecValueNormalizer.numericKey(standard)))
+                    || normStd.contains(normRaw) || normRaw.contains(normStd)
+                    || normStd.startsWith(normRaw) || normRaw.startsWith(normStd);
+            if (similar) {
+                candidates.add(standard);
+            }
+            if (candidates.size() >= 5) {
+                break;
+            }
+        }
+        return candidates;
+    }
+
+    /**
+     * 批量学习：商品保存时把「识别原文 -> 最终采纳值」一次性沉淀
+     */
+    @Transactional(value = "transactionManager", rollbackFor = Exception.class)
+    public int learnBatch(JSONArray items, Long categoryId, Long materialId, Long userId) {
+        int count = 0;
+        if (items == null) {
+            return count;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            String rawText = item.getString("rawText");
+            String correctedValue = item.getString("correctedValue");
+            if (!StringUtil.isNotEmpty(rawText) || !StringUtil.isNotEmpty(correctedValue)) {
+                continue;
+            }
+            if (SpecValueNormalizer.normKey(rawText).equals(SpecValueNormalizer.normKey(correctedValue))) {
+                // 归一化后一致，无需沉淀别名
+                continue;
+            }
+            try {
+                learn(rawText, correctedValue, categoryId, item.getLong("attributeId"), materialId, userId);
+                count++;
+            } catch (Exception e) {
+                logger.warn("批量学习规格值失败：{}", e.getMessage());
+            }
+        }
+        return count;
     }
 
     /**
@@ -142,10 +240,11 @@ public class SpecValueSampleService {
         // 原始写法与标准写法归一化后不同，才记别名
         String rawNormKey = SpecValueNormalizer.normKey(raw);
         if (sample != null && StringUtil.isNotEmpty(rawNormKey) && !rawNormKey.equals(sample.getNormKey())) {
-            SpecValueAlias alias = specValueAliasMapper.selectByNormKey(rawNormKey);
+            SpecValueAlias alias = specValueAliasMapper.selectByNormKey(rawNormKey, attrId);
             if (alias == null) {
                 alias = new SpecValueAlias();
                 alias.setSampleId(sample.getId());
+                alias.setAttributeId(attrId);
                 alias.setRawText(raw);
                 alias.setNormKey(rawNormKey);
                 alias.setHitCount(1);

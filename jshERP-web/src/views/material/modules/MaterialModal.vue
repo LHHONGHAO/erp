@@ -135,24 +135,21 @@
             </div>
             <!-- 第 2 页：商品信息（规格） -->
             <div class="mm-page">
-            <!-- 类别选择：移至商品信息卡片上方 -->
-            <div class="mm-category-selector">
-              <a-form-item :labelCol="{ span: 4 }" :wrapperCol="{ span: 20 }" label="种类" class="mm-category-form-item">
-                <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
-                               dropdownClassName="mm-category-dropdown" allow-clear
-                               :treeData="categoryTreeFiltered" :treeDefaultExpandAll="true"
-                               v-decorator="[ 'categoryId', validatorRules.categoryId ]"
-                               placeholder="请选择种类（须选二级类目，一级类目不可选）" @change="handleCategoryChange">
-                </a-tree-select>
-              </a-form-item>
-            </div>
+            <!-- 种类由类别选择页决定，这里仅保留表单字段，不再展示选择器 -->
+            <a-form-item style="display:none;">
+              <a-input v-decorator="[ 'categoryId', validatorRules.categoryId ]" />
+            </a-form-item>
             <!-- 商品信息卡片：规格模块 -->
-            <a-card :title="'商品信息' + (categorySelected ? '' : ' — 选择种类')" size="small" :bordered="true" style="margin-top: 12px;">
+            <a-card title="商品信息" size="small" :bordered="true" style="margin-top: 12px;">
               <div v-if="!categorySelected" style="text-align: center; padding: 40px 0; color: #999;">
                 <a-icon type="info-circle" style="font-size: 24px;" />
                 <div style="margin-top: 8px;">请先选择种类，规格将自动加载</div>
               </div>
               <template v-else>
+              <!-- 多图识别：同一商品多张图片识别后自动归类并生成规格与 SKU -->
+              <div class="spec-ocr-bar">
+                <a-button size="small" type="link" icon="picture" @click="openMultiSpecImageExtract">多图识别（自动生成规格与 SKU）</a-button>
+              </div>
               <div v-for="(module, mIndex) in specModules" :key="mIndex" class="spec-module">
                 <!-- 头部：规格名称 + 图片开关 + 删除 -->
                 <div class="spec-header">
@@ -449,7 +446,6 @@
       </div>
     </a-modal>
     <!-- 类别新增弹窗：由类别下拉中的「+ 新增品类」打开 -->
-    <material-category-modal ref="categoryModal" @ok="handleCategoryAdded" />
     <!-- 图片识别弹窗 -->
     <ocr-recognize-modal :visible="ocrVisible" @ok="handleOcrResult" @cancel="ocrVisible=false" />
     <ocr-recognize-modal
@@ -457,13 +453,78 @@
       :imageFile="specImageOcrFile"
       :extractOnly="true"
       @cancel="handleSpecImageOcrClose" />
+    <ocr-recognize-modal
+      :visible="specMultiOcrVisible"
+      :extractOnly="true"
+      :multi="true"
+      :maxImages="9"
+      :zIndex="1100"
+      @cancel="handleMultiSpecImageOcrClose" />
+    <!-- 多图识别聚合预览：确认后再回填规格值与 SKU -->
+    <a-modal
+      title="识别结果确认"
+      :visible="specAggregateVisible"
+      :width="isMobileView ? '96%' : 760"
+      :zIndex="1150"
+      :footer="null"
+      :maskClosable="false"
+      @cancel="specAggregateVisible = false">
+      <a-spin :spinning="specAggregateLoading">
+        <template v-if="specAggregateResult">
+          <div v-if="specAggregateResult.duplicated" class="agg-tip">
+            <a-icon type="info-circle" /> 重复图片已忽略 {{ specAggregateResult.duplicatedCount }} 张
+          </div>
+          <div v-if="!specAggregateResult.spuConsistent" class="agg-tip agg-tip-warn">
+            <a-icon type="warning" /> 图片内容不一致，公共属性已按多数取值：
+            <div v-for="conflict in specAggregateResult.conflicts" :key="conflict.field" class="agg-conflict-item">
+              {{ conflict.label }}：{{ (conflict.values || []).join(' / ') }} → 采用「{{ conflict.chosen }}」
+            </div>
+          </div>
+          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">商品信息</a-divider>
+          <div class="agg-props">
+            <span v-for="(value, field) in specAggregateResult.commonProps" :key="field" class="agg-prop">
+              {{ aggFieldLabel(field) }}：{{ value }}
+            </span>
+          </div>
+          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">规格值</a-divider>
+          <div v-for="dim in specAggregateResult.dimensions" :key="dim.name" class="agg-dim">
+            <div class="agg-dim-name">
+              {{ dim.name || '未命名规格' }}
+              <span v-if="!dim.detected" class="agg-dim-empty">（未识别）</span>
+            </div>
+            <div class="agg-values">
+              <span
+                v-for="(val, index) in dim.values"
+                :key="index"
+                class="agg-value"
+                :class="{ 'is-warn': val.needConfirm }">
+                {{ val.value }}
+                <a-icon v-if="val.imagePath" type="picture" style="margin-left:4px" />
+                <span v-if="aggSubLabel(val)" class="agg-sub-label">（{{ aggSubLabel(val) }}）</span>
+              </span>
+              <span v-if="!dim.values || !dim.values.length" class="agg-dim-empty">无</span>
+            </div>
+          </div>
+          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">SKU（{{ (specAggregateResult.skuRows || []).length }} 行）</a-divider>
+          <a-table
+            size="small"
+            :columns="aggSkuColumns"
+            :dataSource="specAggregateResult.skuRows || []"
+            :pagination="false"
+            rowKey="sku" />
+          <div style="text-align:right;margin-top:12px">
+            <a-button style="margin-right:8px" @click="specAggregateVisible = false">取消</a-button>
+            <a-button type="primary" :disabled="specAggregateLoading" @click="confirmSpecAggregate">确认回填</a-button>
+          </div>
+        </template>
+      </a-spin>
+    </a-modal>
   </component>
 </template>
 <script>
   import pick from 'lodash.pick'
   import BatchSetPriceModal from './BatchSetPriceModal'
   import OcrRecognizeModal from './OcrRecognizeModal'
-  import MaterialCategoryModal from './MaterialCategoryModal'
   import JEditableTable from '@/components/jeecg/JEditableTable'
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
   import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
@@ -474,15 +535,11 @@
   import JModal from '@/components/jeecg/JModal'
   import Vue from 'vue'
 
-  // 类别下拉中「新增品类」入口的动作值
-  const CATEGORY_ADD_VALUE = '__category_add__'
-
   export default {
     name: "MaterialModal",
     components: {
       BatchSetPriceModal,
       OcrRecognizeModal,
-      MaterialCategoryModal,
       JImageUpload,
       JDate,
       JModal,
@@ -517,7 +574,6 @@
         switchDisabled: false, //开关的启用状态
         barCodeSwitch: false, //生成条码开关
         categorySelected: false, // 是否已选择类别
-        lastCategoryId: undefined, // 上一次有效的类别值（点击「新增品类」后用于还原）
         specLocked: false, // 规格是否锁定（从类别配置加载后禁止修改规格名称及增删）
         categoryImageStatePending: false, // 编辑时待按类别配置同步“添加规格图片”开关状态
         presetCategoryId: null, // 页面级类别选择后待应用到表单的类别
@@ -531,6 +587,13 @@
         specImageOcrVisible: false,
         specImageOcrFile: null,
         pendingSpecImage: null,
+        // 多图识别与聚合预览
+        specMultiOcrVisible: false,
+        specAggregateVisible: false,
+        specAggregateLoading: false,
+        specAggregateResult: null,
+        // 规格图片识别原文，键为 mIndex_vIndex，保存商品时用于纠错学习
+        specOcrRawMap: {},
         meOldDataSource: [],
         batchColumn: undefined,
         batchColumnValue: '',
@@ -695,15 +758,6 @@
       propertyConfigBaseColumns() {
         return this.basePropertyList.filter(p => this.basePropertyFields.includes(p.field))
       },
-      // 类别树：一级节点禁用，仅可选二级类目；末尾追加「新增品类」入口
-      categoryTreeFiltered() {
-        let nodes = []
-        if (this.categoryTree && this.categoryTree.length > 0) {
-          nodes = this.disableLevelOneNodes(this.categoryTree)
-        }
-        nodes.push({ title: '＋ 新增品类', value: CATEGORY_ADD_VALUE, key: CATEGORY_ADD_VALUE })
-        return nodes
-      },
       // 表单每列的 span（24 / 每行列数）
       formColSpan() {
         const cols = this.propertyConfigCols || 4
@@ -734,6 +788,30 @@
       skuTableBodyHeight() {
         // JEditableTable 的行高约为54px，按SKU数量展开表格。
         return Math.max((this.meTable.dataSource || []).length * 54, 54)
+      },
+      // 识别结果确认表：SKU 行按维度（规格、花色等）分列展示，而非单一 SKU 字段
+      aggSkuColumns() {
+        let dims = ((this.specAggregateResult && this.specAggregateResult.dimensions) || [])
+          .filter(dim => dim.detected || (dim.values && dim.values.length))
+        let cols = []
+        dims.forEach((dim, index) => {
+          cols.push({
+            title: dim.name || ('规格' + (index + 1)),
+            dataIndex: 'dim_' + index,
+            key: 'dim_' + index,
+            width: '110px',
+            customRender: (text, record) => {
+              let item = ((record && record.specValues) || []).find(v => v.attributeName === dim.name)
+              return item ? (item.valueText || '') : ''
+            }
+          })
+        })
+        cols.push(
+          { title: '条码', dataIndex: 'barCode', key: 'barCode', width: '140px' },
+          { title: '零售价', dataIndex: 'commodityDecimal', key: 'commodityDecimal', width: '90px' },
+          { title: '划线价', dataIndex: 'marketPrice', key: 'marketPrice', width: '90px' }
+        )
+        return cols
       },
       priceFillProgress() {
         let rows = this.meTable.dataSource
@@ -880,7 +958,6 @@
         })
         this.edit({})
         this.categorySelected = false
-        this.lastCategoryId = undefined
         this.suppressSpecSync = true
         this.specModules = []
         // 新增时清空上一次编辑残留的规格列
@@ -898,6 +975,7 @@
         // 初始化 specModules
         this.specModules = []
         this.specValueSuggestionCache = {}
+        this.specOcrRawMap = {}
         let attribute = record.attribute
         if(attribute) {
           let attrObj = JSON.parse(attribute)
@@ -927,7 +1005,6 @@
         }
         // 编辑时：有类别则标记已选择类别，有规格则锁定
         this.categorySelected = !!(record.categoryId)
-        this.lastCategoryId = record.categoryId
         this.specLocked = !!(this.specModules.length > 0 && this.specModules[0].name)
         this.activeKey = '1'
         this.barCodeSwitch = false
@@ -1626,6 +1703,7 @@
               this.confirmLoading = true
               httpAction(url, formData, method).then((res) => {
                 if(res.code === 200){
+                  that.learnRecognizedSpecValues();
                   that.$message.success('保存成功');
                   that.formDirty = false;
                   that.initialSnapshot = null;
@@ -1766,37 +1844,6 @@
           }
         })
       },
-      // 打开类别新增弹窗（手机端改为标准路由页面，返回时保留当前商品录入内容）
-      openCategoryAdd() {
-        if (this.isMobileView) {
-          sessionStorage.setItem('materialCategoryAddReturn', '1')
-          this.$router.push('/material/category_add')
-          return
-        }
-        const modal = this.$refs.categoryModal
-        if (!modal) return
-        modal.title = '新增品类'
-        modal.add()
-      },
-      // 类别新增成功后刷新类别树
-      handleCategoryAdded() {
-        this.loadTreeData()
-      },
-      // 递归禁用一级类目节点
-      disableLevelOneNodes(nodes) {
-        const result = []
-        for (let i = 0; i < nodes.length; i++) {
-          const node = Object.assign({}, nodes[i])
-          if (node.categoryLevel === 1) {
-            node.disabled = true
-          }
-          if (node.children && node.children.length > 0) {
-            node.children = this.disableLevelOneNodes(node.children)
-          }
-          result.push(node)
-        }
-        return result
-      },
       // 按类别规格配置构建规格模块：childNames 是一组规格字段，每条 values 记录代表一个规格值组
       buildSpecModulesFromCategory(categorySpecs) {
         return categorySpecs.map(function(item) {
@@ -1823,16 +1870,6 @@
       },
       // 类别变更：自动加载父级类目规格配置
       handleCategoryChange(value) {
-        // 点击下拉中的「＋ 新增品类」：打开类别新增弹窗，并还原原来的类别选择
-        if (value === CATEGORY_ADD_VALUE) {
-          this.openCategoryAdd()
-          const previous = this.lastCategoryId
-          this.$nextTick(() => {
-            this.form.setFieldsValue({ categoryId: previous })
-          })
-          return
-        }
-        this.lastCategoryId = value
         if (!value) {
           // 清除类别，重置规格
           this.categorySelected = false
@@ -1934,25 +1971,282 @@
         })
         self.onSpecChange()
       },
+      /** 打开多图识别：同一商品多张图片，识别后按关键词与一致性聚合 */
+      openMultiSpecImageExtract() {
+        if (!this.specModules || this.specModules.length === 0) {
+          this.$message.warning('请先选择类别并加载规格后再使用多图识别')
+          return
+        }
+        this.specMultiOcrVisible = true
+      },
+      handleMultiSpecImageOcrClose(payload) {
+        this.specMultiOcrVisible = false
+        let images = (payload && payload.images) || []
+        if (!images.length) return
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        // 维度配置来自类别规格：名称、属性ID、子规格名、类别已配置的规格值
+        let dimensions = this.specModules.map((module, mIndex) => {
+          let attrItem = this.materialAttributeList.find(a => a.name === module.name)
+          // 标准值连同子规格标定一起下发：200*230 已标定为「被套」时，聚合端可直接判定归属
+          let standards = []
+          let standardKeys = {}
+          let pushStandard = (value, subValues) => {
+            let text = (value || '').trim()
+            if (!text) return
+            let key = this.normalizeSpecValueKey(text)
+            if (standardKeys[key]) return
+            standardKeys[key] = true
+            standards.push({ value: text, subValues: subValues || {} })
+          }
+          module.values.forEach(v => {
+            pushStandard(v.text, Object.assign({}, v.subValues || {}))
+          })
+          this.getSpecValueSuggestions(mIndex).forEach(s => {
+            if (!s) return
+            let subValues = {}
+            if (s.valueDetail) {
+              try { subValues = JSON.parse(s.valueDetail) || {} } catch (e) { subValues = {} }
+            }
+            pushStandard(s.valueText, subValues)
+          })
+          return {
+            name: module.name,
+            attributeId: attrItem ? attrItem.value : null,
+            childNames: (module.childNames || []).slice(),
+            standards: standards
+          }
+        })
+        this.specAggregateResult = null
+        this.specAggregateVisible = true
+        this.specAggregateLoading = true
+        postAction('/spec/sample/aggregateProduct', {
+          images: images,
+          categoryId: categoryId || null,
+          dimensions: dimensions
+        }).then(res => {
+          this.specAggregateLoading = false
+          if (!res || res.code !== 200) {
+            this.specAggregateVisible = false
+            this.$message.error((res && (res.msg || res.message)) || '识别结果归纳失败')
+            return
+          }
+          this.specAggregateResult = res.data
+        }).catch(() => {
+          this.specAggregateLoading = false
+          this.specAggregateVisible = false
+          this.$message.error('识别结果归纳失败，请稍后重试')
+        })
+      },
+      aggFieldLabel(field) {
+        let item = (this.basePropertyList || []).find(p => p.field === field)
+        return item ? item.anotherName : field
+      },
+      /** 识别值的子规格归属，如「被套：200*230」 */
+      aggSubLabel(val) {
+        let subValues = (val && val.subValues) || {}
+        return Object.keys(subValues)
+          .filter(name => subValues[name])
+          .map(name => name + '：' + subValues[name])
+          .join(' ')
+      },
+      /** 判断已填写的规格值是否与聚合结果中的维度值相同 */
+      isSameSpecValue(module, item, val) {
+        let text = (item.text || '').trim()
+        let target = (val.value || '').trim()
+        if (text && target && this.normalizeSpecValueKey(text) === this.normalizeSpecValueKey(target)) {
+          return true
+        }
+        if (module.childNames && module.childNames.length) {
+          let hasSubValue = module.childNames.some(name => ((item.subValues && item.subValues[name]) || '').trim())
+          if (!hasSubValue) return false
+          return module.childNames.every(name =>
+            ((item.subValues && item.subValues[name]) || '').trim() ===
+            ((val.subValues && val.subValues[name]) || '').trim()
+          )
+        }
+        return false
+      },
+      /** 确认聚合结果：回填公共属性、规格值与 SKU 行 */
+      confirmSpecAggregate() {
+        let result = this.specAggregateResult
+        if (!result) return
+        // 1. 公共属性：只填空白字段，避免覆盖用户已输入内容
+        let props = result.commonProps || {}
+        let formPatch = {}
+        Object.keys(props).forEach(field => {
+          if (!props[field]) return
+          if (this.basePropertyFields.indexOf(field) < 0) return
+          let current = this.form.getFieldValue(field)
+          if (current === undefined || current === null || current === '') {
+            if (field === 'weight' && !isNaN(parseFloat(props[field]))) {
+              formPatch[field] = parseFloat(props[field])
+            } else {
+              formPatch[field] = props[field]
+            }
+          }
+        })
+        if (Object.keys(formPatch).length) {
+          this.form.setFieldsValue(formPatch)
+        }
+        // 2. 规格值：按维度追加（同值不重复），并记录识别原文供保存后学习
+        ;(result.dimensions || []).forEach(dim => {
+          let mIndex = this.specModules.findIndex(m => m.name === dim.name)
+          if (mIndex < 0) return
+          let module = this.specModules[mIndex]
+          ;(dim.values || []).forEach(val => {
+            let text = (val.value || '').trim()
+            if (!text) return
+            let target = module.values.find(item => this.isSameSpecValue(module, item, val))
+            if (!target) {
+              target = { text: text, image: '', subValues: {} }
+              ;(module.childNames || []).forEach(name => {
+                target.subValues[name] = (val.subValues && val.subValues[name]) || ''
+              })
+              let blank = module.values.find(item => !item.text && !Object.keys(item.subValues || {}).some(k => item.subValues[k]))
+              if (blank) {
+                Object.assign(blank, target)
+                target = blank
+              } else {
+                module.values.push(target)
+              }
+            }
+            if (val.imagePath) {
+              this.$set(target, 'image', val.imagePath)
+            }
+            let vIndex = module.values.indexOf(target)
+            if (vIndex >= 0 && val.rawText) {
+              this.$set(this.specOcrRawMap, mIndex + '_' + vIndex, val.rawText)
+            }
+          })
+        })
+        this.specAggregateVisible = false
+        this.onSpecChange()
+        // 3. 规格值生成 SKU 行后，按 SKU 组合回填条码、图片与价格
+        this.$nextTick(() => {
+          let rows = this.meTable.dataSource || []
+          ;(result.skuRows || []).forEach(skuRow => {
+            let row = rows.find(r => r.sku === skuRow.sku)
+            if (!row) return
+            if (skuRow.barCode) row.barCode = skuRow.barCode
+            if (skuRow.imagePath) row.image = skuRow.imagePath
+            if (skuRow.commodityDecimal) row.commodityDecimal = skuRow.commodityDecimal
+            if (skuRow.marketPrice) row.marketPrice = skuRow.marketPrice
+            if (skuRow.purchaseDecimal) row.purchaseDecimal = skuRow.purchaseDecimal
+            if (skuRow.wholesaleDecimal) row.wholesaleDecimal = skuRow.wholesaleDecimal
+          })
+          this.meTable.dataSource = rows.slice()
+          if (result.duplicated) {
+            this.$message.info('重复图片已忽略 ' + (result.duplicatedCount || 0) + ' 张')
+          }
+          this.$message.success('已按识别结果回填规格与 SKU')
+        })
+      },
       openSpecImageExtract(mIndex, vIndex) {
         // 先打开图片文字提取框，再在提取框内加载图片
         this.pendingSpecImage = { mIndex: mIndex, vIndex: vIndex, path: '' }
         this.specImageOcrFile = null
         this.specImageOcrVisible = true
       },
-      handleSpecImageOcrClose(imagePath) {
+      handleSpecImageOcrClose(payload) {
         this.specImageOcrVisible = false
         if (this.pendingSpecImage) {
           let pending = this.pendingSpecImage
+          let imagePath = typeof payload === 'string' ? payload : ((payload && payload.imagePath) || '')
+          let rawText = (payload && typeof payload === 'object') ? (payload.rawText || '') : ''
           let path = imagePath || pending.path
           let module = this.specModules[pending.mIndex]
-          if (path && module && module.values && module.values[pending.vIndex]) {
-            this.$set(module.values[pending.vIndex], 'image', path)
-            this.updateRowImagesBySpec()
+          let value = module && module.values && module.values[pending.vIndex]
+          if (value) {
+            if (path) {
+              this.$set(value, 'image', path)
+              this.updateRowImagesBySpec()
+            }
+            if (rawText) {
+              this.applyRecognizedSpecValue(module, value, rawText, pending.mIndex, pending.vIndex)
+            }
           }
         }
         this.pendingSpecImage = null
         this.specImageOcrFile = null
+      },
+      /** 把图片识别出的文字按类别配置的规格值归一化后回填 */
+      applyRecognizedSpecValue(module, value, rawText, mIndex, vIndex) {
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        let attrItem = this.materialAttributeList.find(a => a.name === module.name)
+        let attributeId = attrItem ? attrItem.value : ''
+        // 标准写法来源：类别配置值 + 已保存的规格值建议
+        let standards = []
+        module.values.forEach(v => {
+          let text = (v.text || v.label || '').trim()
+          if (text) standards.push(text)
+        })
+        this.getSpecValueSuggestions(mIndex).forEach(s => {
+          if (s && s.valueText) standards.push(s.valueText)
+        })
+        let that = this
+        let key = mIndex + '_' + vIndex
+        that.$set(that.specOcrRawMap, key, rawText)
+        postAction('/spec/sample/align', {
+          text: rawText,
+          categoryId: categoryId || null,
+          attributeId: attributeId || null,
+          standards: standards
+        }).then(res => {
+          if (!res || res.code !== 200) {
+            that.$message.warning('规格值识别失败，已保留原文供手动修改')
+            return
+          }
+          let finalValue = res.value || ''
+          if (!res.matched || !finalValue) {
+            that.$message.warning('未匹配到类别配置的规格值，请手动选择：' + rawText)
+            return
+          }
+          if (res.notConfigured) {
+            that.$message.warning('识别为「' + finalValue + '」，不在类别配置中，请确认或直接在类别里维护')
+          }
+          if (module.childNames && module.childNames.length) {
+            let parts = finalValue.split('/')
+            module.childNames.forEach((name, index) => {
+              that.$set(value.subValues, name, parts[index] || '')
+            })
+          } else {
+            that.$set(value, 'text', finalValue)
+          }
+          that.onSpecChange()
+        }).catch(() => {
+          that.$message.warning('规格值识别失败，请手动填写')
+        })
+      },
+      /** 保存成功后把「识别原文 -> 最终值」沉淀为学习样本 */
+      learnRecognizedSpecValues() {
+        let items = []
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        let that = this
+        Object.keys(this.specOcrRawMap).forEach(key => {
+          let rawText = this.specOcrRawMap[key]
+          let parts = key.split('_')
+          let module = this.specModules[parseInt(parts[0])]
+          let value = module && module.values && module.values[parseInt(parts[1])]
+          if (!module || !value || !rawText) return
+          let finalValue = (value.text || '').trim()
+          if (!finalValue && module.childNames && module.childNames.length) {
+            finalValue = module.childNames.map(name => value.subValues && value.subValues[name] || '').join('/')
+          }
+          if (!finalValue) return
+          let attrItem = that.materialAttributeList.find(a => a.name === module.name)
+          items.push({
+            rawText: rawText,
+            correctedValue: finalValue,
+            attributeId: attrItem ? attrItem.value : null
+          })
+        })
+        this.specOcrRawMap = {}
+        if (!items.length) return
+        postAction('/spec/sample/learnBatch', {
+          items: items,
+          categoryId: categoryId || null,
+          materialId: this.model.id || null
+        }).catch(() => {})
       },
       onSpecChange() {
         this.updateSkuColumns()
@@ -2690,12 +2984,80 @@
     color: #bbb;
     background-color: #ffffff;
   }
+  .spec-ocr-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
   .spec-module {
     border: 1px solid #e8e8e8;
     border-radius: 4px;
     padding: 16px;
     margin-bottom: 12px;
     background: #fff;
+  }
+  /* 多图识别聚合预览 */
+  .agg-tip {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #595959;
+    background: #f6ffed;
+    border: 1px solid #b7eb8f;
+    border-radius: 4px;
+  }
+  .agg-tip-warn {
+    color: #ad6800;
+    background: #fffbe6;
+    border-color: #ffe58f;
+  }
+  .agg-conflict-item {
+    margin-top: 4px;
+  }
+  .agg-props {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    font-size: 13px;
+    color: #262626;
+  }
+  .agg-prop {
+    min-width: 150px;
+  }
+  .agg-dim {
+    margin-bottom: 8px;
+  }
+  .agg-dim-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #262626;
+    margin-bottom: 4px;
+  }
+  .agg-dim-empty {
+    font-weight: normal;
+    color: #bfbfbf;
+  }
+  .agg-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .agg-value {
+    padding: 2px 10px;
+    font-size: 13px;
+    color: #262626;
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 12px;
+  }
+  .agg-value.is-warn {
+    color: #ad6800;
+    background: #fffbe6;
+    border-color: #ffe58f;
+  }
+  .agg-sub-label {
+    font-size: 12px;
+    color: #8c8c8c;
   }
   /* 头部 */
   .spec-header {
@@ -3187,16 +3549,6 @@
     height: auto;
     overflow-y: visible;
   }
-  /* 种类选择器：移到商品信息页签后的样式 */
-  .mm-category-selector {
-    padding: 8px 12px 0;
-  }
-  .mm-pages.is-mobile .mm-category-form-item {
-    margin-bottom: 8px;
-  }
-  .mm-pages.is-mobile .mm-category-form-item .ant-form-item-label {
-    padding-bottom: 4px;
-  }
   /* 手机端：收紧弹窗内容区留白，避免三页左侧留白过多 */
   @media (max-width: 768px) {
     ::v-deep .ant-modal-body {
@@ -3575,17 +3927,4 @@
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
-  }
-</style>
-<style>
-  /* 类别下拉：末尾「＋ 新增品类」入口高亮并加分隔线 */
-  .mm-category-dropdown .ant-select-tree-treenode:last-child {
-    border-top: 1px solid #f0f0f0;
-    margin-top: 4px;
-    padding-top: 4px;
-  }
-  .mm-category-dropdown .ant-select-tree-treenode:last-child .ant-select-tree-node-content-wrapper {
-    color: #1890ff;
-    font-weight: 600;
-  }
-</style>
+  }</style>

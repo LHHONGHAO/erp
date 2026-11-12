@@ -25,7 +25,7 @@
         <div class="addr-card__head">
           <span>识别结果</span>
           <div class="addr-card__head-right">
-            <span class="addr-tag" :class="{ 'is-done': hasResult }">{{ hasResult ? '已识别' : '待识别' }}</span>
+            <span class="addr-copy-btn" @click="copyAddress">复制地址</span>
           </div>
         </div>
         <div class="addr-row" v-for="prop in fields" :key="prop.field">
@@ -112,7 +112,6 @@ export default {
     return {
       ocrLoading: false,
       pasteLoading: false,
-      hasResult: false,
       ocrError: '',
       imageUrl: '',
       previewVisible: false,
@@ -150,6 +149,80 @@ export default {
     getPlaceholder(label) {
       return this.ocrLoading ? '识别中...' : ('请输入' + label)
     },
+    // ===== 复制地址 =====
+    /** 待复制内容：只保留联系人、电话、地址 */
+    buildCopyText() {
+      var parts = []
+      var contacts = String(this.form.contacts || '').trim()
+      var telephone = String(this.form.telephone || '').trim()
+      var address = this.joinAddressParts(this.form.address)
+      if (contacts) parts.push('联系人：' + contacts)
+      if (telephone) parts.push('电话：' + telephone)
+      if (address) parts.push('地址：' + address)
+      return parts.join('\n')
+    },
+    /** 把识别出的地址按 省/市/区县/乡镇街道 拆开，再用 / 拼成整体 */
+    joinAddressParts(address) {
+      var text = String(address || '').replace(/\s+/g, ' ').trim()
+      if (!text) return ''
+      if (text.indexOf('/') > -1) return text
+      var patterns = [
+        /^([^省市区县旗镇乡]{2,10}?(?:省|自治区|特别行政区))/,
+        /^([^省区县旗镇乡]{2,10}?(?:市|自治州|地区|盟))/,
+        /^([^省市县旗镇乡]{2,10}?(?:区|县|旗))/,
+        /^([^省市区县]{2,10}?(?:镇|乡|街道))/
+      ]
+      var parts = []
+      patterns.forEach(function(pattern) {
+        var match = text.match(pattern)
+        if (match && match[1]) {
+          parts.push(match[1])
+          text = text.slice(match[1].length)
+        }
+      })
+      if (text) parts.push(text)
+      return parts.join('/')
+    },
+    /** 复制地址：把输入框内容写入剪贴板 */
+    copyAddress() {
+      var text = this.buildCopyText()
+      if (!text) {
+        this.$message.warning('请先填写地址信息')
+        return
+      }
+      this.copyToClipboard(text)
+    },
+    copyToClipboard(text) {
+      var that = this
+      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(function() {
+          that.$message.success('地址信息已复制')
+        }).catch(function() {
+          that.copyByTextarea(text)
+        })
+      } else {
+        this.copyByTextarea(text)
+      }
+    },
+    /** 非安全上下文（http）下的兜底复制方案 */
+    copyByTextarea(text) {
+      var textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', '')
+      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;'
+      document.body.appendChild(textarea)
+      textarea.select()
+      textarea.setSelectionRange(0, text.length)
+      var copied = false
+      try {
+        copied = document.execCommand('copy')
+      } catch (e) {
+        copied = false
+      }
+      document.body.removeChild(textarea)
+      if (copied) this.$message.success('地址信息已复制')
+      else this.$message.error('复制失败，请长按输入框手动复制')
+    },
     resetResult() {
       this.form = {
         contacts: '',
@@ -160,7 +233,6 @@ export default {
         address: ''
       }
       this.goodsRows = [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }]
-      this.hasResult = false
       this.ocrError = ''
       this.ocrLoading = false
       this.pasteLoading = false
@@ -191,31 +263,90 @@ export default {
       this.resetResult()
     },
     recognizeImage(file) {
+      var that = this
       this.ocrLoading = true
-      this.hasResult = false
       this.ocrError = ''
       if (this.imageUrl) {
         URL.revokeObjectURL(this.imageUrl)
       }
       this.imageUrl = URL.createObjectURL(file)
-      var formData = new FormData()
-      formData.append('file', file)
-      var that = this
-      postAction('/ocr/recognizeAddress', formData).then(function(res) {
-        that.ocrLoading = false
-        if (res && res.code === 200 && res.data) {
-          that.fillFields(res.data)
-          that.hasResult = true
-        } else {
-          var msg = (res && res.data && res.data.message) ? res.data.message : '识别失败'
-          that.ocrError = msg
-          that.$message.error(msg)
+      // 第一步：图片识别文字（接口返回 rawText）
+      this.compressImage(file).then(function(blob) {
+        var formData = new FormData()
+        formData.append('file', blob, 'address.jpg')
+        return postAction('/ocr/recognizeProduct', formData)
+      }).then(function(res) {
+        if (!(res && res.code === 200 && res.data)) {
+          throw new Error((res && res.data && res.data.message) ? res.data.message : '图片识别文字失败')
         }
+        var text = (res.data.rawText || '').trim()
+        if (!text) {
+          throw new Error('未识别到文字，请更换清晰的图片')
+        }
+        // 第二步：文字识别地址
+        return postAction('/ocr/parseAddressText', { text: text })
+      }).then(function(res) {
+        if (!(res && res.code === 200 && res.data)) {
+          throw new Error((res && res.data && res.data.message) ? res.data.message : '文字识别地址失败')
+        }
+        that.ocrLoading = false
+        that.fillFields(res.data)
       }).catch(function(err) {
         that.ocrLoading = false
-        var errMsg = '识别请求失败：' + (err && err.message ? err.message : '未知错误')
+        var errMsg = err && err.message ? err.message : '识别失败'
         that.ocrError = errMsg
         that.$message.error(errMsg)
+      })
+    },
+    /**
+     * 压缩图片：百度文字识别要求 base64 后不超过 4MB（原图约 3MB），
+     * 手机拍照普遍 3~8MB，直接上传会报 input oversize，这里先缩到 1600px 内
+     */
+    compressImage(file) {
+      return new Promise(function(resolve) {
+        if (!file || !/^image\//.test(file.type)) {
+          resolve(file)
+          return
+        }
+        var url = URL.createObjectURL(file)
+        var img = new Image()
+        img.onload = function() {
+          var maxSide = 1600
+          var scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+          var canvas = document.createElement('canvas')
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          var ctx = canvas.getContext('2d')
+          ctx.fillStyle = '#fff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          URL.revokeObjectURL(url)
+          var toBlob = function(quality, callback) {
+            if (canvas.toBlob) {
+              canvas.toBlob(callback, 'image/jpeg', quality)
+            } else {
+              callback(null)
+            }
+          }
+          toBlob(0.82, function(blob) {
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            if (blob.size <= 2500000) {
+              resolve(blob)
+              return
+            }
+            toBlob(0.6, function(smaller) {
+              resolve(smaller && smaller.size < blob.size ? smaller : blob)
+            })
+          })
+        }
+        img.onerror = function() {
+          URL.revokeObjectURL(url)
+          resolve(file)
+        }
+        img.src = url
       })
     },
     parsePastedText() {
@@ -231,7 +362,6 @@ export default {
         that.pasteLoading = false
         if (res && res.code === 200 && res.data) {
           that.fillFields(res.data)
-          that.hasResult = true
         } else {
           var msg = (res && res.data && res.data.message) ? res.data.message : '解析失败'
           that.ocrError = msg
@@ -250,7 +380,8 @@ export default {
       }
       this.form.contacts = data.contacts || ''
       this.form.telephone = data.telephone || ''
-      this.form.address = data.address || ''
+      // 识别结果按 省/市/区县/乡镇街道 用 / 拼接后回填，复制与打印均使用该格式
+      this.form.address = this.joinAddressParts(data.address || '')
       // 识别结果回填后文本可能变多导致页面加高，重新计算页面高度
       this.syncPageHeight()
     },
@@ -492,18 +623,18 @@ export default {
   display: flex;
   align-items: center;
 }
-.addr-tag {
+.addr-copy-btn {
   padding: 2px 10px;
   font-size: 12px;
   font-weight: 400;
-  color: #8c8c8c;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-}
-.addr-tag.is-done {
   color: #1890ff;
-  border-color: #bae0ff;
   background: #e6f4ff;
+  border: 1px solid #bae0ff;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.addr-copy-btn:active {
+  opacity: 0.7;
 }
 .addr-row {
   display: flex;

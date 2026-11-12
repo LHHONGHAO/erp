@@ -25,14 +25,18 @@
           allow-clear
           placeholder="请选择商品类别（须选二级类目，一级类目不可选）"
           @change="handleGateCategoryChange" />
+        <a-button class="ma-gate__add" type="dashed" icon="plus" block @click="handleAddCategory">添加类目</a-button>
       </div>
       <material-modal v-else ref="form" inline @close="onClose" @ok="onSaved" />
     </div>
+    <!-- 类别新增弹层：手机端为全屏蓝底标准弹层，桌面端为居中弹窗 -->
+    <material-category-modal ref="categoryModal" @ok="handleCategoryAdded" />
   </div>
 </template>
 
 <script>
   import MaterialModal from './modules/MaterialModal'
+  import MaterialCategoryModal from './modules/MaterialCategoryModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { mixinDevice } from '@/utils/mixin.js'
   import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
@@ -40,7 +44,8 @@
   export default {
     name: 'MaterialAdd',
     components: {
-      MaterialModal
+      MaterialModal,
+      MaterialCategoryModal
     },
     mixins: [mixinDevice],
     data () {
@@ -68,15 +73,6 @@
     activated () {
       document.body.classList.add('mm-no-pull-refresh')
       this.registerHeaderActions()
-      // 从「新增品类」路由页返回：保留当前商品录入内容，仅刷新类别树
-      if (sessionStorage.getItem('materialCategoryAddReturn')) {
-        sessionStorage.removeItem('materialCategoryAddReturn')
-        const modal = this.$refs.form
-        if (modal && modal.loadTreeData) {
-          modal.loadTreeData()
-        }
-        return
-      }
       // 仍停留在类别选择页时不重置，保留用户的选择
       if (this.showCategoryGate) {
         return
@@ -127,6 +123,17 @@
           }
           return item
         })
+      },
+      // 打开类别新增弹层（手机端为标准全屏弹层，桌面端为居中弹窗）
+      handleAddCategory () {
+        const modal = this.$refs.categoryModal
+        if (!modal) return
+        modal.title = '新增品类'
+        modal.add()
+      },
+      // 类别新增成功后刷新类别选择树
+      handleCategoryAdded () {
+        this.loadGateTree()
       },
       // 选择类别后进入商品录入表单，并把已选类别带入表单
       handleGateCategoryChange (value) {
@@ -314,6 +321,10 @@
   .ma-gate__select {
     width: 100%;
     text-align: left;
+  }
+  .ma-gate__add {
+    margin-top: 12px;
+    height: 40px;
   }
   /* 手机端：不限制容器高度，内容随页面整体滚动到底部 */
   @media (max-width: 768px) {

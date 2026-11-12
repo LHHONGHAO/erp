@@ -43,7 +43,8 @@ function injectPrintAgentRoute(routes) {
 // 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表
 function injectAddressRecognizeMenu(menuData) {
   if (!Array.isArray(menuData)) return
-  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA' || item.text === '基础资料')
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA'
+    || item.text === '基础资料' || item.text === '基础信息')
   if (!target) return
   if (!Array.isArray(target.children)) target.children = []
   const exists = target.children.some(item => item.url === '/system/address-recognize')
@@ -129,6 +130,8 @@ function applyMenuRoutes(menuData) {
   injectMobilePageRoutes(constRoutes)
   injectPrintAgentRoute(constRoutes)
   return store.dispatch('UpdateAppRouter', { constRoutes }).then(() => {
+    // 内置页面注入后同步回菜单 store，手机端首页、顶部菜单等直接读取 permissionList
+    store.commit('SET_PERMISSIONLIST', menuData)
     router.addRoutes(store.getters.addRouters)
   })
 }
@@ -170,6 +173,10 @@ router.beforeEach((to, from, next) => {
           // 后台静默刷新菜单与按钮权限，只更新缓存，不打断当前渲染
           store.dispatch('GetPermissionList').then(res => {
             if (res) {
+              // 后台返回的是原始菜单，先注入内置页面再写缓存，避免覆盖掉注入结果
+              injectAddressRecognizeMenu(res)
+              injectAiConfigMenu(res)
+              injectRemotePrintMenu(res)
               saveMenuCache(userId, res)
               refreshUserBtnList()
             }

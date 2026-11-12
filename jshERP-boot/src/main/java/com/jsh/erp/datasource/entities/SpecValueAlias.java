@@ -9,6 +9,7 @@ public class SpecValueAlias {
     private Long id;
     private Long tenantId;
     private Long sampleId;
+    private Long attributeId;
     private String rawText;
     private String normKey;
     private Integer hitCount;
@@ -23,6 +24,9 @@ public class SpecValueAlias {
 
     public Long getSampleId() { return sampleId; }
     public void setSampleId(Long sampleId) { this.sampleId = sampleId; }
+
+    public Long getAttributeId() { return attributeId; }
+    public void setAttributeId(Long attributeId) { this.attributeId = attributeId; }
 
     public String getRawText() { return rawText; }
     public void setRawText(String rawText) { this.rawText = rawText == null ? null : rawText.trim(); }

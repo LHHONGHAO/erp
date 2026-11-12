@@ -1,12 +1,6 @@
 <template>
   <!-- 远程打印机配置页：打印机设备 / 打印机 / 远程连接 / 当前指令 + 品牌与指令集选择 -->
-  <div v-if="visible" class="pdc-page">
-    <div class="pdc-header">
-      <a-icon class="pdc-back" type="arrow-left" @click="$emit('close')" />
-      <div class="pdc-title">编辑设备</div>
-      <span class="pdc-placeholder" />
-    </div>
-
+  <mobile-modal-page :visible="visible" title="编辑设备" @close="$emit('close')">
     <div class="pdc-info">
       <div class="pdc-card">
         <div class="pdc-row" @click="openDeviceSheet">
@@ -51,16 +45,18 @@
       </div>
     </div>
 
-    <div class="pdc-footer">
-      <a-button
-        type="primary"
-        block
-        size="large"
-        class="pdc-save"
-        :disabled="!form.deviceId || !form.printerId"
-        :loading="saving"
-        @click="save">保存</a-button>
-    </div>
+    <template #footer>
+      <div class="pdc-footer">
+        <a-button
+          type="primary"
+          block
+          size="large"
+          class="pdc-save"
+          :disabled="!form.deviceId || !form.printerId"
+          :loading="saving"
+          @click="save">保存</a-button>
+      </div>
+    </template>
 
     <!-- 打印机设备选择 -->
     <div v-if="deviceSheet" class="pdc-sheet-mask" @click="deviceSheet = false">
@@ -114,14 +110,16 @@
         <div class="pdc-sheet-cancel" @click="cmdSheet = false">取消</div>
       </div>
     </div>
-  </div>
+  </mobile-modal-page>
 </template>
 
 <script>
   import { savePrintAgent } from '@/api/printAgent'
+  import MobileModalPage from '@/components/mobile/MobileModalPage'
 
   export default {
     name: 'PrinterDeviceConfig',
+    components: { MobileModalPage },
     props: {
       visible: { type: Boolean, default: false },
       // 远程打印代理设备列表（含 printers）
@@ -301,48 +299,6 @@
 </script>
 
 <style scoped>
-  .pdc-page {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #f0f2f5;
-    display: flex;
-    flex-direction: column;
-    z-index: 3100;
-  }
-  .pdc-header {
-    flex: none;
-    height: 49px;
-    background: #1890ff;
-    display: flex;
-    align-items: center;
-  }
-  .pdc-back {
-    font-size: 22px;
-    color: #fff;
-    cursor: pointer;
-    width: 58px;
-    height: 58px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .pdc-title {
-    flex: 1;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-    color: #fff;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pdc-placeholder {
-    width: 58px;
-    flex: none;
-  }
   .pdc-info {
     flex: none;
     padding: 10px 10px 0;
@@ -410,7 +366,7 @@
     flex: 1;
     overflow-y: auto;
     background: #fff;
-    padding: 12px 6px 88px;
+    padding: 12px 6px 12px;
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;
@@ -458,14 +414,9 @@
     font-size: 10px;
   }
   .pdc-footer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     background: #fff;
     border-top: 1px solid #eee;
-    z-index: 3101;
   }
   .pdc-save {
     height: 46px;

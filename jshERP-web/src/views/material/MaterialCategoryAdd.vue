@@ -1,6 +1,8 @@
 <template>
-  <mobile-page class="mca-page" :standalone="false" body-padding="12px">
-    <a-form :form="form">
+  <!-- 手机端标准弹层页面：白底顶栏、标题居中、右侧关闭 -->
+  <mobile-modal-page class="mca-page" :visible="true" title="新增品类" @close="goBack">
+    <div class="mca-body">
+      <a-form :form="form">
       <a-form-item label="名称">
         <a-input placeholder="请输入名称" v-decorator="['name', validatorRules.name]" />
       </a-form-item>
@@ -66,25 +68,25 @@
           <a-button type="dashed" icon="plus" @click="addSpecModule">规格设置</a-button>
         </div>
       </a-form-item>
-    </a-form>
+      </a-form>
+    </div>
     <template slot="footer">
       <div class="mca-footer">
-        <a-button @click="goBack">取消</a-button>
-        <a-button type="primary" :loading="confirmLoading" @click="handleSave">保存</a-button>
+        <a-button type="primary" block :loading="confirmLoading" @click="handleSave">保存</a-button>
       </div>
     </template>
-  </mobile-page>
+  </mobile-modal-page>
 </template>
 
 <script>
   import { httpAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList, checkMaterialCategory } from '@/api/api'
-  import MobilePage from '@/components/page/MobilePage'
+  import MobileModalPage from '@/components/mobile/MobileModalPage'
   import pick from 'lodash.pick'
 
   export default {
     name: 'MaterialCategoryAdd',
-    components: { MobilePage },
+    components: { MobileModalPage },
     data() {
       return {
         categoryTree: [],
@@ -227,13 +229,32 @@
 </script>
 
 <style scoped>
+  /* 标准弹层内容区内边距（内容区本身由 MobileModalPage 提供） */
+  .mca-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .mca-body .ant-form {
+    padding: 0 12px;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
   .mca-footer {
-    display: flex;
-    justify-content: flex-end;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid #f0f0f0;
   }
 
   .mca-footer .ant-btn {
-    margin-left: 8px;
+    height: 44px;
+    font-size: 16px;
+    font-weight: 500;
+    border-radius: 22px;
   }
 
   /* 规格卡片 */

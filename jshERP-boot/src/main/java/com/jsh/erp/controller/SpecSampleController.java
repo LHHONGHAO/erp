@@ -2,6 +2,7 @@ package com.jsh.erp.controller;
 
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.SpecValueSample;
+import com.jsh.erp.service.SpecAggregateService;
 import com.jsh.erp.service.SpecValueSampleService;
 import com.jsh.erp.utils.ErpInfo;
 import io.swagger.annotations.Api;
@@ -28,6 +29,9 @@ public class SpecSampleController {
 
     @Resource
     private SpecValueSampleService specValueSampleService;
+
+    @Resource
+    private SpecAggregateService specAggregateService;
 
     @PostMapping(value = "/match")
     @ApiOperation(value = "规格值比对：识别文本 -> 标准写法")
@@ -68,6 +72,67 @@ public class SpecSampleController {
         } catch (Exception e) {
             logger.error("规格值学习失败", e);
             return returnJson(objectMap, "学习失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
+    @PostMapping(value = "/align")
+    @ApiOperation(value = "规格值对齐：以类别配置值为标准，识别文本 -> 标准写法")
+    public String align(@RequestBody JSONObject params, HttpServletRequest request) {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            String text = params.getString("text");
+            if (text == null || text.trim().isEmpty()) {
+                return returnJson(objectMap, "请输入规格值", ErpInfo.ERROR.code);
+            }
+            java.util.List<String> standards = new java.util.ArrayList<>();
+            com.alibaba.fastjson.JSONArray array = params.getJSONArray("standards");
+            if (array != null) {
+                for (int i = 0; i < array.size(); i++) {
+                    String value = array.getString(i);
+                    if (value != null && !value.trim().isEmpty()) {
+                        standards.add(value.trim());
+                    }
+                }
+            }
+            JSONObject result = specValueSampleService.align(text,
+                    params.getLong("categoryId"), params.getLong("attributeId"), standards);
+            objectMap.putAll(result);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("规格值对齐失败", e);
+            return returnJson(objectMap, "对齐失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
+    @PostMapping(value = "/learnBatch")
+    @ApiOperation(value = "批量学习规格值：商品保存时沉淀识别原文到采纳值的对应关系")
+    public String learnBatch(@RequestBody JSONObject params, HttpServletRequest request) {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            int count = specValueSampleService.learnBatch(params.getJSONArray("items"),
+                    params.getLong("categoryId"), params.getLong("materialId"), params.getLong("userId"));
+            objectMap.put("count", count);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("批量学习规格值失败", e);
+            return returnJson(objectMap, "批量学习失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
+    @PostMapping(value = "/aggregateProduct")
+    @ApiOperation(value = "多图识别聚合：按关键词与一致性归纳 SPU 与 SKU 规格行")
+    public String aggregateProduct(@RequestBody JSONObject params, HttpServletRequest request) {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            JSONObject result = specAggregateService.aggregate(
+                    params.getJSONArray("images"),
+                    params.getLong("categoryId"),
+                    params.getJSONArray("dimensions"));
+            objectMap.putAll(result);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("多图识别聚合失败", e);
+            return returnJson(objectMap, "聚合失败：" + e.getMessage(), ErpInfo.ERROR.code);
         }
     }
 

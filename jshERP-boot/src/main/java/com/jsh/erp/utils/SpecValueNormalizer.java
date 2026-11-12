@@ -2,7 +2,9 @@ package com.jsh.erp.utils;
 
 import java.math.BigDecimal;
 import java.text.Normalizer;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -10,14 +12,14 @@ import java.util.regex.Pattern;
 
 /**
  * 规格值归一化工具
- * 把 200×230cm / 200 x 230 CM / 200·230 / 200*230厘米 等不同写法归一到同一个 key，
+ * 把 200×230cm / 200 x 230 CM / 200·230 / 200-230 / 200cm*230cm 等不同写法归一到同一个 key，
  * 供规格值样本库比对（如 200x230cm -> 200*230|cm）。
  */
 public class SpecValueNormalizer {
 
-    /** 数字部分 + 可选单位，例如 200*230cm、500ml、XL（无数字不匹配） */
+    /** 单个维度：数字 + 可选单位 */
     private static final Pattern DIMENSION_PATTERN = Pattern.compile(
-            "^(\\d+(?:\\.\\d+)?(?:\\*\\d+(?:\\.\\d+)?)*)([a-z\\u4e00-\\u9fa5]*)$");
+            "^(\\d+(?:\\.\\d+)?)([a-z\\u4e00-\\u9fa5]*)$");
 
     /** 单位别名 -> 标准单位 */
     private static final Map<String, String> UNIT_ALIAS = new HashMap<>();
@@ -50,33 +52,88 @@ public class SpecValueNormalizer {
     }
 
     /**
-     * 归一化键：数值 + "|" + 单位（如 200*230|cm）；无法拆分时返回压缩后的原文（如 xl）
+     * 归一化键：数值 + "|" + 单位（如 200*230|cm）；
+     * 多维尺寸按数值升序排列（230x200 与 200x230 等价）；无法拆分时返回压缩后的原文（如 xl）
      */
     public static String normKey(String rawText) {
-        String compact = compact(rawText);
-        Matcher matcher = DIMENSION_PATTERN.matcher(compact);
-        if (matcher.matches()) {
-            String unit = UNIT_ALIAS.get(matcher.group(2));
-            if (matcher.group(2).isEmpty() || unit != null) {
-                String numbers = normalizeNumbers(matcher.group(1));
-                return unit == null || unit.isEmpty() ? numbers : numbers + "|" + unit;
-            }
+        Parsed parsed = parse(rawText);
+        if (parsed == null) {
+            return compact(rawText);
         }
-        return compact;
+        String numbers = String.join("*", parsed.numbers);
+        return parsed.unit.isEmpty() ? numbers : numbers + "|" + parsed.unit;
     }
 
     /**
      * 数值部分（如 200*230），用于缺失单位时的模糊比对；非数值规格返回 null
      */
     public static String numericKey(String rawText) {
-        Matcher matcher = DIMENSION_PATTERN.matcher(compact(rawText));
-        if (matcher.matches()) {
-            return normalizeNumbers(matcher.group(1));
-        }
-        return null;
+        Parsed parsed = parse(rawText);
+        return parsed == null ? null : String.join("*", parsed.numbers);
     }
 
-    /** 全角转半角、大小写统一、乘号统一、去空白 */
+    /**
+     * 从候选标准写法中挑选与原始文本最接近的一个：
+     * 先比归一化键，再比数值键（忽略单位），都不中返回 null
+     */
+    public static String alignToStandard(String rawText, List<String> standardValues) {
+        if (standardValues == null || standardValues.isEmpty()) {
+            return null;
+        }
+        String normKey = normKey(rawText);
+        String numericKey = numericKey(rawText);
+        String numericHit = null;
+        for (String standard : standardValues) {
+            if (standard == null || standard.trim().isEmpty()) {
+                continue;
+            }
+            if (normKey.equals(normKey(standard))) {
+                return standard;
+            }
+            if (numericHit == null && numericKey != null && numericKey.equals(numericKey(standard))) {
+                numericHit = standard;
+            }
+        }
+        return numericHit;
+    }
+
+    /** 解析为「数值列表 + 统一单位」，无法解析返回 null */
+    private static Parsed parse(String rawText) {
+        String compact = compact(rawText);
+        if (compact.isEmpty()) {
+            return null;
+        }
+        // 逐维拆分，分别取数字与单位（支持 200cm*230cm 这种逐维单位）
+        String[] parts = compact.split("\\*");
+        List<String> numbers = new ArrayList<>();
+        String unit = null;
+        boolean unitConflict = false;
+        for (String part : parts) {
+            Matcher matcher = DIMENSION_PATTERN.matcher(part);
+            if (!matcher.matches()) {
+                return null;
+            }
+            numbers.add(normalizeNumber(matcher.group(1)));
+            String partUnit = normalizeUnit(matcher.group(2));
+            if (partUnit.isEmpty()) {
+                continue;
+            }
+            if (unit == null) {
+                unit = partUnit;
+            } else if (!unit.equals(partUnit)) {
+                unitConflict = true;
+            }
+        }
+        if (unitConflict) {
+            // 单位不一致（如 1m*50cm）无法归到同一单位，退回原文匹配
+            return null;
+        }
+        // 多维尺寸与数值升序无关，排序后比较（230x200 等价于 200x230）
+        numbers.sort((a, b) -> new BigDecimal(a).compareTo(new BigDecimal(b)));
+        return new Parsed(numbers, unit == null ? "" : unit);
+    }
+
+    /** 全角转半角、大小写统一、乘号/分隔符统一、去空白 */
     private static String compact(String rawText) {
         if (rawText == null) {
             return "";
@@ -94,25 +151,38 @@ public class SpecValueNormalizer {
                 sb.append(c);
             }
         }
+        String result = sb.toString();
         // 纯字母 x 只作为尺寸分隔符处理（200x230），避免误伤 XL 等规格
-        return sb.toString().replaceAll("(?<=\\d)x(?=\\d)", "*")
+        result = result.replaceAll("(?<=\\d)x(?=\\d)", "*")
                 .replaceAll("(?<=\\d)x(?=[a-z\\u4e00-\\u9fa5]|$)", "*");
+        // 短横/斜杠/下划线夹在数字之间时按尺寸分隔符处理（200-230、200/230）
+        return result.replaceAll("(?<=\\d)[-/](?=\\d)", "*");
+    }
+
+    private static String normalizeUnit(String unit) {
+        if (unit == null || unit.isEmpty()) {
+            return "";
+        }
+        String alias = UNIT_ALIAS.get(unit);
+        return alias == null ? unit : alias;
     }
 
     /** 去掉多余 0：200.0 -> 200 */
-    private static String normalizeNumbers(String numbers) {
-        String[] parts = numbers.split("\\*");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (sb.length() > 0) {
-                sb.append('*');
-            }
-            try {
-                sb.append(new BigDecimal(part).stripTrailingZeros().toPlainString());
-            } catch (NumberFormatException e) {
-                sb.append(part);
-            }
+    private static String normalizeNumber(String number) {
+        try {
+            return new BigDecimal(number).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException e) {
+            return number;
         }
-        return sb.toString();
+    }
+
+    private static class Parsed {
+        private final List<String> numbers;
+        private final String unit;
+
+        private Parsed(List<String> numbers, String unit) {
+            this.numbers = numbers;
+            this.unit = unit;
+        }
     }
 }

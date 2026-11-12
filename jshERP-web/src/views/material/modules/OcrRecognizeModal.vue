@@ -24,8 +24,40 @@
       </div>
     </template>
 
+    <!-- 多图模式：缩略图列表 + 当前图片文字编辑 -->
+    <div v-if="multi" class="ocr-multi">
+      <div class="ocr-multi-grid">
+        <div
+          v-for="(img, index) in multiImages"
+          :key="img.id"
+          class="ocr-multi-item"
+          :class="{ 'is-active': index === activeImageIndex }"
+          @click="activeImageIndex = index">
+          <img v-if="img.preview" :src="img.preview" />
+          <div v-else class="ocr-multi-item-placeholder"><a-icon type="picture" /></div>
+          <span class="ocr-multi-status" :class="{ 'is-done': !!img.rawText }">
+            {{ img.loading ? '识别中' : (img.rawText ? '已识别' : '待识别') }}
+          </span>
+          <a-icon type="close-circle" class="ocr-multi-remove" @click.stop="removeMultiImage(index)" />
+        </div>
+        <div v-if="multiImages.length < maxImages" class="ocr-multi-add">
+          <a @click="triggerCamera"><a-icon type="camera" />拍照</a>
+          <a @click="triggerGallery"><a-icon type="picture" />相册</a>
+        </div>
+      </div>
+      <a-textarea
+        v-if="activeMultiImage"
+        class="ocr-multi-textarea"
+        :value="activeMultiImage.rawText"
+        :rows="5"
+        placeholder="识别结果会显示在这里，可手动修正；同一商品的多张图片请分别上传"
+        @change="onMultiTextChange" />
+      <div v-else class="ocr-multi-empty">添加商品图片后自动识别文字（最多 {{ maxImages }} 张）</div>
+    </div>
+
     <!-- 标准图片识别框：文本编辑 + 图片预览 + 拍照/图片/清除 + 智能识别 -->
     <image-recognize-box
+      v-else
       v-model="ocrFields.rawText"
       :placeholder="ocrLoading ? '正在识别图片文字...' : '识别结果会显示在这里，也可以直接输入或粘贴文字'"
       :image-url="previewImage"
@@ -70,6 +102,9 @@
     <!-- 操作按钮 -->
     <div style="text-align:right;margin-top:8px">
       <a-button size="small" @click="handleCancel" style="margin-right:8px">取消</a-button>
+      <a-button v-if="multi" size="small" type="primary" :disabled="!recognizedMultiCount" @click="handleCancel">
+        确认（{{ recognizedMultiCount }} 张）
+      </a-button>
       <a-button v-if="!extractOnly" size="small" type="primary" :disabled="!hasOcrResult" @click="applyResult">应用</a-button>
     </div>
 
@@ -161,6 +196,15 @@ export default {
       type: Boolean,
       default: false
     },
+    // 多图模式：用于同一商品多个 SKU 的图片批量识别
+    multi: {
+      type: Boolean,
+      default: false
+    },
+    maxImages: {
+      type: Number,
+      default: 9
+    },
     // 弹窗层级：在高层级弹层（如手机端标准弹层）内使用时需显式提高
     zIndex: {
       type: Number,
@@ -177,6 +221,10 @@ export default {
       previewImage: '',
       previewVisible: false,
       specImagePath: '',
+      // 多图模式：每张图的预览、上传路径与识别文字
+      multiImages: [],
+      activeImageIndex: -1,
+      multiSeq: 0,
       cameraVisible: false,
       cameraStream: null,
       propertyConfigVisible: false,
@@ -193,10 +241,18 @@ export default {
     modalWidth() {
       // 手机端改为全屏标准页面，不再保留左右边距
       if (this.isMobileView) return '100%'
+      if (this.multi) return 640
       return this.extractOnly ? 480 : 453
     },
     visibleOcrProps() {
       return this.ocrPropertyList.filter(function(p) { return p.visible })
+    },
+    activeMultiImage() {
+      if (this.activeImageIndex < 0 || this.activeImageIndex >= this.multiImages.length) return null
+      return this.multiImages[this.activeImageIndex]
+    },
+    recognizedMultiCount() {
+      return this.multiImages.filter(function(img) { return !!img.rawText }).length
     }
   },
   mounted() {
@@ -207,8 +263,11 @@ export default {
       if (val) {
         this.loadOcrPropertyList()
         this.resetOcrFields()
+        if (this.multi) {
+          this.resetMultiImages()
+        }
         // 规格图片识别：直接使用传入的图片自动识别文字
-        if (this.extractOnly && this.imageFile) {
+        if (!this.multi && this.extractOnly && this.imageFile) {
           this.startRecognition(this.imageFile)
         }
       } else {
@@ -237,9 +296,22 @@ export default {
     },
     handleCancel() {
       this.closeCamera()
-      // 规格图取字模式：把提取框内加载并上传成功的图片路径带回
+      // 多图模式：把每张图的图片路径与识别文字一起带回，供聚合识别
+      if (this.multi) {
+        var images = this.multiImages
+          .filter(function(img) { return img.imagePath || img.rawText })
+          .map(function(img) {
+            return { imagePath: img.imagePath || '', rawText: img.rawText || '' }
+          })
+        this.$emit('cancel', { images: images })
+        return
+      }
+      // 规格图取字模式：把图片路径与识别出的文字一起带回，供规格值归一化回填
       if (this.extractOnly) {
-        this.$emit('cancel', this.specImagePath || '')
+        this.$emit('cancel', {
+          imagePath: this.specImagePath || '',
+          rawText: this.ocrFields.rawText || ''
+        })
       } else {
         this.$emit('cancel')
       }
@@ -385,6 +457,10 @@ export default {
         }
         var file = new File([blob], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' })
         that.closeCamera()
+        if (that.multi) {
+          that.addMultiImage(file)
+          return
+        }
         if (that.extractOnly) {
           that.uploadSpecImage(file)
         }
@@ -400,12 +476,62 @@ export default {
       // 允许重复选择同一张图片
       input.value = ''
       if (file) {
+        if (this.multi) {
+          this.addMultiImage(file)
+          return
+        }
         // 规格图取字模式：图片在提取框内加载，同时上传供规格值使用
         if (this.extractOnly) {
           this.uploadSpecImage(file)
         }
         this.startRecognition(file)
       }
+    },
+    resetMultiImages() {
+      this.multiImages = []
+      this.activeImageIndex = -1
+    },
+    addMultiImage(file) {
+      if (this.multiImages.length >= this.maxImages) {
+        this.$message.warning('最多添加 ' + this.maxImages + ' 张图片')
+        return
+      }
+      var that = this
+      var item = { id: ++this.multiSeq, preview: '', imagePath: '', rawText: '', loading: true }
+      this.multiImages.push(item)
+      this.activeImageIndex = this.multiImages.length - 1
+      this.fileToBase64(file).then(function(base64) {
+        item.preview = base64
+        that.multiImages = that.multiImages.slice()
+        // 上传图片，保留路径供规格图片与 SKU 图片使用
+        var formData = new FormData()
+        formData.append('file', file)
+        formData.append('biz', 'material')
+        uploadHttp.post('/systemConfig/upload', formData).then(function(res) {
+          if (res && res.code === 200 && res.data) item.imagePath = res.data
+        }).catch(function() {})
+        return recognizeTextFromImage(base64)
+      }).then(function(res) {
+        item.loading = false
+        var rawText = res && res.code === 200 && res.data && typeof res.data.rawText === 'string' ? res.data.rawText : ''
+        if (rawText) item.rawText = rawText
+        else that.$message.warning('第 ' + (that.multiImages.indexOf(item) + 1) + ' 张图片未识别到文字，可手动输入')
+        that.multiImages = that.multiImages.slice()
+      }).catch(function(err) {
+        item.loading = false
+        that.$message.error(that.formatOcrRequestError(err))
+        that.multiImages = that.multiImages.slice()
+      })
+    },
+    removeMultiImage(index) {
+      this.multiImages.splice(index, 1)
+      if (this.activeImageIndex >= this.multiImages.length) {
+        this.activeImageIndex = this.multiImages.length - 1
+      }
+    },
+    onMultiTextChange(e) {
+      if (!this.activeMultiImage) return
+      this.$set(this.activeMultiImage, 'rawText', e.target.value)
     },
     uploadSpecImage(file) {
       var formData = new FormData()
@@ -704,6 +830,93 @@ export default {
 }
 .ocr-mobile-action-last {
   margin-left: 12px;
+}
+/* 多图识别：缩略图网格 + 当前图片文字 */
+.ocr-multi-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ocr-multi-item {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #fafafa;
+}
+.ocr-multi-item.is-active {
+  border-color: #1890ff;
+}
+.ocr-multi-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ocr-multi-item-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #bfbfbf;
+  font-size: 22px;
+}
+.ocr-multi-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 0;
+  font-size: 11px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ocr-multi-status.is-done {
+  background: rgba(22, 163, 74, 0.75);
+}
+.ocr-multi-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 16px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+}
+.ocr-multi-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 88px;
+  height: 88px;
+  border: 1px dashed #d9d9d9;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+}
+.ocr-multi-add a {
+  color: #595959;
+}
+.ocr-multi-textarea {
+  display: block;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 22px;
+  resize: none;
+}
+.ocr-multi-empty {
+  margin-top: 12px;
+  padding: 24px 0;
+  color: #999;
+  text-align: center;
+  border: 1px dashed #e8e8e8;
+  border-radius: 8px;
 }
 </style>
 <style>

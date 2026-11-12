@@ -1,5 +1,5 @@
 <template>
-  <div class="lem-page">
+  <div class="lem-page" :class="{ 'lem-page--embedded': embedded }">
     <!-- 标准顶栏 -->
     <mobile-top-bar @back="handleBack">
       <template #title>
@@ -428,6 +428,13 @@
   export default {
     name: 'LabelEditMobile',
     components: { MobileTopBar, LabelPrintModal },
+    props: {
+      // 以标准弹层方式内嵌在打印页时使用，不再依赖路由跳转
+      embedded: { type: Boolean, default: false },
+      initialType: { type: String, default: '' },
+      initialBusinessType: { type: String, default: '' },
+      initialTemplateId: { type: [String, Number], default: null }
+    },
     data() {
       return {
         templateType: 'label',
@@ -625,7 +632,7 @@
     },
     methods: {
       initFromRoute() {
-        var type = this.$route.query.type || 'label'
+        var type = this.initialType || this.$route.query.type || 'label'
         var cfg = TYPE_CONFIG[type] || TYPE_CONFIG.label
         // 从打印预览页点「编辑」返回时，恢复当时的商品数据和模板，避免编辑页字段全空
         var context = null
@@ -637,7 +644,7 @@
         }
         this.templateType = type
         // 业务标识：来源页优先，其次按类型兜底（商品/发货单/会员）
-        this.businessType = this.$route.query.businessType || (context && context.businessType) ||
+        this.businessType = this.initialBusinessType || this.$route.query.businessType || (context && context.businessType) ||
           (type === 'delivery' ? 'delivery' : (type === 'label' ? 'product' : (type === 'member' ? 'member' : '')))
         this.labelWidth = cfg.defaultWidth
         this.labelHeight = cfg.defaultHeight
@@ -807,7 +814,7 @@
       loadTemplate(cfg, skipApply) {
         var self = this
         if (cfg.storage === 'localTemplates') {
-          var templateId = this.$route.query.templateId
+          var templateId = this.initialTemplateId || this.$route.query.templateId
           return fetchLabelTemplates().then(function(templates) {
             self.templates = templates || []
             if (skipApply) return
@@ -1833,6 +1840,11 @@
         this.$message.info('设置功能开发中')
       },
       handleBack() {
+        // 弹层内嵌时关闭弹层，独立路由页时保持原来的返回行为
+        if (this.embedded) {
+          this.$emit('close')
+          return
+        }
         this.$router.back()
       },
       openSizeEditor() {
@@ -1865,6 +1877,16 @@
   background: #f5f5f5;
   padding-bottom: calc(58px + env(safe-area-inset-bottom));
   box-sizing: border-box;
+}
+
+/* 内嵌到打印弹层时以标准弹层形式覆盖全屏 */
+.lem-page--embedded {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
 }
 
 .lem-title-area {

@@ -147,58 +147,35 @@
       </template>
     </mobile-modal-page>
 
-    <!-- 页面 2：设备列表（蓝顶栏 + 下划线 tab + 打印机列表） -->
-    <div v-if="visible && showPrinterSheet && !wifiAddStep && !printerEditVisible" class="lp-mobile-page">
-      <!-- 顶栏：蓝底 + 白色返回 + 标题 -->
-      <div class="lmp-header lmp-header-blue">
-        <a-icon class="lmp-back" type="arrow-left" @click="showPrinterSheet = false" />
-        <div class="lmp-title-block">
-          <div class="lmp-title">设备列表</div>
-        </div>
-        <span class="lmp-settings placeholder" />
-      </div>
-
-      <!-- 添加打印机卡片（与桌面共用同一套入口逻辑） -->
-      <div class="lps-add-card lmpl-add-card">
-        <div class="lps-add-title">添加打印机</div>
-        <div class="lps-add-btns">
-          <div class="lps-add-btn" @click="startAddNetwork">
-            <a-icon type="global" /><span>网络添加</span>
-          </div>
-          <div class="lps-add-btn" @click="handleAddBluetooth">
-            <a-icon type="bluetooth" /><span>蓝牙添加</span>
-          </div>
-          <div class="lps-add-btn" @click="handleAddLocalPrinter">
-            <a-icon type="desktop" /><span>本地添加</span>
-          </div>
-        </div>
-      </div>
-
+    <!-- 页面 2：设备列表（标准弹层页面） -->
+    <mobile-modal-page
+      :visible="visible && showPrinterSheet && !wifiAddStep && !printerEditVisible"
+      title="设备列表"
+      @close="showPrinterSheet = false">
       <!-- 类型 Tab：下划线风格 -->
       <div class="lmpl-tabs-bar">
         <div
           v-for="t in printerTabList"
           :key="t.key"
           class="lmpl-tab"
-          :class="{ active: printerType === t.key }"
-          @click="switchPrinterType(t.key); if (printerType === t.key) loadPrinters()"
+          :class="{ active: deviceTab === t.key }"
+          @click="switchDeviceTab(t.key)"
         >{{ t.label }}</div>
       </div>
 
-      <!-- 列表区 -->
-      <a-spin :spinning="loadingPrinters || loadingAgents" tip="加载中...">
-        <div class="lmpl-list">
-          <!-- 后端打印机 -->
-          <template v-if="printerType === 'backend'">
-            <!-- 远程打印机：ERP 打印代理设备上的打印机 -->
+      <div class="lmpl-body">
+        <!-- 列表区 -->
+        <a-spin :spinning="loadingPrinters || loadingAgents" tip="加载中...">
+          <div class="lmpl-list">
+          <!-- 云打印：ERP 打印代理设备上的远程打印机 -->
+          <template v-if="deviceTab === 'cloud'">
             <template v-if="agentPrinterItems.length > 0">
-              <div class="lmpl-section-title">远程打印机</div>
               <div
                 v-for="p in agentPrinterItems"
                 :key="p.key"
                 class="lmpl-item"
-                :class="{ active: selectedPrinter === p.key }"
-                @click="selectPrinterAndClose(p.key)"
+                :class="{ active: printerType === 'backend' && selectedPrinter === p.key }"
+                @click="selectCloudAgentPrinter(p)"
               >
                 <div class="lmpl-item-left">
                   <a-icon type="printer" class="lmpl-item-icon" />
@@ -211,67 +188,25 @@
                 </div>
                 <span class="lmpl-status" :class="p.online ? 'online' : 'offline'">{{ p.online ? '在线' : '离线' }}</span>
                 <a class="lmpl-edit" @click.stop="openPrinterEdit(p)">编辑</a>
-                <a-icon v-if="selectedPrinter === p.key" type="check-circle" theme="filled" class="lmpl-check" />
+                <a-icon v-if="printerType === 'backend' && selectedPrinter === p.key" type="check-circle" theme="filled" class="lmpl-check" />
               </div>
             </template>
-            <template v-if="printers.length > 0">
-              <div v-if="agentPrinterItems.length > 0" class="lmpl-section-title">本机打印机</div>
-              <div
-                v-for="p in printers"
-                :key="p.name"
-                class="lmpl-item"
-                :class="{ active: selectedPrinter === p.name }"
-                @click="selectPrinterAndClose(p.name)"
-              >
-                <div class="lmpl-item-left">
-                  <a-icon type="printer" class="lmpl-item-icon" />
-                  <div class="lmpl-item-text">
-                    <div class="lmpl-item-title">{{ p.name }}</div>
-                    <div v-if="p.isDefault" class="lmpl-item-sub">默认打印机</div>
-                  </div>
-                </div>
-                <a-icon v-if="selectedPrinter === p.name" type="check-circle" theme="filled" class="lmpl-check" />
-              </div>
-            </template>
-            <div v-if="printers.length === 0 && agentPrinterItems.length === 0" class="lmpl-empty">
-              <div class="lmpl-empty-icon"><a-icon type="printer" /></div>
-              <div class="lmpl-empty-text">暂无可用打印机</div>
-              <div class="lmpl-empty-sub">请在 ERP「打印代理设备」中添加设备，或在后端电脑安装打印机后刷新</div>
+            <div v-if="agentPrinterItems.length === 0 && !loadingAgents" class="lmpl-empty">
+              <div class="lmpl-empty-icon"><a-icon type="cloud" /></div>
+              <div class="lmpl-empty-text">暂无云打印设备</div>
+              <div class="lmpl-empty-sub">可在「远程打印配置」中添加云打印设备</div>
             </div>
           </template>
 
-          <!-- 蓝牙 -->
-          <template v-else-if="printerType === 'bluetooth'">
-            <template v-if="btDevice">
-              <div class="lmpl-item active" @click="selectPrinterAndClose(btDevice.id)">
-                <div class="lmpl-item-left">
-                  <a-icon type="bluetooth" class="lmpl-item-icon" />
-                  <div class="lmpl-item-text">
-                    <div class="lmpl-item-title">{{ btDevice.name }}</div>
-                    <div class="lmpl-item-sub">已连接</div>
-                  </div>
-                </div>
-                <a-icon type="check-circle" theme="filled" class="lmpl-check" />
-              </div>
-            </template>
-            <div v-else class="lmpl-empty">
-              <div class="lmpl-empty-icon"><a-icon type="bluetooth" /></div>
-              <div class="lmpl-empty-text">未连接过你的设备</div>
-              <a-button type="primary" block :loading="btSearching" class="lmpl-primary-btn" @click="handleBluetoothSearch">
-                {{ btSearching ? '搜索中...' : '搜索蓝牙打印机' }}
-              </a-button>
-            </div>
-          </template>
-
-          <!-- Wi-Fi -->
-          <template v-else-if="printerType === 'wifi'">
+          <!-- 网络打印 -->
+          <template v-else-if="deviceTab === 'network'">
             <template v-if="wifiPrinters.length > 0">
               <div
                 v-for="p in wifiPrinters"
                 :key="p.id"
                 class="lmpl-item"
-                :class="{ active: activeWifiId === p.id }"
-                @click="selectPrinterAndClose(p.id)"
+                :class="{ active: printerType === 'wifi' && activeWifiId === p.id }"
+                @click="selectNetworkPrinter(p)"
               >
                 <div class="lmpl-item-left">
                   <a-icon type="wifi" class="lmpl-item-icon" />
@@ -285,43 +220,103 @@
                   <a-tag v-if="wifiStatus[p.id]" color="green" class="lmpl-tag">已连接</a-tag>
                   <a-tag v-else class="lmpl-tag">未连接</a-tag>
                 </template>
-                <a-icon v-if="selectedPrinter === p.id" type="check-circle" theme="filled" class="lmpl-check" />
+                <a-icon v-if="printerType === 'wifi' && activeWifiId === p.id" type="check-circle" theme="filled" class="lmpl-check" />
               </div>
-              <a-button type="primary" ghost block icon="plus" class="lmpl-add-btn" @click="openAddWifiPrinter">添加 Wi-Fi 打印机</a-button>
             </template>
             <div v-else class="lmpl-empty">
               <div class="lmpl-empty-icon"><a-icon type="wifi" /></div>
-              <div class="lmpl-empty-text">未连接过你的设备</div>
-              <a-button type="primary" block class="lmpl-primary-btn" @click="openAddWifiPrinter">添加打印机</a-button>
+              <div class="lmpl-empty-text">未添加网络打印机</div>
+              <div class="lmpl-empty-sub">点击下方按钮添加局域网 Wi-Fi 打印机</div>
             </div>
           </template>
 
-          <!-- 云打印 -->
-          <template v-else-if="printerType === 'cloud'">
-            <div class="lmpl-item" :class="{ active: discoveredPrinter && discoveredPrinter.type === 'cloud' }" @click="selectCloudPrinter(); showPrinterSheet = false">
-              <div class="lmpl-item-left">
-                <a-icon type="cloud" class="lmpl-item-icon" />
-                <div class="lmpl-item-text">
-                  <div class="lmpl-item-title">系统打印机</div>
-                  <div class="lmpl-item-sub">通过浏览器打印</div>
+          <!-- 本地打印：本机打印机 + 蓝牙打印机 -->
+          <template v-else>
+            <template v-if="printers.length > 0">
+              <div class="lmpl-section-title">本机打印机</div>
+              <div
+                v-for="p in printers"
+                :key="p.name"
+                class="lmpl-item"
+                :class="{ active: printerType === 'backend' && selectedPrinter === p.name }"
+                @click="selectLocalPrinter(p)"
+              >
+                <div class="lmpl-item-left">
+                  <a-icon type="desktop" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ p.name }}</div>
+                    <div v-if="p.isDefault" class="lmpl-item-sub">默认打印机</div>
+                  </div>
                 </div>
+                <a-icon v-if="printerType === 'backend' && selectedPrinter === p.name" type="check-circle" theme="filled" class="lmpl-check" />
               </div>
-              <a-icon v-if="discoveredPrinter && discoveredPrinter.type === 'cloud'" type="check-circle" theme="filled" class="lmpl-check" />
+            </template>
+            <template v-if="btDevice">
+              <div class="lmpl-section-title">蓝牙打印机</div>
+              <div class="lmpl-item" :class="{ active: printerType === 'bluetooth' && selectedPrinter === btDevice.id }" @click="selectBluetoothPrinter">
+                <div class="lmpl-item-left">
+                  <a-icon type="bluetooth" class="lmpl-item-icon" />
+                  <div class="lmpl-item-text">
+                    <div class="lmpl-item-title">{{ btDevice.name }}</div>
+                    <div class="lmpl-item-sub">已连接</div>
+                  </div>
+                </div>
+                <a-icon v-if="printerType === 'bluetooth' && selectedPrinter === btDevice.id" type="check-circle" theme="filled" class="lmpl-check" />
+              </div>
+            </template>
+            <div v-if="printers.length === 0 && !btDevice" class="lmpl-empty">
+              <div class="lmpl-empty-icon"><a-icon type="desktop" /></div>
+              <div class="lmpl-empty-text">暂无本地打印机</div>
+              <div class="lmpl-empty-sub">可添加本机打印机或搜索蓝牙打印机</div>
             </div>
           </template>
-        </div>
-      </a-spin>
-    </div>
+          </div>
+        </a-spin>
 
-    <!-- 页面 3：选择品牌（添加 Wi-Fi 打印机第一步） -->
-    <div v-if="visible && showPrinterSheet && wifiAddStep === 'brand'" class="lp-mobile-page">
-      <div class="lmp-header lmp-header-blue">
-        <a-icon class="lmp-back" type="arrow-left" @click="wifiAddStep = ''" />
-        <div class="lmp-title-block">
-          <div class="lmp-title">选择品牌</div>
+        <!-- 对应类型的打印机添加入口 -->
+        <div class="lmpl-footer-add">
+          <a-button
+            v-if="deviceTab === 'cloud'"
+            type="primary"
+            ghost
+            block
+            icon="plus"
+            class="lmpl-add-btn"
+            @click="openCloudPrinterManage"
+          >添加云打印打印机</a-button>
+          <a-button
+            v-else-if="deviceTab === 'network'"
+            type="primary"
+            ghost
+            block
+            icon="plus"
+            class="lmpl-add-btn"
+            @click="openAddWifiPrinter"
+          >添加网络打印机</a-button>
+          <template v-else>
+            <a-button type="primary" ghost block icon="plus" class="lmpl-add-btn" @click="handleAddLocalPrinter">添加本地打印机</a-button>
+            <a-button
+              v-if="printerCaps.bluetooth"
+              type="primary"
+              ghost
+              block
+              icon="bluetooth"
+              class="lmpl-add-btn"
+              :loading="btSearching"
+              @click="handleAddBluetooth"
+            >添加蓝牙打印机</a-button>
+          </template>
         </div>
-        <span class="lmp-settings placeholder" />
       </div>
+    </mobile-modal-page>
+
+    <!-- 页面 3：选择品牌（标准弹层页面） -->
+    <mobile-modal-page
+      :visible="visible && showPrinterSheet && wifiAddStep === 'brand'"
+      title="选择品牌"
+      show-back
+      @back="wifiAddStep = ''"
+      @close="wifiAddStep = ''">
       <div class="lmb-grid">
         <div v-for="b in wifiBrandList" :key="b.key" class="lmb-cell" @click="selectWifiBrand(b)">
           <div class="lmb-logo" :style="{ color: b.color }">{{ b.en || b.name }}</div>
@@ -360,17 +355,15 @@
           <div class="lmb-sheet-cancel" @click="cmdSheetPrinter = null">取消</div>
         </div>
       </div>
-    </div>
+    </mobile-modal-page>
 
-    <!-- 页面 4：Wi-Fi 打印配置（添加 Wi-Fi 打印机第二步） -->
-    <div v-if="visible && showPrinterSheet && wifiAddStep === 'config'" class="lp-mobile-page">
-      <div class="lmp-header lmp-header-blue">
-        <a-icon class="lmp-back" type="arrow-left" @click="wifiAddStep = 'brand'" />
-        <div class="lmp-title-block">
-          <div class="lmp-title">Wi-Fi 打印配置</div>
-        </div>
-        <span class="lmp-settings placeholder" />
-      </div>
+    <!-- 页面 4：网络打印配置（标准弹层页面） -->
+    <mobile-modal-page
+      :visible="visible && showPrinterSheet && wifiAddStep === 'config'"
+      title="网络打印配置"
+      show-back
+      @back="wifiAddStep = 'brand'"
+      @close="wifiAddStep = ''">
       <div class="lmw-form">
         <div class="lmw-card">
           <div class="lmw-row">
@@ -396,17 +389,19 @@
         </div>
         <div class="lmw-tip">端口默认 9100（原始打印端口），请确保手机与打印机在同一局域网。</div>
       </div>
-      <div class="lmp-footer">
-        <a-button
-          type="primary"
-          block
-          size="large"
-          class="lmp-print-btn"
-          :loading="addWifiTesting"
-          @click="handleSaveWifiPrinter"
-        >保存</a-button>
-      </div>
-    </div>
+      <template #footer>
+        <div class="lmp-footer">
+          <a-button
+            type="primary"
+            block
+            size="large"
+            class="lmp-print-btn"
+            :loading="addWifiTesting"
+            @click="handleSaveWifiPrinter"
+          >保存</a-button>
+        </div>
+      </template>
+    </mobile-modal-page>
 
     <!-- 页面 5：编辑设备（打印机设备 / 打印机 / 品牌与指令集） -->
     <printer-device-config
@@ -622,6 +617,14 @@
       </div>
     </div>
   </a-modal>
+    <!-- 标签编辑：以标准弹层方式内嵌，不再跳转独立路由页 -->
+    <label-edit-mobile
+      v-if="labelEditorVisible"
+      embedded
+      :initial-type="labelEditorType"
+      :initial-business-type="labelEditorBusinessType"
+      :initial-template-id="labelEditorTemplateId"
+      @close="labelEditorVisible = false" />
   </div>
 </template>
 
@@ -641,7 +644,6 @@
     DEFAULT_PRINTER_PORT,
     getPrinterCapabilities,
     searchBluetoothPrinter,
-    getCloudPrinterInfo,
     getWifiPrinters,
     saveWifiPrinter,
     removeWifiPrinter,
@@ -654,10 +656,18 @@
   var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
-    components: { LabelPaper, MobileModalPage, PrinterDeviceConfig },
+    // 异步引入，避免与内嵌在标签编辑页里的本组件形成循环依赖
+    components: { LabelPaper, MobileModalPage, PrinterDeviceConfig, LabelEditMobile: () => import('./LabelEditMobile') },
     data() {
       return {
         visible: false,
+        // 设备列表当前分类：cloud / network / local
+        deviceTab: 'cloud',
+        // 标签编辑弹层
+        labelEditorVisible: false,
+        labelEditorType: '',
+        labelEditorBusinessType: '',
+        labelEditorTemplateId: null,
         record: {},
         sku: {},
         categoryTree: [],
@@ -745,17 +755,13 @@
       }
     },
     computed: {
-      // 打印机类型标签列表
+      // 打印机类型标签列表（三分类：云 / 网络 / 本地）
       printerTabList() {
-        var caps = this.printerCaps
         return [
-          { key: 'backend', label: '后端', icon: 'desktop' },
-          { key: 'bluetooth', label: '蓝牙', icon: 'bluetooth' },
-          { key: 'wifi', label: 'Wi-Fi', icon: 'wifi' },
-          { key: 'cloud', label: '云', icon: 'cloud' }
-        ].filter(function(t) {
-          return t.key === 'backend' || caps[t.key]
-        })
+          { key: 'cloud', label: '云打印' },
+          { key: 'network', label: '网络打印' },
+          { key: 'local', label: '本地打印' }
+        ]
       },
       // 远程打印机（打印代理设备下的打印机，扁平化成可选卡片）
       agentPrinterItems() {
@@ -1119,6 +1125,8 @@
         var opts = options || {}
         this.directEntry = opts.directEntry !== false
         this.printTitle = opts.title || ''
+        // 重新打开打印页时关闭可能残留的编辑弹层
+        this.labelEditorVisible = false
         this.type = type || 'delivery'
         this.record = {}
         this.sku = {}
@@ -1154,6 +1162,10 @@
           else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
           else this.selectedPrinter = undefined
         }
+        // 恢复上次设备分类
+        this.deviceTab = this.printerType === 'wifi'
+          ? 'network'
+          : (this.printerType === 'backend' && this.selectedPrinter && this.selectedPrinter.indexOf('agent:') === 0 ? 'cloud' : (this.printerType === 'cloud' ? 'cloud' : 'local'))
         this.loadPrinters()
         this.loadWifiPrinters()
         if (this.isMobile) {
@@ -1321,8 +1333,47 @@
       },
       // 手机端：打开打印机选择弹层
       showMobilePrinterSheet() {
+        // 根据当前选中打印机定位到对应分类
+        this.deviceTab = this.printerType === 'wifi'
+          ? 'network'
+          : (this.printerType === 'bluetooth'
+            ? 'local'
+            : (this.printerType === 'backend' && this.selectedPrinter && this.selectedPrinter.indexOf('agent:') === 0 ? 'cloud' : (this.printerType === 'cloud' ? 'cloud' : 'local')))
         this.loadPrinters()
+        if (this.deviceTab === 'network') this.loadWifiPrinters()
         this.showPrinterSheet = true
+      },
+      // 手机端：切换设备分类
+      switchDeviceTab(tab) {
+        this.deviceTab = tab
+        if (tab === 'network') this.loadWifiPrinters()
+        if (tab === 'cloud') this.loadAgentPrinters()
+      },
+      // 云打印：选中 ERP 打印代理设备下的远程打印机
+      selectCloudAgentPrinter(p) {
+        this.printerType = 'backend'
+        this.selectPrinterAndClose(p.key)
+      },
+      // 网络打印：选中 Wi-Fi 打印机
+      selectNetworkPrinter(p) {
+        this.printerType = 'wifi'
+        this.selectPrinterAndClose(p.id)
+      },
+      // 本地打印：选中本机打印机
+      selectLocalPrinter(p) {
+        this.printerType = 'backend'
+        this.selectPrinterAndClose(p.name)
+      },
+      // 本地打印：选中已连接的蓝牙打印机
+      selectBluetoothPrinter() {
+        this.printerType = 'bluetooth'
+        this.selectPrinterAndClose(this.btDevice ? this.btDevice.id : undefined)
+      },
+      // 云打印：跳转到远程打印配置页添加云打印设备
+      openCloudPrinterManage() {
+        this.showPrinterSheet = false
+        this.visible = false
+        this.$router.push('/system/remote-print')
       },
       // 手机端：选中打印机后关闭弹层
       selectPrinterAndClose(name) {
@@ -1455,14 +1506,6 @@
       handlePrinterSaved() {
         this.printerEditVisible = false
         this.loadAgentPrinters()
-      },
-      // 切换打印机类型
-      switchPrinterType(type) {
-        this.printerType = type
-        this.selectedPrinter = undefined
-        this.discoveredPrinter = null
-        if (type === 'backend') this.loadPrinters()
-        if (type === 'wifi') this.loadWifiPrinters()
       },
       // 蓝牙打印机搜索
       handleBluetoothSearch() {
@@ -1607,11 +1650,6 @@
       selectDiscoveredPrinter(printer) {
         this.discoveredPrinter = printer
         this.selectedPrinter = printer.id
-      },
-      // 选择云打印机
-      selectCloudPrinter() {
-        var cloud = getCloudPrinterInfo()
-        this.selectDiscoveredPrinter(cloud)
       },
       handleCancel() {
         this.printerEditVisible = false
@@ -2009,8 +2047,11 @@
           if (!isAddress) {
             query.businessType = this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product')
           }
-          if (payload.templateId) query.templateId = payload.templateId
-          this.$router.push({ path: '/label/edit-mobile', query: query })
+          // 改为标准弹层内嵌编辑，保持当前页面不跳转
+          this.labelEditorType = query.type
+          this.labelEditorBusinessType = query.businessType || ''
+          this.labelEditorTemplateId = payload.templateId || null
+          this.labelEditorVisible = true
           return
         }
         setTimeout(() => this.$emit('edit', payload), 200)
@@ -3192,6 +3233,19 @@
     border-bottom: 1px solid #eee;
     padding: 0 4px;
   }
+  /* 弹层内容区：分类 tab 固定，列表与添加入口可滚动 */
+  .lmpl-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .lmpl-footer-add {
+    padding: 12px 12px calc(14px + env(safe-area-inset-bottom));
+  }
+  .lmpl-footer-add .lmpl-add-btn + .lmpl-add-btn {
+    margin-top: 8px;
+  }
   .lmpl-tab {
     flex: 1;
     text-align: center;
@@ -3218,8 +3272,6 @@
     border-radius: 2px;
   }
   .lmpl-list {
-    flex: 1;
-    overflow-y: auto;
     padding: 10px;
   }
   .lmpl-item {

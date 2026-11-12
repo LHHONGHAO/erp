@@ -57,3 +57,29 @@ CREATE TABLE IF NOT EXISTS `jsh_spec_learn_log` (
   PRIMARY KEY (`id`),
   KEY `idx_spec_learn_time` (`tenant_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规格值学习日志';
+
+-- =====================================================
+-- 4. P0 结构修正（2026-11）
+-- 目的：修复唯一键失效、别名跨规格名串味、学习日志缺少场景信息
+-- 说明：本段为一次性 ALTER，重复执行会报「列/索引已存在」，属正常
+-- =====================================================
+
+-- 4.1 租户ID补 0：MySQL 中 NULL 不参与唯一约束，会导致样本重复
+UPDATE `jsh_spec_value_sample` SET `tenant_id` = 0 WHERE `tenant_id` IS NULL;
+ALTER TABLE `jsh_spec_value_sample`
+  MODIFY COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 0 COMMENT '租户ID';
+
+-- 4.2 别名按规格名隔离：同一个 norm_key 在不同规格名下可能含义不同
+UPDATE `jsh_spec_value_alias` SET `tenant_id` = 0 WHERE `tenant_id` IS NULL;
+ALTER TABLE `jsh_spec_value_alias`
+  MODIFY COLUMN `tenant_id` BIGINT NOT NULL DEFAULT 0 COMMENT '租户ID',
+  ADD COLUMN `attribute_id` BIGINT NOT NULL DEFAULT 0 COMMENT '规格名ID（jsh_material_attribute.id），0表示不限规格名' AFTER `sample_id`,
+  DROP INDEX `uk_spec_alias_norm`,
+  ADD UNIQUE KEY `uk_spec_alias_norm` (`tenant_id`, `attribute_id`, `norm_key`);
+
+-- 4.3 学习日志补充场景与采纳结果，便于统计纠错率
+ALTER TABLE `jsh_spec_learn_log`
+  ADD COLUMN `scene` VARCHAR(16) DEFAULT 'ocr_spec' COMMENT '场景：ocr_spec 规格识别、material_attr 商品属性、sku_spec SKU规格' AFTER `attr_id`,
+  ADD COLUMN `accepted` VARCHAR(1) DEFAULT '0' COMMENT '是否被采纳：0未采纳 1采纳' AFTER `corrected_value`,
+  ADD COLUMN `source_image_idx` INT DEFAULT NULL COMMENT '来源图片序号，多图聚合时使用' AFTER `material_id`;
+

@@ -10,7 +10,7 @@ public interface SpecValueAliasMapper {
 
     int insertSelective(SpecValueAlias record);
 
-    SpecValueAlias selectByNormKey(@Param("normKey") String normKey);
+    SpecValueAlias selectByNormKey(@Param("normKey") String normKey, @Param("attributeId") Long attributeId);
 
     int increaseHitCount(@Param("id") Long id);
 }

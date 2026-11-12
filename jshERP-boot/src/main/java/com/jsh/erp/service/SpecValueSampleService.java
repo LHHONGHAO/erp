@@ -53,21 +53,27 @@ public class SpecValueSampleService {
         if (normKey.isEmpty()) {
             return result;
         }
+        Long tenantId = currentTenantId();
         try {
-            SpecValueSample sample = specValueSampleMapper.selectByNormKey(normKey, attributeId);
+            SpecValueSample sample = specValueSampleMapper.selectByNormKey(normKey, attributeId, categoryId, tenantId);
             String matchType = "exact";
             SpecValueAlias alias = null;
             if (sample == null) {
-                alias = specValueAliasMapper.selectByNormKey(normKey, attributeId);
+                alias = specValueAliasMapper.selectByNormKey(normKey, attributeId, categoryId, tenantId);
                 if (alias != null) {
                     sample = specValueSampleMapper.selectByPrimaryKey(alias.getSampleId());
                     matchType = "alias";
+                    if (sample != null && categoryId != null && sample.getCategoryId() != null
+                            && sample.getCategoryId() != 0L && !categoryId.equals(sample.getCategoryId())) {
+                        sample = null;
+                        alias = null;
+                    }
                 }
             }
             if (sample == null) {
                 String numericKey = SpecValueNormalizer.numericKey(rawText);
                 if (StringUtil.isNotEmpty(numericKey)) {
-                    sample = specValueSampleMapper.selectByNumericKey(numericKey, attributeId);
+                    sample = specValueSampleMapper.selectByNumericKey(numericKey, attributeId, categoryId, tenantId);
                     matchType = "numeric";
                 }
             }
@@ -211,10 +217,12 @@ public class SpecValueSampleService {
         }
         Long attrId = attributeId == null ? 0L : attributeId;
         Long catId = categoryId == null ? 0L : categoryId;
+        Long tenantId = currentTenantId();
 
-        SpecValueSample sample = specValueSampleMapper.selectByNormKey(normKey, attrId);
+        SpecValueSample sample = specValueSampleMapper.selectByNormKey(normKey, attrId, catId, tenantId);
         if (sample == null) {
             sample = new SpecValueSample();
+            sample.setTenantId(tenantId == null ? 0L : tenantId);
             sample.setCategoryId(catId);
             sample.setAttributeId(attrId);
             sample.setCanonicalValue(canonical);
@@ -227,7 +235,7 @@ public class SpecValueSampleService {
             try {
                 specValueSampleMapper.insertSelective(sample);
             } catch (DuplicateKeyException e) {
-                sample = specValueSampleMapper.selectByNormKey(normKey, attrId);
+                sample = specValueSampleMapper.selectByNormKey(normKey, attrId, catId, tenantId);
             }
         } else {
             SpecValueSample update = new SpecValueSample();
@@ -240,10 +248,12 @@ public class SpecValueSampleService {
         // 原始写法与标准写法归一化后不同，才记别名
         String rawNormKey = SpecValueNormalizer.normKey(raw);
         if (sample != null && StringUtil.isNotEmpty(rawNormKey) && !rawNormKey.equals(sample.getNormKey())) {
-            SpecValueAlias alias = specValueAliasMapper.selectByNormKey(rawNormKey, attrId);
+            SpecValueAlias alias = specValueAliasMapper.selectByNormKey(rawNormKey, attrId, catId, tenantId);
             if (alias == null) {
                 alias = new SpecValueAlias();
+                alias.setTenantId(tenantId == null ? 0L : tenantId);
                 alias.setSampleId(sample.getId());
+                alias.setCategoryId(catId);
                 alias.setAttributeId(attrId);
                 alias.setRawText(raw);
                 alias.setNormKey(rawNormKey);
@@ -315,6 +325,14 @@ public class SpecValueSampleService {
             return userService.getCurrentUser().getId();
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private Long currentTenantId() {
+        try {
+            return userService.getCurrentUser().getTenantId();
+        } catch (Exception e) {
+            return 0L;
         }
     }
 }

@@ -27,6 +27,7 @@
           useGeneratedKeys="true" keyProperty="id">
     insert into jsh_spec_value_sample
     <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="tenantId != null">tenant_id,</if>
       <if test="categoryId != null">category_id,</if>
       <if test="attributeId != null">attribute_id,</if>
       <if test="canonicalValue != null">canonical_value,</if>
@@ -39,6 +40,7 @@
       <if test="deleteFlag != null">delete_flag,</if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="tenantId != null">#{tenantId,jdbcType=BIGINT},</if>
       <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
       <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
       <if test="canonicalValue != null">#{canonicalValue,jdbcType=VARCHAR},</if>
@@ -81,6 +83,10 @@
     where norm_key = #{normKey,jdbcType=VARCHAR}
       and delete_flag &lt;&gt; '1'
       and status = '0'
+      and IFNULL(tenant_id,0) = IFNULL(#{tenantId,jdbcType=BIGINT},0)
+      <if test="categoryId != null">
+        and (category_id = #{categoryId,jdbcType=BIGINT} or category_id = 0)
+      </if>
       <if test="attributeId != null">
         and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
       </if>
@@ -95,6 +101,10 @@
            or norm_key like concat(#{numericKey,jdbcType=VARCHAR}, '|%'))
       and delete_flag &lt;&gt; '1'
       and status = '0'
+      and IFNULL(tenant_id,0) = IFNULL(#{tenantId,jdbcType=BIGINT},0)
+      <if test="categoryId != null">
+        and (category_id = #{categoryId,jdbcType=BIGINT} or category_id = 0)
+      </if>
       <if test="attributeId != null">
         and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
       </if>

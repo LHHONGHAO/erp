@@ -9,6 +9,7 @@ public class SpecValueAlias {
     private Long id;
     private Long tenantId;
     private Long sampleId;
+    private Long categoryId;
     private Long attributeId;
     private String rawText;
     private String normKey;
@@ -24,6 +25,9 @@ public class SpecValueAlias {
 
     public Long getSampleId() { return sampleId; }
     public void setSampleId(Long sampleId) { this.sampleId = sampleId; }
+
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
 
     public Long getAttributeId() { return attributeId; }
     public void setAttributeId(Long attributeId) { this.attributeId = attributeId; }

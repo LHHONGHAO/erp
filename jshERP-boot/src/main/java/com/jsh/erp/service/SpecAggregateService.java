@@ -5,6 +5,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.utils.OcrUtil;
 import com.jsh.erp.utils.SpecValueNormalizer;
 import com.jsh.erp.utils.StringUtil;
+import com.jsh.erp.datasource.mappers.MaterialMapperEx;
+import com.jsh.erp.datasource.entities.User;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -17,12 +19,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * 多图商品识别聚合：按「关键词优先 + 一致性判定」把多张图片的文字归纳为一个商品（SPU）及其 SKU。
- * 纯计算，不落库。
+ * 汇总 OCR 结果并读取同类别历史属性分布，不在识别阶段写入商品数据。
  */
 @Service
 public class SpecAggregateService {
@@ -58,6 +61,12 @@ public class SpecAggregateService {
     @Resource
     private SpecValueSampleService specValueSampleService;
 
+    @Resource
+    private MaterialMapperEx materialMapperEx;
+
+    @Resource
+    private UserService userService;
+
     /**
      * 聚合多图识别结果
      *
@@ -79,6 +88,13 @@ public class SpecAggregateService {
      */
     public JSONObject aggregate(JSONArray images, Long categoryId, JSONArray dimensions, JSONObject labelAliases) {
         JSONObject result = new JSONObject();
+        JSONObject profiles = propertyProfiles(categoryId);
+        Set<String> stableSingleFields = new HashSet<>();
+        for (String field : profiles.keySet()) {
+            JSONObject profile = profiles.getJSONObject(field);
+            if (profile != null && profile.getBooleanValue("stableSingle")) stableSingleFields.add(field);
+        }
+        result.put("propertyProfiles", profiles);
         List<JSONObject> dims = normalizeDimensions(dimensions);
         Map<String, String> aliasMap = new LinkedHashMap<>();
         if (labelAliases != null) {
@@ -123,6 +139,11 @@ public class SpecAggregateService {
                     }
                     String field = resolvePropField(label, aliasMap, categoryId);
                     if (field != null) {
+                        // 尺寸是规格值；当类别已配置尺寸/规格维度时，即使 OCR 或已学习别名把
+                        // 该行误标为颜色，也不能把尺寸同时写进商品基础颜色属性。
+                        if ("color".equals(field) && hasSizeDimension(dims) && !extractSizes(value).isEmpty()) {
+                            continue;
+                        }
                         data.fieldValues.put(field, value);
                     } else if (!"standard".equals(label) && !"model".equals(label) && !"color".equals(label)
                             && !"barCode".equals(label) && !"mnemonic".equals(label)
@@ -168,7 +189,7 @@ public class SpecAggregateService {
                 }
             }
             commonPropsRaw.put(field, chosen);
-            commonProps.put(field, normalizeBaseValue(field, chosen, categoryId));
+            commonProps.put(field, normalizeBaseValue(field, chosen, categoryId, stableSingleFields));
             if (counts.size() > 1) {
                 spuConsistent = false;
                 JSONObject conflict = new JSONObject();
@@ -497,6 +518,14 @@ public class SpecAggregateService {
         if (name == null) return false;
         String value = name.trim();
         return value.contains("尺寸") || value.contains("规格") || value.contains("大小") || value.contains("尺码");
+    }
+
+    private boolean hasSizeDimension(List<JSONObject> dimensions) {
+        if (dimensions == null) return false;
+        for (JSONObject dimension : dimensions) {
+            if (dimension != null && isSizeDimension(dimension.getString("name"))) return true;
+        }
+        return false;
     }
 
     /** 子规格标签命中：把每张标签上的「子规格：值」归一到类别标准写法 */
@@ -975,12 +1004,12 @@ public class SpecAggregateService {
     }
 
     /** 基础属性值归一化：命中样本库（attributeId = -1）时回填标准写法 */
-    private String normalizeBaseValue(String field, String value, Long categoryId) {
-        if (!StringUtil.isNotEmpty(value)) {
+    private String normalizeBaseValue(String field, String value, Long categoryId, Set<String> stableSingleFields) {
+        if (!StringUtil.isNotEmpty(value) || stableSingleFields == null || !stableSingleFields.contains(field)) {
             return value;
         }
         try {
-            JSONObject learned = specValueSampleService.match(value, categoryId, -1L);
+            JSONObject learned = specValueSampleService.match(value, categoryId, baseFieldSampleId(field));
             if (learned.getBooleanValue("matched")) {
                 String canonical = learned.getString("canonicalValue");
                 if (StringUtil.isNotEmpty(canonical) && !isPropertyField(canonical)) {
@@ -991,6 +1020,87 @@ public class SpecAggregateService {
             // 样本库不可用时保留原值
         }
         return value;
+    }
+
+    /** Negative IDs below -100 isolate learned values by base-property field; -2 remains label-alias learning. */
+    private Long baseFieldSampleId(String field) {
+        if ("name".equals(field)) return -101L;
+        if ("brand".equals(field)) return -102L;
+        if ("unit".equals(field)) return -103L;
+        if ("mfrs".equals(field)) return -104L;
+        if ("fabric".equals(field)) return -105L;
+        if ("safetyCategory".equals(field)) return -106L;
+        if ("executiveStandard".equals(field)) return -107L;
+        if ("grade".equals(field)) return -108L;
+        if ("inspection".equals(field)) return -109L;
+        if ("filler".equals(field)) return -110L;
+        if ("weight".equals(field)) return -111L;
+        if ("color".equals(field)) return -112L;
+        if ("standard".equals(field)) return -113L;
+        if ("model".equals(field)) return -114L;
+        if ("otherField1".equals(field)) return -115L;
+        if ("otherField2".equals(field)) return -116L;
+        if ("otherField3".equals(field)) return -117L;
+        if ("otherField4".equals(field)) return -118L;
+        if ("otherField5".equals(field)) return -119L;
+        if ("otherField6".equals(field)) return -120L;
+        if ("otherField7".equals(field)) return -121L;
+        return -1L;
+    }
+
+    /** Only a category property with enough history and one normalized value is eligible for auto value normalization/completion. */
+    private JSONObject propertyProfiles(Long categoryId) {
+        try {
+            User user = userService.getCurrentUser();
+            JSONObject result = new JSONObject();
+            result.putAll(propertyProfiles(categoryId, user == null ? null : user.getTenantId()));
+            return result;
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    private Map<String, JSONObject> propertyProfiles(Long categoryId, Long tenantId) {
+        Map<String, JSONObject> profiles = new LinkedHashMap<>();
+        if (categoryId == null) return profiles;
+        Map<String, Integer> totals = new LinkedHashMap<>();
+        Map<String, Set<String>> normalizedValues = new LinkedHashMap<>();
+        Map<String, String> examples = new LinkedHashMap<>();
+        accumulatePropertyStats(materialMapperEx.selectCategoryPropertyValueStats(categoryId, tenantId), "", totals, normalizedValues, examples);
+        try {
+            accumulatePropertyStats(materialMapperEx.selectCategorySkuValueStats(categoryId, tenantId), "spec:", totals, normalizedValues, examples);
+        } catch (Exception e) {
+            // Older database engines may not support JSON_TABLE; base property profiles still work.
+        }
+        for (String field : totals.keySet()) {
+            JSONObject profile = new JSONObject();
+            int samples = totals.get(field);
+            int distinct = normalizedValues.get(field).size();
+            boolean stableSingle = samples >= 5 && distinct == 1;
+            profile.put("field", field);
+            profile.put("sampleCount", samples);
+            profile.put("distinctValueCount", distinct);
+            profile.put("stableSingle", stableSingle);
+            profile.put("modeValue", stableSingle ? examples.get(field) : null);
+            profile.put("modeRatio", stableSingle ? 1D : 0D);
+            profiles.put(field, profile);
+        }
+        return profiles;
+    }
+
+    private void accumulatePropertyStats(List<Map<String, Object>> rows, String prefix,
+                                         Map<String, Integer> totals, Map<String, Set<String>> normalizedValues,
+                                         Map<String, String> examples) {
+        if (rows == null) return;
+        for (Map<String, Object> row : rows) {
+            String field = prefix + String.valueOf(row.get("fieldName"));
+            String value = String.valueOf(row.get("valueText"));
+            int count = ((Number) row.get("valueCount")).intValue();
+            totals.put(field, totals.getOrDefault(field, 0) + count);
+            String normalized = SpecValueNormalizer.normKey(value);
+            normalizedValues.computeIfAbsent(field, key -> new HashSet<>()).add(normalized);
+            examples.putIfAbsent(field, value);
+        }
     }
 
     private static class ImageData {

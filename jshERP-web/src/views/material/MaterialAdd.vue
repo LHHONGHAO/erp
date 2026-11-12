@@ -353,10 +353,26 @@
       },
       // 保存成功后给出提示并重置为空白表单，便于连续录入
       onSaved () {
-        this.$message.success('保存成功')
+        if (this.mode === 'ai') {
+          // AI 商品页保存成功：不入商品添加页，清空已识别图片与类别，停留在 AI 添加页继续录入
+          this.aiImages = []
+          this.gateCategoryId = undefined
+          this.aiCategoryChosen = false
+          this.registerHeaderActions()
+        }
       },
-      // 表单关闭（取消或保存成功后）回到类别选择，便于按类别连续录入
+      // 表单关闭（取消或重置）：AI 添加页关闭后仍停留在当前 AI 添加页，不再回到新增入口
       onClose () {
+        if (this.mode === 'ai') {
+          this.aiImages = []
+          this.gateCategoryId = undefined
+          this.registerHeaderActions()
+          this.$nextTick(() => {
+            const form = this.$refs.form
+            if (form && typeof form.add === 'function') form.add()
+          })
+          return
+        }
         this.returnToCategoryGate()
       },
       // 回到新增入口（AI添加 / 人工添加）

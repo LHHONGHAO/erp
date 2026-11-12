@@ -18,6 +18,14 @@ import java.util.Map;
  */
 public interface MaterialMapperEx {
 
+    /** Category-scoped value counts for fixed material properties, used to detect stable fields. */
+    List<Map<String, Object>> selectCategoryPropertyValueStats(@Param("categoryId") Long categoryId,
+                                                               @Param("tenantId") Long tenantId);
+
+    /** Category-scoped SKU dimension value counts. */
+    List<Map<String, Object>> selectCategorySkuValueStats(@Param("categoryId") Long categoryId,
+                                                         @Param("tenantId") Long tenantId);
+
     List<MaterialVo4Unit> selectByConditionMaterial(
             @Param("materialParam") String materialParam,
             @Param("standard") String standard,

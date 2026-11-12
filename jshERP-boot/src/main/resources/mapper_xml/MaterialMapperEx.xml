@@ -1,6 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.jsh.erp.datasource.mappers.MaterialMapperEx">
+    <select id="selectCategoryPropertyValueStats" resultType="map">
+        SELECT field_name AS fieldName, value_text AS valueText, COUNT(*) AS valueCount
+        FROM (
+            SELECT 'name' AS field_name, NULLIF(TRIM(name), '') AS value_text FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'brand', NULLIF(TRIM(brand), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'unit', NULLIF(TRIM(unit), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'mfrs', NULLIF(TRIM(mfrs), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'fabric', NULLIF(TRIM(fabric), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'safetyCategory', NULLIF(TRIM(safety_category), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'executiveStandard', NULLIF(TRIM(executive_standard), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'grade', NULLIF(TRIM(grade), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'inspection', NULLIF(TRIM(inspection), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'filler', NULLIF(TRIM(filler), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'color', NULLIF(TRIM(color), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'standard', NULLIF(TRIM(standard), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'model', NULLIF(TRIM(model), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField1', NULLIF(TRIM(other_field1), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField2', NULLIF(TRIM(other_field2), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField3', NULLIF(TRIM(other_field3), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField4', NULLIF(TRIM(other_field4), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField5', NULLIF(TRIM(other_field5), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField6', NULLIF(TRIM(other_field6), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+            UNION ALL SELECT 'otherField7', NULLIF(TRIM(other_field7), '') FROM jsh_material WHERE category_id = #{categoryId} AND IFNULL(delete_flag,'0') != '1' AND IFNULL(tenant_id,0) = IFNULL(#{tenantId},0)
+        ) values_by_field
+        WHERE value_text IS NOT NULL
+        GROUP BY field_name, value_text
+    </select>
+    <select id="selectCategorySkuValueStats" resultType="map">
+        SELECT jt.attributeName AS fieldName, jt.valueText AS valueText,
+               COUNT(*) AS valueCount
+        FROM sku s
+        INNER JOIN jsh_material m ON m.id = s.spu_id
+        JOIN JSON_TABLE(s.spec_json, '$[*]' COLUMNS (
+            attributeName VARCHAR(100) PATH '$.name',
+            valueText VARCHAR(255) PATH '$.value'
+        )) jt
+        WHERE m.category_id = #{categoryId}
+          AND IFNULL(m.delete_flag,'0') != '1'
+          AND s.deleted_at IS NULL
+          AND IFNULL(m.tenant_id,0) = IFNULL(#{tenantId},0)
+          AND IFNULL(s.tenant_id,0) = IFNULL(#{tenantId},0)
+          AND jt.valueText IS NOT NULL AND TRIM(jt.valueText) != ''
+        GROUP BY jt.attributeName, jt.valueText
+    </select>
     <resultMap extends="com.jsh.erp.datasource.mappers.MaterialMapper.BaseResultMap" id="ResultMapList" type="com.jsh.erp.datasource.entities.MaterialVo4Unit">
         <result column="unitName" jdbcType="VARCHAR" property="unitName" />
         <result column="ratio" jdbcType="DECIMAL" property="ratio" />

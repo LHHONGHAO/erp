@@ -264,9 +264,14 @@ function Launch-Service {
         Write-Host "    请检查日志: $Log" -ForegroundColor DarkGray
     }
 
-    $lanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
-        Select-Object -First 1 -ExpandProperty IPAddress)
+    # 取默认路由所在网卡的 IPv4，避免误取 WSL/Hyper-V 虚拟网卡地址
+    $lanIp = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Sort-Object RouteMetric |
+        ForEach-Object {
+            Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+                Select-Object -First 1 -ExpandProperty IPAddress
+        } | Select-Object -First 1)
 
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Green

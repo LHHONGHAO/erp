@@ -414,7 +414,7 @@
         </a-tabs>
       </a-form>
     </a-spin>
-    <a-modal :title="'基础属性设置'" :visible="propertyConfigVisible" :width="500" @ok="savePropertyConfig" @cancel="propertyConfigVisible=false">
+    <a-modal :title="'基础属性设置'" :visible="propertyConfigVisible" :width="500" :zIndex="1200" @ok="savePropertyConfig" @cancel="propertyConfigVisible=false">
       <!-- 每行列数 -->
       <div style="margin-bottom: 16px;">
         <span style="margin-right: 12px;">每行列数：</span>
@@ -462,12 +462,13 @@
       @cancel="handleMultiSpecImageOcrClose" />
     <!-- 多图识别聚合预览：确认后再回填规格值与 SKU -->
     <a-modal
-      title="识别结果确认"
+      :title="aggregateModalTitle"
       :visible="specAggregateVisible"
-      :width="isMobileView ? '96%' : 760"
+      :width="isMobileView ? '100%' : 760"
       :zIndex="1150"
       :footer="null"
       :maskClosable="false"
+      :wrapClassName="isMobileView ? 'agg-page-modal' : ''"
       @cancel="specAggregateVisible = false">
       <a-spin :spinning="specAggregateLoading">
         <template v-if="specAggregateResult">
@@ -480,38 +481,57 @@
               {{ conflict.label }}：{{ (conflict.values || []).join(' / ') }} → 采用「{{ conflict.chosen }}」
             </div>
           </div>
-          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">商品信息</a-divider>
+          <div v-if="allOcrTags.length" class="agg-ocr-tags">
+            <a-tag v-for="(tag, tIndex) in allOcrTags" :key="'ocr-' + tIndex" @click="fillFocusedInput(tag)">{{ tag }}</a-tag>
+          </div>
+          <div class="agg-section-head">
+            <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px;flex:1">商品基础属性</a-divider>
+            <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
+          </div>
           <div class="agg-props">
-            <span v-for="(value, field) in specAggregateResult.commonProps" :key="field" class="agg-prop">
-              {{ aggFieldLabel(field) }}：{{ value }}
-            </span>
-          </div>
-          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">规格值</a-divider>
-          <div v-for="dim in specAggregateResult.dimensions" :key="dim.name" class="agg-dim">
-            <div class="agg-dim-name">
-              {{ dim.name || '未命名规格' }}
-              <span v-if="!dim.detected" class="agg-dim-empty">（未识别）</span>
-            </div>
-            <div class="agg-values">
-              <span
-                v-for="(val, index) in dim.values"
-                :key="index"
-                class="agg-value"
-                :class="{ 'is-warn': val.needConfirm }">
-                {{ val.value }}
-                <a-icon v-if="val.imagePath" type="picture" style="margin-left:4px" />
-                <span v-if="aggSubLabel(val)" class="agg-sub-label">（{{ aggSubLabel(val) }}）</span>
-              </span>
-              <span v-if="!dim.values || !dim.values.length" class="agg-dim-empty">无</span>
+            <div v-for="prop in aggBindableProps" :key="prop.field" class="agg-prop-row">
+              <span class="agg-prop-name">{{ prop.label }}：</span>
+              <a-input v-model="specAggregateResult.commonProps[prop.field]" size="small"
+                       @focus="setAggFocus({ type: 'base', field: prop.field })" />
+              <a-icon type="close" class="agg-row-close" @click="clearBaseProp(prop.field)" />
             </div>
           </div>
-          <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px">SKU（{{ (specAggregateResult.skuRows || []).length }} 行）</a-divider>
-          <a-table
-            size="small"
-            :columns="aggSkuColumns"
-            :dataSource="specAggregateResult.skuRows || []"
-            :pagination="false"
-            rowKey="sku" />
+          <div v-if="aggUnmatchedProps.length" class="agg-unmatched">
+            <div class="agg-unmatched-title">识别到的其他属性（已自动归一化，点 × 撤销并清除对应输入）</div>
+            <div v-for="(prop, uIndex) in aggUnmatchedProps" :key="'um-' + uIndex" class="agg-unmatched-row">
+              <span class="agg-unmatched-label">{{ prop.label }}</span>
+              <span class="agg-unmatched-value">{{ prop.value }}</span>
+              <span v-if="prop.targetLabel" class="agg-unmatched-target">→ {{ prop.targetLabel }}</span>
+              <a-icon type="close" class="agg-unmatched-close" @click="rejectUnmatchedProp(prop)" />
+            </div>
+          </div>
+          <template v-for="group in specImageGroups">
+            <a-divider :key="'spec-' + group.index" orientation="left" style="margin:12px 0 8px;font-size:13px">规格值{{ group.index }}</a-divider>
+            <div v-for="(dim, dIndex) in group.dimensions" :key="group.index + '-' + dim.name" class="agg-dim">
+              <div class="agg-dim-name">
+                <span class="agg-dim-title">规格名：</span>
+                <span>{{ dim.name || '未命名规格' }}</span>
+                <a-icon v-if="group.imagePath" type="picture" style="margin-left:4px" />
+                <a-button size="small" type="link" icon="delete" style="margin-left:auto;padding:0" @click="group.dimensions.splice(dIndex, 1)" />
+              </div>
+              <div class="agg-values">
+                <div class="agg-value" :class="{ 'is-warn': dim.needConfirm }">
+                  <div v-if="!(dim.childNames || []).length" class="agg-value-row">
+                    <span class="agg-value-label">规格值：</span>
+                    <a-input v-model="dim.value" size="small" :placeholder="dim.name"
+                             @focus="setAggFocus({ type: 'dim', groupIndex: group.index, dimName: dim.name })" />
+                    <a-icon type="close" class="agg-row-close" @click="clearSpecValue(group, dim, null)" />
+                  </div>
+                  <div v-for="child in (dim.childNames || [])" :key="child" class="agg-value-row">
+                    <span class="agg-value-label">{{ child }}：</span>
+                    <a-input v-model="dim.subValues[child]" size="small" :placeholder="child"
+                             @focus="setAggFocus({ type: 'child', groupIndex: group.index, dimName: dim.name, child: child })" />
+                    <a-icon type="close" class="agg-row-close" @click="clearSpecValue(group, dim, child)" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
           <div style="text-align:right;margin-top:12px">
             <a-button style="margin-right:8px" @click="specAggregateVisible = false">取消</a-button>
             <a-button type="primary" :disabled="specAggregateLoading" @click="confirmSpecAggregate">确认回填</a-button>
@@ -554,6 +574,11 @@
       inline: {
         type: Boolean,
         default: false
+      },
+      // AI添加模式：识别结果页标题显示为「AI添加商品」
+      aiMode: {
+        type: Boolean,
+        default: false
       }
     },
     data () {
@@ -594,6 +619,29 @@
         specAggregateResult: null,
         // 规格图片识别原文，键为 mIndex_vIndex，保存商品时用于纠错学习
         specOcrRawMap: {},
+        // 识别到的基础属性原始值：属性字段 -> 识别原文，保存时用于归一化学习
+        baseOcrRawMap: {},
+        // 识别到的属性名别名（如 检测员 -> inspection），保存在本机并同步样本库
+        aggLabelAliases: {},
+        // 识别到的规格子项别名（如 铭套 -> 枕套）
+        aggChildAliases: {},
+        // 当前聚焦的识别输入框：基础属性/规格值/子规格
+        aggFocus: null,
+        // 属性名常见别名（含 OCR 易错写法），用于自动归一化
+        propertyNameSynonyms: {
+          '检验': ['质检', '检测', '质检员', '检测员', '检验员', '质鹼', '检鹼'],
+          '安全类别': ['安全别', '安全级别', '安全等级', '安全类'],
+          '执行标准': ['执行标', '执行标准号', '执行标谁'],
+          '制造商': ['造商', '生产商', '生产厂家', '制造商'],
+          '名称': ['品名', '产品名称', '商品名称'],
+          '面料': ['材质', '面料成分']
+        },
+        // 规格子项常见别名（含 OCR 易错写法）
+        specChildSynonyms: {
+          '枕套': ['铭套', '忱套', '枕头套', '枕袋'],
+          '被套': ['被罩', '被袋'],
+          '床单': ['床布', '床垫单']
+        },
         meOldDataSource: [],
         batchColumn: undefined,
         batchColumnValue: '',
@@ -789,36 +837,68 @@
         // JEditableTable 的行高约为54px，按SKU数量展开表格。
         return Math.max((this.meTable.dataSource || []).length * 54, 54)
       },
-      // 识别结果确认表：SKU 行按维度（规格、花色等）分列展示，而非单一 SKU 字段
-      aggSkuColumns() {
-        let dims = ((this.specAggregateResult && this.specAggregateResult.dimensions) || [])
-          .filter(dim => dim.detected || (dim.values && dim.values.length))
-        let cols = []
-        dims.forEach((dim, index) => {
-          cols.push({
-            title: dim.name || ('规格' + (index + 1)),
-            dataIndex: 'dim_' + index,
-            key: 'dim_' + index,
-            width: '110px',
-            customRender: (text, record) => {
-              let item = ((record && record.specValues) || []).find(v => v.attributeName === dim.name)
-              return item ? (item.valueText || '') : ''
-            }
+      // 识别结果确认：按图片分组展示规格值（一张图一组：规格值1、规格值2 ...）
+      specImageGroups() {
+        let result = this.specAggregateResult
+        if (!result) return []
+        if (result.imageGroups && result.imageGroups.length) return result.imageGroups
+        // 兼容旧接口：把合并后的维度值兜底为单组
+        let dims = (result.dimensions || []).filter(dim => dim.detected)
+        let groupDims = []
+        dims.forEach(dim => (dim.values || []).forEach(val => {
+          groupDims.push({
+            name: dim.name,
+            value: val.value || '',
+            rawValue: val.rawValue || '',
+            subValues: val.subValues || {},
+            needConfirm: !!val.needConfirm,
+            childNames: dim.childNames || [],
+            rawText: val.rawText || ''
+          })
+        }))
+        return groupDims.length ? [{ index: 1, imagePath: '', dimensions: groupDims }] : []
+      },
+      // 识别到但未对应现有基础属性的标签（含已自动归一化的，供核对/撤销）
+      aggUnmatchedProps() {
+        let result = this.specAggregateResult
+        if (!result) return []
+        return (result.unmatchedProps || []).filter(prop => !prop.rejected && (prop.value || '').trim())
+      },
+      // 所有基础属性（按属性设置中的别名显示，名称右对齐输出）
+      aggBindableProps() {
+        let skip = ['categoryId', 'id', 'mnemonic', 'enableSerialNumber', 'barCode']
+        return (this.basePropertyList || [])
+          .filter(p => this.basePropertyFields.includes(p.field) && skip.indexOf(p.field) < 0 && p.visible !== false)
+          .map(p => ({ field: p.field, label: p.anotherName || p.nativeName, nativeName: p.nativeName || '' }))
+      },
+      // 识别结果页标题：AI添加模式下为标准手机页面标题「AI添加商品」
+      aggregateModalTitle() {
+        return this.aiMode ? 'AI添加商品' : '识别结果确认'
+      },
+      // 识别到的全部内容标签（如 200*230），点击可填入当前聚焦的输入框
+      allOcrTags() {
+        let tags = []
+        let seen = {}
+        ;(this.specImageGroups || []).forEach(group => {
+          let texts = [group && group.rawText]
+          ;((group && group.dimensions) || []).forEach(dim => texts.push(dim.rawText))
+          texts.forEach(text => {
+            ;((text || '')).split(/[\r\n]+/).forEach(line => {
+              line = (line || '').trim()
+              if (!line || line.length > 40 || seen[line]) return
+              seen[line] = true
+              tags.push(line)
+            })
           })
         })
-        cols.push(
-          { title: '条码', dataIndex: 'barCode', key: 'barCode', width: '140px' },
-          { title: '零售价', dataIndex: 'commodityDecimal', key: 'commodityDecimal', width: '90px' },
-          { title: '划线价', dataIndex: 'marketPrice', key: 'marketPrice', width: '90px' }
-        )
-        return cols
+        return tags.slice(0, 60)
       },
       priceFillProgress() {
         let rows = this.meTable.dataSource
         if (!rows || rows.length === 0) return 0
         let filled = 0
         for (let i = 0; i < rows.length; i++) {
-          if (rows[i].wholesaleDecimal) filled++
+          if (rows[i].commodityDecimal) filled++
         }
         return Math.round(filled / rows.length * 100)
       },
@@ -880,6 +960,8 @@
       document.getElementById(this.prefixNo).addEventListener('keydown', this.handleOkKey)
       window.addEventListener('resize', this.onWindowResize)
       window.addEventListener('beforeunload', this.handleBeforeUnload)
+      this.aggLabelAliases = Vue.ls.get('material_ocr_label_alias') || {}
+      this.aggChildAliases = Vue.ls.get('material_ocr_child_alias') || {}
       // iOS 无法拦截系统级刷新，定期自动保存草稿，刷新后可恢复
       this.draftWatchTimer = setInterval(() => {
         if (this.visible && this.hasUnsavedData()) this.saveDraft()
@@ -1704,6 +1786,7 @@
               httpAction(url, formData, method).then((res) => {
                 if(res.code === 200){
                   that.learnRecognizedSpecValues();
+                  that.learnRecognizedBaseProps();
                   that.$message.success('保存成功');
                   that.formDirty = false;
                   that.initialSnapshot = null;
@@ -1982,7 +2065,11 @@
       handleMultiSpecImageOcrClose(payload) {
         this.specMultiOcrVisible = false
         let images = (payload && payload.images) || []
-        if (!images.length) return
+        this.openSpecAggregateForImages(images)
+      },
+      /** 用已上传/已识别的图片直接聚合，展示识别结果页（AI添加页也有调用） */
+      openSpecAggregateForImages(images) {
+        if (!images || !images.length) return
         let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
         // 维度配置来自类别规格：名称、属性ID、子规格名、类别已配置的规格值
         let dimensions = this.specModules.map((module, mIndex) => {
@@ -2019,10 +2106,19 @@
         this.specAggregateResult = null
         this.specAggregateVisible = true
         this.specAggregateLoading = true
+        // 属性名别名：现有基础属性名/别名 + 已学习的识别别名
+        let labelAliases = {}
+        ;(this.basePropertyList || []).forEach(p => {
+          if (this.basePropertyFields.indexOf(p.field) < 0) return
+          if (p.nativeName) labelAliases[this.normOcrLabel(p.nativeName)] = p.field
+          if (p.anotherName) labelAliases[this.normOcrLabel(p.anotherName)] = p.field
+        })
+        Object.assign(labelAliases, this.aggLabelAliases || {})
         postAction('/spec/sample/aggregateProduct', {
           images: images,
           categoryId: categoryId || null,
-          dimensions: dimensions
+          dimensions: dimensions,
+          labelAliases: labelAliases
         }).then(res => {
           this.specAggregateLoading = false
           if (!res || res.code !== 200) {
@@ -2031,6 +2127,11 @@
             return
           }
           this.specAggregateResult = res.data
+          this.baseOcrRawMap = Object.assign({}, res.data.commonPropsRaw || {})
+          this.prepareAggregateSpecGroups()
+          this.prepareAggregateProps()
+          this.autoNormalizeUnmatchedProps()
+          this.aggFocus = null
         }).catch(() => {
           this.specAggregateLoading = false
           this.specAggregateVisible = false
@@ -2040,6 +2141,301 @@
       aggFieldLabel(field) {
         let item = (this.basePropertyList || []).find(p => p.field === field)
         return item ? item.anotherName : field
+      },
+      /** 属性名归一化：去掉空格与分隔符，便于「检测员：」「检测员」比对 */
+      normOcrLabel(label) {
+        return (label || '').replace(/[\s:：=＝|｜\-—–、，,.;；。]/g, '').toLowerCase()
+      },
+      /** 两个属性名的相似度（公共子序列占比），用于识别错字的模糊归一化 */
+      labelSimilarity(a, b) {
+        if (!a || !b) return 0
+        let prev = new Array(b.length + 1).fill(0)
+        for (let i = 1; i <= a.length; i++) {
+          let cur = [0]
+          for (let j = 1; j <= b.length; j++) {
+            cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1])
+          }
+          prev = cur
+        }
+        return prev[b.length] * 2 / (a.length + b.length)
+      },
+      /** 模糊匹配到某个基础属性（如 质鹼/质检 -> 检验，安全别 -> 安全类别） */
+      matchBaseProperty(label) {
+        let target = this.normOcrLabel(label)
+        if (!target) return null
+        let best = null
+        let bestScore = 0
+        this.aggBindableProps.forEach(bp => {
+          let names = [bp.label, bp.nativeName]
+            .concat(this.propertyNameSynonyms[bp.label] || [])
+            .concat(this.propertyNameSynonyms[bp.nativeName] || [])
+          names.forEach(name => {
+            let text = this.normOcrLabel(name)
+            if (!text) return
+            let score = text === target ? 1
+              : (target.indexOf(text) >= 0 || text.indexOf(target) >= 0 ? 0.85 : this.labelSimilarity(target, text))
+            if (score > bestScore) {
+              bestScore = score
+              best = bp
+            }
+          })
+        })
+        return bestScore >= 0.5 ? best : null
+      },
+      /** 模糊匹配到规格子项（如 铭套 -> 枕套） */
+      matchSpecChild(prop) {
+        let groups = this.specImageGroups || []
+        if (!groups.length) return null
+        let group = groups.find(g => g.imagePath && prop.imagePath && g.imagePath === prop.imagePath)
+          || (groups.length === 1 ? groups[0] : null)
+        if (!group) return null
+        let target = this.normOcrLabel(prop.label)
+        if (!target) return null
+        let best = null
+        let bestScore = 0
+        ;(group.dimensions || []).forEach(dim => {
+          ;(dim.childNames || []).forEach(child => {
+            let learned = (this.aggChildAliases || {})[target]
+            let names = [child].concat(this.specChildSynonyms[child] || [])
+            names.forEach(name => {
+              let text = this.normOcrLabel(name)
+              if (!text) return
+              let score = learned === child ? 1
+                : (text === target ? 1 : (target.indexOf(text) >= 0 || text.indexOf(target) >= 0 ? 0.85 : this.labelSimilarity(target, text)))
+              if (score > bestScore) {
+                bestScore = score
+                best = { groupIndex: group.index, dimName: dim.name, child: child }
+              }
+            })
+          })
+        })
+        return bestScore >= 0.5 ? best : null
+      },
+      /** 识别项自动归一化：能对应基础属性/规格子项的，直接回填到对应输入框 */
+      autoNormalizeUnmatchedProps() {
+        let result = this.specAggregateResult
+        if (!result) return
+        ;(result.unmatchedProps || []).forEach(prop => {
+          if (prop.targetLabel || prop.rejected) return
+          let base = this.matchBaseProperty(prop.label)
+          if (base) {
+            prop.field = base.field
+            prop.targetLabel = base.label
+            let current = result.commonProps[base.field]
+            if (current === undefined || current === null || current === '') {
+              this.$set(result.commonProps, base.field, prop.value)
+              if (!result.commonPropsRaw) this.$set(result, 'commonPropsRaw', {})
+              this.$set(result.commonPropsRaw, base.field, prop.value)
+              this.$set(this.baseOcrRawMap, base.field, prop.value)
+              prop.autoFilled = true
+            }
+            return
+          }
+          let spec = this.matchSpecChild(prop)
+          if (spec) {
+            prop.specTarget = spec
+            prop.targetLabel = spec.child
+            let group = this.findAggGroup(spec.groupIndex)
+            let dim = group && (group.dimensions || []).find(d => d.name === spec.dimName)
+            if (dim) {
+              if (!dim.subValues) this.$set(dim, 'subValues', {})
+              this.$set(dim.subValues, spec.child, prop.value)
+              prop.autoFilled = true
+            }
+          }
+        })
+      },
+      /** 撤销自动归一化：清空对应输入框内容，表示归一化错误（不学习） */
+      rejectUnmatchedProp(prop) {
+        if (!prop) return
+        let result = this.specAggregateResult
+        if (result && prop.autoFilled) {
+          if (prop.field) {
+            this.$set(result.commonProps, prop.field, '')
+            if (result.commonPropsRaw) this.$set(result.commonPropsRaw, prop.field, '')
+            if (this.baseOcrRawMap) this.$set(this.baseOcrRawMap, prop.field, '')
+          } else if (prop.specTarget) {
+            let group = this.findAggGroup(prop.specTarget.groupIndex)
+            let dim = group && (group.dimensions || []).find(d => d.name === prop.specTarget.dimName)
+            if (dim && dim.subValues) this.$set(dim.subValues, prop.specTarget.child, '')
+          }
+        }
+        this.$set(prop, 'rejected', true)
+      },
+      /** 点击属性后的 ×：清空该输入框并标记对应归一化为错误 */
+      clearBaseProp(field) {
+        let result = this.specAggregateResult
+        if (!result || !field) return
+        if (!result.commonProps) this.$set(result, 'commonProps', {})
+        this.$set(result.commonProps, field, '')
+        if (result.commonPropsRaw) this.$set(result.commonPropsRaw, field, '')
+        if (this.baseOcrRawMap) this.$set(this.baseOcrRawMap, field, '')
+        ;(result.unmatchedProps || []).forEach(prop => {
+          if (prop.field === field && !prop.rejected) this.$set(prop, 'rejected', true)
+        })
+      },
+      /** 点击规格值后的 ×：清空该输入框并标记对应归一化为错误 */
+      clearSpecValue(group, dim, child) {
+        if (!dim) return
+        if (child) {
+          if (!dim.subValues) this.$set(dim, 'subValues', {})
+          this.$set(dim.subValues, child, '')
+        } else {
+          this.$set(dim, 'value', '')
+        }
+        let result = this.specAggregateResult
+        ;((result && result.unmatchedProps) || []).forEach(prop => {
+          if (prop.rejected || !prop.specTarget) return
+          let target = prop.specTarget
+          if (target.groupIndex === (group && group.index) && target.dimName === dim.name && target.child === child) {
+            this.$set(prop, 'rejected', true)
+          }
+        })
+      },
+      /** 为所有基础属性补上可编辑的空值，保证 v-model 响应式 */
+      prepareAggregateProps() {
+        let result = this.specAggregateResult
+        if (!result) return
+        if (!result.commonProps) this.$set(result, 'commonProps', {})
+        this.aggBindableProps.forEach(prop => {
+          if (result.commonProps[prop.field] === undefined) this.$set(result.commonProps, prop.field, '')
+        })
+      },
+      findAggGroup(index) {
+        return (this.specImageGroups || []).find(g => g.index === index)
+      },
+      setAggFocus(focus) {
+        this.aggFocus = focus
+      },
+      /** 图片识别内容标签：点击后填入当前聚焦的输入框，并学习该值 */
+      fillFocusedInput(tag) {
+        let result = this.specAggregateResult
+        let focus = this.aggFocus
+        if (!result || !focus || !tag) return
+        let attributeId = null
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        if (focus.type === 'base') {
+          this.$set(result.commonProps, focus.field, tag)
+          attributeId = -1
+        } else {
+          let group = this.findAggGroup(focus.groupIndex)
+          let dim = group && (group.dimensions || []).find(d => d.name === focus.dimName)
+          if (!dim) return
+          let dimConfig = (result.dimensions || []).find(d => d.name === dim.name)
+          attributeId = dimConfig && dimConfig.attributeId
+          if (focus.type === 'child') {
+            if (!dim.subValues) this.$set(dim, 'subValues', {})
+            this.$set(dim.subValues, focus.child, tag)
+          } else {
+            this.$set(dim, 'value', tag)
+          }
+        }
+        postAction('/spec/sample/learnBatch', {
+          items: [{ rawText: tag, correctedValue: tag, attributeId: attributeId }],
+          categoryId: categoryId || null
+        }).catch(() => {})
+      },
+      /** 确认时学习自动归一化的属性名与子规格名 */
+      learnAggregateLabelAliases() {
+        let result = this.specAggregateResult
+        if (!result) return
+        let items = []
+        let childAliases = Object.assign({}, this.aggChildAliases || {})
+        let childChanged = false
+        ;(result.unmatchedProps || []).forEach(prop => {
+          if (prop.rejected || !prop.targetLabel) return
+          if (prop.field) {
+            items.push({ rawText: prop.label, correctedValue: prop.field, attributeId: -2 })
+            items.push({ rawText: prop.value, correctedValue: prop.value, attributeId: -1 })
+          } else if (prop.specTarget) {
+            let key = this.normOcrLabel(prop.label)
+            if (key && childAliases[key] !== prop.specTarget.child) {
+              childAliases[key] = prop.specTarget.child
+              childChanged = true
+            }
+          }
+        })
+        if (childChanged) {
+          this.aggChildAliases = childAliases
+          Vue.ls.set('material_ocr_child_alias', childAliases, 365 * 24 * 60 * 60 * 1000)
+        }
+        if (!items.length) return
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        postAction('/spec/sample/learnBatch', {
+          items: items,
+          categoryId: categoryId || null,
+          materialId: this.model.id || null
+        }).catch(() => {})
+      },
+      /** 补齐识别分组里的子规格键，保证 Vue2 下 v-model 可响应 */
+      prepareAggregateSpecGroups() {
+        let result = this.specAggregateResult
+        if (!result) return
+        ;(result.imageGroups || []).forEach(group => {
+          ;(group.dimensions || []).forEach(dim => {
+            if (!dim.subValues) this.$set(dim, 'subValues', {})
+            ;(dim.childNames || []).forEach(name => {
+              if (dim.subValues[name] === undefined) this.$set(dim.subValues, name, '')
+            })
+            if (dim.value === undefined || dim.value === null) this.$set(dim, 'value', '')
+          })
+        })
+      },
+      /** 把分组编辑结果合并回 dimensions（保留识别原文与图片，供回填与学习使用） */
+      syncDimensionsFromImageGroups() {
+        let result = this.specAggregateResult
+        if (!result) return
+        let groups = result.imageGroups || []
+        if (!groups.length) return
+        let oldDims = {}
+        ;(result.dimensions || []).forEach(dim => { oldDims[dim.name] = dim })
+        let merged = {}
+        let order = []
+        groups.forEach(group => {
+          ;(group.dimensions || []).forEach(item => {
+            let name = item.name
+            if (!name) return
+            let text = (item.value || '').trim()
+            let subValues = {}
+            ;(item.childNames || []).forEach(child => {
+              let sub = ((item.subValues && item.subValues[child]) || '').trim()
+              if (sub) subValues[child] = sub
+            })
+            if (!text && !Object.keys(subValues).length) return
+            if (!merged[name]) {
+              merged[name] = { name: name, attributeId: null, values: [], detected: true, needConfirm: false }
+              order.push(name)
+            }
+            let dim = merged[name]
+            let valueKey = this.normalizeSpecValueKey(text || Object.keys(subValues).map(k => subValues[k]).join('/'))
+            let exists = dim.values.find(val => {
+              let sameValue = this.normalizeSpecValueKey(val.value || '') === valueKey
+              let sameSub = Object.keys(subValues).every(k => ((val.subValues && val.subValues[k]) || '') === subValues[k]) &&
+                Object.keys(val.subValues || {}).every(k => subValues[k] !== undefined)
+              return sameValue && sameSub
+            })
+            if (exists) {
+              this.$set(exists, 'value', text)
+              this.$set(exists, 'subValues', subValues)
+              return
+            }
+            dim.values.push({
+              value: text,
+              rawValue: item.rawValue || '',
+              subValues: subValues,
+              needConfirm: !!item.needConfirm,
+              imagePath: group.imagePath || '',
+              rawText: item.rawText || ''
+            })
+          })
+        })
+        result.dimensions = order.map(name => {
+          let dim = merged[name]
+          let base = oldDims[name] || {}
+          dim.attributeId = base.attributeId || null
+          dim.needConfirm = dim.values.some(val => val.needConfirm)
+          return dim
+        })
       },
       /** 识别值的子规格归属，如「被套：200*230」 */
       aggSubLabel(val) {
@@ -2070,6 +2466,9 @@
       confirmSpecAggregate() {
         let result = this.specAggregateResult
         if (!result) return
+        // 先把分组编辑结果合并回维度值，后续回填逻辑保持不变
+        this.syncDimensionsFromImageGroups()
+        this.learnAggregateLabelAliases()
         // 1. 公共属性：只填空白字段，避免覆盖用户已输入内容
         let props = result.commonProps || {}
         let formPatch = {}
@@ -2241,6 +2640,28 @@
           })
         })
         this.specOcrRawMap = {}
+        if (!items.length) return
+        postAction('/spec/sample/learnBatch', {
+          items: items,
+          categoryId: categoryId || null,
+          materialId: this.model.id || null
+        }).catch(() => {})
+      },
+      /** 保存成功后把基础属性的「识别原文 -> 最终值」沉淀为学习样本 */
+      learnRecognizedBaseProps() {
+        let rawMap = this.baseOcrRawMap || {}
+        let items = []
+        let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        Object.keys(rawMap).forEach(field => {
+          let rawText = (rawMap[field] || '').trim()
+          let finalValue = this.form.getFieldValue(field)
+          if (!rawText || finalValue === undefined || finalValue === null) return
+          finalValue = String(finalValue).trim()
+          if (!finalValue) return
+          if (this.normalizeSpecValueKey(rawText) === this.normalizeSpecValueKey(finalValue)) return
+          items.push({ rawText: rawText, correctedValue: finalValue, attributeId: -1 })
+        })
+        this.baseOcrRawMap = {}
         if (!items.length) return
         postAction('/spec/sample/learnBatch', {
           items: items,
@@ -3024,10 +3445,79 @@
   .agg-prop {
     min-width: 150px;
   }
+  .agg-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .agg-row-close {
+    margin-left: 4px;
+    padding: 2px;
+    color: #bfbfbf;
+    cursor: pointer;
+  }
+  .agg-dim-title {
+    margin-right: 4px;
+    font-size: 12px;
+    color: #8c8c8c;
+  }
+  .agg-prop-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .agg-prop-name {
+    flex: 0 0 84px;
+    text-align: right;
+    font-size: 13px;
+    color: #595959;
+  }
+  .agg-unmatched-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: #262626;
+    border-bottom: 1px dashed #f0f0f0;
+  }
+  .agg-unmatched-label {
+    font-weight: 500;
+  }
+  .agg-unmatched-value {
+    color: #595959;
+  }
+  .agg-unmatched-target {
+    color: #1890ff;
+    font-size: 12px;
+  }
+  .agg-unmatched-close {
+    margin-left: auto;
+    padding: 0 2px;
+    color: #8c8c8c;
+    cursor: pointer;
+  }
+  .agg-ocr-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .agg-unmatched {
+    margin-top: 8px;
+  }
+  .agg-unmatched-title {
+    font-size: 12px;
+    color: #8c8c8c;
+    margin-bottom: 6px;
+  }
   .agg-dim {
     margin-bottom: 8px;
   }
   .agg-dim-name {
+    display: flex;
+    align-items: center;
     font-size: 13px;
     font-weight: 500;
     color: #262626;
@@ -3041,14 +3531,36 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    width: 100%;
   }
   .agg-value {
-    padding: 2px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 10px;
     font-size: 13px;
     color: #262626;
     background: #fafafa;
     border: 1px solid #e8e8e8;
-    border-radius: 12px;
+    border-radius: 6px;
+  }
+  .agg-value-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .agg-value-row > .ant-input,
+  .agg-prop-row > .ant-input {
+    flex: 1;
+    min-width: 0;
+  }
+  .agg-value-label {
+    flex: 0 0 56px;
+    min-width: 56px;
+    font-size: 12px;
+    color: #8c8c8c;
+    text-align: right;
   }
   .agg-value.is-warn {
     color: #ad6800;
@@ -3928,3 +4440,35 @@
     background: transparent !important;
     box-shadow: none !important;
   }</style>
+
+<style>
+/* 手机端识别结果页：全屏标准页面，标题栏与 App 蓝色顶栏一致 */
+.agg-page-modal .ant-modal {
+  top: 0;
+  padding-bottom: 0;
+  max-width: 100%;
+}
+.agg-page-modal .ant-modal-content {
+  min-height: 100vh;
+  border-radius: 0;
+}
+.agg-page-modal .ant-modal-header {
+  padding: 12px 16px;
+  background: #1890ff;
+  border-radius: 0;
+}
+.agg-page-modal .ant-modal-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+}
+.agg-page-modal .ant-modal-close,
+.agg-page-modal .ant-modal-close-x {
+  color: #fff;
+}
+.agg-page-modal .ant-modal-body {
+  max-height: calc(100vh - 52px);
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+}
+</style>

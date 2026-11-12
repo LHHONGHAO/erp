@@ -151,6 +151,8 @@ const KEYBOARD_MIN_GAP = 120
 /** 键盘是否展开，展开期间不做任何留白检测，收起后再统一刷新一次 */
 let keyboardOpen = false
 let keyboardTimer = null
+let editorFocusTimer = null
+let editorFocusPending = false
 /** mixin 页面的刷新函数集合，键盘收起后统一回调 */
 const keyboardMixinRefreshers = []
 let keyboardWatchInstalled = false
@@ -158,6 +160,46 @@ let keyboardWatchInstalled = false
 /** 当前键盘是否处于展开状态（供页面判断是否跳过自身滚动逻辑） */
 export function isScrollBlankKeyboardOpen() {
   return keyboardOpen
+}
+
+/** 移动端输入法打开时，某些浏览器会同时缩小 innerHeight 与 visualViewport，差值检测会漏报。 */
+function isEditableElement(el) {
+  if (!el || el.nodeType !== 1) return false
+  if (el.isContentEditable) return true
+  const tag = (el.tagName || '').toLowerCase()
+  if (tag === 'textarea' || tag === 'select') return true
+  if (tag !== 'input') return false
+  const type = (el.type || 'text').toLowerCase()
+  return ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].indexOf(type) >= 0
+}
+
+function hasFocusedEditor() {
+  return isEditableElement(document.activeElement)
+}
+
+function isScrollBlankPaused() {
+  return keyboardOpen || editorFocusPending || hasFocusedEditor()
+}
+
+function onEditorFocusIn() {
+  editorFocusPending = false
+  if (editorFocusTimer) {
+    clearTimeout(editorFocusTimer)
+    editorFocusTimer = null
+  }
+}
+
+function onEditorFocusOut() {
+  editorFocusPending = true
+  if (editorFocusTimer) clearTimeout(editorFocusTimer)
+  // 等待焦点切换完成；只有离开输入控件后才恢复页面对齐。
+  editorFocusTimer = setTimeout(function () {
+    editorFocusTimer = null
+    editorFocusPending = false
+    if (isScrollBlankPaused()) return
+    queueAutoRefresh(180)
+    keyboardMixinRefreshers.slice().forEach(function (fn) { fn() })
+  }, 180)
 }
 
 function detectKeyboardOpen() {
@@ -193,10 +235,13 @@ function onKeyboardViewportChange() {
 function watchKeyboard() {
   if (keyboardWatchInstalled) return
   const vv = window.visualViewport
-  if (!vv) return
   keyboardWatchInstalled = true
-  vv.addEventListener('resize', onKeyboardViewportChange)
-  vv.addEventListener('scroll', onKeyboardViewportChange)
+  document.addEventListener('focusin', onEditorFocusIn, true)
+  document.addEventListener('focusout', onEditorFocusOut, true)
+  if (vv) {
+    vv.addEventListener('resize', onKeyboardViewportChange)
+    vv.addEventListener('scroll', onKeyboardViewportChange)
+  }
 }
 
 function isMobileView() {
@@ -311,7 +356,7 @@ function teardownAuto() {
 }
 
 function queueAutoRefresh(delay) {
-  if (keyboardOpen) return
+  if (isScrollBlankPaused()) return
   if (!autoState || autoState.timer) return
   autoState.timer = setTimeout(function () {
     autoState.timer = null
@@ -328,7 +373,7 @@ export function refreshAutoScrollBlank() {
   const state = autoState
   if (!state || state.busy) return null
   // 键盘展开期间暂停检测，收起后由键盘监听统一刷新
-  if (keyboardOpen) return null
+  if (isScrollBlankPaused()) return null
   // 页面已显式接入 mixin，交由 mixin 处理，避免重复占位
   if (mixinDepth > 0) return null
   if (!isMobileView()) { teardownAuto(); syncScrollBlankViewport(); return null }
@@ -460,7 +505,7 @@ export const scrollBlankMixin = {
     /** 检测页面上下空白并修正底部占位，返回检测结果 */
     refreshScrollBlank() {
       // 键盘展开期间暂停刷新，避免键盘动画与留白重排互相干扰
-      if (keyboardOpen) return this.scrollBlankInfo
+      if (isScrollBlankPaused()) return this.scrollBlankInfo
       // 先同步可视高度并写入 CSS 变量，后续测量基于修正后的页面高度
       if (syncScrollBlankViewport() == null) {
         this.resetScrollBlank()

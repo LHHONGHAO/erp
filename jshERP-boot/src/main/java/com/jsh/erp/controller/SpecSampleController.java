@@ -127,7 +127,8 @@ public class SpecSampleController {
             JSONObject result = specAggregateService.aggregate(
                     params.getJSONArray("images"),
                     params.getLong("categoryId"),
-                    params.getJSONArray("dimensions"));
+                    params.getJSONArray("dimensions"),
+                    params.getJSONObject("labelAliases"));
             objectMap.putAll(result);
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
         } catch (Exception e) {

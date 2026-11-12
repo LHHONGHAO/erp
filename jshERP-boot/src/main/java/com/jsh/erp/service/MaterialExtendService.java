@@ -168,9 +168,7 @@ public class MaterialExtendService {
                 sku.setSkuCode(skuCode);
                 sku.setPurchaseDecimal(tempJson.getBigDecimal("purchaseDecimal"));
                 sku.setCommodityDecimal(tempJson.getBigDecimal("commodityDecimal"));
-                sku.setWholesaleDecimal(tempJson.getBigDecimal("wholesaleDecimal"));
                 sku.setMarketPrice(tempJson.getBigDecimal("marketPrice"));
-                sku.setLowDecimal(tempJson.getBigDecimal("lowDecimal"));
                 sku.setImageUrl(tempJson.getString("image"));
                 sku.setDefaultFlag("0");
                 sku.setTenantId(tenantId);
@@ -201,9 +199,7 @@ public class MaterialExtendService {
                 sku.setSkuCode(skuCode);
                 sku.setPurchaseDecimal(tempJson.getBigDecimal("purchaseDecimal"));
                 sku.setCommodityDecimal(tempJson.getBigDecimal("commodityDecimal"));
-                sku.setWholesaleDecimal(tempJson.getBigDecimal("wholesaleDecimal"));
                 sku.setMarketPrice(tempJson.getBigDecimal("marketPrice"));
-                sku.setLowDecimal(tempJson.getBigDecimal("lowDecimal"));
                 sku.setImageUrl(tempJson.getString("image"));
                 sku.setUpdateSerial(serial);
                 skuService.saveSku(sku, buildSpecs(specValues));

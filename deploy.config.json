@@ -1,7 +1,7 @@
 {
   "//": "JSH_ERP 本地部署固化配置。所有部署脚本/计划任务统一读取此文件。",
   "//publicUrl": "对外访问地址（后端直接以 HTTPS 提供服务，端口即 backendPort）",
-  "publicUrl": "https://192.168.100.157:9999",
+  "publicUrl": "https://192.168.10.111:9999",
   "backendPort": 9999,
   "dataDir": "D:/jshERP/data",
   "backupDir": "D:/jshERP/backup",

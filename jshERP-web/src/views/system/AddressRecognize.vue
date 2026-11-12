@@ -41,8 +41,7 @@
           <template v-else>
             <span class="addr-row__label">{{ prop.label }}</span>
             <a-textarea v-if="prop.type === 'textarea'" v-model="form[prop.field]" class="addr-row__input"
-                        :bordered="false" autosize :placeholder="getPlaceholder(prop.label)"
-                        @input="syncPageHeight()" />
+                        :bordered="false" autosize :placeholder="getPlaceholder(prop.label)" />
             <a-input v-else v-model="form[prop.field]" class="addr-row__input" :bordered="false"
                      :placeholder="getPlaceholder(prop.label)" />
           </template>

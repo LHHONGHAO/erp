@@ -460,18 +460,32 @@
       :maxImages="9"
       :zIndex="1100"
       @cancel="handleMultiSpecImageOcrClose" />
-    <!-- 多图识别聚合预览：确认后再回填规格值与 SKU -->
+    <!-- 多图识别聚合预览：标准弹层，底部栏提供属性设置与保存 -->
     <a-modal
       :title="aggregateModalTitle"
       :visible="specAggregateVisible"
       :width="isMobileView ? '100%' : 760"
       :zIndex="1150"
-      :footer="null"
       :maskClosable="false"
-      :wrapClassName="isMobileView ? 'agg-page-modal' : ''"
-      @cancel="specAggregateVisible = false">
+      :wrapClassName="isMobileView ? 'mm-sheet-modal agg-sheet-modal' : ''"
+      @cancel="closeSpecAggregate">
+      <template slot="title">
+        <div v-if="isMobileView" class="mm-sheet-header">
+          <div class="mm-sheet-title-block">
+            <div class="mm-sheet-title">{{ aggregateModalTitle }}</div>
+          </div>
+          <a-icon type="close" class="mm-sheet-close" @click="closeSpecAggregate" />
+        </div>
+        <span v-else>{{ aggregateModalTitle }}</span>
+      </template>
+      <template slot="footer">
+        <div class="agg-footer">
+          <a-button class="agg-footer-icon" icon="setting" title="属性设置" @click="openPropertyConfig" />
+          <a-button type="primary" class="agg-footer-save" @click="saveSpecAggregate">保存</a-button>
+        </div>
+      </template>
       <a-spin :spinning="specAggregateLoading">
-        <template v-if="specAggregateResult">
+        <div v-if="specAggregateResult" class="agg-sheet-card">
           <div v-if="specAggregateResult.duplicated" class="agg-tip">
             <a-icon type="info-circle" /> 重复图片已忽略 {{ specAggregateResult.duplicatedCount }} 张
           </div>
@@ -486,7 +500,6 @@
           </div>
           <div class="agg-section-head">
             <a-divider orientation="left" style="margin:12px 0 8px;font-size:13px;flex:1">商品基础属性</a-divider>
-            <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
           </div>
           <div class="agg-props">
             <div v-for="prop in aggBindableProps" :key="prop.field" class="agg-prop-row">
@@ -532,11 +545,7 @@
               </div>
             </div>
           </template>
-          <div style="text-align:right;margin-top:12px">
-            <a-button style="margin-right:8px" @click="specAggregateVisible = false">取消</a-button>
-            <a-button type="primary" :disabled="specAggregateLoading" @click="confirmSpecAggregate">确认回填</a-button>
-          </div>
-        </template>
+        </div>
       </a-spin>
     </a-modal>
   </component>
@@ -2462,10 +2471,15 @@
         }
         return false
       },
-      /** 确认聚合结果：回填公共属性、规格值与 SKU 行 */
-      confirmSpecAggregate() {
+      /** 关闭识别结果弹层（仅关闭，不写回表单） */
+      closeSpecAggregate() {
+        this.specAggregateLoading = false
+        this.specAggregateVisible = false
+      },
+      /** 把识别结果写回表单：公共属性、规格值与 SKU 行 */
+      applySpecAggregate() {
         let result = this.specAggregateResult
-        if (!result) return
+        if (!result) return Promise.resolve(false)
         // 先把分组编辑结果合并回维度值，后续回填逻辑保持不变
         this.syncDimensionsFromImageGroups()
         this.learnAggregateLabelAliases()
@@ -2518,26 +2532,33 @@
             }
           })
         })
-        this.specAggregateVisible = false
         this.onSpecChange()
         // 3. 规格值生成 SKU 行后，按 SKU 组合回填条码、图片与价格
-        this.$nextTick(() => {
-          let rows = this.meTable.dataSource || []
-          ;(result.skuRows || []).forEach(skuRow => {
-            let row = rows.find(r => r.sku === skuRow.sku)
-            if (!row) return
-            if (skuRow.barCode) row.barCode = skuRow.barCode
-            if (skuRow.imagePath) row.image = skuRow.imagePath
-            if (skuRow.commodityDecimal) row.commodityDecimal = skuRow.commodityDecimal
-            if (skuRow.marketPrice) row.marketPrice = skuRow.marketPrice
-            if (skuRow.purchaseDecimal) row.purchaseDecimal = skuRow.purchaseDecimal
-            if (skuRow.wholesaleDecimal) row.wholesaleDecimal = skuRow.wholesaleDecimal
+        return new Promise(resolve => {
+          this.$nextTick(() => {
+            let rows = this.meTable.dataSource || []
+            ;(result.skuRows || []).forEach(skuRow => {
+              let row = rows.find(r => r.sku === skuRow.sku)
+              if (!row) return
+              if (skuRow.barCode) row.barCode = skuRow.barCode
+              if (skuRow.imagePath) row.image = skuRow.imagePath
+              if (skuRow.commodityDecimal) row.commodityDecimal = skuRow.commodityDecimal
+              if (skuRow.marketPrice) row.marketPrice = skuRow.marketPrice
+              if (skuRow.purchaseDecimal) row.purchaseDecimal = skuRow.purchaseDecimal
+              if (skuRow.wholesaleDecimal) row.wholesaleDecimal = skuRow.wholesaleDecimal
+            })
+            this.meTable.dataSource = rows.slice()
+            resolve(true)
           })
-          this.meTable.dataSource = rows.slice()
-          if (result.duplicated) {
-            this.$message.info('重复图片已忽略 ' + (result.duplicatedCount || 0) + ' 张')
-          }
-          this.$message.success('已按识别结果回填规格与 SKU')
+        })
+      },
+      /** 底栏保存：先写回识别结果，再保存商品基础信息与 SKU */
+      saveSpecAggregate() {
+        if (this.specAggregateLoading) return
+        this.applySpecAggregate().then(applied => {
+          if (!applied) return
+          this.specAggregateVisible = false
+          this.$nextTick(() => this.handleOk())
         })
       },
       openSpecImageExtract(mIndex, vIndex) {
@@ -4442,33 +4463,41 @@
   }</style>
 
 <style>
-/* 手机端识别结果页：全屏标准页面，标题栏与 App 蓝色顶栏一致 */
-.agg-page-modal .ant-modal {
-  top: 0;
-  padding-bottom: 0;
-  max-width: 100%;
+/* 识别结果弹层：手机端沿用标准弹层（.mm-sheet-modal）顶栏与底栏，内容区为白色圆角卡片 */
+.agg-sheet-card {
+  padding: 12px;
+  background: #fff;
+  border-radius: 12px;
 }
-.agg-page-modal .ant-modal-content {
-  min-height: 100vh;
-  border-radius: 0;
+/* 底边栏：属性设置以图标形式放在左侧，保存为主按钮 */
+.agg-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.agg-page-modal .ant-modal-header {
-  padding: 12px 16px;
-  background: #1890ff;
-  border-radius: 0;
+.agg-footer .agg-footer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
 }
-.agg-page-modal .ant-modal-title {
-  color: #fff;
-  font-size: 16px;
-  font-weight: 500;
+.agg-footer .agg-footer-save {
+  min-width: 160px;
+  margin-left: auto;
 }
-.agg-page-modal .ant-modal-close,
-.agg-page-modal .ant-modal-close-x {
-  color: #fff;
+/* 手机端：标准底栏只显示主按钮，这里放行图标按钮并让保存按钮占满剩余宽度 */
+.mm-sheet-modal .ant-modal-footer .agg-footer .agg-footer-icon {
+  display: inline-flex !important;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  border-radius: 24px;
 }
-.agg-page-modal .ant-modal-body {
-  max-height: calc(100vh - 52px);
-  overflow-y: auto;
-  padding: 12px 16px 24px;
+.mm-sheet-modal .ant-modal-footer .agg-footer .agg-footer-save {
+  flex: 1;
+  width: auto !important;
+  margin-left: 0;
 }
 </style>

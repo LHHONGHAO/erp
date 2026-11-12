@@ -280,6 +280,7 @@
     <a-modal
       :visible="sizeEditorVisible"
       title="标签尺寸"
+      :zIndex="3010"
       @ok="confirmSizeEdit"
       @cancel="sizeEditorVisible = false"
       ok-text="确定"
@@ -323,6 +324,9 @@
       :visible="saveModalVisible"
       :width="'92%'"
       :maskClosable="false"
+      :zIndex="3020"
+      class="lem-save-sheet"
+      wrapClassName="lem-save-sheet-wrap"
       ok-text="保存"
       cancel-text="取消"
       @ok="confirmSaveTemplate"
@@ -331,6 +335,14 @@
       <div class="lem-save-field">
         <div class="lem-save-label">模板名称</div>
         <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
+      </div>
+      <div class="lem-save-field">
+        <div class="lem-save-label-row">
+          <span class="lem-save-label">超长文本</span>
+          <span class="lem-save-switch-value">{{ overflowWrapEnabled ? '自动折行' : '省略号裁切' }}</span>
+          <a-switch v-model="overflowWrapEnabled" />
+        </div>
+        <div class="lem-save-hint">{{ overflowWrapEnabled ? '文字超出标签宽度自动折行，下方内容依次下移' : '文字超出标签宽度保持单行，末尾补省略号后裁切' }}</div>
       </div>
       <div v-if="templateType === 'label'" class="lem-save-field">
         <div class="lem-save-label">商品类型</div>
@@ -453,6 +465,8 @@
         currentAttrKey: null,
         labelWidth: 320,
         labelHeight: 240,
+        // 超长文本处理：wrap=自动折行并下移下方内容，ellipsis=单行省略号裁切
+        overflowMode: 'wrap',
         zoom: 1,
         showMore: false,
         elementPanelVisible: false,
@@ -487,6 +501,11 @@
       currentTitle() {
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         return cfg.title
+      },
+      // 超长文本处理开关：开=自动折行，关=省略号裁切
+      overflowWrapEnabled: {
+        get: function() { return this.overflowMode !== 'ellipsis' },
+        set: function(val) { this.overflowMode = val ? 'wrap' : 'ellipsis' }
       },
       // 仅二级类目可作为模板类型（一级类目不可保存模板）
       categoryList() {
@@ -877,6 +896,7 @@
         if (Array.isArray(snap.goodsFields)) this.goodsFields = snap.goodsFields.slice()
         if (snap.width) this.labelWidth = snap.width
         if (snap.height) this.labelHeight = snap.height
+        this.overflowMode = snap.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
         this.restoreMissingAttrs(snap.selectedAttrs)
         this.fitLabelAfterLoad()
       },
@@ -1375,6 +1395,29 @@
         }
         this.startActualDrag(key, e, mode, willMultiDrag)
       },
+      // 测量元素文字本身的自然尺寸（不换行、不裁剪），用于限制缩放边框的最小值
+      measureContentSize(key) {
+        var el = document.querySelector('.lem-label .lem-elem[data-key="' + key + '"]')
+        if (!el) return { width: 0, height: 0 }
+        var clone = el.cloneNode(true)
+        clone.style.position = 'absolute'
+        clone.style.visibility = 'hidden'
+        clone.style.left = '0'
+        clone.style.top = '0'
+        clone.style.width = 'auto'
+        clone.style.height = 'auto'
+        clone.style.whiteSpace = 'nowrap'
+        clone.style.overflow = 'visible'
+        clone.style.outline = 'none'
+        var handles = clone.querySelectorAll('.lem-resize-handle, .lem-delete-btn')
+        Array.prototype.forEach.call(handles, function(node) {
+          if (node.parentNode) node.parentNode.removeChild(node)
+        })
+        el.parentNode.appendChild(clone)
+        var size = { width: clone.offsetWidth, height: clone.offsetHeight }
+        el.parentNode.removeChild(clone)
+        return size
+      },
       startActualDrag(key, e, mode, multiDrag) {
         var self = this
         var style = this.attrStyles[key] || {}
@@ -1396,6 +1439,14 @@
           var s = self.attrStyles[k] || {}
           dragOrigins[k] = { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
         })
+        // 缩放边框时的最小尺寸：不得小于文字本身占用的尺寸
+        var minW = 12
+        var minH = 12
+        if (mode === 'resize') {
+          var natural = this.measureContentSize(key)
+          if (natural.width > 0) minW = natural.width
+          if (natural.height > 0) minH = natural.height
+        }
         this.dragging = {
           active: true,
           mode: mode,
@@ -1406,6 +1457,8 @@
           origY: style.y || 0,
           origW: origW,
           origH: origH,
+          minW: minW,
+          minH: minH,
           moved: false,
           multiDrag: multiDrag,
           dragOrigins: dragOrigins
@@ -1439,30 +1492,28 @@
         }
         if (d.mode === 'move') {
           if (d.multiDrag && d.dragOrigins) {
-            // 多选整体移动
+            // 多选整体移动（不限制边界，可拖到屏幕任意可视位置）
             var self2 = this
             Object.keys(d.dragOrigins).forEach(function(k) {
               var origin = d.dragOrigins[k]
               var newX = Math.round((origin.x || 0) + dx / self2.zoom)
               var newY = Math.round((origin.y || 0) + dy / self2.zoom)
-              if (newX < 0) newX = 0
-              if (newY < 0) newY = 0
               self2.$set(self2.attrStyles[k], 'x', newX)
               self2.$set(self2.attrStyles[k], 'y', newY)
             })
           } else {
-            // 单个元素移动
+            // 单个元素移动（不限制边界，文字标签超出屏幕时可拖到任意可视位置）
             var newX = d.origX + dx / this.zoom
             var newY = d.origY + dy / this.zoom
-            if (newX < 0) newX = 0
-            if (newY < 0) newY = 0
             this.$set(this.attrStyles[d.key], 'x', Math.round(newX))
             this.$set(this.attrStyles[d.key], 'y', Math.round(newY))
           }
         } else if (d.mode === 'resize') {
-          // 调整文字框尺寸：宽度变小时文字按框宽自动折行，高度之外的部分裁掉不打印
-          var newW = Math.max(12, Math.round(d.origW + dx / this.zoom))
-          var newH = Math.max(12, Math.round(d.origH + dy / this.zoom))
+          // 调整文字框尺寸：不得小于文字本身大小，避免文字被压缩重叠
+          var minW = d.minW || 12
+          var minH = d.minH || 12
+          var newW = Math.max(minW, Math.round(d.origW + dx / this.zoom))
+          var newH = Math.max(minH, Math.round(d.origH + dy / this.zoom))
           this.$set(this.attrStyles[d.key], 'width', newW)
           this.$set(this.attrStyles[d.key], 'height', newH)
         }
@@ -1621,7 +1672,8 @@
           attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
           goodsFields: this.goodsFields.slice(),
           width: this.labelWidth,
-          height: this.labelHeight
+          height: this.labelHeight,
+          overflowMode: this.overflowMode
         }
         if (cfg.storage === 'deliveryTemplate') {
           var base = this.deliveryTemplate || {}
@@ -1633,7 +1685,8 @@
             attrStyles: payload.attrStyles,
             attrLabels: payload.attrLabels,
             labelWidth: payload.width,
-            labelHeight: payload.height
+            labelHeight: payload.height,
+            overflowMode: payload.overflowMode
           })
           persistDeliveryTemplate(tpl).then(function(res) {
             if (res && res.code === 200 && res.data != null) {
@@ -1717,7 +1770,8 @@
           goodsFields: this.goodsFields.slice(),
           customLabels: customLabels,
           labelWidth: this.labelWidth,
-          labelHeight: this.labelHeight
+          labelHeight: this.labelHeight,
+          overflowMode: this.overflowMode
         })
       },
       /** 保存弹窗确认：不选商品类型=普通模板，选了=该类型的通用模板（同类型只保留一个） */
@@ -1815,6 +1869,7 @@
             selectedAttrs: this.selectedAttrs,
             attrStyles: this.attrStyles,
             attrLabels: this.attrLabels,
+            overflowMode: this.overflowMode,
             values: snapshotValues
           }))
         } catch (e) { /* 忽略 */ }
@@ -2153,6 +2208,25 @@
   font-weight: 600;
   margin-bottom: 6px;
   color: #333;
+}
+
+.lem-save-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.lem-save-label-row .lem-save-label {
+  margin-bottom: 0;
+}
+
+.lem-save-switch-value {
+  flex: 1;
+  text-align: right;
+  margin-right: 10px;
+  font-size: 13px;
+  color: #666;
 }
 
 .lem-save-hint {
@@ -2508,5 +2582,55 @@
 .lem-size-preset-item:active {
   background: #e6f7ff;
   color: #1890ff;
+}
+</style>
+
+<style lang="scss">
+/* 保存模板弹层：移动端标准底部弹层样式（圆角顶部、贴底、安全区留白） */
+.lem-save-sheet-wrap {
+  display: flex;
+  align-items: flex-end;
+}
+
+.lem-save-sheet-wrap .ant-modal {
+  position: relative;
+  top: auto;
+  bottom: 0;
+  width: 100% !important;
+  max-width: 100%;
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.lem-save-sheet-wrap .ant-modal-content {
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: hidden;
+}
+
+.lem-save-sheet-wrap .ant-modal-header {
+  border-radius: 16px 16px 0 0;
+  border-bottom: none;
+  padding: 16px 16px 8px;
+}
+
+.lem-save-sheet-wrap .ant-modal-title {
+  text-align: center;
+  font-size: 16px;
+}
+
+.lem-save-sheet-wrap .ant-modal-body {
+  padding: 4px 16px 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.lem-save-sheet-wrap .ant-modal-footer {
+  padding: 8px 16px 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.lem-save-sheet-wrap .ant-modal-footer .ant-btn {
+  height: 40px;
 }
 </style>

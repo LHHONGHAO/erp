@@ -111,6 +111,8 @@ export function legacyToSchema(tpl) {
     name: source.name || '未命名标签',
     version: SCHEMA_VERSION,
     businessType: source.businessType || source.provider || (isDelivery ? 'shipping.delivery' : ''),
+    // 超长文本处理：wrap=自动折行并顺移下方元素，ellipsis=单行省略号裁切
+    overflowMode: source.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap',
     size: {
       width: pxToMm(source.labelWidth || 320),
       height: pxToMm(source.labelHeight || 240),
@@ -148,6 +150,7 @@ export function schemaToLegacy(schema) {
     customLabels: [],
     labelWidth: mmToPx(size.width || 40),
     labelHeight: mmToPx(size.height || 30),
+    overflowMode: source.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap',
     provider: (source.dataSource && source.dataSource.provider) || ''
   }
   var meta = source.meta || {}

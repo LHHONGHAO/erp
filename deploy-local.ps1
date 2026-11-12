@@ -187,7 +187,9 @@ function Find-Java {
 function Find-Maven {
     param([string]$Hint)
     if ($Hint -and (Test-Path $Hint)) { return $Hint }
-    $candidates = @(
+    $candidates = @()
+    if ($env:MAVEN_HOME) { $candidates += "$env:MAVEN_HOME\bin\mvn.cmd" }
+    $candidates += @(
         "C:\Program Files\apache-maven-3.9.16\bin\mvn.cmd",
         "C:\apache-maven-*\bin\mvn.cmd",
         "$env:USERPROFILE\apache-maven-*\bin\mvn.cmd"
@@ -234,12 +236,15 @@ function Launch-Service {
     # 显式指定静态资源绝对路径，避免依赖进程工作目录
     $staticDir = ($StaticLink -replace '\\', '/') + '/'
     $dataDirArg = ($DataDir -replace '\\', '/')
+    $logDir = Join-Path $DataDir 'logs'
+    $logDirArg = ($logDir -replace '\\', '/')
     $argList = @(
         '-Xms256m', '-Xmx1024m',
         '-Dspring.profiles.active=dev',
         '-Dfile.encoding=UTF-8',
         "-Dspring.resources.static-locations=file:$staticDir",
         "-Djsh.data.dir=$dataDirArg",
+        "-Dlogs.home=$logDirArg",
         '-jar', $Jar
     )
     $proc = Start-Process -FilePath $javaExe `
@@ -283,7 +288,7 @@ function Launch-Service {
         Write-Host "  HTTP     : http://${lanIp}:${HttpPort}（证书安装/兼容）"
         Write-Host "  证书安装 : http://${lanIp}:${HttpPort}/cert"
     }
-    Write-Host "  后端日志 : $Log"
+    Write-Host "  后端日志 : $(Join-Path $DataDir 'logs\jshERP.log')"
     Write-Host "  前端产物 : $StaticLink -> $DistPath"
     Write-Host "  停止命令 : .\deploy-local.ps1 -StopOnly"
     Write-Host "============================================================" -ForegroundColor Green
@@ -309,8 +314,15 @@ $mvn = Find-Maven -Hint $MvnPath
 Write-Ok "Maven: $mvn"
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Fail "未找到 node.exe，请先安装 Node.js"
-    exit 1
+    # 回退到项目内置 Node（tools\node16-build），避免本机未配置全局 Node
+    $bundledNode = Join-Path $Root 'tools\node16-build'
+    if (Test-Path (Join-Path $bundledNode 'node.exe')) {
+        $env:Path = "$bundledNode;$env:Path"
+        Write-Warn "未找到全局 Node，使用内置 Node: $bundledNode"
+    } else {
+        Write-Fail "未找到 node.exe，请先安装 Node.js"
+        exit 1
+    }
 }
 $nodeExe = (Get-Command node -ErrorAction Stop).Source
 Write-Ok "Node : $(node -v)"
@@ -362,7 +374,9 @@ if (-not $SkipBuild -and -not $SkipWeb) {
         Write-Host "    首次构建，安装依赖 ..." -ForegroundColor DarkGray
         Invoke-External -File $npmCmd -CmdArgs @('install') -WorkDir $WebDir -Desc 'npm install'
     }
-    $env:NODE_OPTIONS = '--openssl-legacy-provider --max-old-space-size=4096'
+    $nodeMajor = [int](((node -v) -replace '^v', '').Split('.')[0])
+    $env:NODE_OPTIONS = '--max-old-space-size=4096'
+    if ($nodeMajor -ge 17) { $env:NODE_OPTIONS = '--openssl-legacy-provider ' + $env:NODE_OPTIONS }
     Invoke-External -File $npmCmd -CmdArgs @('run','build') -WorkDir $WebDir -Desc 'npm run build'
     Write-Ok "前端构建完成 -> $(Join-Path $WebDir 'dist')"
 }

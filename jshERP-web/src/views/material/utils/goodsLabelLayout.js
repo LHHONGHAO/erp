@@ -223,3 +223,80 @@ export function resolveGoodsLayout(options) {
     table: table
   }
 }
+
+/** 单行文本超出宽度时裁切，末尾补省略号 */
+export function truncateText(text, width, fontSize, bold) {
+  const value = text == null ? '' : String(text)
+  if (!value || !width || width <= 0) return value
+  const ctx = measureCtx()
+  if (!ctx) return value
+  ctx.font = (bold ? 'bold ' : '') + (fontSize || 12) + 'px sans-serif'
+  if (ctx.measureText(value).width <= width) return value
+  const ellipsis = '…'
+  if (ctx.measureText(ellipsis).width > width) return ''
+  let low = 0
+  let high = value.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    if (ctx.measureText(value.slice(0, mid) + ellipsis).width <= width) low = mid
+    else high = mid - 1
+  }
+  return value.slice(0, low) + ellipsis
+}
+
+/**
+ * 文本超宽处理（预览与打印共用）
+ *
+ * mode = 'wrap'     ：按元素宽度自动折行，折行多出的高度让下方元素整体下移；
+ * mode = 'ellipsis' ：保持单行，超出宽度末尾补省略号裁切（显式换行的每行分别处理）。
+ *
+ * @param {Object} options.styles      已解析样式（含 x/y/width/height/fontSize/lineHeight）
+ * @param {Array}  options.keys        需要处理的文本元素 key
+ * @param {Object} options.texts       元素 key → 显示文本（含「属性名：」前缀）
+ * @param {string} options.mode        wrap | ellipsis
+ * @returns {{styles:Object, texts:Object}}
+ */
+export function applyTextOverflow(options) {
+  const opts = options || {}
+  const mode = opts.mode === 'ellipsis' ? 'ellipsis' : 'wrap'
+  const source = opts.styles || {}
+  const texts = opts.texts || {}
+  const styles = {}
+  Object.keys(source).forEach(function(key) {
+    styles[key] = Object.assign({}, source[key])
+  })
+  const resultTexts = {}
+  const ordered = (opts.keys || Object.keys(styles))
+    .filter(function(key) { return styles[key] && key.indexOf('code__') !== 0 })
+    .sort(function(a, b) { return (styles[a].y || 0) - (styles[b].y || 0) })
+
+  ordered.forEach(function(key) {
+    const style = styles[key]
+    const raw = texts[key] == null ? '' : String(texts[key])
+    resultTexts[key] = raw
+    const width = style.width > 0 ? style.width : 0
+    if (!width) return
+    const fontSize = style.fontSize || 12
+    const bold = style.fontWeight === 'bold'
+    const lineHeight = fontSize * (style.lineHeight || 1.3)
+    if (mode === 'ellipsis') {
+      resultTexts[key] = raw.split('\n').map(function(line) {
+        return truncateText(line, width, fontSize, bold)
+      }).join('\n')
+      return
+    }
+    const originalHeight = style.height > 0 ? style.height : lineHeight
+    const actualHeight = Math.max(originalHeight, measureTextLines(raw, width, fontSize, bold) * lineHeight)
+    const delta = Math.ceil(actualHeight - originalHeight)
+    if (delta > 0) {
+      const bottom = (style.y || 0) + originalHeight
+      Object.keys(styles).forEach(function(other) {
+        if (other === key) return
+        if ((styles[other].y || 0) >= bottom - 0.5) styles[other].y = (styles[other].y || 0) + delta
+      })
+      style.height = Math.round(actualHeight)
+    }
+  })
+
+  return { styles: styles, texts: resultTexts }
+}

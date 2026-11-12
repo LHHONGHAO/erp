@@ -1,63 +1,32 @@
 <template>
   <div class="addr-page">
     <div class="addr-body">
-      <!-- 标准图片识别框 -->
+      <!-- 标准联系人信息提取面板：识别框 + 信息卡片（字段行随业务增减） -->
       <div ref="scrollBlankFirst">
-        <image-recognize-box
-          v-model="pasteText"
-          class="addr-ocr-box"
-          placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别"
-          :image-url="imageUrl"
-          :loading="ocrLoading"
-          :error-text="ocrError"
-          :smart-loading="pasteLoading"
-          @camera="triggerCamera"
-          @gallery="triggerGallery"
-          @clear="clearAll"
-          @smart="parsePastedText"
-          @preview="previewVisible = true" />
-        <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="addr-file-input" @change="onPick" />
-        <input ref="galleryInput" type="file" accept="image/*" class="addr-file-input" @change="onPick" />
-      </div>
-
-      <!-- 识别结果卡片 -->
-      <div ref="scrollBlankLast" class="addr-card addr-info">
-        <div class="addr-card__head">
-          <span>识别结果</span>
-          <div class="addr-card__head-right">
-            <span class="addr-copy-btn" @click="copyAddress">复制地址</span>
+        <contact-recognize-panel
+          :form="form"
+          :fields="fields"
+          title="识别结果"
+          copyable
+          account-field="account"
+          :platform-options="platformOptions"
+          :z-index="2000"
+          @filled="onRecognized"
+          @input.native="syncPageHeight"
+          @clear="onPanelClear">
+          <!-- 商品：仅首行显示标题；末行为「点击添加商品」触发行，已添加商品行可删除 -->
+          <div class="addr-row addr-goods-row" :class="{ 'is-first': idx === 0, 'is-trigger': !g.name }"
+               v-for="(g, idx) in goodsRows" :key="'goods-' + idx" :ref="'goodsRow' + idx">
+            <span class="addr-row__label">{{ idx === 0 ? '商品' : '' }}</span>
+            <div class="addr-goods-box" @click="openGoodsPicker(idx)">
+              <span v-if="g.name" class="addr-goods-text">{{ g.name }}<template v-if="g.spec"> · {{ g.spec }}</template></span>
+              <span v-else class="addr-goods-placeholder">点击添加商品</span>
+            </div>
+            <a-icon v-if="g.name" class="addr-goods-del" type="delete" @click.stop="removeGoodsRow(idx)" />
           </div>
-        </div>
-        <div class="addr-row" v-for="prop in fields" :key="prop.field">
-          <!-- 账号：右侧为平台下拉框 -->
-          <template v-if="prop.field === 'account'">
-            <span class="addr-row__label">{{ prop.label }}</span>
-            <a-input v-model="form.account" class="addr-row__input addr-account-input" :bordered="false"
-                     placeholder="请输入账号" />
-            <a-select v-model="form.platform" class="addr-platform-select" :dropdownMatchSelectWidth="false">
-              <a-select-option v-for="opt in platformOptions" :key="opt" :value="opt">{{ opt }}</a-select-option>
-            </a-select>
-          </template>
-          <template v-else>
-            <span class="addr-row__label">{{ prop.label }}</span>
-            <a-textarea v-if="prop.type === 'textarea'" v-model="form[prop.field]" class="addr-row__input"
-                        :bordered="false" autosize :placeholder="getPlaceholder(prop.label)" />
-            <a-input v-else v-model="form[prop.field]" class="addr-row__input" :bordered="false"
-                     :placeholder="getPlaceholder(prop.label)" />
-          </template>
-        </div>
-        <!-- 商品：仅首行显示标题，末行「添加」，其余行可删除 -->
-        <div class="addr-row addr-goods-row" :class="{ 'is-first': idx === 0 }"
-             v-for="(g, idx) in goodsRows" :key="'goods-' + idx" :ref="'goodsRow' + idx">
-          <span class="addr-row__label">{{ idx === 0 ? '商品' : '' }}</span>
-          <div class="addr-goods-box" @click="openGoodsPicker(idx)">
-            <span v-if="g.name" class="addr-goods-text">{{ g.name }}<template v-if="g.spec"> · {{ g.spec }}</template></span>
-            <span v-else class="addr-goods-placeholder">请选择商品</span>
-          </div>
-          <a-icon v-if="idx === goodsRows.length - 1" class="addr-goods-add" type="plus-circle" @click.stop="addGoodsRow" />
-          <a-icon v-else class="addr-goods-del" type="minus-circle" @click.stop="removeGoodsRow(idx)" />
-        </div>
+        </contact-recognize-panel>
       </div>
+      <div ref="scrollBlankLast" class="addr-last-marker"></div>
 
       <div ref="scrollBlankSpacer" class="addr-bottom-space"></div>
     </div>
@@ -75,17 +44,6 @@
       @confirm="handleConfirmGoods"
       @close="goodsPickerVisible = false" />
 
-    <!-- 图片放大预览 -->
-    <a-modal
-      :visible="previewVisible"
-      :footer="null"
-      :width="'96%'"
-      :zIndex="2000"
-      wrapClassName="ocr-preview-modal"
-      @cancel="previewVisible = false">
-      <img :src="imageUrl" class="addr-preview-full" @click="previewVisible = false" />
-    </a-modal>
-
     <!-- 打印标签页：会员标签模板存在时自动按模板加载，识别结果按字段回填 -->
     <label-print-modal ref="labelPrintModal" />
   </div>
@@ -96,17 +54,17 @@ import { postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
 import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
-import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
+import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
 import MobileProductPicker from '@/components/mobile/MobileProductPicker'
 
 /**
- * 地址识别独立页面：界面与识别逻辑与 OcrMemberRecognizeModal 保持一致，
- * 仅展示识别结果，不回填任何业务表单。
+ * 地址识别独立页面：使用标准联系人信息提取面板（ContactRecognizePanel），
+ * 仅展示/编辑识别结果并支持地址打印，不回填任何业务表单。
  */
 export default {
   name: 'AddressRecognize',
   mixins: [mixinDevice, scrollBlankMixin],
-  components: { LabelPrintModal, ImageRecognizeBox, MobileProductPicker },
+  components: { LabelPrintModal, ContactRecognizePanel, MobileProductPicker },
   data() {
     return {
       ocrLoading: false,
@@ -144,7 +102,23 @@ export default {
       URL.revokeObjectURL(this.imageUrl)
     }
   },
+  computed: {},
   methods: {
+    /** 识别完成：内容高度可能变化，重算页面高度 */
+    onRecognized() {
+      this.syncPageHeight()
+    },
+    /** 清除识别结果：重置输入与商品行 */
+    onPanelClear() {
+      this.form.contacts = ''
+      this.form.telephone = ''
+      this.form.account = ''
+      this.form.platform = '抖音'
+      this.form.remark = ''
+      this.form.address = ''
+      this.goodsRows = [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }]
+      this.syncPageHeight()
+    },
     getPlaceholder(label) {
       return this.ocrLoading ? '识别中...' : ('请输入' + label)
     },
@@ -373,9 +347,36 @@ export default {
         that.$message.error(errMsg)
       })
     },
+    /**
+     * 清理识别文本：去掉与地址无关的无效内容
+     * 1. 纯数字/符号碎片（如快递单表格的行号 8、9、10）
+     * 2. 订单号、运单号、重量、金额等物流/单据信息
+     * 保留含中文的行、电话行，并去重
+     */
+    cleanOcrText(text) {
+      var lines = String(text || '').split(/\r?\n/)
+      var seen = {}
+      var result = []
+      lines.forEach(function(line) {
+        var item = line.replace(/\s+/g, ' ').trim()
+        if (!item) return
+        var hasChinese = /[\u4e00-\u9fa5]/.test(item)
+        var digits = item.replace(/\D/g, '')
+        var isPhone = /^[+\d][\d\s()-]{5,19}$/.test(item) && digits.length >= 7
+        // 非中文且不是电话的碎片行（行号、金额符号、分隔线等）直接丢弃
+        if (!hasChinese && !isPhone) return
+        // 与地址无关的单据/物流信息
+        if (/^(订单号|运单号|快递单号|流水号|单号|重量|体积|数量|金额|合计|小计|单价|价格|日期|时间)[:：]?/.test(item)) return
+        if (seen[item]) return
+        seen[item] = true
+        result.push(item)
+      })
+      return result.join('\n')
+    },
     fillFields(data) {
       if (data.rawText) {
-        this.pasteText = data.rawText
+        // 回填编辑框前清理与地址无关的内容（表格行号、订单/物流信息等）
+        this.pasteText = this.cleanOcrText(data.rawText)
       }
       this.form.contacts = data.contacts || ''
       this.form.telephone = data.telephone || ''
@@ -415,17 +416,16 @@ export default {
         }
       })
     },
-    addGoodsRow() {
-      // 最后一行未选择商品时，添加无效
+    /** 保证商品列表末尾始终有一行「点击添加商品」触发行 */
+    ensureGoodsTailRow() {
       var last = this.goodsRows[this.goodsRows.length - 1]
-      if (!last || !last.name) return
-      this.goodsRows.push({ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' })
-      // 新增行：重算页面高度并滚动到可视区
-      this.syncPageHeight(this.goodsRows.length - 1)
+      if (!last || last.name) {
+        this.goodsRows.push({ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' })
+      }
     },
     removeGoodsRow(index) {
-      if (this.goodsRows.length <= 1) return
       this.goodsRows.splice(index, 1)
+      this.ensureGoodsTailRow()
       // 删除行：重算页面高度
       this.syncPageHeight()
     },
@@ -521,6 +521,8 @@ export default {
     handlePickGoods(goods) {
       if (!goods || !goods.name) return
       this.$set(this.goodsRows, this.goodsTargetIndex, this.toGoodsRow(goods))
+      // 选中后自动补一行「点击添加商品」触发行
+      this.ensureGoodsTailRow()
       this.goodsPickerVisible = false
       // 商品名过长会折行加高，重新计算页面高度
       this.syncPageHeight()
@@ -538,6 +540,8 @@ export default {
           self.goodsRows.push(row)
         }
       })
+      // 多选回填后自动补一行触发行
+      this.ensureGoodsTailRow()
       this.goodsPickerVisible = false
       this.syncPageHeight()
     },
@@ -601,6 +605,10 @@ export default {
 }
 .addr-ocr-box {
   margin-bottom: 12px;
+}
+/* 页面高度计算锚点：位于标准面板底部 */
+.addr-last-marker {
+  height: 0;
 }
 .addr-preview-full {
   display: block;
@@ -727,19 +735,17 @@ export default {
 .addr-goods-text {
   color: #333;
 }
+/* 「点击添加商品」触发行：浅灰提示、不可编辑，点击打开商品选择 */
 .addr-goods-placeholder {
   color: #bfbfbf;
 }
-.addr-goods-add,
+.addr-goods-row.is-trigger .addr-goods-box {
+  cursor: pointer;
+}
 .addr-goods-del {
   flex-shrink: 0;
   margin-left: 8px;
   font-size: 20px;
-}
-.addr-goods-add {
-  color: #1890ff;
-}
-.addr-goods-del {
   color: #ff4d4f;
 }
 .addr-print-btn {

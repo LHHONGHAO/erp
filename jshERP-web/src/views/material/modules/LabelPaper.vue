@@ -54,6 +54,8 @@
       schema:          { type: Object, required: true },
       values:          { type: Object, default: function() { return {} } },
       rows:            { type: Array,  default: function() { return [] } },
+      // 处理后的文本（省略号裁切模式）：元素 key → 最终文本
+      texts:           { type: Object, default: null },
       scale:           { type: Number, default: null },
       transformOrigin: { type: String, default: 'center top' },
       padLR:           { type: Number, default: 12 },
@@ -104,6 +106,8 @@
         }).map(function(el) {
           var value = el.field ? self.textOf(self.values[el.field]) : self.textOf(el.text)
           var display = el.label ? el.label + ': ' + value : value
+          var key = el.field || el.id
+          if (self.texts && self.texts[key] != null) display = self.texts[key]
           var style = self.baseStyle(el)
           // 指定宽度：按框宽自动换行；指定高度：超出部分不打印（裁剪）
           if (el.width) {

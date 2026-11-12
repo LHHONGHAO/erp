@@ -1,17 +1,30 @@
 <template>
   <div class="ir-box">
-    <a-textarea
-      class="ir-box__textarea"
-      :value="value"
-      :rows="rows"
-      :bordered="false"
-      :placeholder="placeholder"
-      @change="onTextChange" />
-    <div v-if="imageUrl" class="ir-box__preview">
-      <img :src="imageUrl" @click="$emit('preview')" />
-      <span v-if="loading">正在识别图片...</span>
-      <span v-else-if="errorText" class="ir-box__preview-error">识别失败：{{ errorText }}</span>
-      <span v-else>{{ previewText }}</span>
+    <div class="ir-box__editor" :class="{ 'is-image-inline': imageInline && imageUrl }">
+      <a-textarea
+        class="ir-box__textarea"
+        :value="value"
+        :rows="rows"
+        :bordered="false"
+        :placeholder="placeholder"
+        @change="onTextChange" />
+      <template v-if="imageUrl">
+        <template v-if="imageInline">
+          <img class="ir-box__inline-image" :src="imageUrl" @click="$emit('preview')" />
+          <div v-if="loading || errorText" class="ir-box__inline-status">
+            <span v-if="loading">正在识别图片...</span>
+            <span v-else class="ir-box__preview-error">识别失败：{{ errorText }}</span>
+          </div>
+        </template>
+        <div v-else class="ir-box__preview">
+          <img :src="imageUrl" @click="$emit('preview')" />
+          <div class="ir-box__preview-text">
+            <template v-if="loading">正在识别图片...</template>
+            <template v-else-if="errorText"><span class="ir-box__preview-error">识别失败：{{ errorText }}</span></template>
+            <template v-else>{{ previewText }}</template>
+          </div>
+        </div>
+      </template>
     </div>
     <div class="ir-box__toolbar">
       <div class="ir-box__toolbar-left">
@@ -72,6 +85,11 @@ export default {
       type: String,
       default: '图片已识别，点击图片可放大查看'
     },
+    // 图片内嵌在输入框左侧、垂直居中显示，文字在图片右侧逐行显示且可编辑
+    imageInline: {
+      type: Boolean,
+      default: false
+    },
     smartText: {
       type: String,
       default: '智能识别'
@@ -113,12 +131,38 @@ export default {
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
+.ir-box__editor {
+  position: relative;
+}
 .ir-box__textarea {
   display: block;
   padding: 14px;
   font-size: 16px;
   line-height: 24px;
   resize: none;
+}
+/* 内嵌图片时：输入框高度不变，文字左侧留出图片位置，从第一行开始逐行显示 */
+.ir-box__editor.is-image-inline .ir-box__textarea {
+  padding-left: 100px;
+}
+.ir-box__inline-image {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.ir-box__inline-status {
+  position: absolute;
+  left: 100px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: #8c8c8c;
 }
 .ir-box__preview {
   display: flex;
@@ -128,12 +172,19 @@ export default {
   font-size: 13px;
   color: #8c8c8c;
 }
+.ir-box__preview-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
 .ir-box__preview img {
   width: 64px;
   height: 64px;
   border-radius: 8px;
   object-fit: cover;
   cursor: zoom-in;
+  flex-shrink: 0;
 }
 .ir-box__preview-error {
   color: #f5222d;

@@ -46,9 +46,10 @@
               <!-- 新版模板：按 elements 直接渲染（mm 坐标、条码/二维码、明细循环） -->
               <label-paper
                 v-if="templateSchema"
-                :schema="templateSchema"
+                :schema="previewSchema"
                 :values="attrValues"
                 :rows="detailRows"
+                :texts="previewTexts"
                 :scale="1" />
               <template v-else>
                 <div
@@ -75,7 +76,8 @@
                     </div>
                   </template>
                   <template v-else>
-                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}
+                    <template v-if="overflowMode === 'ellipsis' && overflowLayout.texts[item.attr.key] != null">{{ overflowLayout.texts[item.attr.key] }}</template>
+                    <template v-else><template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}</template>
                   </template>
                 </div>
               </template>
@@ -446,9 +448,10 @@
               <!-- 新版模板：按 elements 直接渲染（mm 坐标、条码/二维码、明细循环） -->
               <label-paper
                 v-if="templateSchema"
-                :schema="templateSchema"
+                :schema="previewSchema"
                 :values="attrValues"
                 :rows="detailRows"
+                :texts="previewTexts"
                 :scale="1" />
               <template v-else>
                 <div
@@ -475,7 +478,8 @@
                     </div>
                   </template>
                   <template v-else>
-                    <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}
+                    <template v-if="overflowMode === 'ellipsis' && overflowLayout.texts[item.attr.key] != null">{{ overflowLayout.texts[item.attr.key] }}</template>
+                    <template v-else><template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>{{ getItemText(item) }}</template>
                   </template>
                 </div>
               </template>
@@ -636,7 +640,7 @@
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveGoodsLayout } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveGoodsLayout, applyTextOverflow } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { getAction, postAction } from '@/api/manage'
@@ -990,6 +994,66 @@
       },
       goodsTableData() {
         return this.goodsLayout.table
+      },
+      // 超长文本处理模式：随模板保存，wrap=自动折行并下移后续行，ellipsis=单行省略号裁切
+      overflowMode() {
+        return this.template && this.template.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
+      },
+      // 元素 key → 最终显示文本（含「属性名：」前缀）
+      overflowTexts() {
+        var self = this
+        var map = {}
+        this.renderItems.forEach(function(item) {
+          if (item.isCode) return
+          var label = self.attrLabels[item.key] || ''
+          var value = item.key === GOODS_KEY
+            ? self.goodsLayout.goodsText
+            : (item.attr.value == null ? '' : item.attr.value)
+          map[item.key] = label ? label + ': ' + value : value
+        })
+        return map
+      },
+      // 折行顺移 / 省略号裁切结果（预览与打印共用）
+      overflowLayout() {
+        return applyTextOverflow({
+          mode: this.overflowMode,
+          styles: this.goodsLayout.styles,
+          keys: this.renderItems.filter(function(item) { return !item.isCode }).map(function(item) { return item.key }),
+          texts: this.overflowTexts,
+          paperWidth: this.labelWidth
+        })
+      },
+      // 预览 schema：套用折行后的实际坐标与高度
+      previewSchema() {
+        var schema = this.templateSchema
+        if (!schema || !schema.elements) return schema
+        var styles = this.overflowLayout.styles
+        var changed = false
+        var elements = schema.elements.map(function(el) {
+          if (!el) return el
+          var key = (el.type === 'barcode' || el.type === 'qrcode')
+            ? CODE_KEY_PREFIX + el.field
+            : (el.field || el.id)
+          var style = styles[key]
+          if (!style) return el
+          var next = el
+          var y = Math.round((style.y || 0) / PX_PER_MM * 100) / 100
+          if (Math.abs((el.y || 0) - y) > 0.01) {
+            next = Object.assign({}, next, { y: y })
+            changed = true
+          }
+          var height = style.height / PX_PER_MM
+          if (style.height > 0 && el.height != null && Math.abs((el.height || 0) - height) > 0.01) {
+            next = Object.assign({}, next, { height: Math.round(height * 100) / 100 })
+            changed = true
+          }
+          return next
+        })
+        return changed ? Object.assign({}, schema, { elements: elements }) : schema
+      },
+      // 省略号模式预览文本：直接用裁切后的文本
+      previewTexts() {
+        return this.overflowMode === 'ellipsis' ? this.overflowLayout.texts : null
       },
       goodsTableColumns() {
         return GOODS_TABLE_COLUMNS
@@ -1701,7 +1765,8 @@
               attrLabels: cfg.attrLabels || {},
               labelWidth: cfg.width || cfg.labelWidth || cfgInfo.width,
               labelHeight: cfg.height || cfg.labelHeight || cfgInfo.height,
-              goodsFields: cfg.goodsFields
+              goodsFields: cfg.goodsFields,
+              overflowMode: cfg.overflowMode
             }
           }).catch(function() { return null })
         }
@@ -1769,6 +1834,7 @@
           width: width || fallback[0],
           height: height || fallback[1],
           goodsFields: Array.isArray(base.goodsFields) ? base.goodsFields : ((src && src.goodsFields) || null),
+          overflowMode: (schema && schema.overflowMode) || base.overflowMode || src.overflowMode || 'wrap',
           schema: schema
         }
       },
@@ -1888,7 +1954,7 @@
       },
       itemStyle(key) {
         // 商品明细表/商品组合按商品行数动态变高，使用重排后的坐标
-        var s = this.goodsLayout.styles[key] || this.attrStyles[key]
+        var s = this.overflowLayout.styles[key] || this.goodsLayout.styles[key] || this.attrStyles[key]
         if (!s) return {}
         // 独立编码元素：宽高即图形实际可打印尺寸
         if (isCodeKey(key)) {
@@ -2231,7 +2297,7 @@
       buildLayoutItems() {
         var self = this
         var items = []
-        var resolved = this.goodsLayout.styles
+        var resolved = this.overflowLayout.styles
         this.renderItems.forEach(function(item) {
           var style = resolved[item.key] || self.attrStyles[item.key]
           if (!style) return
@@ -2304,6 +2370,9 @@
             ? self.goodsLayout.goodsText
             : (attr.value == null ? '' : attr.value)
           var displayText = labelText ? labelText + ': ' + value : value
+          // 超宽处理后的最终文本（省略号裁切模式下已截断）
+          var overflowText = self.overflowLayout.texts[attr.key]
+          if (overflowText != null) displayText = overflowText
           items.push({
             x: style.x || 0,
             y: style.y || 0,

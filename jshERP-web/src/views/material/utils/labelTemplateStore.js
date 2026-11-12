@@ -26,6 +26,7 @@ function fromServer(row) {
   legacy.businessType = row.businessType || cfg.businessType || ''
   legacy.provider = (cfg.dataSource && cfg.dataSource.provider) || legacy.provider || ''
   legacy.version = row.version || 1
+  legacy.overflowMode = legacy.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
   // 保留 v3 原始结构，供预览模块按 elements 直接渲染
   legacy.schema = cfg.elements ? cfg : null
   return legacy

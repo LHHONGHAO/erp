@@ -9,7 +9,7 @@
     :wrapClassName="wrapClass"
     :style="modalStyle"
     :bodyStyle="bodyStyle"
-    :mask="isDesktop()"
+    :mask="!isMobileView"
     @cancel="handleCancel">
     <template slot="title">
       <div class="ocr-member-title">
@@ -18,69 +18,21 @@
       </div>
     </template>
 
-    <!-- 标准图片识别框（文本输入 + 拍照/图片/清除 + 智能识别） -->
-    <div>
-      <image-recognize-box
-        v-model="pasteText"
-        class="ocr-member-ocr-box"
-        placeholder="粘贴名片、快递单等文本内容，或拍照 / 选择图片自动识别"
-        :image-url="imageUrl"
-        :loading="ocrLoading"
-        :error-text="ocrError"
-        :smart-loading="pasteLoading"
-        @camera="triggerCamera"
-        @gallery="triggerGallery"
-        @clear="clearMobile"
-        @smart="parsePastedText"
-        @preview="previewVisible = true" />
-      <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onMobilePick" />
-      <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onMobilePick" />
-    </div>
+    <!-- 标准联系人信息提取面板：与地址识别独立页同一组件、同一外观 -->
+    <contact-recognize-panel
+      ref="panel"
+      :form="ocrFields"
+      :fields="memberProps"
+      title="联系人信息"
+      show-status
+      :z-index="zIndex"
+      @filled="onFilled"
+      @clear="onClear" />
 
-    <!-- 图片放大预览 -->
-    <a-modal
-      :visible="previewVisible"
-      :footer="null"
-      :width="'96%'"
-      :zIndex="2000"
-      wrapClassName="ocr-preview-modal"
-      @cancel="previewVisible = false">
-      <img :src="imageUrl" class="ocr-preview-full" @click="previewVisible = false" />
-    </a-modal>
-
-    <!-- 识别结果（原始文本）：电脑端展示 -->
-    <div v-if="!isMobileView && ocrFields.rawText" style="margin-top:4px">
+    <!-- 电脑端：原始识别文本 -->
+    <div v-if="!isMobileView && rawText" style="margin-top:4px">
       <div style="font-size:13px;color:rgba(0,0,0,0.85);line-height:20px;margin-bottom:2px">原始文本</div>
-      <a-textarea v-model="ocrFields.rawText" readOnly style="font-size:12px;color:#666;resize:none" :rows="2" />
-    </div>
-
-    <!-- 手机端：联系人信息卡片 -->
-    <div v-if="isMobileView" class="ocr-member-card ocr-member-info">
-      <div class="ocr-member-card__head">
-        <span>联系人信息</span>
-        <span class="ocr-member-tag" :class="{ 'is-done': hasOcrResult }">{{ hasOcrResult ? '已识别' : '待识别' }}</span>
-      </div>
-      <div class="ocr-member-row" v-for="prop in memberProps" :key="prop.field">
-        <span class="ocr-member-row__label">{{ prop.label }}</span>
-        <a-textarea v-if="prop.type==='textarea'" v-model="ocrFields[prop.field]" class="ocr-member-row__input"
-                    :bordered="false" autosize :placeholder="ocrLoading ? '识别中...' : ('请输入' + prop.label)" />
-        <a-input v-else v-model="ocrFields[prop.field]" class="ocr-member-row__input" :bordered="false"
-                 :placeholder="ocrLoading ? '识别中...' : ('请输入' + prop.label)" />
-      </div>
-    </div>
-
-    <!-- 电脑端：属性信息 -->
-    <div v-else style="margin-top:4px">
-      <a-divider orientation="left" style="margin:4px 0 8px;font-size:13px">识别的信息</a-divider>
-      <a-row :gutter="8">
-        <a-col :span="12" v-for="prop in memberProps" :key="prop.field">
-          <div class="ocr-prop-item">
-            <div style="font-size:13px;color:rgba(0,0,0,0.85);line-height:20px;margin-bottom:0px">{{ prop.label }}</div>
-            <a-input v-if="prop.type==='input'" v-model="ocrFields[prop.field]" :placeholder="ocrLoading ? '识别中...' : ''" size="small" />
-            <a-textarea v-if="prop.type==='textarea'" v-model="ocrFields[prop.field]" :placeholder="ocrLoading ? '识别中...' : ''" size="small" :rows="2" />
-          </div>
-        </a-col>
-      </a-row>
+      <a-textarea :value="rawText" readOnly style="font-size:12px;color:#666;resize:none" :rows="2" />
     </div>
 
     <!-- 操作按钮 -->
@@ -95,14 +47,13 @@
 </template>
 
 <script>
-import { postAction } from '@/api/manage'
 import { mixinDevice } from '@/utils/mixin'
-import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
+import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
 
 export default {
   name: 'OcrMemberRecognizeModal',
   mixins: [mixinDevice],
-  components: { ImageRecognizeBox },
+  components: { ContactRecognizePanel },
   props: {
     visible: {
       type: Boolean,
@@ -115,15 +66,9 @@ export default {
   },
   data() {
     return {
-      ocrLoading: false,
-      pasteLoading: false,
       hasOcrResult: false,
-      ocrError: '',
-      imageUrl: '',
-      previewVisible: false,
-      pasteText: '',
+      rawText: '',
       ocrFields: {
-        rawText: '',
         contacts: '',
         telephone: '',
         email: '',
@@ -171,7 +116,7 @@ export default {
       return {}
     },
     wrapClass() {
-      return this.wrapClassNameInfo() + (this.isMobileView ? ' ocr-member-modal-mobile' : '')
+      return this.isMobileView ? 'ocr-member-modal-wrap ocr-member-modal-mobile' : 'ocr-member-modal-wrap'
     }
   },
   watch: {
@@ -187,7 +132,6 @@ export default {
     },
     resetOcrFields() {
       this.ocrFields = {
-        rawText: '',
         contacts: '',
         telephone: '',
         email: '',
@@ -195,110 +139,24 @@ export default {
         company: ''
       }
       this.hasOcrResult = false
-      this.ocrLoading = false
-      this.pasteLoading = false
-      this.ocrError = ''
-      this.imageUrl = ''
-      this.pasteText = ''
+      this.rawText = ''
     },
-    /** 手机端：拍照/相册选择图片 */
-    triggerCamera() {
-      this.$refs.cameraInput && this.$refs.cameraInput.click()
+    onFilled(data) {
+      this.hasOcrResult = true
+      this.rawText = (data && data.rawText) || ''
     },
-    triggerGallery() {
-      this.$refs.galleryInput && this.$refs.galleryInput.click()
-    },
-    onMobilePick(event) {
-      var input = event.target
-      var file = input.files && input.files[0]
-      // 允许重复选择同一张图片
-      input.value = ''
-      if (file) {
-        this.beforeUpload(file)
-      }
-    },
-    clearMobile() {
-      if (this.imageUrl) {
-        URL.revokeObjectURL(this.imageUrl)
-      }
+    onClear() {
       this.resetOcrFields()
-    },
-    beforeUpload(file) {
-      this.ocrLoading = true
-      this.hasOcrResult = false
-      this.ocrError = ''
-      if (this.imageUrl) {
-        URL.revokeObjectURL(this.imageUrl)
-      }
-      this.imageUrl = URL.createObjectURL(file)
-      var formData = new FormData()
-      formData.append('file', file)
-      var that = this
-      postAction('/ocr/recognizeAddress', formData).then(function(res) {
-        that.ocrLoading = false
-        if (res && res.code === 200 && res.data) {
-          that.fillOcrFields(res.data)
-          that.hasOcrResult = true
-        } else {
-          var msg = (res && res.data && res.data.message) ? res.data.message : '识别失败'
-          that.ocrError = msg
-          that.$message.error(msg)
-        }
-      }).catch(function(err) {
-        that.ocrLoading = false
-        var errMsg = '识别请求失败：' + (err && err.message ? err.message : '未知错误')
-        that.ocrError = errMsg
-        that.$message.error(errMsg)
-      })
-      return false
-    },
-    parsePastedText() {
-      var text = this.pasteText.trim()
-      if (!text) {
-        this.$message.warn('请先粘贴文本内容')
-        return
-      }
-      this.pasteLoading = true
-      this.ocrError = ''
-      var that = this
-      postAction('/ocr/parseAddressText', { text: text }).then(function(res) {
-        that.pasteLoading = false
-        if (res && res.code === 200 && res.data) {
-          that.fillOcrFields(res.data)
-          that.hasOcrResult = true
-          that.imageUrl = ''
-        } else {
-          var msg = (res && res.data && res.data.message) ? res.data.message : '解析失败'
-          that.ocrError = msg
-          that.$message.error(msg)
-        }
-      }).catch(function(err) {
-        that.pasteLoading = false
-        var errMsg = '解析请求失败：' + (err && err.message ? err.message : '未知错误')
-        that.ocrError = errMsg
-        that.$message.error(errMsg)
-      })
-    },
-    fillOcrFields(data) {
-      if (data.rawText) {
-        this.ocrFields.rawText = data.rawText
-      }
-      this.ocrFields.contacts = data.contacts || ''
-      this.ocrFields.telephone = data.telephone || ''
-      this.ocrFields.email = data.email || ''
-      this.ocrFields.address = data.address || ''
-      this.ocrFields.company = data.company || ''
     },
     applyResult() {
       if (this.hasOcrResult) {
-        var output = {
+        this.$emit('ok', {
           contacts: this.ocrFields.contacts || '',
           telephone: this.ocrFields.telephone || '',
           email: this.ocrFields.email || '',
           address: this.ocrFields.address || '',
           company: this.ocrFields.company || ''
-        }
-        this.$emit('ok', output)
+        })
       }
     }
   }
@@ -375,67 +233,6 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .ocr-member-card {
-    margin-bottom: 12px;
-    background: #fff;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  }
-  .ocr-preview-full {
-    display: block;
-    width: 100%;
-    max-height: 78vh;
-    object-fit: contain;
-    cursor: zoom-out;
-  }
-  .ocr-member-card__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 14px 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #262626;
-  }
-  .ocr-member-tag {
-    padding: 2px 10px;
-    font-size: 12px;
-    font-weight: 400;
-    color: #8c8c8c;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-  }
-  .ocr-member-tag.is-done {
-    color: #1890ff;
-    border-color: #bae0ff;
-    background: #e6f4ff;
-  }
-  .ocr-member-row {
-    display: flex;
-    align-items: center;
-    min-height: 52px;
-    padding: 6px 14px;
-    border-top: 1px solid #f0f0f0;
-  }
-  .ocr-member-row__label {
-    width: 84px;
-    flex-shrink: 0;
-    font-size: 15px;
-    color: #595959;
-  }
-  .ocr-member-row__input {
-    flex: 1;
-    padding: 0;
-    font-size: 16px;
-    line-height: 22px;
-    border: none;
-    box-shadow: none;
-    background: transparent;
-  }
-  .ocr-member-row__input::placeholder {
-    color: #bfbfbf;
   }
   .ocr-member-actions {
     position: sticky;

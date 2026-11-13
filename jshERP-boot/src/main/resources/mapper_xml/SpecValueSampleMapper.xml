@@ -6,6 +6,7 @@
     <result column="tenant_id" jdbcType="BIGINT" property="tenantId" />
     <result column="category_id" jdbcType="BIGINT" property="categoryId" />
     <result column="attribute_id" jdbcType="BIGINT" property="attributeId" />
+    <result column="child_name" jdbcType="VARCHAR" property="childName" />
     <result column="canonical_value" jdbcType="VARCHAR" property="canonicalValue" />
     <result column="norm_key" jdbcType="VARCHAR" property="normKey" />
     <result column="attr_value_id" jdbcType="BIGINT" property="attrValueId" />
@@ -19,7 +20,7 @@
   </resultMap>
 
   <sql id="Base_Column_List">
-    id, tenant_id, category_id, attribute_id, canonical_value, norm_key, attr_value_id,
+    id, tenant_id, category_id, attribute_id, child_name, canonical_value, norm_key, attr_value_id,
     source, confidence, hit_count, status, create_time, update_time, delete_flag
   </sql>
 
@@ -27,9 +28,9 @@
           useGeneratedKeys="true" keyProperty="id">
     insert into jsh_spec_value_sample
     <trim prefix="(" suffix=")" suffixOverrides=",">
-      <if test="tenantId != null">tenant_id,</if>
       <if test="categoryId != null">category_id,</if>
       <if test="attributeId != null">attribute_id,</if>
+      <if test="childName != null">child_name,</if>
       <if test="canonicalValue != null">canonical_value,</if>
       <if test="normKey != null">norm_key,</if>
       <if test="attrValueId != null">attr_value_id,</if>
@@ -40,9 +41,9 @@
       <if test="deleteFlag != null">delete_flag,</if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
-      <if test="tenantId != null">#{tenantId,jdbcType=BIGINT},</if>
       <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
       <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
+      <if test="childName != null">#{childName,jdbcType=VARCHAR},</if>
       <if test="canonicalValue != null">#{canonicalValue,jdbcType=VARCHAR},</if>
       <if test="normKey != null">#{normKey,jdbcType=VARCHAR},</if>
       <if test="attrValueId != null">#{attrValueId,jdbcType=BIGINT},</if>
@@ -59,6 +60,7 @@
     <set>
       <if test="categoryId != null">category_id = #{categoryId,jdbcType=BIGINT},</if>
       <if test="attributeId != null">attribute_id = #{attributeId,jdbcType=BIGINT},</if>
+      <if test="childName != null">child_name = #{childName,jdbcType=VARCHAR},</if>
       <if test="canonicalValue != null">canonical_value = #{canonicalValue,jdbcType=VARCHAR},</if>
       <if test="normKey != null">norm_key = #{normKey,jdbcType=VARCHAR},</if>
       <if test="attrValueId != null">attr_value_id = #{attrValueId,jdbcType=BIGINT},</if>
@@ -90,6 +92,9 @@
       <if test="attributeId != null">
         and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
       </if>
+      <if test="childName != null">
+        and child_name = #{childName,jdbcType=VARCHAR}
+      </if>
     order by hit_count desc, id asc
     limit 1
   </select>
@@ -108,8 +113,30 @@
       <if test="attributeId != null">
         and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
       </if>
+      <if test="childName != null">
+        and child_name = #{childName,jdbcType=VARCHAR}
+      </if>
     order by hit_count desc, confidence desc, id asc
     limit 1
+  </select>
+
+  <select id="selectByScope" resultMap="BaseResultMap">
+    select <include refid="Base_Column_List"/>
+    from jsh_spec_value_sample
+    where delete_flag &lt;&gt; '1'
+      and status = '0'
+      and IFNULL(tenant_id,0) = IFNULL(#{tenantId,jdbcType=BIGINT},0)
+      <if test="categoryId != null">
+        and (category_id = #{categoryId,jdbcType=BIGINT} or category_id = 0)
+      </if>
+      <if test="attributeId != null">
+        and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
+      </if>
+      <if test="childName != null">
+        and child_name = #{childName,jdbcType=VARCHAR}
+      </if>
+    order by hit_count desc, confidence desc, id asc
+    limit #{limit,jdbcType=INTEGER}
   </select>
 
   <select id="selectList" resultMap="BaseResultMap">

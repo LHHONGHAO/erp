@@ -11,7 +11,8 @@ public interface SpecValueAliasMapper {
     int insertSelective(SpecValueAlias record);
 
     SpecValueAlias selectByNormKey(@Param("normKey") String normKey, @Param("attributeId") Long attributeId,
-                                   @Param("categoryId") Long categoryId, @Param("tenantId") Long tenantId);
+                                   @Param("categoryId") Long categoryId, @Param("childName") String childName,
+                                   @Param("tenantId") Long tenantId);
 
     int increaseHitCount(@Param("id") Long id);
 }

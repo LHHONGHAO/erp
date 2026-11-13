@@ -27,7 +27,7 @@
               <span v-if="img.loading" class="ma-ai-image__mask">识别中</span>
               <a-icon type="close-circle" class="ma-ai-image__remove" @click="removeAiImage(index)" />
             </div>
-            <div v-if="!aiImages.length" class="ma-ai-images__empty">请拍摄或从相册选择商品图片（可多张）</div>
+            <div v-if="!aiImages.length" class="ma-ai-images__empty">请拍摄或选择一张商品图片</div>
           </div>
           <div class="ma-ai-image-actions">
             <a-button icon="camera" @click="triggerAiCamera">拍照</a-button>
@@ -44,7 +44,7 @@
             placeholder="请选择商品类别（须选二级类目）" />
           <a-button type="primary" size="large" block class="ma-ai-recognize" :disabled="!canAiRecognize" @click="startAiRecognize">识别</a-button>
           <input ref="aiCameraInput" type="file" accept="image/*" capture="environment" class="ma-ai-file" @change="onAiFilesChange" />
-          <input ref="aiGalleryInput" type="file" accept="image/*" multiple class="ma-ai-file" @change="onAiFilesChange" />
+          <input ref="aiGalleryInput" type="file" accept="image/*" class="ma-ai-file" @change="onAiFilesChange" />
         </div>
         <material-modal v-else ref="form" inline :aiMode="mode === 'ai'" @close="onClose" @ok="onSaved" />
       </template>
@@ -198,7 +198,10 @@
       onAiFilesChange (e) {
         const files = Array.from((e.target && e.target.files) || [])
         e.target.value = ''
-        files.slice(0, 9 - this.aiImages.length).forEach(file => this.addAiImage(file))
+        // 单图单商品：每次只保留一张图片，重新拍照/选图会替换旧图
+        if (!files.length) return
+        this.aiImages = []
+        this.addAiImage(files[0])
       },
       addAiImage (file) {
         const item = { id: ++this.aiImageSeq, preview: '', imagePath: '', rawText: '', loading: true }
@@ -239,7 +242,8 @@
       // 识别：类别已选且图片识别完成后可用，点击进入识别结果页
       startAiRecognize () {
         if (!this.canAiRecognize) return
-        const images = this.aiImages.map(item => ({ rawText: item.rawText || '', imagePath: item.imagePath || '' }))
+        const item = this.aiImages[0] || {}
+        const image = { rawText: item.rawText || '', imagePath: item.imagePath || '' }
         this.aiCategoryChosen = true
         this.registerHeaderActions()
         this.$nextTick(() => {
@@ -248,22 +252,22 @@
           if (form && form.applyPresetCategory) {
             form.applyPresetCategory(this.gateCategoryId)
           }
-          this.$nextTick(() => this.waitSpecReadyAndAggregate(images, 0))
+          this.$nextTick(() => this.waitSpecReadyAndRecognize(image, 0))
         })
       },
       // 等待类别规格加载完成后打开识别结果页
-      waitSpecReadyAndAggregate (images, tries) {
+      waitSpecReadyAndRecognize (image, tries) {
         const form = this.$refs.form
         if (!form) return
         if ((form.specModules || []).length > 0) {
-          form.openSpecAggregateForImages(images)
+          form.openSpecRecognize(image)
           return
         }
         if (tries >= 20) {
           this.$message.warning('该类别未配置规格，无法使用AI识别')
           return
         }
-        setTimeout(() => this.waitSpecReadyAndAggregate(images, tries + 1), 150)
+        setTimeout(() => this.waitSpecReadyAndRecognize(image, tries + 1), 150)
       },
       // 注册手机端顶部按钮：设置（属性设置）、重置、保存（类别选择阶段不显示）
       registerHeaderActions () {

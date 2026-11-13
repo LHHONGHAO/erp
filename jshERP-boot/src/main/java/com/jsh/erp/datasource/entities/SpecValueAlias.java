@@ -11,6 +11,7 @@ public class SpecValueAlias {
     private Long sampleId;
     private Long categoryId;
     private Long attributeId;
+    private String childName;
     private String rawText;
     private String normKey;
     private Integer hitCount;
@@ -31,6 +32,9 @@ public class SpecValueAlias {
 
     public Long getAttributeId() { return attributeId; }
     public void setAttributeId(Long attributeId) { this.attributeId = attributeId; }
+
+    public String getChildName() { return childName; }
+    public void setChildName(String childName) { this.childName = childName == null ? "" : childName.trim(); }
 
     public String getRawText() { return rawText; }
     public void setRawText(String rawText) { this.rawText = rawText == null ? null : rawText.trim(); }

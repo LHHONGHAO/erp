@@ -11,6 +11,7 @@ public class SpecValueSample {
     private Long tenantId;
     private Long categoryId;
     private Long attributeId;
+    private String childName;
     private String canonicalValue;
     private String normKey;
     private Long attrValueId;
@@ -33,6 +34,9 @@ public class SpecValueSample {
 
     public Long getAttributeId() { return attributeId; }
     public void setAttributeId(Long attributeId) { this.attributeId = attributeId; }
+
+    public String getChildName() { return childName; }
+    public void setChildName(String childName) { this.childName = childName == null ? "" : childName.trim(); }
 
     public String getCanonicalValue() { return canonicalValue; }
     public void setCanonicalValue(String canonicalValue) {

@@ -146,9 +146,9 @@
                 <div style="margin-top: 8px;">请先选择种类，规格将自动加载</div>
               </div>
               <template v-else>
-              <!-- 多图识别：同一商品多张图片识别后自动归类并生成规格与 SKU -->
+              <!-- 单图识别：识别一张商品图片，自动归一属性与规格值 -->
               <div class="spec-ocr-bar">
-                <a-button size="small" type="link" icon="picture" @click="openMultiSpecImageExtract">多图识别（自动生成规格与 SKU）</a-button>
+                <a-button size="small" type="link" icon="picture" @click="openSpecImageRecognize">图片识别（自动识别属性与规格）</a-button>
               </div>
               <div v-for="(module, mIndex) in specModules" :key="mIndex" class="spec-module">
                 <!-- 头部：规格名称 + 图片开关 + 删除 -->
@@ -454,13 +454,11 @@
       :extractOnly="true"
       @cancel="handleSpecImageOcrClose" />
     <ocr-recognize-modal
-      :visible="specMultiOcrVisible"
+      :visible="specRecognizeOcrVisible"
       :extractOnly="true"
-      :multi="true"
-      :maxImages="9"
       :zIndex="1100"
-      @cancel="handleMultiSpecImageOcrClose" />
-    <!-- 多图识别聚合预览：标准弹层，底部栏提供属性设置与保存 -->
+      @cancel="handleSpecRecognizeOcrClose" />
+    <!-- 单图识别结果预览：标准弹层，底部栏提供属性设置与保存 -->
     <a-modal
       :title="aggregateModalTitle"
       :visible="specAggregateVisible"
@@ -497,15 +495,6 @@
           </div>
         </div>
         <div v-if="specAggregateResult" class="agg-sheet-card">
-          <div v-if="specAggregateResult.duplicated" class="agg-tip">
-            <a-icon type="info-circle" /> 重复图片已忽略 {{ specAggregateResult.duplicatedCount }} 张
-          </div>
-          <div v-if="!specAggregateResult.spuConsistent" class="agg-tip agg-tip-warn">
-            <a-icon type="warning" /> 图片内容不一致，公共属性已按多数取值：
-            <div v-for="conflict in specAggregateResult.conflicts" :key="conflict.field" class="agg-conflict-item">
-              {{ conflict.label }}：{{ (conflict.values || []).join(' / ') }} → 采用「{{ conflict.chosen }}」
-            </div>
-          </div>
           <div class="agg-section-head">
             <a-divider orientation="left" style="margin:8px 0 6px;font-size:13px;flex:1">商品基础属性</a-divider>
           </div>
@@ -522,7 +511,12 @@
                   类别常值建议：{{ stablePropertyProfile(prop.field).modeValue }}
                 </a-button>
                 <div v-if="propertyProfile(prop.field)" class="agg-profile-status">
-                  本类已统计 {{ propertyProfile(prop.field).sampleCount }} 条：{{ propertyProfile(prop.field).stableSingle ? '稳定单值' : '多值/尚未稳定，不自动补全' }}
+                  本类已统计 {{ propertyProfile(prop.field).sampleCount }} 条：{{ propertyProfile(prop.field).stableSingle ? '稳定单值' : '多值，可按常用值选择' }}
+                </div>
+                <div v-if="propertyCandidates(prop.field).length" class="agg-candidate-list">
+                  <span class="agg-candidate-tip">本类常用值：</span>
+                  <a v-for="cand in propertyCandidates(prop.field)" :key="'cand-' + cand" class="agg-candidate"
+                     @click="applyProfileCandidate(prop.field, cand)">{{ cand }}</a>
                 </div>
                 <div v-if="aggFieldErrors[prop.field]" class="agg-prop-error">{{ aggFieldErrors[prop.field] }}</div>
               </div>
@@ -539,7 +533,7 @@
             </div>
           </div>
           <template v-for="group in specImageGroups">
-            <a-divider :key="'spec-' + group.index" orientation="left" style="margin:8px 0 6px;font-size:13px">规格值{{ group.index }}</a-divider>
+            <a-divider :key="'spec-' + group.index" orientation="left" style="margin:8px 0 6px;font-size:13px">规格值</a-divider>
             <div v-for="(dim, dIndex) in group.dimensions" :key="group.index + '-' + dim.name" class="agg-dim">
               <div class="agg-dim-name">
                 <span class="agg-dim-title">规格名：</span>
@@ -565,6 +559,12 @@
                     <a-input v-model="dim.subValues[child]" size="small" :placeholder="child"
                              @focus="setAggFocus({ type: 'child', groupIndex: group.index, dimName: dim.name, child: child })" />
                     <a-icon type="close" class="agg-row-close" @click="clearSpecValue(group, dim, child)" />
+                  </div>
+                  <div v-for="child in (dim.childNames || [])" :key="'cv-' + child" class="agg-candidate-list"
+                       v-show="!(dim.subValues[child] || '').trim() && childCandidates(dim, child).length">
+                    <span class="agg-candidate-tip">{{ child }}常用值：</span>
+                    <a v-for="cand in childCandidates(dim, child)" :key="'cvc-' + child + cand" class="agg-candidate"
+                       @click="applyChildCandidate(dim, child, cand)">{{ cand }}</a>
                   </div>
                 </div>
               </div>
@@ -663,8 +663,8 @@
         specImageOcrVisible: false,
         specImageOcrFile: null,
         pendingSpecImage: null,
-        // 多图识别与聚合预览
-        specMultiOcrVisible: false,
+        // 单图识别与结果预览
+        specRecognizeOcrVisible: false,
         specAggregateVisible: false,
         specAggregateLoading: false,
         specAggregateResult: null,
@@ -895,26 +895,13 @@
         // JEditableTable 的行高约为54px，按SKU数量展开表格。
         return Math.max((this.meTable.dataSource || []).length * 54, 54)
       },
-      // 识别结果确认：按图片分组展示规格值（一张图一组：规格值1、规格值2 ...）
+      // 识别结果确认：单图单商品，按类别规格维度展示（规格值1 一组）
       specImageGroups() {
         let result = this.specAggregateResult
         if (!result) return []
-        if (result.imageGroups && result.imageGroups.length) return result.imageGroups
-        // 兼容旧接口：把合并后的维度值兜底为单组
-        let dims = (result.dimensions || []).filter(dim => dim.detected)
-        let groupDims = []
-        dims.forEach(dim => (dim.values || []).forEach(val => {
-          groupDims.push({
-            name: dim.name,
-            value: val.value || '',
-            rawValue: val.rawValue || '',
-            subValues: val.subValues || {},
-            needConfirm: !!val.needConfirm,
-            childNames: dim.childNames || [],
-            rawText: val.rawText || ''
-          })
-        }))
-        return groupDims.length ? [{ index: 1, imagePath: '', dimensions: groupDims }] : []
+        let dims = (result.dimensions || []).filter(dim => dim.name)
+        if (!dims.length) return []
+        return [{ index: 1, imagePath: result.imagePath || '', rawText: result.rawText || '', dimensions: dims }]
       },
       // 识别到但未对应现有基础属性的标签（含已自动归一化的，供核对/撤销）
       aggUnmatchedProps() {
@@ -1884,8 +1871,22 @@
               httpAction(url, formData, method).then((res) => {
                 if(res.code === 200){
                   that.learnAggregateLabelAliases()
-                  that.learnRecognizedSpecValues();
-                  that.learnRecognizedBaseProps();
+                  let learnResults = [that.learnRecognizedSpecValues()]
+                  learnResults.push(that.learnRecognizedBaseProps())
+                  Promise.all(learnResults).then(list => {
+                    let learned = 0
+                    let failedCount = 0
+                    let firstMessage = ''
+                    list.forEach(item => {
+                      if (!item) return
+                      learned += item.count || 0
+                      let failed = item.failed || []
+                      failedCount += failed.length
+                      if (!firstMessage && failed.length) firstMessage = failed[0].message || ''
+                    })
+                    if (learned > 0) that.$message.success('已学习 ' + learned + ' 条识别对应关系')
+                    if (failedCount > 0) that.$message.warning('有 ' + failedCount + ' 条学习未生效' + (firstMessage ? '：' + firstMessage : ''))
+                  })
                   that.$message.success('保存成功');
                   that.formDirty = false;
                   that.initialSnapshot = null;
@@ -2189,27 +2190,33 @@
         })
         self.onSpecChange()
       },
-      /** 打开多图识别：同一商品多张图片，识别后按关键词与一致性聚合 */
-      openMultiSpecImageExtract() {
+      /** 打开单图识别：一张商品图片，识别后归一属性与规格值 */
+      openSpecImageRecognize() {
         if (!this.specModules || this.specModules.length === 0) {
-          this.$message.warning('请先选择类别并加载规格后再使用多图识别')
+          this.$message.warning('请先选择类别并加载规格后再使用图片识别')
           return
         }
-        this.specMultiOcrVisible = true
+        this.specRecognizeOcrVisible = true
       },
-      handleMultiSpecImageOcrClose(payload) {
-        this.specMultiOcrVisible = false
-        let images = (payload && payload.images) || []
-        this.openSpecAggregateForImages(images)
+      handleSpecRecognizeOcrClose(payload) {
+        this.specRecognizeOcrVisible = false
+        let image = {
+          rawText: (payload && payload.rawText) || '',
+          imagePath: (payload && payload.imagePath) || ''
+        }
+        this.openSpecRecognize(image)
       },
-      /** 用已上传/已识别的图片直接聚合，展示识别结果页（AI添加页也有调用） */
-      openSpecAggregateForImages(images) {
-        if (!images || !images.length) return
+      /** 用已上传/已识别的单张图片识别，展示识别结果页（AI添加页也有调用） */
+      openSpecRecognize(image) {
+        if (!image || (!image.rawText && !image.imagePath)) {
+          this.$message.warning('未识别到图片文字，请重新拍照或选择图片')
+          return
+        }
         let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
         // 维度配置来自类别规格：名称、属性ID、子规格名、类别已配置的规格值
         let dimensions = this.specModules.map((module, mIndex) => {
           let attrItem = this.materialAttributeList.find(a => a.name === module.name)
-          // 标准值连同子规格标定一起下发：200*230 已标定为「被套」时，聚合端可直接判定归属
+          // 标准值连同子规格标定一起下发：200*230 已标定为「被套」时，识别端可直接判定归属
           let standards = []
           let standardKeys = {}
           let pushStandard = (value, subValues) => {
@@ -2254,8 +2261,8 @@
           if (p.anotherName) labelAliases[this.normOcrLabel(p.anotherName)] = p.field
         })
         Object.assign(labelAliases, this.aggLabelAliases || {})
-        postAction('/spec/sample/aggregateProduct', {
-          images: images,
+        postAction('/spec/sample/recognizeProduct', {
+          image: image,
           categoryId: categoryId || null,
           dimensions: dimensions,
           labelAliases: labelAliases
@@ -2263,7 +2270,7 @@
           this.specAggregateLoading = false
           if (!res || res.code !== 200) {
             this.specAggregateVisible = false
-            this.$message.error((res && (res.msg || res.message)) || '识别结果归纳失败')
+            this.$message.error((res && (res.msg || res.message)) || '商品识别失败')
             return
           }
           this.specAggregateResult = res.data
@@ -2275,7 +2282,7 @@
         }).catch(() => {
           this.specAggregateLoading = false
           this.specAggregateVisible = false
-          this.$message.error('识别结果归纳失败，请稍后重试')
+          this.$message.error('商品识别失败，请稍后重试')
         })
       },
       aggFieldLabel(field) {
@@ -2544,74 +2551,26 @@
           materialId: this.model.id || null
         }).catch(() => {})
       },
-      /** 补齐识别分组里的子规格键，保证 Vue2 下 v-model 可响应 */
+      /** 把接口返回的维度值展开为可编辑字段，保证 Vue2 下 v-model 可响应 */
       prepareAggregateSpecGroups() {
         let result = this.specAggregateResult
         if (!result) return
-        ;(result.imageGroups || []).forEach(group => {
-          ;(group.dimensions || []).forEach(dim => {
-            if (!dim.subValues) this.$set(dim, 'subValues', {})
-            ;(dim.childNames || []).forEach(name => {
-              if (dim.subValues[name] === undefined) this.$set(dim.subValues, name, '')
-            })
-            if (dim.value === undefined || dim.value === null) this.$set(dim, 'value', '')
-          })
-        })
-      },
-      /** 把分组编辑结果合并回 dimensions（保留识别原文与图片，供回填与学习使用） */
-      syncDimensionsFromImageGroups() {
-        let result = this.specAggregateResult
-        if (!result) return
-        let groups = result.imageGroups || []
-        if (!groups.length) return
-        let oldDims = {}
-        ;(result.dimensions || []).forEach(dim => { oldDims[dim.name] = dim })
-        let merged = {}
-        let order = []
-        groups.forEach(group => {
-          ;(group.dimensions || []).forEach(item => {
-            let name = item.name
-            if (!name) return
-            let text = (item.value || '').trim()
-            let subValues = {}
-            ;(item.childNames || []).forEach(child => {
-              let sub = ((item.subValues && item.subValues[child]) || '').trim()
-              if (sub) subValues[child] = sub
-            })
-            if (!text && !Object.keys(subValues).length) return
-            if (!merged[name]) {
-              merged[name] = { name: name, attributeId: null, values: [], detected: true, needConfirm: false }
-              order.push(name)
+        ;(result.dimensions || []).forEach(dim => {
+          let hit = (dim.values && dim.values[0]) || {}
+          if (dim.value === undefined || dim.value === null) this.$set(dim, 'value', hit.value || '')
+          if (!dim.rawValue) this.$set(dim, 'rawValue', hit.rawValue || '')
+          if (dim.needConfirm === undefined) this.$set(dim, 'needConfirm', !!hit.needConfirm)
+          if (!dim.subValues) this.$set(dim, 'subValues', {})
+          if (!dim.childNames) this.$set(dim, 'childNames', [])
+          if (!dim.childValues) this.$set(dim, 'childValues', {})
+          if (!dim.rawSubValues) this.$set(dim, 'rawSubValues', Object.assign({}, (hit && hit.subRawValues) || {}))
+          ;(dim.childNames || []).forEach(name => {
+            if (dim.subValues[name] === undefined) {
+              this.$set(dim.subValues, name, (hit.subValues && hit.subValues[name]) || '')
             }
-            let dim = merged[name]
-            let valueKey = this.normalizeSpecValueKey(text || Object.keys(subValues).map(k => subValues[k]).join('/'))
-            let exists = dim.values.find(val => {
-              let sameValue = this.normalizeSpecValueKey(val.value || '') === valueKey
-              let sameSub = Object.keys(subValues).every(k => ((val.subValues && val.subValues[k]) || '') === subValues[k]) &&
-                Object.keys(val.subValues || {}).every(k => subValues[k] !== undefined)
-              return sameValue && sameSub
-            })
-            if (exists) {
-              this.$set(exists, 'value', text)
-              this.$set(exists, 'subValues', subValues)
-              return
-            }
-            dim.values.push({
-              value: text,
-              rawValue: item.rawValue || '',
-              subValues: subValues,
-              needConfirm: !!item.needConfirm,
-              imagePath: group.imagePath || '',
-              rawText: item.rawText || ''
-            })
           })
-        })
-        result.dimensions = order.map(name => {
-          let dim = merged[name]
-          let base = oldDims[name] || {}
-          dim.attributeId = base.attributeId || null
-          dim.needConfirm = dim.values.some(val => val.needConfirm)
-          return dim
+          if (!dim.imagePath) this.$set(dim, 'imagePath', hit.imagePath || result.imagePath || '')
+          if (!dim.rawText) this.$set(dim, 'rawText', hit.rawText || result.rawText || '')
         })
       },
       /** 识别值的子规格归属，如「被套：200*230」 */
@@ -2686,6 +2645,28 @@
         this.$set(this.specAggregateResult.commonProps, field, profile.modeValue)
         this.markAggPropEdited(field)
       },
+      /** 同品类该属性的少量固定写法（如安全类别），用于补全 */
+      propertyCandidates(field) {
+        let profile = this.propertyProfile(field)
+        let list = (profile && profile.candidates) || []
+        if (!list.length || list.length > 4) return []
+        let current = ((this.specAggregateResult && this.specAggregateResult.commonProps || {})[field] || '').trim()
+        return list.filter(item => item && item !== current)
+      },
+      applyProfileCandidate(field, value) {
+        if (!this.specAggregateResult) return
+        this.$set(this.specAggregateResult.commonProps, field, value)
+        this.markAggPropEdited(field)
+      },
+      /** 该子规格在本品类下已配置的标准值，作为子规格值的补全建议 */
+      childCandidates(dim, child) {
+        let values = (dim && dim.childValues && dim.childValues[child]) || []
+        return values.filter(item => item).slice(0, 3)
+      },
+      applyChildCandidate(dim, child, value) {
+        if (!dim.subValues) this.$set(dim, 'subValues', {})
+        this.$set(dim.subValues, child, value)
+      },
       stableSpecProfile(name) {
         let profiles = this.specAggregateResult && this.specAggregateResult.propertyProfiles
         let profile = profiles && profiles['spec:' + name]
@@ -2752,8 +2733,6 @@
       applySpecAggregate() {
         let result = this.specAggregateResult
         if (!result) return Promise.resolve(false)
-        // 先把分组编辑结果合并回维度值，后续回填逻辑保持不变
-        this.syncDimensionsFromImageGroups()
         // 1. 公共属性：只填空白字段，避免覆盖用户已输入内容
         let props = result.commonProps || {}
         let formPatch = {}
@@ -2775,62 +2754,81 @@
         if (Object.keys(formPatch).length) {
           this.form.setFieldsValue(formPatch)
         }
-        // 2. 规格值：按维度追加（同值不重复），并记录识别原文供保存后学习
+        // 2. 规格值：单图单商品，每个维度最多一个值；同值不重复，并记录识别原文供保存后学习
         ;(result.dimensions || []).forEach(dim => {
           let mIndex = this.specModules.findIndex(m => m.name === dim.name)
           if (mIndex < 0) return
           let module = this.specModules[mIndex]
-          ;(dim.values || []).forEach(val => {
-            let text = (val.value || '').trim()
-            if (!text) return
-            let target = module.values.find(item => this.isSameSpecValue(module, item, val))
-            if (!target) {
-              target = { text: text, image: '', subValues: {} }
-              ;(module.childNames || []).forEach(name => {
-                target.subValues[name] = (val.subValues && val.subValues[name]) || ''
-              })
-              let blank = module.values.find(item => !item.text && !Object.keys(item.subValues || {}).some(k => item.subValues[k]))
-              if (blank) {
-                Object.assign(blank, target)
-                target = blank
-              } else {
-                module.values.push(target)
-              }
-            }
-            if (val.imagePath) {
-              this.$set(target, 'image', val.imagePath)
-            }
-            let vIndex = module.values.indexOf(target)
-            if (vIndex >= 0 && val.rawText) {
-              this.$set(this.specOcrRawMap, mIndex + '_' + vIndex, val.rawText)
-            }
+          let text = (dim.value || '').trim()
+          let subValues = {}
+          ;(dim.childNames || []).forEach(name => {
+            let sub = ((dim.subValues && dim.subValues[name]) || '').trim()
+            if (sub) subValues[name] = sub
           })
+          if (module.childNames && module.childNames.length && Object.keys(subValues).length) {
+            text = module.childNames.map(name => subValues[name] || '').join('/')
+          }
+          if (!text && !Object.keys(subValues).length) return
+          let val = { value: text, subValues: subValues }
+          let target = module.values.find(item => this.isSameSpecValue(module, item, val))
+          if (!target) {
+            target = { text: text, image: '', subValues: {} }
+            ;(module.childNames || []).forEach(name => {
+              target.subValues[name] = subValues[name] || ''
+            })
+            let blank = module.values.find(item => !item.text && !Object.keys(item.subValues || {}).some(k => item.subValues[k]))
+            if (blank) {
+              Object.assign(blank, target)
+              target = blank
+            } else {
+              module.values.push(target)
+            }
+          }
+          if (dim.imagePath) {
+            this.$set(target, 'image', dim.imagePath)
+          }
+          let vIndex = module.values.indexOf(target)
+          if (vIndex >= 0) {
+            let rawSubValues = dim.rawSubValues || {}
+            let hasChildRaw = false
+            ;(module.childNames || []).forEach(name => {
+              let childRaw = (rawSubValues[name] || '').trim()
+              let childValue = (subValues[name] || '').trim()
+              if (childRaw && childValue) {
+                hasChildRaw = true
+                this.$set(this.specOcrRawMap, mIndex + '_' + vIndex + '_child_' + name, childRaw)
+              }
+            })
+            if (!hasChildRaw && dim.rawText) {
+              this.$set(this.specOcrRawMap, mIndex + '_' + vIndex, dim.rawText)
+            }
+          }
         })
         this.onSpecChange()
-        // 3. 规格值生成 SKU 行后，按 SKU 组合回填条码、图片与价格
+        // 3. 规格值生成 SKU 行后，把单图识别到的条码、图片与价格回填到第一行
         return new Promise(resolve => {
           this.$nextTick(() => {
             let rows = this.meTable.dataSource || []
-            ;(result.skuRows || []).forEach(skuRow => {
-              let row = rows.find(r => r.sku === skuRow.sku)
-              if (!row) return
+            let skuRow = result.skuRow || {}
+            let row = rows[0]
+            if (row) {
               if (skuRow.barCode) row.barCode = skuRow.barCode
               if (skuRow.imagePath) row.image = skuRow.imagePath
               if (skuRow.commodityDecimal) row.commodityDecimal = skuRow.commodityDecimal
               if (skuRow.marketPrice) row.marketPrice = skuRow.marketPrice
               if (skuRow.purchaseDecimal) row.purchaseDecimal = skuRow.purchaseDecimal
               if (skuRow.wholesaleDecimal) row.wholesaleDecimal = skuRow.wholesaleDecimal
-            })
+            }
             // 4. 价格设置卡片：保存时覆盖写入全部 SKU 行
-            rows.forEach(row => {
-              if (this.batchPurchasePrice !== '') row.purchaseDecimal = this.batchPurchasePrice
-              if (this.batchCommodityPrice !== '') row.commodityDecimal = this.batchCommodityPrice
-              if (this.batchMarketPrice !== '') row.marketPrice = this.batchMarketPrice
-              if (this.batchStock !== '') row.stock = this.batchStock
-              if (this.batchLowSafeStock !== '') row.lowSafeStock = this.batchLowSafeStock
-              if (this.batchHighSafeStock !== '') row.highSafeStock = this.batchHighSafeStock
-              if (this.batchDepotId !== undefined && this.batchDepotId !== null && this.batchDepotId !== '') row.depotId = this.batchDepotId
-              if (this.batchStore !== undefined && this.batchStore !== null && this.batchStore !== '') row.store = this.batchStore
+            rows.forEach(item => {
+              if (this.batchPurchasePrice !== '') item.purchaseDecimal = this.batchPurchasePrice
+              if (this.batchCommodityPrice !== '') item.commodityDecimal = this.batchCommodityPrice
+              if (this.batchMarketPrice !== '') item.marketPrice = this.batchMarketPrice
+              if (this.batchStock !== '') item.stock = this.batchStock
+              if (this.batchLowSafeStock !== '') item.lowSafeStock = this.batchLowSafeStock
+              if (this.batchHighSafeStock !== '') item.highSafeStock = this.batchHighSafeStock
+              if (this.batchDepotId !== undefined && this.batchDepotId !== null && this.batchDepotId !== '') item.depotId = this.batchDepotId
+              if (this.batchStore !== undefined && this.batchStore !== null && this.batchStore !== '') item.store = this.batchStore
             })
             this.meTable.dataSource = rows.slice()
             resolve(true)
@@ -2956,29 +2954,47 @@
         let that = this
         Object.keys(this.specOcrRawMap).forEach(key => {
           let rawText = this.specOcrRawMap[key]
-          let parts = key.split('_')
+          // 子规格样本按「规格名 + 子项」隔离，如 被套 的样本不会被 床单 命中
+          let childParts = key.split('_child_')
+          let childName = childParts.length > 1 ? childParts.slice(1).join('_child_') : ''
+          let parts = childParts[0].split('_')
           let module = this.specModules[parseInt(parts[0])]
           let value = module && module.values && module.values[parseInt(parts[1])]
           if (!module || !value || !rawText) return
+          let attrItem = that.materialAttributeList.find(a => a.name === module.name)
+          let attributeId = attrItem ? attrItem.value : null
+          if (childName) {
+            let childValue = ((value.subValues && value.subValues[childName]) || '').trim()
+            if (!childValue) return
+            items.push({
+              rawText: rawText,
+              correctedValue: childValue,
+              attributeId: attributeId,
+              childName: childName
+            })
+            return
+          }
           let finalValue = (value.text || '').trim()
           if (!finalValue && module.childNames && module.childNames.length) {
             finalValue = module.childNames.map(name => value.subValues && value.subValues[name] || '').join('/')
           }
           if (!finalValue) return
-          let attrItem = that.materialAttributeList.find(a => a.name === module.name)
           items.push({
             rawText: rawText,
             correctedValue: finalValue,
-            attributeId: attrItem ? attrItem.value : null
+            attributeId: attributeId
           })
         })
         this.specOcrRawMap = {}
-        if (!items.length) return
-        postAction('/spec/sample/learnBatch', {
+        if (!items.length) return Promise.resolve({ count: 0, failed: [] })
+        return postAction('/spec/sample/learnBatch', {
           items: items,
           categoryId: categoryId || null,
           materialId: this.model.id || null
-        }).catch(() => {})
+        }).then(res => {
+          let data = (res && res.data) ? res.data : (res || {})
+          return { count: data.count || 0, failed: data.failed || [] }
+        }).catch(() => ({ count: 0, failed: [{ message: '学习请求失败' }] }))
       },
       /** 保存成功后把基础属性的「识别原文 -> 最终值」沉淀为学习样本 */
       learnRecognizedBaseProps() {
@@ -2995,12 +3011,15 @@
           items.push({ rawText: rawText, correctedValue: finalValue, attributeId: this.baseFieldSampleId(field) })
         })
         this.baseOcrRawMap = {}
-        if (!items.length) return
-        postAction('/spec/sample/learnBatch', {
+        if (!items.length) return Promise.resolve({ count: 0, failed: [] })
+        return postAction('/spec/sample/learnBatch', {
           items: items,
           categoryId: categoryId || null,
           materialId: this.model.id || null
-        }).catch(() => {})
+        }).then(res => {
+          let data = (res && res.data) ? res.data : (res || {})
+          return { count: data.count || 0, failed: data.failed || [] }
+        }).catch(() => ({ count: 0, failed: [{ message: '学习请求失败' }] }))
       },
       onSpecChange() {
         this.updateSkuColumns()
@@ -3760,7 +3779,7 @@
     margin-bottom: 12px;
     background: #fff;
   }
-  /* 多图识别聚合预览 */
+  /* 单图识别结果预览 */
   .agg-tip {
     padding: 8px 12px;
     margin-bottom: 8px;
@@ -3855,6 +3874,25 @@
     font-size: 11px;
     line-height: 15px;
     color: #8c8c8c;
+  }
+  .agg-candidate-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    font-size: 11px;
+    line-height: 16px;
+  }
+  .agg-candidate-tip {
+    color: #8c8c8c;
+  }
+  .agg-candidate {
+    padding: 1px 6px;
+    color: #1890ff;
+    background: #e6f7ff;
+    border: 1px solid #91d5ff;
+    border-radius: 10px;
   }
   .agg-unmatched-value-input {
     flex: 1 1 120px;

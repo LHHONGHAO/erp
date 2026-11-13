@@ -2,7 +2,7 @@ package com.jsh.erp.controller;
 
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.SpecValueSample;
-import com.jsh.erp.service.SpecAggregateService;
+import com.jsh.erp.service.SpecRecognizeService;
 import com.jsh.erp.service.SpecValueSampleService;
 import com.jsh.erp.utils.ErpInfo;
 import io.swagger.annotations.Api;
@@ -31,7 +31,7 @@ public class SpecSampleController {
     private SpecValueSampleService specValueSampleService;
 
     @Resource
-    private SpecAggregateService specAggregateService;
+    private SpecRecognizeService specRecognizeService;
 
     @PostMapping(value = "/match")
     @ApiOperation(value = "规格值比对：识别文本 -> 标准写法")
@@ -109,9 +109,10 @@ public class SpecSampleController {
     public String learnBatch(@RequestBody JSONObject params, HttpServletRequest request) {
         Map<String, Object> objectMap = new HashMap<>();
         try {
-            int count = specValueSampleService.learnBatch(params.getJSONArray("items"),
+            JSONObject learnResult = specValueSampleService.learnBatch(params.getJSONArray("items"),
                     params.getLong("categoryId"), params.getLong("materialId"), params.getLong("userId"));
-            objectMap.put("count", count);
+            objectMap.put("count", learnResult.getIntValue("count"));
+            objectMap.put("failed", learnResult.getJSONArray("failed"));
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
         } catch (Exception e) {
             logger.error("批量学习规格值失败", e);
@@ -119,21 +120,21 @@ public class SpecSampleController {
         }
     }
 
-    @PostMapping(value = "/aggregateProduct")
-    @ApiOperation(value = "多图识别聚合：按关键词与一致性归纳 SPU 与 SKU 规格行")
-    public String aggregateProduct(@RequestBody JSONObject params, HttpServletRequest request) {
+    @PostMapping(value = "/recognizeProduct")
+    @ApiOperation(value = "单图商品识别：属性名归一、属性值归一与规格补全")
+    public String recognizeProduct(@RequestBody JSONObject params, HttpServletRequest request) {
         Map<String, Object> objectMap = new HashMap<>();
         try {
-            JSONObject result = specAggregateService.aggregate(
-                    params.getJSONArray("images"),
+            JSONObject result = specRecognizeService.recognize(
+                    params.getJSONObject("image"),
                     params.getLong("categoryId"),
                     params.getJSONArray("dimensions"),
                     params.getJSONObject("labelAliases"));
             objectMap.putAll(result);
             return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
         } catch (Exception e) {
-            logger.error("多图识别聚合失败", e);
-            return returnJson(objectMap, "聚合失败：" + e.getMessage(), ErpInfo.ERROR.code);
+            logger.error("单图商品识别失败", e);
+            return returnJson(objectMap, "识别失败：" + e.getMessage(), ErpInfo.ERROR.code);
         }
     }
 

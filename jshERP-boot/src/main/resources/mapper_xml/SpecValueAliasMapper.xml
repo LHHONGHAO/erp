@@ -7,6 +7,7 @@
     <result column="sample_id" jdbcType="BIGINT" property="sampleId" />
     <result column="category_id" jdbcType="BIGINT" property="categoryId" />
     <result column="attribute_id" jdbcType="BIGINT" property="attributeId" />
+    <result column="child_name" jdbcType="VARCHAR" property="childName" />
     <result column="raw_text" jdbcType="VARCHAR" property="rawText" />
     <result column="norm_key" jdbcType="VARCHAR" property="normKey" />
     <result column="hit_count" jdbcType="INTEGER" property="hitCount" />
@@ -15,27 +16,27 @@
   </resultMap>
 
   <sql id="Base_Column_List">
-    id, tenant_id, sample_id, category_id, attribute_id, raw_text, norm_key, hit_count, create_time, delete_flag
+    id, tenant_id, sample_id, category_id, attribute_id, child_name, raw_text, norm_key, hit_count, create_time, delete_flag
   </sql>
 
   <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.SpecValueAlias"
           useGeneratedKeys="true" keyProperty="id">
     insert into jsh_spec_value_alias
     <trim prefix="(" suffix=")" suffixOverrides=",">
-      <if test="tenantId != null">tenant_id,</if>
       <if test="sampleId != null">sample_id,</if>
       <if test="categoryId != null">category_id,</if>
       <if test="attributeId != null">attribute_id,</if>
+      <if test="childName != null">child_name,</if>
       <if test="rawText != null">raw_text,</if>
       <if test="normKey != null">norm_key,</if>
       <if test="hitCount != null">hit_count,</if>
       <if test="deleteFlag != null">delete_flag,</if>
     </trim>
     <trim prefix="values (" suffix=")" suffixOverrides=",">
-      <if test="tenantId != null">#{tenantId,jdbcType=BIGINT},</if>
       <if test="sampleId != null">#{sampleId,jdbcType=BIGINT},</if>
       <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
       <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
+      <if test="childName != null">#{childName,jdbcType=VARCHAR},</if>
       <if test="rawText != null">#{rawText,jdbcType=VARCHAR},</if>
       <if test="normKey != null">#{normKey,jdbcType=VARCHAR},</if>
       <if test="hitCount != null">#{hitCount,jdbcType=INTEGER},</if>
@@ -54,6 +55,9 @@
       </if>
       <if test="attributeId != null">
         and (attribute_id = #{attributeId,jdbcType=BIGINT} or attribute_id = 0)
+      </if>
+      <if test="childName != null">
+        and child_name = #{childName,jdbcType=VARCHAR}
       </if>
     order by hit_count desc, id asc
     limit 1

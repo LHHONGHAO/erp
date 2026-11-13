@@ -24,14 +24,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 多图商品识别聚合：按「关键词优先 + 一致性判定」把多张图片的文字归纳为一个商品（SPU）及其 SKU。
- * 汇总 OCR 结果并读取同类别历史属性分布，不在识别阶段写入商品数据。
+ * 单图商品识别：解析一张商品图片中的文字，完成属性名归一、属性值归一与属性补全建议。
+ * 只处理「一张图 = 一个商品」，不做多图聚合，识别阶段不写入商品数据。
  */
 @Service
-public class SpecAggregateService {
+public class SpecRecognizeService {
 
-    /** 参与 SPU 一致性判定的公共属性（条码/价格属于 SKU，不参与） */
-    private static final String[] SPU_FIELDS = {
+    /** 基础属性的输出顺序 */
+    private static final String[] BASE_FIELD_ORDER = {
             "name", "brand", "unit", "mfrs", "fabric", "safetyCategory",
             "executiveStandard", "grade", "inspection", "filler", "weight"
     };
@@ -68,45 +68,169 @@ public class SpecAggregateService {
     private UserService userService;
 
     /**
-     * 聚合多图识别结果
+     * 识别单张图片
      *
-     * @param images     每张图的 {rawText, imagePath}
-     * @param categoryId 类别
-     * @param dimensions 类别已配置的规格维度 [{name, attributeId, childNames[], standards[]}]
-     */
-    public JSONObject aggregate(JSONArray images, Long categoryId, JSONArray dimensions) {
-        return aggregate(images, categoryId, dimensions, null);
-    }
-
-    /**
-     * 聚合多图识别结果
-     *
-     * @param images       每张图的 {rawText, imagePath}
-     * @param categoryId   类别
-     * @param dimensions   类别已配置的规格维度 [{name, attributeId, childNames[], standards[]}]
+     * @param image       图中文字 {rawText, imagePath}
+     * @param categoryId  类别
+     * @param dimensions  类别已配置的规格维度 [{name, attributeId, childNames[], standards[]}]
      * @param labelAliases 前端维护的属性名别名 {识别到的属性名: 基础属性字段}
      */
-    public JSONObject aggregate(JSONArray images, Long categoryId, JSONArray dimensions, JSONObject labelAliases) {
+    public JSONObject recognize(JSONObject image, Long categoryId, JSONArray dimensions, JSONObject labelAliases) {
+        String rawText = image == null ? "" : trim(image.getString("rawText"));
+        String imagePath = image == null ? "" : trim(image.getString("imagePath"));
         JSONObject result = new JSONObject();
+        result.put("rawText", rawText);
+        result.put("imagePath", imagePath);
+        // 同类别历史属性分布：用于提示「类别常值建议」（补全）
         JSONObject profiles = propertyProfiles(categoryId);
-        Set<String> stableSingleFields = new HashSet<>();
-        for (String field : profiles.keySet()) {
-            JSONObject profile = profiles.getJSONObject(field);
-            if (profile != null && profile.getBooleanValue("stableSingle")) stableSingleFields.add(field);
-        }
         result.put("propertyProfiles", profiles);
+
         List<JSONObject> dims = normalizeDimensions(dimensions);
-        Map<String, String> aliasMap = new LinkedHashMap<>();
-        if (labelAliases != null) {
-            for (String key : labelAliases.keySet()) {
-                String field = labelAliases.getString(key);
-                if (StringUtil.isNotEmpty(key) && StringUtil.isNotEmpty(field) && isPropertyField(field)) {
-                    aliasMap.put(normLabel(key), field);
+        Map<String, String> aliasMap = buildAliasMap(labelAliases);
+        Set<String> specLabels = collectSpecLabels(dims);
+
+        // 1. 属性名归一：识别标签 -> 基础属性字段；值归一：命中样本库时回填标准写法
+        Map<String, String> props = OcrUtil.parseProductText(rawText);
+        Map<String, String> fieldValues = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : props.entrySet()) {
+            String label = entry.getKey();
+            String value = trim(entry.getValue());
+            if (value.isEmpty() || "rawText".equals(label)) {
+                continue;
+            }
+            String field = resolvePropField(label, aliasMap, categoryId);
+            if (field != null) {
+                // 尺寸是规格值；类别已配置尺寸/规格维度时，不把尺寸同时写进商品基础颜色属性
+                if ("color".equals(field) && hasSizeDimension(dims) && !extractSizes(value).isEmpty()) {
+                    continue;
                 }
+                fieldValues.put(field, value);
             }
         }
-        List<ImageData> dataList = new ArrayList<>();
-        // 规格维度名及其子项（如 规格/被套/床单/枕套）属于 SKU 基础属性，不进入「其他属性」
+        JSONObject commonProps = new JSONObject();
+        JSONObject commonPropsRaw = new JSONObject();
+        Set<String> fields = new LinkedHashSet<>(Arrays.asList(BASE_FIELD_ORDER));
+        fields.addAll(fieldValues.keySet());
+        for (String field : fields) {
+            String value = trim(fieldValues.get(field));
+            if (value.isEmpty()) {
+                continue;
+            }
+            commonPropsRaw.put(field, value);
+            commonProps.put(field, normalizeBaseValue(field, value, categoryId, profiles.getJSONObject(field)));
+        }
+        result.put("commonProps", commonProps);
+        result.put("commonPropsRaw", commonPropsRaw);
+
+        // 2. 规格维度：单图内按关键词/子规格/行内写法抽取并归一到类别标准写法
+        ImageData data = new ImageData();
+        data.rawText = rawText;
+        data.imagePath = imagePath;
+        data.props = props;
+        data.values = new LinkedHashMap<>();
+        for (JSONObject dim : dims) {
+            extractDimensionValue(data, dim, categoryId);
+        }
+        JSONArray dimensionList = new JSONArray();
+        for (JSONObject dim : dims) {
+            JSONObject out = new JSONObject(true);
+            out.put("name", dim.getString("name"));
+            out.put("attributeId", dim.get("attributeId"));
+            out.put("childNames", dim.getJSONArray("childNames") == null ? new JSONArray() : dim.getJSONArray("childNames"));
+            JSONObject childValues = childStandardValues(dim);
+            if (!childValues.isEmpty()) {
+                out.put("childValues", childValues);
+            }
+            JSONObject hit = data.values.get(dim.getString("name"));
+            JSONArray values = new JSONArray();
+            if (hit != null && StringUtil.isNotEmpty(hit.getString("value"))) {
+                hit.put("imagePath", imagePath);
+                hit.put("rawText", rawText);
+                values.add(hit);
+            }
+            out.put("values", values);
+            out.put("detected", values.size() > 0);
+            out.put("needConfirm", hit != null && hit.getBooleanValue("needConfirm"));
+            dimensionList.add(out);
+        }
+        result.put("dimensions", dimensionList);
+
+        // 3. 识别到但未对应到基础属性的标签：交给前端确认，确认后学习属性名别名
+        JSONArray unmatchedProps = new JSONArray();
+        for (Map.Entry<String, String> entry : props.entrySet()) {
+            String label = entry.getKey();
+            String value = trim(entry.getValue());
+            if (value.isEmpty() || "rawText".equals(label)) {
+                continue;
+            }
+            if (resolvePropField(label, aliasMap, categoryId) != null) {
+                continue;
+            }
+            if ("standard".equals(label) || "model".equals(label) || "color".equals(label)
+                    || "barCode".equals(label) || "mnemonic".equals(label)
+                    || specLabels.contains(normLabel(label)) || isSkuPriceLabel(label)) {
+                continue;
+            }
+            JSONObject item = new JSONObject(true);
+            item.put("label", label);
+            item.put("value", value);
+            item.put("rawValue", value);
+            item.put("rawText", rawText);
+            item.put("imagePath", imagePath);
+            unmatchedProps.add(item);
+        }
+        result.put("unmatchedProps", unmatchedProps);
+
+        // 4. 单图单商品的 SKU 信息（条码与价格），前端用于回填唯一 SKU 行
+        JSONObject skuRow = new JSONObject();
+        skuRow.put("barCode", trim(props.get("barCode")));
+        skuRow.put("imagePath", imagePath);
+        skuRow.put("commodityDecimal", findPrice(rawText, "零售价", "售价", "吊牌价"));
+        skuRow.put("marketPrice", findPrice(rawText, "划线价", "原价", "市场价"));
+        skuRow.put("purchaseDecimal", findPrice(rawText, "进货价", "采购价"));
+        skuRow.put("wholesaleDecimal", findPrice(rawText, "批发价"));
+        result.put("skuRow", skuRow);
+        return result;
+    }
+
+    /** 每个子规格在本品类下已配置的标准值（少量固定值），作为识别结果的补全建议 */
+    private JSONObject childStandardValues(JSONObject dim) {
+        JSONObject result = new JSONObject(true);
+        List<String> childNames = toStringList(dim.getJSONArray("childNames"));
+        if (childNames.isEmpty()) {
+            return result;
+        }
+        List<StandardValue> standards = toStandardValues(dim.getJSONArray("standards"), childNames);
+        for (String child : childNames) {
+            JSONArray values = new JSONArray();
+            for (String value : childStandardValues(child, standards)) {
+                if (!values.contains(value)) {
+                    values.add(value);
+                }
+            }
+            if (!values.isEmpty()) {
+                result.put(child, values);
+            }
+        }
+        return result;
+    }
+
+    private Map<String, String> buildAliasMap(JSONObject labelAliases) {
+        Map<String, String> aliasMap = new LinkedHashMap<>();
+        if (labelAliases == null) {
+            return aliasMap;
+        }
+        for (String key : labelAliases.keySet()) {
+            String field = labelAliases.getString(key);
+            if (StringUtil.isNotEmpty(key) && StringUtil.isNotEmpty(field) && isPropertyField(field)) {
+                aliasMap.put(normLabel(key), field);
+            }
+        }
+        return aliasMap;
+    }
+
+    /** 规格维度名及其子项（如 规格/被套/床单/枕套）属于 SKU 基础属性，不进入「其他属性」 */
+    private Set<String> collectSpecLabels(List<JSONObject> dims) {
         Set<String> specLabels = new LinkedHashSet<>();
         for (JSONObject dim : dims) {
             specLabels.add(normLabel(dim.getString("name")));
@@ -114,292 +238,7 @@ public class SpecAggregateService {
                 specLabels.add(normLabel(child));
             }
         }
-        if (images != null) {
-            for (int i = 0; i < images.size(); i++) {
-                JSONObject img = images.getJSONObject(i);
-                if (img == null) {
-                    continue;
-                }
-                String rawText = img.getString("rawText");
-                if (!StringUtil.isNotEmpty(rawText)) {
-                    continue;
-                }
-                ImageData data = new ImageData();
-                data.rawText = rawText;
-                data.imagePath = img.getString("imagePath");
-                data.props = OcrUtil.parseProductText(rawText);
-                data.values = new LinkedHashMap<>();
-                data.fieldValues = new LinkedHashMap<>();
-                data.unmatched = new LinkedHashMap<>();
-                for (Map.Entry<String, String> entry : data.props.entrySet()) {
-                    String label = entry.getKey();
-                    String value = trim(entry.getValue());
-                    if (value.isEmpty() || "rawText".equals(label)) {
-                        continue;
-                    }
-                    String field = resolvePropField(label, aliasMap, categoryId);
-                    if (field != null) {
-                        // 尺寸是规格值；当类别已配置尺寸/规格维度时，即使 OCR 或已学习别名把
-                        // 该行误标为颜色，也不能把尺寸同时写进商品基础颜色属性。
-                        if ("color".equals(field) && hasSizeDimension(dims) && !extractSizes(value).isEmpty()) {
-                            continue;
-                        }
-                        data.fieldValues.put(field, value);
-                    } else if (!"standard".equals(label) && !"model".equals(label) && !"color".equals(label)
-                            && !"barCode".equals(label) && !"mnemonic".equals(label)
-                            && !specLabels.contains(normLabel(label)) && !isSkuPriceLabel(label)) {
-                        // 识别到但未对应到现有基础属性的标签，交给前端确认后再确定
-                        data.unmatched.put(label, value);
-                    }
-                }
-                for (JSONObject dim : dims) {
-                    extractDimensionValue(data, dim, categoryId);
-                }
-                dataList.add(data);
-            }
-        }
-
-        // 1. SPU 公共属性：取多数值，冲突项单独提示；值命中样本库时归一化为标准写法
-        JSONObject commonProps = new JSONObject();
-        JSONObject commonPropsRaw = new JSONObject();
-        JSONArray conflicts = new JSONArray();
-        boolean spuConsistent = true;
-        Set<String> propFields = new LinkedHashSet<>(Arrays.asList(SPU_FIELDS));
-        for (ImageData data : dataList) {
-            propFields.addAll(data.fieldValues.keySet());
-        }
-        for (String field : propFields) {
-            Map<String, Integer> counts = new LinkedHashMap<>();
-            for (ImageData data : dataList) {
-                String value = trim(data.fieldValues.get(field));
-                if (!value.isEmpty()) {
-                    Integer count = counts.get(value);
-                    counts.put(value, count == null ? 1 : count + 1);
-                }
-            }
-            if (counts.isEmpty()) {
-                continue;
-            }
-            String chosen = null;
-            int max = 0;
-            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-                if (entry.getValue() > max) {
-                    max = entry.getValue();
-                    chosen = entry.getKey();
-                }
-            }
-            commonPropsRaw.put(field, chosen);
-            commonProps.put(field, normalizeBaseValue(field, chosen, categoryId, stableSingleFields));
-            if (counts.size() > 1) {
-                spuConsistent = false;
-                JSONObject conflict = new JSONObject();
-                conflict.put("field", field);
-                conflict.put("label", FIELD_LABELS.containsKey(field) ? FIELD_LABELS.get(field) : field);
-                conflict.put("values", new ArrayList<>(counts.keySet()));
-                conflict.put("chosen", chosen);
-                conflicts.add(conflict);
-            }
-        }
-
-        // 1.1 识别到但未对应基础属性的标签：前端确认后学习别名
-        JSONArray unmatchedProps = new JSONArray();
-        Map<String, JSONObject> unmatchedByLabel = new LinkedHashMap<>();
-        for (ImageData data : dataList) {
-            for (Map.Entry<String, String> entry : data.unmatched.entrySet()) {
-                if (unmatchedByLabel.containsKey(entry.getKey())) {
-                    continue;
-                }
-                JSONObject item = new JSONObject(true);
-                item.put("label", entry.getKey());
-                item.put("value", entry.getValue());
-                item.put("rawValue", entry.getValue());
-                item.put("rawText", data.rawText);
-                item.put("imagePath", data.imagePath == null ? "" : data.imagePath);
-                unmatchedByLabel.put(entry.getKey(), item);
-                unmatchedProps.add(item);
-            }
-        }
-
-
-        // 2. 维度：只保留识别出的（即 SKU 维度）参与 SKU 生成
-        JSONArray dimensionList = new JSONArray();
-        List<JSONObject> skuDims = new ArrayList<>();
-        for (JSONObject dim : dims) {
-            JSONObject out = new JSONObject();
-            out.put("name", dim.getString("name"));
-            out.put("attributeId", dim.get("attributeId"));
-            JSONArray values = new JSONArray();
-            Set<String> seen = new LinkedHashSet<>();
-            boolean needConfirm = false;
-            for (ImageData data : dataList) {
-                JSONObject hit = data.values.get(dim.getString("name"));
-                if (hit == null) {
-                    continue;
-                }
-                String text = hit.getString("value");
-                if (!StringUtil.isNotEmpty(text)) {
-                    continue;
-                }
-                if (!seen.add(SpecValueNormalizer.normKey(text))) {
-                    continue;
-                }
-                hit.put("imagePath", data.imagePath == null ? "" : data.imagePath);
-                hit.put("rawText", data.rawText);
-                values.add(hit);
-                if (hit.getBooleanValue("needConfirm")) {
-                    needConfirm = true;
-                }
-            }
-            out.put("values", values);
-            out.put("detected", values.size() > 0);
-            out.put("needConfirm", needConfirm);
-            dimensionList.add(out);
-            if (values.size() > 0) {
-                skuDims.add(dim);
-            }
-        }
-
-        // 2.1 按图片分组：每张图各自识别出的规格值（前端按「规格值1/规格值2」展示）
-        JSONArray imageGroups = new JSONArray();
-        int groupIndex = 0;
-        for (ImageData data : dataList) {
-            JSONArray groupDims = new JSONArray();
-            for (JSONObject dim : dims) {
-                JSONObject hit = data.values.get(dim.getString("name"));
-                if (hit == null || !StringUtil.isNotEmpty(hit.getString("value"))) {
-                    continue;
-                }
-                JSONObject item = new JSONObject(true);
-                item.put("name", dim.getString("name"));
-                item.put("value", hit.getString("value"));
-                item.put("rawValue", hit.getString("rawValue"));
-                item.put("subValues", hit.get("subValues") == null ? new JSONObject(true) : hit.get("subValues"));
-                item.put("needConfirm", hit.getBooleanValue("needConfirm"));
-                item.put("childNames", dim.getJSONArray("childNames") == null ? new JSONArray() : dim.getJSONArray("childNames"));
-                item.put("rawText", data.rawText);
-                groupDims.add(item);
-            }
-            if (groupDims.isEmpty()) {
-                continue;
-            }
-            JSONObject group = new JSONObject(true);
-            group.put("index", ++groupIndex);
-            group.put("imagePath", data.imagePath == null ? "" : data.imagePath);
-            group.put("dimensions", groupDims);
-            imageGroups.add(group);
-        }
-
-        // 3. SKU 行：按维度值组合去重，完全重复的图片只保留一行
-        JSONArray skuRows = new JSONArray();
-        boolean duplicated = false;
-        int duplicatedCount = 0;
-        Map<String, JSONObject> rowsByKey = new LinkedHashMap<>();
-        if (skuDims.isEmpty()) {
-            // 未识别到任何 SKU 维度：多图视为同一商品，只保留一行
-            if (!dataList.isEmpty()) {
-                ImageData first = dataList.get(0);
-                JSONObject row = new JSONObject();
-                row.put("sku", "");
-                row.put("specValues", new JSONArray());
-                row.put("barCode", trim(first.props.get("barCode")));
-                row.put("imagePath", first.imagePath == null ? "" : first.imagePath);
-                row.put("commodityDecimal", findPrice(first.rawText, "零售价", "售价", "吊牌价"));
-                row.put("marketPrice", findPrice(first.rawText, "划线价", "原价", "市场价"));
-                row.put("purchaseDecimal", findPrice(first.rawText, "进货价", "采购价"));
-                row.put("wholesaleDecimal", findPrice(first.rawText, "批发价"));
-                skuRows.add(row);
-                for (int i = 1; i < dataList.size(); i++) {
-                    mergeMissingSkuFields(row, dataList.get(i));
-                }
-                duplicated = dataList.size() > 1;
-                duplicatedCount = dataList.size() - 1;
-            }
-        }
-        for (ImageData data : dataList) {
-            if (skuDims.isEmpty()) {
-                break;
-            }
-            JSONArray specValues = new JSONArray();
-            List<String> texts = new ArrayList<>();
-            boolean hasSkuValue = false;
-            for (JSONObject dim : skuDims) {
-                JSONObject hit = data.values.get(dim.getString("name"));
-                String text = hit == null ? "" : hit.getString("value");
-                if (text == null) {
-                    text = "";
-                }
-                if (!text.isEmpty()) {
-                    hasSkuValue = true;
-                }
-                texts.add(text);
-                JSONObject specValue = new JSONObject();
-                specValue.put("attributeName", dim.getString("name"));
-                specValue.put("valueText", text);
-                specValue.put("subValues", hit == null ? new JSONObject() : hit.get("subValues"));
-                specValues.add(specValue);
-            }
-            // 该图只有商品基础信息、没有任何 SKU 值时，不作为 SKU 行
-            if (!hasSkuValue) {
-                continue;
-            }
-            String sku = joinSlash(texts);
-            String key = SpecValueNormalizer.normKey(sku);
-            if (key.isEmpty()) {
-                key = "image_" + skuRows.size();
-            }
-            if (rowsByKey.containsKey(key)) {
-                duplicated = true;
-                duplicatedCount++;
-                mergeMissingSkuFields(rowsByKey.get(key), data);
-                continue;
-            }
-            JSONObject row = new JSONObject();
-            row.put("sku", sku);
-            row.put("specValues", specValues);
-            row.put("barCode", trim(data.props.get("barCode")));
-            row.put("imagePath", data.imagePath == null ? "" : data.imagePath);
-            row.put("commodityDecimal", findPrice(data.rawText, "零售价", "售价", "吊牌价"));
-            row.put("marketPrice", findPrice(data.rawText, "划线价", "原价", "市场价"));
-            row.put("purchaseDecimal", findPrice(data.rawText, "进货价", "采购价"));
-            row.put("wholesaleDecimal", findPrice(data.rawText, "批发价"));
-            skuRows.add(row);
-            rowsByKey.put(key, row);
-        }
-
-        result.put("spuConsistent", spuConsistent);
-        result.put("commonProps", commonProps);
-        result.put("commonPropsRaw", commonPropsRaw);
-        result.put("unmatchedProps", unmatchedProps);
-        result.put("conflicts", conflicts);
-        result.put("dimensions", dimensionList);
-        result.put("imageGroups", imageGroups);
-        result.put("skuRows", skuRows);
-        result.put("duplicated", duplicated);
-        result.put("duplicatedCount", duplicatedCount);
-        result.put("imageCount", dataList.size());
-        return result;
-    }
-
-    /** 同一规格组合的重复标签只保留一行，但把首张标签缺失的信息从后续标签补齐。 */
-    private void mergeMissingSkuFields(JSONObject row, ImageData data) {
-        if (row == null || data == null) {
-            return;
-        }
-        mergeMissing(row, "barCode", data.props.get("barCode"));
-        mergeMissing(row, "imagePath", data.imagePath);
-        mergeMissing(row, "commodityDecimal", findPrice(data.rawText, "零售价", "售价", "吊牌价"));
-        mergeMissing(row, "marketPrice", findPrice(data.rawText, "划线价", "原价", "市场价"));
-        mergeMissing(row, "purchaseDecimal", findPrice(data.rawText, "进货价", "采购价"));
-        mergeMissing(row, "wholesaleDecimal", findPrice(data.rawText, "批发价"));
-    }
-
-    private void mergeMissing(JSONObject target, String field, String candidate) {
-        if (target == null || !StringUtil.isNotEmpty(candidate)) {
-            return;
-        }
-        if (!StringUtil.isNotEmpty(target.getString(field))) {
-            target.put(field, candidate.trim());
-        }
+        return specLabels;
     }
 
     private List<JSONObject> normalizeDimensions(JSONArray dimensions) {
@@ -447,17 +286,17 @@ public class SpecAggregateService {
         for (StandardValue standard : sorted) {
             String normStandard = SpecValueNormalizer.normKey(standard.value);
             if (!normStandard.isEmpty() && normRaw.contains(normStandard)) {
-                data.values.put(name, buildHit(standard.value, standard.value, false, "keyword", childNames, standard.subValues));
+                data.values.put(name, buildHit(standard.value, standard.value, false, "keyword", childNames, standard.subValues, standard.subValues));
                 return;
             }
         }
 
         // 2. 规格以组判定：一张图 = 一个 SKU，按品类约定的子规格组（被套/床单/枕套）依次归位
-        // 尺寸只属于尺寸类规格；颜色等普通 SKU 维度不能因文本中出现床品尺寸而误收尺寸值。
-        List<String> sizes = (childNames != null && !childNames.isEmpty()) || isSizeDimension(name)
+        // 仅尺寸类规格参与：花色/颜色等维度即使配置了子项，也不能因文本中出现床品尺寸而误收尺寸值
+        List<String> sizes = isSizeGroupDimension(name, childNames, standards)
                 ? extractSizes(raw) : Collections.<String>emptyList();
         if (!sizes.isEmpty()) {
-            JSONObject sizeHit = buildHitBySizes(sizes, standards, childNames);
+            JSONObject sizeHit = buildHitBySizes(sizes, standards, childNames, categoryId, attributeId);
             if (sizeHit != null) {
                 data.values.put(name, sizeHit);
                 return;
@@ -492,7 +331,7 @@ public class SpecAggregateService {
                 }
             }
             if (tokenHit) {
-                data.values.put(name, buildHit(standard.value, standard.value, true, "keyword", childNames, standard.subValues));
+                data.values.put(name, buildHit(standard.value, standard.value, true, "keyword", childNames, standard.subValues, standard.subValues));
                 return;
             }
         }
@@ -520,6 +359,24 @@ public class SpecAggregateService {
         return value.contains("尺寸") || value.contains("规格") || value.contains("大小") || value.contains("尺码");
     }
 
+    /**
+     * 是否是「尺寸组」规格：只有规格名属于尺寸类，或子规格本身的标准值就是尺寸时，
+     * 才把图中尺寸依次归入子规格；花色/颜色这类普通维度不参与。
+     */
+    private boolean isSizeGroupDimension(String name, List<String> childNames, List<StandardValue> standards) {
+        if (childNames == null || childNames.isEmpty()) return false;
+        if (isSizeDimension(name)) return true;
+        for (String child : childNames) {
+            if (isSizeDimension(child)) return true;
+        }
+        for (StandardValue standard : standards) {
+            for (String sub : standard.subValues.values()) {
+                if (SIZE_PATTERN.matcher(sub).find()) return true;
+            }
+        }
+        return false;
+    }
+
     private boolean hasSizeDimension(List<JSONObject> dimensions) {
         if (dimensions == null) return false;
         for (JSONObject dimension : dimensions) {
@@ -528,10 +385,11 @@ public class SpecAggregateService {
         return false;
     }
 
-    /** 子规格标签命中：把每张标签上的「子规格：值」归一到类别标准写法 */
+    /** 子规格标签命中：把每张标签上的「子规格：值」归一到该子规格自己的类别标准写法 */
     private JSONObject buildHitFromChildLabels(Map<String, String> labelSubValues, List<StandardValue> standards,
                                                List<String> childNames, Long categoryId, Long attributeId) {
         Map<String, String> subValues = new LinkedHashMap<>();
+        Map<String, String> rawSubValues = new LinkedHashMap<>();
         List<String> values = new ArrayList<>();
         boolean needConfirm = false;
         List<String> orderedNames = childNames.isEmpty() ? new ArrayList<>(labelSubValues.keySet()) : childNames;
@@ -541,36 +399,41 @@ public class SpecAggregateService {
                 continue;
             }
             List<String> childStandards = childStandardValues(childName, standards);
-            String aligned = alignValue(text, categoryId, attributeId, childStandards);
+            String aligned = alignValue(text, categoryId, attributeId, childName, childStandards);
             subValues.put(childName, aligned);
+            rawSubValues.put(childName, text);
             values.add(aligned);
             if (!childStandards.isEmpty() && !containsValue(childStandards, aligned)) {
                 needConfirm = true;
             }
         }
-        return buildHit(joinSlash(values), joinSlash(values), needConfirm, "label", childNames, subValues);
+        return buildHit(joinSlash(values), joinSlash(values), needConfirm, "label", childNames, subValues, rawSubValues);
     }
 
     /** 子规格名命中：尺寸优先取该子规格已配置的写法，否则原样保留尺寸 */
     private JSONObject buildHitByChildName(String childName, String size, List<StandardValue> standards,
                                            Long categoryId, Long attributeId) {
         Map<String, String> subValues = new LinkedHashMap<>();
+        Map<String, String> rawSubValues = new LinkedHashMap<>();
         if (size.isEmpty()) {
-            return buildHit(childName, childName, true, "keyword", Collections.<String>emptyList(), subValues);
+            return buildHit(childName, childName, true, "keyword", Collections.<String>emptyList(), subValues, rawSubValues);
         }
         List<String> childStandards = childStandardValues(childName, standards);
-        String aligned = alignValue(size, categoryId, attributeId, childStandards);
+        String aligned = alignValue(size, categoryId, attributeId, childName, childStandards);
         boolean needConfirm = !childStandards.isEmpty() && !containsValue(childStandards, aligned);
         subValues.put(childName, aligned);
-        return buildHit(aligned, size, needConfirm, "keyword", Collections.singletonList(childName), subValues);
+        rawSubValues.put(childName, size);
+        return buildHit(aligned, size, needConfirm, "keyword", Collections.singletonList(childName), subValues, rawSubValues);
     }
 
     /**
      * 规格按组判定：一张标签上的多个尺寸依次归入品类约定的子规格（被套/床单/枕套）。
      * 已标定的尺寸采用标定归属，未标定的按约定顺序补位并标记需确认。
      */
-    private JSONObject buildHitBySizes(List<String> sizes, List<StandardValue> standards, List<String> childNames) {
+    private JSONObject buildHitBySizes(List<String> sizes, List<StandardValue> standards, List<String> childNames,
+                                       Long categoryId, Long attributeId) {
         Map<String, String> subValues = new LinkedHashMap<>();
+        Map<String, String> rawSubValues = new LinkedHashMap<>();
         boolean needConfirm = false;
         for (String size : sizes) {
             Set<String> matchedChildren = matchChildrenBySize(size, standards);
@@ -589,13 +452,14 @@ public class SpecAggregateService {
                 needConfirm = true;
                 continue;
             }
-            subValues.put(child, alignChildValue(child, size, standards));
+            subValues.put(child, alignChildValue(child, size, standards, categoryId, attributeId));
+            rawSubValues.put(child, size);
         }
         if (subValues.isEmpty()) {
             return null;
         }
         return buildHit(joinSlash(orderedValues(childNames, subValues)), joinSlash(sizes),
-                needConfirm, "size", childNames, subValues);
+                needConfirm, "size", childNames, subValues, rawSubValues);
     }
 
     /** 该尺寸在已标定的规格组中归属哪些子规格 */
@@ -635,15 +499,11 @@ public class SpecAggregateService {
         return values;
     }
 
-    /** 子规格值的标准写法：优先取该子规格已标定的值，否则压缩尺寸写法 */
-    private String alignChildValue(String childName, String size, List<StandardValue> standards) {
-        for (StandardValue standard : standards) {
-            String sub = standard.subValues.get(childName);
-            if (StringUtil.isNotEmpty(sub) && sameSpecValue(sub, size)) {
-                return sub;
-            }
-        }
-        return normalizeSize(size);
+    /** 子规格值的标准写法：取该子规格自己的配置值与样本，避免与其他子规格串值 */
+    private String alignChildValue(String childName, String size, List<StandardValue> standards,
+                                   Long categoryId, Long attributeId) {
+        List<String> childStandards = childStandardValues(childName, standards);
+        return alignValue(size, categoryId, attributeId, childName, childStandards);
     }
 
     /** 提取本行内各子规格的标注值，支持「被套：200*230」「被套200*230」「被套 200x230cm」 */
@@ -705,11 +565,11 @@ public class SpecAggregateService {
     }
 
     /** 归一化：优先采用类别/样本库标准写法，其次压缩尺寸写法 */
-    private String alignValue(String text, Long categoryId, Long attributeId, List<String> standards) {
-        if (standards == null || standards.isEmpty()) {
-            return normalizeSize(text);
+    private String alignValue(String text, Long categoryId, Long attributeId, String childName, List<String> standards) {
+        if (text == null) {
+            return "";
         }
-        JSONObject aligned = specValueSampleService.align(text, categoryId, attributeId, standards);
+        JSONObject aligned = specValueSampleService.align(text, categoryId, attributeId, childName, standards);
         if (aligned.getBooleanValue("matched") && StringUtil.isNotEmpty(aligned.getString("value"))) {
             return aligned.getString("value");
         }
@@ -757,12 +617,13 @@ public class SpecAggregateService {
                 needConfirm = true;
             }
         }
-        data.values.put(name, buildHit(finalValue, candidate, needConfirm, source, childNames, null));
+                data.values.put(name, buildHit(finalValue, candidate, needConfirm, source, childNames, null, null));
     }
 
-    /** 构建命中结果：subValues 优先，否则按 "/" 拆出子规格值 */
+    /** 构建命中结果：subValues 优先，否则按 "/" 拆出子规格值；subRawValues 保留每个子规格的识别原文用于学习 */
     private JSONObject buildHit(String value, String rawValue, boolean needConfirm, String source,
-                                List<String> childNames, Map<String, String> subValues) {
+                                List<String> childNames, Map<String, String> subValues,
+                                Map<String, String> rawSubValues) {
         JSONObject hit = new JSONObject();
         hit.put("value", value);
         hit.put("rawValue", rawValue);
@@ -783,6 +644,11 @@ public class SpecAggregateService {
             }
         }
         hit.put("subValues", subObj);
+        JSONObject rawSubObj = new JSONObject(true);
+        if (rawSubValues != null) {
+            rawSubObj.putAll(rawSubValues);
+        }
+        hit.put("subRawValues", rawSubObj);
         return hit;
     }
 
@@ -1003,9 +869,12 @@ public class SpecAggregateService {
         return null;
     }
 
-    /** 基础属性值归一化：命中样本库（attributeId = -1）时回填标准写法 */
-    private String normalizeBaseValue(String field, String value, Long categoryId, Set<String> stableSingleFields) {
-        if (!StringUtil.isNotEmpty(value) || stableSingleFields == null || !stableSingleFields.contains(field)) {
+    /**
+     * 基础属性值归一化：先命中该品类该字段的已学样本，
+     * 再对齐到该品类历史上出现过的少量固定写法（如安全类别、执行标准），保持同品类属性值的单一性。
+     */
+    private String normalizeBaseValue(String field, String value, Long categoryId, JSONObject profile) {
+        if (!StringUtil.isNotEmpty(value)) {
             return value;
         }
         try {
@@ -1018,6 +887,19 @@ public class SpecAggregateService {
             }
         } catch (Exception e) {
             // 样本库不可用时保留原值
+        }
+        if (profile != null) {
+            JSONArray candidates = profile.getJSONArray("candidates");
+            if (candidates != null && candidates.size() > 0) {
+                List<String> values = new ArrayList<>();
+                for (int i = 0; i < candidates.size(); i++) {
+                    values.add(candidates.getString(i));
+                }
+                String standard = SpecValueNormalizer.alignToStandard(value, values);
+                if (StringUtil.isNotEmpty(standard)) {
+                    return standard;
+                }
+            }
         }
         return value;
     }
@@ -1048,7 +930,7 @@ public class SpecAggregateService {
         return -1L;
     }
 
-    /** Only a category property with enough history and one normalized value is eligible for auto value normalization/completion. */
+    /** Only a category property with enough history and one normalized value is eligible for completion suggestion. */
     private JSONObject propertyProfiles(Long categoryId) {
         try {
             User user = userService.getCurrentUser();
@@ -1066,9 +948,10 @@ public class SpecAggregateService {
         Map<String, Integer> totals = new LinkedHashMap<>();
         Map<String, Set<String>> normalizedValues = new LinkedHashMap<>();
         Map<String, String> examples = new LinkedHashMap<>();
-        accumulatePropertyStats(materialMapperEx.selectCategoryPropertyValueStats(categoryId, tenantId), "", totals, normalizedValues, examples);
+        Map<String, Map<String, Integer>> valueCounts = new LinkedHashMap<>();
+        accumulatePropertyStats(materialMapperEx.selectCategoryPropertyValueStats(categoryId, tenantId), "", totals, normalizedValues, examples, valueCounts);
         try {
-            accumulatePropertyStats(materialMapperEx.selectCategorySkuValueStats(categoryId, tenantId), "spec:", totals, normalizedValues, examples);
+            accumulatePropertyStats(materialMapperEx.selectCategorySkuValueStats(categoryId, tenantId), "spec:", totals, normalizedValues, examples, valueCounts);
         } catch (Exception e) {
             // Older database engines may not support JSON_TABLE; base property profiles still work.
         }
@@ -1083,6 +966,25 @@ public class SpecAggregateService {
             profile.put("stableSingle", stableSingle);
             profile.put("modeValue", stableSingle ? examples.get(field) : null);
             profile.put("modeRatio", stableSingle ? 1D : 0D);
+            // 同品类该属性出现过的少量固定写法，用于值归一与补全
+            JSONArray candidates = new JSONArray();
+            Map<String, Integer> counts = valueCounts.get(field);
+            if (counts != null) {
+                List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
+                Collections.sort(entries, new Comparator<Map.Entry<String, Integer>>() {
+                    @Override
+                    public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
+                        return b.getValue() - a.getValue();
+                    }
+                });
+                for (Map.Entry<String, Integer> entry : entries) {
+                    if (candidates.size() >= 8) {
+                        break;
+                    }
+                    candidates.add(entry.getKey());
+                }
+            }
+            profile.put("candidates", candidates);
             profiles.put(field, profile);
         }
         return profiles;
@@ -1090,7 +992,7 @@ public class SpecAggregateService {
 
     private void accumulatePropertyStats(List<Map<String, Object>> rows, String prefix,
                                          Map<String, Integer> totals, Map<String, Set<String>> normalizedValues,
-                                         Map<String, String> examples) {
+                                         Map<String, String> examples, Map<String, Map<String, Integer>> valueCounts) {
         if (rows == null) return;
         for (Map<String, Object> row : rows) {
             String field = prefix + String.valueOf(row.get("fieldName"));
@@ -1100,6 +1002,7 @@ public class SpecAggregateService {
             String normalized = SpecValueNormalizer.normKey(value);
             normalizedValues.computeIfAbsent(field, key -> new HashSet<>()).add(normalized);
             examples.putIfAbsent(field, value);
+            valueCounts.computeIfAbsent(field, key -> new LinkedHashMap<>()).merge(value, count, Integer::sum);
         }
     }
 
@@ -1108,10 +1011,6 @@ public class SpecAggregateService {
         private String imagePath;
         private Map<String, String> props;
         private Map<String, JSONObject> values;
-        /** 已对应到基础属性字段的值 */
-        private Map<String, String> fieldValues;
-        /** 未对应到基础属性的识别标签 -> 值 */
-        private Map<String, String> unmatched;
     }
 
     /** 标准规格值与其子规格标定（子规格名 -> 已标定值） */

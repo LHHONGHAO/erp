@@ -1,21 +1,15 @@
 <template>
-  <div class="lem-page" :class="{ 'lem-page--embedded': embedded }">
-    <!-- 标准顶栏 -->
-    <mobile-top-bar @back="handleBack">
-      <template #title>
-        <div class="lem-title-area">
-          <div class="lem-title">{{ currentTitle }}</div>
-          <div class="lem-subtitle" @click="openSizeEditor">
-            {{ labelWidthMm }}mm × {{ labelHeightMm }}mm
-            <a-icon type="edit" class="lem-size-edit-icon" />
-          </div>
-        </div>
-      </template>
-      <template #actions>
-        <a-icon type="fullscreen" class="lem-top-icon" @click="toggleZoom" />
-        <a-icon type="more" class="lem-top-icon" @click="showMore = !showMore" />
-      </template>
-    </mobile-top-bar>
+  <mobile-modal-page
+    :visible="true"
+    :title="currentTitle"
+    :subtitle="sizeLabel"
+    @close="handleBack">
+    <template #actions>
+      <a-icon type="edit" class="mmp-icon" title="标签尺寸" @click="openSizeEditor" />
+      <a-icon type="fullscreen" class="mmp-icon" title="全屏" @click="toggleZoom" />
+      <a-icon type="more" class="mmp-icon" title="更多" @click="showMore = !showMore" />
+    </template>
+    <div class="lem-page">
 
     <!-- 对齐排列工具条（固定在顶栏下方，全部图标按钮） -->
     <div class="lem-align-bar">
@@ -356,11 +350,12 @@
     </a-modal>
     <!-- 打印标签弹层（不再跳转打印页面） -->
     <label-print-modal ref="labelPrintModal" />
-  </div>
+    </div>
+  </mobile-modal-page>
 </template>
 
 <script>
-  import MobileTopBar from '@/components/mobile/MobileTopBar'
+  import MobileModalPage from '@/components/mobile/MobileModalPage'
   import LabelPrintModal from './LabelPrintModal'
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { isCodeKey, codeSourceKey, renderCodeDataUrl, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
@@ -439,7 +434,7 @@
 
   export default {
     name: 'LabelEditMobile',
-    components: { MobileTopBar, LabelPrintModal },
+    components: { MobileModalPage, LabelPrintModal },
     props: {
       // 以标准弹层方式内嵌在打印页时使用，不再依赖路由跳转
       embedded: { type: Boolean, default: false },
@@ -529,6 +524,10 @@
       },
       labelHeightMm() {
         return Math.round(this.labelHeight / PX_PER_MM)
+      },
+      // 标准弹层顶栏副标题：标签尺寸
+      sizeLabel() {
+        return this.labelWidthMm + 'mm × ' + this.labelHeightMm + 'mm'
       },
       labelStyle() {
         return {
@@ -1924,63 +1923,14 @@
 
 <style lang="scss" scoped>
 .lem-page {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   position: relative;
-  height: 100vh;
-  height: 100dvh;
   background: #f5f5f5;
   padding-bottom: calc(58px + env(safe-area-inset-bottom));
   box-sizing: border-box;
-}
-
-/* 内嵌到打印弹层时以标准弹层形式覆盖全屏 */
-.lem-page--embedded {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 3000;
-}
-
-.lem-title-area {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  text-align: center;
-  line-height: 1.2;
-}
-
-.lem-title {
-  font-size: 16px;
-  font-weight: 400;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lem-subtitle {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
-  margin-top: 2px;
-  white-space: nowrap;
-}
-
-.lem-top-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 49px;
-  font-size: 20px;
-  color: #fff;
-}
-
-.lem-top-icon:active {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 .lem-preview-wrap {
@@ -2534,16 +2484,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.lem-subtitle {
-  cursor: pointer;
-}
-
-.lem-size-edit-icon {
-  margin-left: 4px;
-  font-size: 12px;
-  opacity: 0.6;
 }
 
 .lem-size-editor {

@@ -1922,6 +1922,10 @@
 </script>
 
 <style lang="scss" scoped>
+.mmp-tools .mmp-icon {
+  width: 40px;
+}
+
 .lem-page {
   flex: 1;
   min-height: 0;

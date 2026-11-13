@@ -113,12 +113,6 @@ export const constantRouterMap = [
     ]
   },
   {
-    path: '/label/edit-mobile',
-    name: 'LabelEditMobile',
-    component: () => import(/* webpackChunkName: "label" */ '@/views/material/modules/LabelEditMobile'),
-    meta: { title: '标签编辑' }
-  },
-  {
     path: '/material/edit',
     component: TabLayout,
     children: [

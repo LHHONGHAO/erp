@@ -2,7 +2,6 @@
   <label-edit-mobile
     v-if="visible"
     :key="openKey"
-    embedded
     :initial-type="type"
     :initial-business-type="businessType"
     :initial-template-id="templateId"

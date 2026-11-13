@@ -68,7 +68,7 @@
       openPrint(member) {
         this.member = member || {}
         this.buildSnapshot(this.member)
-        this.$refs.labelPrintModal.openByType('member')
+        this.$refs.labelPrintModal.openByType('member', { record: this.member })
       },
       // 模板只提供布局，会员数据通过快照带入
       buildSnapshot(m) {
@@ -84,13 +84,6 @@
             attrStyles: {},
             attrLabels: {},
             values: values
-          }))
-          sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-            record: m,
-            sku: {},
-            template: null,
-            provider: 'table.jsh_supplier',
-            businessType: 'member'
           }))
         } catch (e) { /* 忽略 */ }
       }

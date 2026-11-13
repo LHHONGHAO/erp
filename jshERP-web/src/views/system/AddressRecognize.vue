@@ -655,16 +655,9 @@ export default {
           // 商品明细行：标签编辑/打印按行数动态排版
           rows: values.goodsRows
         }))
-        // 创建/编辑地址打印模板时带回本页输入值，不绑定会员数据源
-        sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-          record: values,
-          sku: {},
-          template: null,
-          provider: '',
-          businessType: ''
-        }))
       } catch (e) { /* 忽略 */ }
-      this.$refs.labelPrintModal.openByType('address', { title: '地址打印' })
+      // 创建/编辑地址打印模板时带回本页输入值，不绑定会员数据源
+      this.$refs.labelPrintModal.openByType('address', { title: '地址打印', record: values })
     }
   }
 }

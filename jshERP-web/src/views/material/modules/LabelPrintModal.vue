@@ -3,7 +3,7 @@
  *
  * 交互：商品信息页点击「打印标签」→ 本弹层按当前商品所用标签模板的实际尺寸显示预览
  *   - 打印：按模板直接打印（不进入编辑界面）
- *   - 编辑：交给标签编辑弹层（LabelEditModal）修改模板/样式
+ *   - 编辑：交给标准复用标签编辑弹层页（LabelEditModalPage）修改模板/样式
  */
 <template>
   <div>
@@ -662,7 +662,6 @@
         deviceTab: 'cloud',
         record: {},
         sku: {},
-        categoryTree: [],
         // 当前模板业务类型：label / delivery / receipt
         type: 'label',
         // 打印页标题（调用方可覆盖，如地址识别页传「地址打印」）
@@ -1172,8 +1171,8 @@
         // 重新打开打印页时关闭可能残留的编辑弹层
         if (this.$refs.labelEditor) this.$refs.labelEditor.close()
         this.type = type || 'delivery'
-        this.record = {}
-        this.sku = {}
+        this.record = opts.record || {}
+        this.sku = opts.sku || {}
         this.allAttrs = this.buildAttrList()
         this.copies = 1
         this.printRotation = 0
@@ -1217,12 +1216,11 @@
           setTimeout(function() { self.updatePreviewScale() }, 300)
         }
       },
-      open(record, sku, categoryTree, preferredTpl) {
+      open(record, sku, preferredTpl) {
         this.directEntry = false
         this.printTitle = ''
         this.record = record || {}
         this.sku = sku || {}
-        this.categoryTree = categoryTree || []
         this.allAttrs = this.buildAttrList()
         if (preferredTpl) {
           // 由标签编辑页打开时直接使用其当前编辑内容，保持所见即所得
@@ -2048,15 +2046,13 @@
       // 会员标签 → 会员数据表字段；地址打印 → 只取地址识别页面输入框字段
       handleCreateTemplate() {
         var isAddress = this.type === 'address'
-        var ctx = null
-        try { ctx = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { ctx = null }
         this.visible = false
         this.$refs.labelEditor.open({
           type: isAddress ? 'address' : 'member',
           businessType: isAddress ? '' : 'member',
           provider: isAddress ? '' : 'table.jsh_supplier',
           templateId: null,
-          record: (ctx && ctx.record) || this.record || {},
+          record: this.record || {},
           sku: {},
           template: null
         })
@@ -2067,23 +2063,19 @@
         var payload = {
           record: this.record,
           sku: this.sku,
-          categoryTree: this.categoryTree,
           templateId: this.template ? this.template.id : null
         }
         this.visible = false
         // 弹层直达方式（无父组件监听 edit）→ 直接打开标准标签编辑弹层页面
         if (this.directEntry && !(this.$listeners && this.$listeners.edit)) {
           var isAddress = this.type === 'address'
-          // 打开弹层时未携带 record（如地址识别页）→ 沿用进入打印前写入的上下文数据，避免编辑时字段为空
-          var prevRecord = null
-          try { prevRecord = (JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') || {}).record } catch (e) { prevRecord = null }
           var businessType = isAddress ? '' : (this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product'))
           this.$refs.labelEditor.open({
             type: this.type || 'label',
             businessType: businessType,
             provider: (this.template && this.template.provider) || (isAddress ? '' : (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label'))),
             templateId: payload.templateId || null,
-            record: (this.record && Object.keys(this.record).length) ? this.record : (prevRecord || {}),
+            record: this.record || {},
             sku: this.sku || {},
             template: this.template || null
           })

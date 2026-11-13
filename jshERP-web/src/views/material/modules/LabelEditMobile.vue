@@ -449,8 +449,7 @@
     name: 'LabelEditMobile',
     components: { MobileModalPage, LabelPrintModal },
     props: {
-      // 以标准弹层方式内嵌在打印页时使用，不再依赖路由跳转
-      embedded: { type: Boolean, default: false },
+      // 由标准复用弹层页传入的业务上下文
       initialType: { type: String, default: '' },
       initialBusinessType: { type: String, default: '' },
       initialTemplateId: { type: [String, Number], default: null }
@@ -653,7 +652,7 @@
       }
     },
     mounted() {
-      this.initFromRoute()
+      this.initEditor()
       // 标签居中 + 对称滑动：用 label-scroll 模块
       setupLabelScroll(this, 'previewWrap', 'labelWidth', 'zoom', 'wrapScrolling')
     },
@@ -666,8 +665,8 @@
       }
     },
     methods: {
-      initFromRoute() {
-        var type = this.initialType || this.$route.query.type || 'label'
+      initEditor() {
+        var type = this.initialType || 'label'
         var cfg = TYPE_CONFIG[type] || TYPE_CONFIG.label
         // 从打印预览页点「编辑」返回时，恢复当时的商品数据和模板，避免编辑页字段全空
         var context = null
@@ -679,7 +678,7 @@
         }
         this.templateType = type
         // 业务标识：来源页优先，其次按类型兜底（商品/发货单/会员）
-        this.businessType = this.initialBusinessType || this.$route.query.businessType || (context && context.businessType) ||
+        this.businessType = this.initialBusinessType || (context && context.businessType) ||
           (type === 'delivery' ? 'delivery' : (type === 'label' ? 'product' : (type === 'member' ? 'member' : '')))
         this.labelWidth = cfg.defaultWidth
         this.labelHeight = cfg.defaultHeight
@@ -849,7 +848,7 @@
       loadTemplate(cfg, skipApply) {
         var self = this
         if (cfg.storage === 'localTemplates') {
-          var templateId = this.initialTemplateId || this.$route.query.templateId
+          var templateId = this.initialTemplateId
           return fetchLabelTemplates().then(function(templates) {
             self.templates = templates || []
             if (skipApply) return
@@ -1925,12 +1924,7 @@
         this.$message.info('设置功能开发中')
       },
       handleBack() {
-        // 弹层内嵌时关闭弹层，独立路由页时保持原来的返回行为
-        if (this.embedded) {
-          this.$emit('close')
-          return
-        }
-        this.$router.back()
+        this.$emit('close')
       },
       openSizeEditor() {
         this.editWidthMm = this.labelWidthMm

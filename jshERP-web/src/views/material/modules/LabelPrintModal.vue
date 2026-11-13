@@ -1552,6 +1552,7 @@
           var data = (res && res.data) || {}
           if (res && res.code === 200) {
             self.$message.success('已发送到远程打印机：' + agentPrinter.printerName)
+            self.notifyPrintSuccess()
           } else {
             self.$message.error((typeof data === 'string' ? data : data.message) || '远程打印失败')
           }
@@ -2167,6 +2168,7 @@
         }).then(function() {
           self.printing = false
           self.$message.success('已发送到蓝牙打印机：' + printer.name)
+          self.notifyPrintSuccess()
         }).catch(function(err) {
           self.printing = false
           self.$message.error('蓝牙打印失败：' + (err.message || err))
@@ -2204,6 +2206,10 @@
       // 构造打印项数组（供 discovered 打印复用）
       buildPrintItems() {
         return this.buildLayoutItems()
+      },
+      // 打印成功后通知父页面（地址打印页据此生成并保存会员信息）
+      notifyPrintSuccess() {
+        this.$emit('print-success', { type: this.type })
       },
       // 打印：直接发送到所选打印机（后端执行），后端不可用时回退浏览器打印
       handlePrint() {
@@ -2283,6 +2289,7 @@
           var data = (res && res.data) || {}
           if (res && res.code === 200) {
             self.$message.success('已发送到打印机：' + self.selectedPrinter)
+            self.notifyPrintSuccess()
           } else {
             self.$message.error(data.message || '打印失败')
             self.printByBrowser(items)
@@ -2417,6 +2424,7 @@
           if (res && res.code === 200) {
             self2.$message.success('已发送到打印机：' + printer.name)
             self2.$set(self2.wifiStatus, printer.id, true)
+            self2.notifyPrintSuccess()
           } else {
             // 后端把失败原因放在 data.message 中
             var data = (res && res.data) || {}
@@ -2518,6 +2526,7 @@
           self.printing = false
           if (res && res.code === 200) {
             self.$message.success('已发送到打印机：' + printer)
+            self.notifyPrintSuccess()
           } else {
             self.$message.error((res && (res.message || res.msg)) || '打印失败')
           }

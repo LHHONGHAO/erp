@@ -109,6 +109,8 @@ const updateOneValueByKeyIdAndType = (params)=>postAction("/userBusiness/updateO
 const addSupplier = (params)=>postAction("/supplier/add",params);
 const editSupplier = (params)=>putAction("/supplier/update",params);
 const checkSupplier = (params)=>getAction("/supplier/checkIsNameAndTypeExist",params);
+//地址打印成功后保存会员（自动比对已有会员）
+const saveMemberFromAddress = (params)=>postAction("/supplier/saveMemberFromAddress",params);
 const findBySelectSup = (params)=>postAction("/supplier/findBySelect_sup",params);
 const findBySelectCus = (params)=>postAction("/supplier/findBySelect_cus",params);
 const findBySelectRetail = (params)=>postAction("/supplier/findBySelect_retail",params);
@@ -212,6 +214,7 @@ export {
   addSupplier,
   editSupplier,
   checkSupplier,
+  saveMemberFromAddress,
   findBySelectSup,
   findBySelectCus,
   findBySelectRetail,

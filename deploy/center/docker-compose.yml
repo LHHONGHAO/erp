@@ -1,0 +1,38 @@
+# ============================================================
+# 中心端（192.168.100.1）：纯数据库中心 —— MySQL 8.4 + Redis 7
+# 只承载数据，不跑 app / nginx。客户端（192.168.100.157 等）直连本机数据库。
+#
+# 安全约定：
+#   3306 / 6379 只允许内网 / VPN 网段访问，切勿对公网开放。
+#   在宿主防火墙（ufw / firewalld）只放行 VPN 网段。
+# ============================================================
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: jsherp-center-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 center/.env 设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: jsh_erp
+      MYSQL_USER: jsherp
+      MYSQL_PASSWORD: ${APP_DB_PASSWORD:?请在 center/.env 设置 APP_DB_PASSWORD}
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    ports:
+      - "3306:3306"          # 仅内网/VPN 放行
+    volumes:
+      - ${JSHERP_DATA_ROOT:-/srv/jsherp-data}/mysql:/var/lib/mysql
+      - ${JSHERP_BACKUP_ROOT:-/srv/jsherp-backup}/mysql:/backup
+    restart: always
+    networks: [jsherp]
+
+  redis:
+    image: redis:7-alpine
+    container_name: jsherp-center-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?请在 center/.env 设置 REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"          # 仅内网/VPN 放行
+    restart: always
+    networks: [jsherp]
+
+networks:
+  jsherp:

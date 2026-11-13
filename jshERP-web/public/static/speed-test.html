@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>静态响应速度测试</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: #f5f6f8; color: #1f2329;
+         font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .desc { color: #646a73; font-size: 13px; margin-bottom: 18px; }
+  .card { background: #fff; border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+  .metrics { display: flex; gap: 12px; flex-wrap: wrap; }
+  .metric { flex: 1 1 120px; background: #f7f8fa; border-radius: 8px; padding: 12px; }
+  .metric .k { font-size: 12px; color: #646a73; }
+  .metric .v { font-size: 24px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .metric .v small { font-size: 12px; font-weight: 400; color: #646a73; margin-left: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 8px 6px; border-bottom: 1px solid #eff0f1; font-variant-numeric: tabular-nums; }
+  th { color: #646a73; font-weight: 500; }
+  th:first-child, td:first-child { text-align: left; }
+  .ok { color: #0a7d43; }
+  .bad { color: #c02a2a; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  button { appearance: none; border: 1px solid #d0d3d6; background: #fff; color: #1f2329;
+           padding: 9px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  button.primary { background: #0a7d43; border-color: #0a7d43; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .meta { font-size: 12px; color: #646a73; word-break: break-all; }
+  .hint { font-size: 12px; color: #8a9099; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>静态响应速度测试</h1>
+  <div class="desc">本页不加载任何框架、不请求任何接口、不读取任何登录态或配置，只测「服务器响应 + 网络链路」本身。</div>
+
+  <div class="card">
+    <h2>本次页面加载</h2>
+    <div class="metrics">
+      <div class="metric"><div class="k">首字节 TTFB</div><div class="v" id="navTtfb">-<small>ms</small></div></div>
+      <div class="metric"><div class="k">DOM 就绪</div><div class="v" id="navDom">-<small>ms</small></div></div>
+      <div class="metric"><div class="k">完全加载</div><div class="v" id="navLoad">-<small>ms</small></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>连续请求（本页面，3 次）</h2>
+    <table>
+      <thead><tr><th>次数</th><th>首字节</th><th>总耗时</th><th>大小</th><th>状态</th></tr></thead>
+      <tbody id="probeBody"><tr><td colspan="5" class="hint">测试中…</td></tr></tbody>
+    </table>
+    <div class="actions">
+      <button class="primary" id="btnProbe">重新测试</button>
+      <button id="btnBandwidth">测试下载带宽</button>
+    </div>
+    <div class="hint" id="summary"></div>
+  </div>
+
+  <div class="card">
+    <h2>环境</h2>
+    <div class="meta" id="meta">-</div>
+  </div>
+</div>
+<script>
+(function () {
+  var probeBody = document.getElementById('probeBody');
+  var summary = document.getElementById('summary');
+  var btnProbe = document.getElementById('btnProbe');
+  var btnBandwidth = document.getElementById('btnBandwidth');
+  var PRICE = './speed-test.html';
+
+  function ms(v) { return Math.round(v); }
+
+  function showNavigation() {
+    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    var ttfb, dom, load;
+    if (nav) {
+      ttfb = nav.responseStart - nav.startTime;
+      dom = nav.domContentLoadedEventEnd - nav.startTime;
+      load = nav.loadEventEnd - nav.startTime;
+    } else {
+      var t = performance.timing;
+      if (!t || !t.navigationStart) return;
+      ttfb = t.responseStart - t.navigationStart;
+      dom = t.domContentLoadedEventEnd - t.navigationStart;
+      load = t.loadEventEnd - t.navigationStart;
+    }
+    if (ttfb >= 0) document.getElementById('navTtfb').innerHTML = ms(ttfb) + '<small>ms</small>';
+    if (dom >= 0) document.getElementById('navDom').innerHTML = ms(dom) + '<small>ms</small>';
+    if (load >= 0) document.getElementById('navLoad').innerHTML = ms(load) + '<small>ms</small>';
+  }
+
+  async function probeOnce(i) {
+    var url = PRICE + '?probe=' + i + '&t=' + Date.now();
+    var t0 = performance.now();
+    var res = await fetch(url, { cache: 'no-store' });
+    var t1 = performance.now();
+    var buf = await res.arrayBuffer();
+    var t2 = performance.now();
+    return { index: i, ttfb: t1 - t0, total: t2 - t0, size: buf.byteLength, status: res.status };
+  }
+
+  async function runProbe() {
+    btnProbe.disabled = true;
+    probeBody.innerHTML = '';
+    var rows = [];
+    var errors = 0;
+    for (var i = 1; i <= 3; i++) {
+      try {
+        var r = await probeOnce(i);
+        rows.push(r);
+      } catch (e) {
+        errors++;
+        rows.push({ index: i, error: true });
+      }
+    }
+    var html = '';
+    var ttfbSum = 0, okCount = 0;
+    rows.forEach(function (r) {
+      if (r.error) {
+        html += '<tr><td>' + r.index + '</td><td>-</td><td>-</td><td>-</td><td class="bad">失败</td></tr>';
+        return;
+      }
+      ttfbSum += r.ttfb; okCount++;
+      html += '<tr><td>' + r.index + '</td><td>' + ms(r.ttfb) + ' ms</td><td>' + ms(r.total) +
+              ' ms</td><td>' + (r.size / 1024).toFixed(1) + ' KB</td><td class="ok">' + r.status + '</td></tr>';
+    });
+    probeBody.innerHTML = html;
+    if (okCount > 0) {
+      summary.textContent = '平均首字节 ' + ms(ttfbSum / okCount) + ' ms' + (errors ? '，失败 ' + errors + ' 次' : '');
+    } else {
+      summary.textContent = '全部失败，请检查网络或证书';
+    }
+    btnProbe.disabled = false;
+  }
+
+  async function runBandwidth() {
+    btnBandwidth.disabled = true;
+    var old = btnBandwidth.textContent;
+    btnBandwidth.textContent = '测试中…';
+    try {
+      var url = './banner-home.jpg?t=' + Date.now();
+      var t0 = performance.now();
+      var res = await fetch(url, { cache: 'no-store' });
+      var buf = await res.arrayBuffer();
+      var sec = (performance.now() - t0) / 1000;
+      var kb = buf.byteLength / 1024;
+      var mbps = (buf.byteLength * 8 / 1000000) / sec;
+      summary.textContent = '下载 ' + kb.toFixed(0) + ' KB，用时 ' + sec.toFixed(2) + ' 秒，约 ' +
+                            mbps.toFixed(1) + ' Mbps（' + (kb / sec).toFixed(0) + ' KB/s）';
+    } catch (e) {
+      summary.textContent = '带宽测试失败：' + e;
+    }
+    btnBandwidth.disabled = false;
+    btnBandwidth.textContent = old;
+  }
+
+  function showMeta() {
+    var parts = [];
+    parts.push('UA: ' + navigator.userAgent);
+    if (navigator.connection) {
+      if (navigator.connection.effectiveType) parts.push('网络类型: ' + navigator.connection.effectiveType);
+      if (navigator.connection.downlink) parts.push('估算带宽: ' + navigator.connection.downlink + ' Mbps');
+    }
+    parts.push('协议: ' + location.protocol + '//' + location.host);
+    parts.push('时间: ' + new Date().toLocaleString());
+    document.getElementById('meta').textContent = parts.join('\n');
+  }
+
+  showNavigation();
+  showMeta();
+  btnProbe.addEventListener('click', runProbe);
+  btnBandwidth.addEventListener('click', runBandwidth);
+  if (performance.getEntriesByType && performance.getEntriesByType('navigation').length) {
+    runProbe();
+  } else {
+    window.addEventListener('load', function () { showNavigation(); runProbe(); });
+  }
+})();
+</script>
+</body>
+</html>

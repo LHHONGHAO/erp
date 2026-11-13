@@ -3,35 +3,20 @@
   <mobile-modal-page :visible="visible" :title="title" @close="handleClose">
     <div class="mpp-picker">
       <div class="mpp-picker__scroll">
-        <!-- 最近使用：近 N 天选择次数前 N 名（所有页面共用同一份统计） -->
-        <template v-if="!keyword && !filterActive && recentList.length > 0">
-          <div class="mpp-picker__section">最近使用（近 {{ recentDays }} 天，按使用次数排序）</div>
-          <div v-for="g in recentList" :key="'recent-' + g.key" class="mpp-picker__item"
-               @click="onSinglePick(g)">
-            <div class="mpp-picker__main">
-              <div class="mpp-picker__name">{{ g.name }}</div>
-              <div v-if="g.spec" class="mpp-picker__spec">{{ g.spec }}</div>
-            </div>
-            <span class="mpp-picker__count">{{ g.count }} 次</span>
-            <span class="mpp-picker__check" @click.stop="toggleSelect(g)">
-              <a-checkbox :checked="isSelected(g)" />
-            </span>
-          </div>
-        </template>
-
-        <div class="mpp-picker__section">全部商品（点击直接选择，勾选可多选）</div>
-        <div v-for="item in list" :key="goodsKey(item)" class="mpp-picker__item"
-             @click="onSinglePick(formatGoods(item))">
+        <!-- 最近使用按次数排在前面，与全部商品逐行展示，已出现过的商品不再重复 -->
+        <div v-for="row in displayList" :key="row.key" class="mpp-picker__item"
+             @click="onSinglePick(row.goods)">
           <div class="mpp-picker__main">
-            <div class="mpp-picker__name">{{ item.name }}</div>
-            <div v-if="specOf(item)" class="mpp-picker__spec">{{ specOf(item) }}</div>
+            <div class="mpp-picker__name">{{ row.goods.name }}</div>
+            <div v-if="row.goods.spec" class="mpp-picker__spec">{{ row.goods.spec }}</div>
           </div>
-          <span class="mpp-picker__check" @click.stop="toggleSelect(formatGoods(item))">
-            <a-checkbox :checked="isSelected(formatGoods(item))" />
+          <span v-if="row.count" class="mpp-picker__count">{{ row.count }} 次</span>
+          <span class="mpp-picker__check" @click.stop="toggleSelect(row.goods)">
+            <a-checkbox :checked="isSelected(row.goods)" />
           </span>
         </div>
 
-        <div v-if="!loading && list.length === 0" class="mpp-picker__empty">暂无商品</div>
+        <div v-if="!loading && displayList.length === 0" class="mpp-picker__empty">暂无商品</div>
         <div v-if="hasMore" class="mpp-picker__more">
           <a-button :loading="loading" @click="loadList(true)">加载更多</a-button>
         </div>
@@ -106,7 +91,7 @@ import { recordGoodsUsage, getRecentGoods } from './goodsUsage'
 /**
  * 手机端标准商品选择/添加弹层
  * 1. 与打印弹层同一套标准页面样式（白底顶栏、标题居中、右侧关闭）
- * 2. 顶部展示近 N 天选择次数前 N 名的商品（所有页面公用同一份使用记录）
+ * 2. 近 N 天选择次数前 N 名的商品按次数排在列表前面，与全部商品逐行展示且不重复
  * 3. 单选：点击商品直接回填并关闭；多选：勾选后点「确定」批量回填
  * 4. 底部复用标准搜索底栏：拍照识别 / 搜索框 / 扫码 / 搜索 / 筛选
  */
@@ -146,6 +131,34 @@ export default {
   computed: {
     hasMore() {
       return this.list.length < this.total
+    },
+    /** 最近使用置顶，其余商品按接口顺序；同一商品只出现一次 */
+    displayList() {
+      var recent = (!this.keyword && !this.filterActive) ? this.recentList : []
+      var recentKeys = {}
+      var legacyNames = {}
+      var rows = recent.map(function(g) {
+        var goods = this.normalizeGoods(g)
+        if (g.raw) {
+          goods.key = this.goodsKey(g.raw)
+        } else {
+          // 旧记录没有原始商品数据，用名称+规格兜底去重
+          legacyNames[goods.name + '\u0000' + (goods.spec || '')] = true
+        }
+        recentKeys[goods.key] = true
+        return {
+          key: 'recent-' + goods.key,
+          goods: goods,
+          count: g.count || 0
+        }
+      }, this)
+      this.list.forEach(function(item) {
+        var goods = this.formatGoods(item)
+        if (recentKeys[goods.key]) return
+        if (legacyNames[goods.name + '\u0000' + (goods.spec || '')]) return
+        rows.push({ key: 'item-' + goods.key, goods: goods, count: 0 })
+      }, this)
+      return rows
     },
     filterActive() {
       return !!this.filterCategoryId || this.filterEnabled === '0' || this.filterEnabled === '1'
@@ -336,12 +349,6 @@ export default {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-}
-.mpp-picker__section {
-  padding: 8px 16px;
-  font-size: 12px;
-  color: #999;
-  background: #fafafa;
 }
 .mpp-picker__item {
   display: flex;

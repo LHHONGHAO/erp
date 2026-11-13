@@ -18,18 +18,7 @@ const router = new Router({
   mode: 'history',
   base: process.env.BASE_URL,
   scrollBehavior: () => ({ y: 0 }),
-  routes: constantRouterMap.concat([
-    {
-      path: '/test/datatable',
-      name: 'testDataTable',
-      component: () => import('@/views/TestDataTable')
-    },
-    {
-      path: '/test/datatable-pro',
-      name: 'testDataTablePro',
-      component: () => import('@/views/TestDataTablePro')
-    }
-  ])
+  routes: constantRouterMap
 })
 
 // 异步 chunk 加载失败（旧缓存/编译后 chunk 变更）时页面会一直白屏，

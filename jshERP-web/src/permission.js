@@ -142,7 +142,7 @@ function refreshUserBtnList() {
   }).catch(() => {})
 }
 
-const whiteList = ['/user/login', '/user/register', '/user/register-result', '/test/datatable', '/test/datatable-pro'] // no redirect whitelist
+const whiteList = ['/user/login', '/user/register', '/user/register-result'] // no redirect whitelist
 
 // 本地开发时手机端预览页不强制登录，业务页面在 iframe 内仍按正常登录态校验
 if (process.env.NODE_ENV !== 'production') {

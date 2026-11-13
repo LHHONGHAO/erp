@@ -1,6 +1,7 @@
 <template>
-  <div v-if="visible" class="mip-root" :style="{ bottom: keyboardHeight + 'px' }">
-    <div class="mip-row">
+  <div v-if="visible" class="mip-root" :style="rootStyle">
+    <div v-if="title" class="mip-title">{{ title }}</div>
+    <div class="mip-box">
       <input
         ref="input"
         v-model="draft"
@@ -9,9 +10,15 @@
         data-kb-overlay="off"
         enterkeyhint="search"
         :placeholder="placeholder"
-        @keyup.enter="onConfirm" />
-      <button type="button" class="mip-btn mip-cancel" @mousedown.prevent @touchstart.prevent @click="onCancel">{{ cancelText }}</button>
-      <button type="button" class="mip-btn mip-ok" @mousedown.prevent @touchstart.prevent @click="onConfirm">{{ confirmText }}</button>
+        @blur="onBlur"
+        @keydown.enter.prevent />
+      <button
+        type="button"
+        class="mip-ok"
+        @mousedown.prevent
+        @touchstart.prevent="markTouch"
+        @touchend.prevent="onConfirm"
+        @click="onClick">{{ confirmText }}</button>
     </div>
   </div>
 </template>
@@ -19,7 +26,8 @@
 <script>
 /**
  * 手机端标准输入弹层
- * 交互与 AI 商品添加页的键盘输入弹层保持一致：底部弹出、自动聚焦、取消/确认。
+ * 交互与全局键盘输入弹层保持一致：按屏宽铺满、带标题、框内右侧确认按钮；
+ * 只有点击确认按钮才会提交，失焦/点击弹层外只关闭不回填，回车不触发提交。
  * 输入框标记 data-kb-overlay="off"，避免被全局键盘弹层二次接管。
  */
 export default {
@@ -38,21 +46,35 @@ export default {
       type: String,
       default: '请输入'
     },
-    cancelText: {
+    /** 弹层标题，为空时不显示 */
+    title: {
       type: String,
-      default: '取消'
+      default: ''
     },
     confirmText: {
       type: String,
-      default: '确定'
+      default: '确认'
     }
   },
   data() {
     return {
       draft: '',
       keyboardHeight: 0,
+      popupLeft: 0,
+      popupWidth: '100%',
       viewportBound: false,
-      baselineHeight: 0
+      outsideBound: false,
+      baselineHeight: 0,
+      lastTouch: 0
+    }
+  },
+  computed: {
+    rootStyle() {
+      return {
+        bottom: this.keyboardHeight + 'px',
+        left: this.popupLeft + 'px',
+        width: this.popupWidth
+      }
     }
   },
   watch: {
@@ -63,15 +85,18 @@ export default {
         this.$nextTick(() => {
           this.focusInput()
           this.bindViewport()
+          this.bindOutside()
           this.positionPopup()
         })
       } else {
         this.unbindViewport()
+        this.unbindOutside()
       }
     }
   },
   beforeDestroy() {
     this.unbindViewport()
+    this.unbindOutside()
   },
   methods: {
     focusInput() {
@@ -97,8 +122,17 @@ export default {
       const gap = (this.baselineHeight || innerHeight) - innerHeight
       return gap > 80 ? gap : 0
     },
+    /** 按可视视口定位，兼容横屏与页面缩放 */
     positionPopup() {
       this.keyboardHeight = this.getKeyboardHeight()
+      const vv = window.visualViewport
+      if (vv && vv.width) {
+        this.popupLeft = Math.round(vv.offsetLeft)
+        this.popupWidth = Math.round(vv.width) + 'px'
+      } else {
+        this.popupLeft = 0
+        this.popupWidth = '100%'
+      }
     },
     bindViewport() {
       if (this.viewportBound) return
@@ -122,13 +156,50 @@ export default {
         window.visualViewport.removeEventListener('scroll', this.positionPopup)
       }
     },
+    /** 点击弹层外关闭，不提交 */
+    bindOutside() {
+      if (this.outsideBound) return
+      this.outsideBound = true
+      document.addEventListener('click', this.onDocumentClick, true)
+    },
+    unbindOutside() {
+      if (!this.outsideBound) return
+      this.outsideBound = false
+      document.removeEventListener('click', this.onDocumentClick, true)
+    },
+    onDocumentClick(e) {
+      if (!this.visible) return
+      if (this.$el && this.$el.contains(e.target)) return
+      this.close()
+    },
+    /** 键盘收起导致的失焦：只关闭弹层，不提交 */
+    onBlur() {
+      setTimeout(() => {
+        if (!this.visible) return
+        const active = document.activeElement
+        if (active && this.$el && this.$el.contains(active)) return
+        this.close()
+      }, 0)
+    },
+    markTouch() {
+      this.lastTouch = Date.now()
+    },
+    onClick() {
+      // touchend 已处理过的场景，忽略后续 click，避免重复提交
+      if (Date.now() - this.lastTouch < 600) return
+      this.onConfirm()
+    },
     onConfirm() {
       const text = (this.draft || '').trim()
       // 无内容时点击确认不做任何反应
       if (!text) return
+      this.unbindViewport()
+      this.unbindOutside()
       this.$emit('confirm', text)
     },
-    onCancel() {
+    close() {
+      this.unbindViewport()
+      this.unbindOutside()
       this.$emit('cancel')
     }
   }
@@ -136,25 +207,42 @@ export default {
 </script>
 
 <style lang="less" scoped>
-/* 与 AI 商品添加页的键盘输入弹层保持同一视觉：白色底部条 + 圆角 + 顶部阴影 */
+/* 与全局键盘输入弹层一致的铺满式底部条：标题 + 框内确认按钮 */
 .mip-root {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 1000;
-  padding: 8px 10px;
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  padding: 10px 12px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   background: #fff;
   border-top: 1px solid #e8e8e8;
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
-  font-size: 14px;
+  font-size: 15px;
 }
-.mip-row {
+.mip-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: #262626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mip-box {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
 }
 .mip-input {
   flex: 1;
@@ -162,35 +250,27 @@ export default {
   height: 44px;
   padding: 0 12px;
   box-sizing: border-box;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  font-size: 15px;
+  border: none;
+  background: transparent;
+  font-size: 16px;
   color: #262626;
-  background: #fff;
   outline: none;
   &::placeholder {
     color: #b7b7b7;
   }
-  &:focus {
-    border-color: #1890ff;
-    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.12);
-  }
-}
-.mip-btn {
-  flex: 0 0 auto;
-  height: 44px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-}
-.mip-cancel {
-  padding: 0 10px;
-  background: #f5f5f5;
-  color: #595959;
 }
 .mip-ok {
-  padding: 0 14px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-left: 1px solid #e8e8e8;
+  border-radius: 0;
   background: #1890ff;
   color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  outline: none;
 }
 </style>

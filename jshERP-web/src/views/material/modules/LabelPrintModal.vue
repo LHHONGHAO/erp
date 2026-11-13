@@ -154,17 +154,6 @@
       :visible="visible && showPrinterSheet && !wifiAddStep && !printerEditVisible"
       title="设备列表"
       @close="showPrinterSheet = false">
-      <!-- 类型 Tab：下划线风格 -->
-      <div class="lmpl-tabs-bar">
-        <div
-          v-for="t in printerTabList"
-          :key="t.key"
-          class="lmpl-tab"
-          :class="{ active: deviceTab === t.key }"
-          @click="switchDeviceTab(t.key)"
-        >{{ t.label }}</div>
-      </div>
-
       <div class="lmpl-body">
         <!-- 列表区 -->
         <a-spin :spinning="loadingPrinters || loadingAgents" tip="加载中...">
@@ -310,6 +299,19 @@
           </template>
         </div>
       </div>
+
+      <!-- 类型切换：底部栏 -->
+      <template #footer>
+        <div class="lmpl-bottom-tabs">
+          <div
+            v-for="t in printerTabList"
+            :key="t.key"
+            class="lmpl-bottom-tab"
+            :class="{ active: deviceTab === t.key }"
+            @click="switchDeviceTab(t.key)"
+          >{{ t.label }}</div>
+        </div>
+      </template>
     </mobile-modal-page>
 
     <!-- 页面 3：选择品牌（标准弹层页面） -->
@@ -3095,14 +3097,41 @@
     font-weight: 500;
   }
   /* ===== 设备列表页（lmpl = label mobile printer list） ===== */
-  .lmpl-tabs-bar {
-    flex: none;
+  /* 类型切换：底部栏 */
+  .lmpl-bottom-tabs {
     display: flex;
-    background: #fff;
-    border-bottom: 1px solid #eee;
-    padding: 0 4px;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    box-sizing: border-box;
+    border-top: 1px solid #f0f0f0;
   }
-  /* 弹层内容区：分类 tab 固定，列表与添加入口可滚动 */
+  .lmpl-bottom-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    color: #8c8c8c;
+    font-size: 14px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .lmpl-bottom-tab.active {
+    color: #1890ff;
+    font-weight: 600;
+  }
+  .lmpl-bottom-tab.active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 28px;
+    height: 3px;
+    border-radius: 0 0 2px 2px;
+    background: #1890ff;
+  }
+  /* 弹层内容区：列表与添加入口可滚动 */
   .lmpl-body {
     flex: 1;
     min-height: 0;
@@ -3110,35 +3139,10 @@
     -webkit-overflow-scrolling: touch;
   }
   .lmpl-footer-add {
-    padding: 12px 12px calc(14px + env(safe-area-inset-bottom));
+    padding: 12px 12px 14px;
   }
   .lmpl-footer-add .lmpl-add-btn + .lmpl-add-btn {
     margin-top: 8px;
-  }
-  .lmpl-tab {
-    flex: 1;
-    text-align: center;
-    padding: 14px 0 12px;
-    font-size: 15px;
-    color: #888;
-    position: relative;
-    cursor: pointer;
-    transition: color 0.15s;
-  }
-  .lmpl-tab.active {
-    color: #1890ff;
-    font-weight: 600;
-  }
-  .lmpl-tab.active::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 28px;
-    height: 3px;
-    background: #1890ff;
-    border-radius: 2px;
   }
   .lmpl-list {
     padding: 10px;

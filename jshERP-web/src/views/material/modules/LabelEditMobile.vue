@@ -6,8 +6,7 @@
     @close="handleBack">
     <template #actions>
       <a-icon type="edit" class="mmp-icon" title="标签尺寸" @click="openSizeEditor" />
-      <a-icon type="fullscreen" class="mmp-icon" title="全屏" @click="toggleZoom" />
-      <a-icon type="more" class="mmp-icon" title="更多" @click="showMore = !showMore" />
+      <a-icon type="setting" class="mmp-icon" title="设置" @click="openSettings" />
     </template>
     <div class="lem-page">
 
@@ -119,16 +118,12 @@
       <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
     </div>
 
-    <!-- 工具栏：始终固定在屏幕底边，按钮左右滑动，下滑/上滑按钮固定在右侧 -->
+    <!-- 工具栏：固定在屏幕底边 -->
     <div class="lem-toolbar">
       <div class="lem-toolbar-scroll">
         <div class="lem-tool-btn" @click="openElementPanel">
           <a-icon type="appstore" />
           <span>元素</span>
-        </div>
-        <div class="lem-tool-btn" @click="deleteSelected">
-          <a-icon type="delete" />
-          <span>删除</span>
         </div>
         <div class="lem-tool-btn" @click="zoomIn">
           <a-icon type="zoom-in" />
@@ -138,27 +133,19 @@
           <a-icon type="zoom-out" />
           <span>缩小</span>
         </div>
-        <div class="lem-tool-btn" @click="saveTemplate">
-          <a-icon type="save" />
-          <span>保存</span>
-        </div>
         <div class="lem-tool-btn" @click="handlePrint">
           <a-icon type="printer" />
           <span>打印</span>
         </div>
-        <div class="lem-tool-btn" @click="openSettings">
-          <a-icon type="setting" />
-          <span>设置</span>
+        <div class="lem-tool-btn" @click="saveTemplate">
+          <a-icon type="save" />
+          <span>保存</span>
         </div>
-      </div>
-      <div class="lem-toolbar-move" :class="{ 'lem-toolbar-move-locked': panelDown }" @click="togglePanelMode">
-        <a-icon :type="panelDown ? 'up' : 'down'" />
-        <span>{{ panelDown ? '上滑' : '下滑' }}</span>
       </div>
     </div>
 
-    <!-- 属性编辑面板：上滑状态为向上浮出的弹层；下滑状态不弹层 -->
-    <div class="lem-panel" v-if="selectedKeys.length && !panelDown">
+    <!-- 属性编辑面板：选中元素时直接显示 -->
+    <div class="lem-panel" v-if="selectedKeys.length">
       <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
       <!-- 属性名 / 文本内容（单选时显示） -->
       <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields">
@@ -225,8 +212,8 @@
       </div>
     </div>
 
-    <!-- 元素选择弹层：全宽，从底边栏上沿向上弹出，受弹出锁定按钮控制 -->
-    <div v-if="elementPanelVisible && !panelDown" class="lem-sheet-mask" @click="elementPanelVisible = false">
+    <!-- 元素选择弹层：全宽，从底边栏上沿向上弹出 -->
+    <div v-if="elementPanelVisible" class="lem-sheet-mask" @click="elementPanelVisible = false">
       <div class="lem-sheet" @click.stop>
         <div class="lem-sheet-head">
           <span class="lem-sheet-title">元素</span>
@@ -463,11 +450,8 @@
         // 超长文本处理：wrap=自动折行并下移下方内容，ellipsis=单行省略号裁切
         overflowMode: 'wrap',
         zoom: 1,
-        showMore: false,
         elementPanelVisible: false,
         customCounter: 0,
-        // true = 下滑状态：点击元素不向上弹层；false = 上滑状态：面板向上浮出
-        panelDown: false,
         templates: [],
         selectedTemplateId: null,
         // 保存模板弹窗（与 PC 端一致：模板名称 + 商品类型）
@@ -1266,19 +1250,8 @@
         if (attr) attr.value = val
       },
       openElementPanel() {
-        if (this.panelDown) {
-          this.$message.warning('已锁定弹出层，先点右下角「上滑」解锁')
-          return
-        }
         // 再点一次「元素」即关闭
         this.elementPanelVisible = !this.elementPanelVisible
-      },
-      deleteSelected() {
-        var keys = this.selectedKeys.slice()
-        if (!keys.length && this.currentAttrKey) keys = [this.currentAttrKey]
-        if (!keys.length) return
-        var self = this
-        keys.forEach(function(k) { self.removeAttr(k) })
       },
       toggleMultiSelect() {
         this.multiSelectMode = !this.multiSelectMode
@@ -1286,10 +1259,6 @@
         if (!this.multiSelectMode) {
           this.selectedKeys = this.currentAttrKey ? [this.currentAttrKey] : []
         }
-      },
-      // 下滑/上滑：只控制属性面板是否向上弹层，工具栏始终固定在底边
-      togglePanelMode() {
-        this.panelDown = !this.panelDown
       },
       copyElement() {
         if (!this.currentAttrKey) return
@@ -1345,11 +1314,6 @@
       },
       zoomOut() {
         this.zoom = Math.max(LABEL_MIN_ZOOM, this.zoom - 0.1)
-      },
-      // 全屏图标：1:1 与「按窗口适配」之间切换
-      toggleZoom() {
-        if (Math.abs(this.zoom - 1) < 0.01) this.fitLabelToView()
-        else this.zoom = 1
       },
       /**
        * 按预览区尺寸等比缩放标签（复用 label-scroll 的 computeFitScale）
@@ -1922,10 +1886,6 @@
 </script>
 
 <style lang="scss" scoped>
-.mmp-tools .mmp-icon {
-  width: 40px;
-}
-
 .lem-page {
   flex: 1;
   min-height: 0;
@@ -2212,13 +2172,14 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* 可横向滑动的按钮区 */
+/* 按钮区：均分底栏宽度 */
 .lem-toolbar-scroll {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
+  justify-content: space-around;
   gap: 4px;
   padding: 8px 10px;
   overflow-x: auto;
@@ -2229,33 +2190,6 @@
 
 .lem-toolbar-scroll::-webkit-scrollbar {
   display: none;
-}
-
-/* 上下移动按钮：固定在右侧，不随按钮栏滑动 */
-.lem-toolbar-move {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  font-size: 10px;
-  color: #1890ff;
-  padding: 4px 12px;
-  border-left: 1px solid #eee;
-  background: #fff;
-  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.05);
-  z-index: 2;
-}
-
-/* 弹出锁定状态：按钮高亮提示当前已锁定，点击元素不弹卡片 */
-.lem-toolbar-move-locked {
-  color: #fff;
-  background: #1890ff;
-}
-
-.lem-toolbar-move-locked span {
-  color: #fff;
 }
 
 .lem-tool-btn {
@@ -2274,7 +2208,7 @@
   font-size: 18px;
 }
 
-/* 属性面板：宽度与页面一致，从底边栏上沿向上弹出；下滑（锁定）状态不弹 */
+/* 属性面板：宽度与页面一致，选中元素时从底边栏上沿向上弹出 */
 .lem-panel {
   position: absolute;
   left: 0;

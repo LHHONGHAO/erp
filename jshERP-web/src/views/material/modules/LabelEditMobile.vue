@@ -41,6 +41,8 @@
       </div>
     </div>
 
+    <!-- 画布 + 右侧属性栏 -->
+    <div class="lem-content">
     <!-- 预览区 -->
     <div class="lem-preview-wrap" ref="previewWrap" :class="wrapScrolling ? 'lem-preview-wrap--scrolling' : 'lem-preview-wrap--fitting'">
       <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
@@ -118,12 +120,98 @@
       <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
     </div>
 
+    <!-- 属性编辑栏：贴附屏幕右侧，字段单列排列 -->
+    <div class="lem-side" v-if="selectedKeys.length" :class="{ 'lem-side--hidden': attrPanelHidden }">
+      <template v-if="!attrPanelHidden">
+        <div class="lem-side-head">
+          <span class="lem-side-title">文字属性</span>
+          <span class="lem-side-collapse" title="隐藏属性栏" @click="attrPanelHidden = true">
+            隐藏<a-icon type="right" />
+          </span>
+        </div>
+        <div class="lem-side-body">
+          <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
+          <!-- 属性名 / 文本内容（单选时显示） -->
+          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields">
+            <span class="lem-style-label">属性名</span>
+            <a-input
+              :value="currentLabel"
+              :placeholder="isCustomAttr(selectedKeys[0]) ? '自定义文本内容' : '属性名（留空不显示）'"
+              class="lem-text-input"
+              @input="updateCurrentLabel"
+            />
+          </div>
+          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
+            <span class="lem-style-label">文本内容</span>
+            <a-input
+              :value="currentValue"
+              placeholder="文本内容"
+              class="lem-text-input"
+              @input="updateCurrentValue"
+            />
+            <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+          </div>
+          <!-- 商品信息：组合值由勾选的字段拼接（如只勾商品名称+规格值2） -->
+          <div class="lem-field" v-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
+            <span class="lem-style-label">组合字段</span>
+            <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
+              <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
+            </a-checkbox-group>
+          </div>
+          <!-- 样式编辑：多选时不一致的项显示为空，修改后应用到全部 -->
+          <div class="lem-style-grid">
+            <div class="lem-style-item" v-if="showFontFields">
+              <span class="lem-style-label">字号</span>
+              <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" class="lem-style-control" placeholder="多值" />
+            </div>
+            <div class="lem-style-item" v-if="showFontFields">
+              <span class="lem-style-label">粗细</span>
+              <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" class="lem-style-control" placeholder="多值">
+                <a-select-option value="normal">正常</a-select-option>
+                <a-select-option value="bold">粗体</a-select-option>
+              </a-select>
+            </div>
+            <div class="lem-style-item" v-if="showFontFields">
+              <span class="lem-style-label">字距</span>
+              <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" class="lem-style-control" placeholder="多值" />
+            </div>
+            <div class="lem-style-item" v-if="showFontFields">
+              <span class="lem-style-label">行距</span>
+              <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" class="lem-style-control" placeholder="多值" />
+            </div>
+            <div class="lem-style-item">
+              <span class="lem-style-label">X</span>
+              <a-input-number :value="getMultiStyle('x')" @change="v => setMultiStyle('x', v)" size="small" class="lem-style-control" />
+            </div>
+            <div class="lem-style-item">
+              <span class="lem-style-label">Y</span>
+              <a-input-number :value="getMultiStyle('y')" @change="v => setMultiStyle('y', v)" size="small" class="lem-style-control" />
+            </div>
+            <div class="lem-style-item">
+              <span class="lem-style-label">宽</span>
+              <a-input-number :value="getMultiStyle('width')" @change="v => setMultiStyle('width', v)" :min="10" :max="2000" size="small" class="lem-style-control" placeholder="自动" />
+            </div>
+            <div class="lem-style-item">
+              <span class="lem-style-label">高</span>
+              <a-input-number :value="getMultiStyle('height')" @change="v => setMultiStyle('height', v)" :min="10" :max="1000" size="small" class="lem-style-control" placeholder="自动" />
+            </div>
+          </div>
+        </div>
+      </template>
+      <div v-else class="lem-side-handle" @click="attrPanelHidden = false">属性</div>
+    </div>
+    </div>
+
     <!-- 工具栏：固定在屏幕底边 -->
     <div class="lem-toolbar">
       <div class="lem-toolbar-scroll">
         <div class="lem-tool-btn" @click="openElementPanel">
           <a-icon type="appstore" />
           <span>元素</span>
+        </div>
+        <div class="lem-tool-btn" :class="{ 'lem-tool-btn--disabled': !selectedKeys.length }" @click="deleteSelected">
+          <a-icon type="delete" />
+          <span>删除</span>
         </div>
         <div class="lem-tool-btn" @click="zoomIn">
           <a-icon type="zoom-in" />
@@ -140,74 +228,6 @@
         <div class="lem-tool-btn" @click="saveTemplate">
           <a-icon type="save" />
           <span>保存</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 属性编辑面板：选中元素时直接显示 -->
-    <div class="lem-panel" v-if="selectedKeys.length">
-      <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
-      <!-- 属性名 / 文本内容（单选时显示） -->
-      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields">
-        <a-input
-          :value="currentLabel"
-          :placeholder="isCustomAttr(selectedKeys[0]) ? '自定义文本内容' : '属性名（留空不显示）'"
-          class="lem-text-input"
-          @input="updateCurrentLabel"
-        />
-      </div>
-      <div class="lem-text-input-row" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
-        <a-input
-          :value="currentValue"
-          placeholder="文本内容"
-          class="lem-text-input"
-          @input="updateCurrentValue"
-        />
-        <a-button size="small" class="lem-ocr-btn">OCR</a-button>
-      </div>
-      <!-- 商品信息：组合值由勾选的字段拼接（如只勾商品名称+规格值2） -->
-      <div class="lem-goods-field-row" v-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
-        <span class="lem-style-label">组合字段</span>
-        <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
-          <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
-        </a-checkbox-group>
-      </div>
-      <!-- 样式编辑：多选时不一致的项显示为空，修改后应用到全部 -->
-      <div class="lem-style-grid">
-        <div class="lem-style-item" v-if="showFontFields">
-          <span class="lem-style-label">字号</span>
-          <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" style="width:70px" placeholder="多值" />
-        </div>
-        <div class="lem-style-item" v-if="showFontFields">
-          <span class="lem-style-label">粗细</span>
-          <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" style="width:70px" placeholder="多值">
-            <a-select-option value="normal">正常</a-select-option>
-            <a-select-option value="bold">粗体</a-select-option>
-          </a-select>
-        </div>
-        <div class="lem-style-item" v-if="showFontFields">
-          <span class="lem-style-label">字距</span>
-          <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" style="width:70px" placeholder="多值" />
-        </div>
-        <div class="lem-style-item" v-if="showFontFields">
-          <span class="lem-style-label">行距</span>
-          <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" style="width:70px" placeholder="多值" />
-        </div>
-        <div class="lem-style-item">
-          <span class="lem-style-label">X</span>
-          <a-input-number :value="getMultiStyle('x')" @change="v => setMultiStyle('x', v)" size="small" style="width:70px" />
-        </div>
-        <div class="lem-style-item">
-          <span class="lem-style-label">Y</span>
-          <a-input-number :value="getMultiStyle('y')" @change="v => setMultiStyle('y', v)" size="small" style="width:70px" />
-        </div>
-        <div class="lem-style-item">
-          <span class="lem-style-label">宽</span>
-          <a-input-number :value="getMultiStyle('width')" @change="v => setMultiStyle('width', v)" :min="10" :max="2000" size="small" style="width:70px" placeholder="自动" />
-        </div>
-        <div class="lem-style-item">
-          <span class="lem-style-label">高</span>
-          <a-input-number :value="getMultiStyle('height')" @change="v => setMultiStyle('height', v)" :min="10" :max="1000" size="small" style="width:70px" placeholder="自动" />
         </div>
       </div>
     </div>
@@ -466,6 +486,8 @@
         historyIndex: -1,
         dragging: { active: false, mode: '', key: '', startX: 0, startY: 0, origX: 0, origY: 0, origW: 0, origH: 0, moved: false },
         selectedKeys: [],
+        // 右侧属性栏是否收起（收起后仅保留竖向「属性」手柄）
+        attrPanelHidden: false,
         multiSelectMode: false,
         suppressClick: false,
         marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
@@ -617,6 +639,12 @@
           width: this.marquee.w + 'px',
           height: this.marquee.h + 'px'
         }
+      }
+    },
+    watch: {
+      // 取消选中后重新展开属性栏，避免下次选中时仍是收起状态
+      selectedKeys(val) {
+        if (!val.length) this.attrPanelHidden = false
       }
     },
     mounted() {
@@ -1097,6 +1125,14 @@
       clearSelection() {
         this.selectedKeys = []
         this.currentAttrKey = null
+      },
+      // 删除选中元素（无多选时删除当前焦点元素）
+      deleteSelected() {
+        var keys = this.selectedKeys.slice()
+        if (!keys.length && this.currentAttrKey) keys = [this.currentAttrKey]
+        if (!keys.length) return
+        var self = this
+        keys.forEach(function(k) { self.removeAttr(k) })
       },
       addAttr(key) {
         if (this.selectedAttrs.indexOf(key) !== -1) return
@@ -1897,8 +1933,18 @@
   box-sizing: border-box;
 }
 
-.lem-preview-wrap {
+/* 画布 + 右侧属性栏：横向排布，属性栏贴附屏幕右侧 */
+.lem-content {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.lem-preview-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: auto;
   /* 与默认适配缩放的四周边距保持一致（20px） */
   padding: 20px 0;
@@ -2208,22 +2254,91 @@
   font-size: 18px;
 }
 
-/* 属性面板：宽度与页面一致，选中元素时从底边栏上沿向上弹出 */
-.lem-panel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  width: 100%;
+/* 无选中元素时「删除」置灰 */
+.lem-tool-btn--disabled {
+  opacity: 0.35;
+}
+
+/* 属性栏：贴附屏幕右侧，字段单列排列 */
+.lem-side {
+  flex: 0 0 126px;
+  width: 126px;
   box-sizing: border-box;
-  bottom: calc(58px + env(safe-area-inset-bottom));
-  z-index: 90;
+  display: flex;
+  flex-direction: column;
   background: #fff;
-  border-top: 1px solid #eee;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
-  padding: 12px 16px;
-  max-height: 46vh;
+  border-left: 1px solid #eee;
+  overflow: hidden;
+}
+
+/* 收起态：仅保留竖向「属性」手柄 */
+.lem-side--hidden {
+  flex-basis: 22px;
+  width: 22px;
+  background: #1890ff;
+  border-left: none;
+}
+
+.lem-side-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.lem-side-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.lem-side-collapse {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: #999;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lem-side-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  animation: lem-panel-up 0.18s ease-out;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px;
+}
+
+.lem-side-handle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 2px;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 窄屏再收窄，保证画布可用宽度 */
+@media (max-width: 360px) {
+  .lem-side {
+    flex-basis: 114px;
+    width: 114px;
+  }
+
+  .lem-side--hidden {
+    flex-basis: 22px;
+    width: 22px;
+  }
 }
 
 @keyframes lem-panel-up {
@@ -2295,60 +2410,64 @@
 }
 
 .lem-panel-multi-tip {
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.4;
   color: #1890ff;
+  margin-bottom: 6px;
+}
+
+/* 单列字段：标签在上、控件在下 */
+.lem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   margin-bottom: 8px;
 }
 
-.lem-text-input-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
 .lem-text-input {
-  flex: 1;
+  width: 100%;
 }
 
 /* 商品信息组合字段勾选 */
-.lem-goods-field-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.lem-goods-field-row .lem-style-label {
-  flex-shrink: 0;
-  line-height: 24px;
-}
-
 .lem-goods-field-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  line-height: 24px;
+  gap: 2px 8px;
+  line-height: 20px;
+}
+
+.lem-goods-field-group ::v-deep .ant-checkbox-wrapper {
+  margin-left: 0;
+  font-size: 12px;
 }
 
 .lem-ocr-btn {
-  flex-shrink: 0;
+  align-self: flex-end;
+  margin-top: 2px;
 }
 
 .lem-style-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .lem-style-item {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 控件占满属性栏宽度 */
+.lem-style-control {
+  width: 100% !important;
 }
 
 .lem-style-label {
   font-size: 12px;
   color: #999;
+  white-space: nowrap;
 }
 
 .lem-elem-list {

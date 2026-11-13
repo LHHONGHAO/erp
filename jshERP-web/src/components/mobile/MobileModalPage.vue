@@ -2,9 +2,6 @@
   <div v-if="visible" class="mmp-page">
     <!-- 标准顶栏：蓝底 49px、标题左对齐、副标题同行、右侧关闭固定 -->
     <div class="mmp-header">
-      <div v-if="showBack" class="mmp-back" @click="$emit('back')">
-        <a-icon type="arrow-left" />
-      </div>
       <div class="mmp-title-block">
         <div class="mmp-title">{{ title }}</div>
         <div v-if="subtitle" class="mmp-subtitle">{{ subtitle }}</div>
@@ -42,7 +39,6 @@ export default {
     visible: { type: Boolean, default: false },
     title: { type: String, default: '' },
     subtitle: { type: String, default: '' },
-    showBack: { type: Boolean, default: false },
     closable: { type: Boolean, default: true }
   }
 }
@@ -79,7 +75,7 @@ export default {
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  /* 与标准手机顶栏标题左边一致：返回区 58px + 8px */
+  /* 标题左边固定 66px，与标准手机顶栏一致 */
   padding-left: 8px;
 }
 .mmp-title {
@@ -103,23 +99,6 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.mmp-back {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 58px;
-  height: 49px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  color: #fff;
-  cursor: pointer;
-  user-select: none;
-}
-.mmp-back:active {
-  background: rgba(255, 255, 255, 0.2);
 }
 .mmp-tools {
   flex: none;

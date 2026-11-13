@@ -316,8 +316,6 @@
     <mobile-modal-page
       :visible="visible && showPrinterSheet && wifiAddStep === 'brand'"
       title="选择品牌"
-      show-back
-      @back="wifiAddStep = ''"
       @close="wifiAddStep = ''">
       <div class="lmb-grid">
         <div v-for="b in wifiBrandList" :key="b.key" class="lmb-cell" @click="selectWifiBrand(b)">
@@ -363,8 +361,6 @@
     <mobile-modal-page
       :visible="visible && showPrinterSheet && wifiAddStep === 'config'"
       title="网络打印配置"
-      show-back
-      @back="wifiAddStep = 'brand'"
       @close="wifiAddStep = ''">
       <div class="lmw-form">
         <div class="lmw-card">

@@ -518,6 +518,10 @@
       },
       // 打开结算页面：自动带出默认仓库，实收默认填单据金额
       openSettle () {
+        if (this.cartList.length === 0) {
+          this.$message.warning('请先添加商品')
+          return
+        }
         if (!this.billForm.depotId) {
           const depots = this.depotList || []
           if (this.defaultDepotId) {

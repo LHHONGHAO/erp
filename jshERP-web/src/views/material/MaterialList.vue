@@ -73,6 +73,13 @@
     <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
     <label-edit-modal ref="labelEditModal"></label-edit-modal>
     <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+    <label-edit-mobile
+      v-if="labelEditorVisible"
+      embedded
+      initial-type="label"
+      initial-business-type="product"
+      :initial-template-id="labelEditorTemplateId"
+      @close="labelEditorVisible = false" />
     <ocr-recognize-modal
       :visible="ocrVisible"
       :extractOnly="true"
@@ -264,6 +271,7 @@
   import MaterialModal from './modules/MaterialModal'
   import ImportFileModal from '@/components/tools/ImportFileModal'
   import LabelEditModal from './modules/LabelEditModal'
+  import LabelEditMobile from './modules/LabelEditMobile'
   import LabelPrintModal from './modules/LabelPrintModal'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
@@ -285,6 +293,7 @@
       MaterialModal,
       ImportFileModal,
       LabelEditModal,
+      LabelEditMobile,
       LabelPrintModal,
       OcrRecognizeModal,
       MaterialTable,
@@ -298,6 +307,9 @@
         categoryTree:[],
         mPropertyListShort: '',
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
+        // 手机端标签编辑弹层
+        labelEditorVisible: false,
+        labelEditorTemplateId: null,
         // 显示方式：spu=单类显示（每个商品一行），sku=单品显示（每个SKU一行）
         displayMode: 'sku',
         model: {},
@@ -508,8 +520,7 @@
       handleEditLabel({ record, sku, categoryTree, templateId }) {
         var isMobile = window.innerWidth <= 768
         if (isMobile) {
-          // 手机端编辑页是独立路由，商品数据需要经 sessionStorage 带过去，
-          // 否则编辑页拿不到 record/sku，标签字段会全部为空
+          // 手机端改为标准弹层内嵌编辑页，不再跳转独立路由；商品数据仍需经 sessionStorage 传递
           try {
             sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
               record: record || {},
@@ -518,7 +529,8 @@
               businessType: 'product'
             }))
           } catch (e) { /* 忽略 */ }
-          this.$router.push({ path: '/label/edit-mobile', query: { type: 'label', templateId: templateId, businessType: 'product' } })
+          this.labelEditorTemplateId = templateId || null
+          this.labelEditorVisible = true
         } else {
           this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId, 'label', 'product')
         }

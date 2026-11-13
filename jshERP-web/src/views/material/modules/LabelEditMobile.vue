@@ -120,16 +120,12 @@
       <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
     </div>
 
-    <!-- 属性编辑栏：贴附屏幕右侧，字段单列排列 -->
-    <div class="lem-side" v-if="selectedKeys.length" :class="{ 'lem-side--hidden': attrPanelHidden }">
-      <template v-if="!attrPanelHidden">
-        <div class="lem-side-head">
-          <span class="lem-side-title">文字属性</span>
-          <span class="lem-side-collapse" title="隐藏属性栏" @click="attrPanelHidden = true">
-            隐藏<a-icon type="right" />
-          </span>
-        </div>
-        <div class="lem-side-body">
+    <!-- 属性面板：覆盖在画布右侧，不压缩画布；与元素面板互斥 -->
+    <div class="lem-side" v-if="sidePanel === 'attr'">
+      <div class="lem-side-head">
+        <span class="lem-side-title">文字属性</span>
+      </div>
+      <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
           <!-- 属性名 / 文本内容（单选时显示） -->
           <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields">
@@ -162,53 +158,108 @@
           <div class="lem-style-grid">
             <div class="lem-style-item" v-if="showFontFields">
               <span class="lem-style-label">字号</span>
-              <a-input-number :value="getMultiStyle('fontSize')" @change="v => setMultiStyle('fontSize', v)" :min="6" :max="72" size="small" class="lem-style-control" placeholder="多值" />
+              <a-input-number :value="getMultiStyle('fontSize')" @change="onStyleChange('fontSize', $event)" :min="6" :max="72" size="small" class="lem-style-control" placeholder="多值" />
             </div>
             <div class="lem-style-item" v-if="showFontFields">
               <span class="lem-style-label">粗细</span>
-              <a-select :value="getMultiStyle('fontWeight')" @change="v => setMultiStyle('fontWeight', v)" size="small" class="lem-style-control" placeholder="多值">
+              <a-select :value="getMultiStyle('fontWeight')" @change="onStyleChange('fontWeight', $event)" size="small" class="lem-style-control" placeholder="多值">
                 <a-select-option value="normal">正常</a-select-option>
                 <a-select-option value="bold">粗体</a-select-option>
               </a-select>
             </div>
             <div class="lem-style-item" v-if="showFontFields">
               <span class="lem-style-label">字距</span>
-              <a-input-number :value="getMultiStyle('letterSpacing')" @change="v => setMultiStyle('letterSpacing', v)" :min="0" :max="30" :step="0.5" size="small" class="lem-style-control" placeholder="多值" />
+              <a-input-number :value="getMultiStyle('letterSpacing')" @change="onStyleChange('letterSpacing', $event)" :min="0" :max="30" :step="0.5" size="small" class="lem-style-control" placeholder="多值" />
             </div>
             <div class="lem-style-item" v-if="showFontFields">
               <span class="lem-style-label">行距</span>
-              <a-input-number :value="getMultiStyle('lineHeight')" @change="v => setMultiStyle('lineHeight', v)" :min="0.8" :max="4" :step="0.1" size="small" class="lem-style-control" placeholder="多值" />
+              <a-input-number :value="getMultiStyle('lineHeight')" @change="onStyleChange('lineHeight', $event)" :min="0.8" :max="4" :step="0.1" size="small" class="lem-style-control" placeholder="多值" />
             </div>
             <div class="lem-style-item">
               <span class="lem-style-label">X</span>
-              <a-input-number :value="getMultiStyle('x')" @change="v => setMultiStyle('x', v)" size="small" class="lem-style-control" />
+              <a-input-number :value="getMultiStyle('x')" @change="onStyleChange('x', $event)" size="small" class="lem-style-control" />
             </div>
             <div class="lem-style-item">
               <span class="lem-style-label">Y</span>
-              <a-input-number :value="getMultiStyle('y')" @change="v => setMultiStyle('y', v)" size="small" class="lem-style-control" />
+              <a-input-number :value="getMultiStyle('y')" @change="onStyleChange('y', $event)" size="small" class="lem-style-control" />
             </div>
             <div class="lem-style-item">
               <span class="lem-style-label">宽</span>
-              <a-input-number :value="getMultiStyle('width')" @change="v => setMultiStyle('width', v)" :min="10" :max="2000" size="small" class="lem-style-control" placeholder="自动" />
+              <a-input-number :value="getMultiStyle('width')" @change="onStyleChange('width', $event)" :min="10" :max="2000" size="small" class="lem-style-control" placeholder="自动" />
             </div>
             <div class="lem-style-item">
               <span class="lem-style-label">高</span>
-              <a-input-number :value="getMultiStyle('height')" @change="v => setMultiStyle('height', v)" :min="10" :max="1000" size="small" class="lem-style-control" placeholder="自动" />
+              <a-input-number :value="getMultiStyle('height')" @change="onStyleChange('height', $event)" :min="10" :max="1000" size="small" class="lem-style-control" placeholder="自动" />
             </div>
           </div>
+      </div>
+    </div>
+
+    <!-- 元素面板：与属性面板同款，贴附右侧；两者互斥 -->
+    <div class="lem-side" v-if="sidePanel === 'element'">
+      <div class="lem-side-head">
+        <span class="lem-side-title">元素</span>
+      </div>
+      <div class="lem-side-body">
+        <!-- 数据表选择：字段随所选表加载，逻辑与 Web 端「业务数据源」一致 -->
+        <div v-if="providerList.length" class="lem-provider">
+          <span class="lem-provider-label">数据表</span>
+          <a-select
+            :value="provider"
+            size="small"
+            class="lem-provider-select"
+            placeholder="选择数据表"
+            @change="onProviderChange"
+          >
+            <a-select-option v-for="p in providerList" :key="p.provider" :value="p.provider">{{ p.name }}</a-select-option>
+          </a-select>
         </div>
-      </template>
-      <div v-else class="lem-side-handle" @click="attrPanelHidden = false">属性</div>
+        <div v-for="group in attrGroups" :key="group.name" class="lem-elem-group">
+          <div class="lem-elem-group-title">{{ group.name }}</div>
+          <div
+            v-for="attr in group.attrs"
+            :key="attr.key"
+            class="lem-elem-item"
+            :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
+            @click="toggleAttr(attr.key)"
+          >
+            <div class="lem-elem-text">
+              <span class="lem-elem-cn">{{ attr.comment || attr.label }}</span>
+              <span class="lem-elem-key">{{ attr.key }}</span>
+            </div>
+            <a-icon
+              :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
+              :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
+              :class="{ 'lem-elem-icon--on': selectedAttrs.indexOf(attr.key) > -1 }"
+            />
+          </div>
+        </div>
+        <a-button type="dashed" block size="small" class="lem-add-custom" @click="addCustomLabel">
+          <a-icon type="plus" />自定义标签
+        </a-button>
+      </div>
+    </div>
+
+    <!-- 悬浮切换卡片：位于屏幕下方，两个都关闭时贴屏幕右边缘 -->
+    <div class="lem-side-tabs" :class="{ 'lem-side-tabs--attached': sidePanel }">
+      <div
+        class="lem-side-tab"
+        :class="{ 'lem-side-tab--disabled': !selectedKeys.length }"
+        @click="toggleSidePanel('attr')"
+      >
+        <a-icon :type="sidePanel === 'attr' ? 'right' : 'left'" />
+        <span>属性</span>
+      </div>
+      <div class="lem-side-tab" @click="toggleSidePanel('element')">
+        <a-icon :type="sidePanel === 'element' ? 'right' : 'left'" />
+        <span>元素</span>
+      </div>
     </div>
     </div>
 
     <!-- 工具栏：固定在屏幕底边 -->
     <div class="lem-toolbar">
       <div class="lem-toolbar-scroll">
-        <div class="lem-tool-btn" @click="openElementPanel">
-          <a-icon type="appstore" />
-          <span>元素</span>
-        </div>
         <div class="lem-tool-btn" :class="{ 'lem-tool-btn--disabled': !selectedKeys.length }" @click="deleteSelected">
           <a-icon type="delete" />
           <span>删除</span>
@@ -228,51 +279,6 @@
         <div class="lem-tool-btn" @click="saveTemplate">
           <a-icon type="save" />
           <span>保存</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 元素选择弹层：全宽，从底边栏上沿向上弹出 -->
-    <div v-if="elementPanelVisible" class="lem-sheet-mask" @click="elementPanelVisible = false">
-      <div class="lem-sheet" @click.stop>
-        <div class="lem-sheet-head">
-          <span class="lem-sheet-title">元素</span>
-        </div>
-        <div class="lem-sheet-body">
-          <!-- 数据表选择：字段随所选表加载，逻辑与 Web 端「业务数据源」一致 -->
-          <div v-if="providerList.length" class="lem-provider">
-            <span class="lem-provider-label">数据表</span>
-            <a-select
-              :value="provider"
-              size="small"
-              style="flex:1"
-              placeholder="选择数据表"
-              @change="onProviderChange"
-            >
-              <a-select-option v-for="p in providerList" :key="p.provider" :value="p.provider">{{ p.name }}</a-select-option>
-            </a-select>
-          </div>
-          <div v-for="group in attrGroups" :key="group.name" class="lem-elem-group">
-            <div class="lem-elem-group-title">{{ group.name }}</div>
-            <div
-              v-for="attr in group.attrs"
-              :key="attr.key"
-              class="lem-elem-item"
-              :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
-              @click="toggleAttr(attr.key)"
-            >
-              <span class="lem-elem-key">{{ attr.key }}</span>
-              <span class="lem-elem-cn">{{ attr.comment || attr.label }}</span>
-              <a-icon
-                :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
-                :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
-                :style="{ color: selectedAttrs.indexOf(attr.key) > -1 ? '#1890ff' : '#bfbfbf' }"
-              />
-            </div>
-          </div>
-          <a-button type="dashed" block class="lem-add-custom" @click="addCustomLabel">
-            <a-icon type="plus" />添加自定义标签
-          </a-button>
         </div>
       </div>
     </div>
@@ -470,7 +476,6 @@
         // 超长文本处理：wrap=自动折行并下移下方内容，ellipsis=单行省略号裁切
         overflowMode: 'wrap',
         zoom: 1,
-        elementPanelVisible: false,
         customCounter: 0,
         templates: [],
         selectedTemplateId: null,
@@ -486,8 +491,8 @@
         historyIndex: -1,
         dragging: { active: false, mode: '', key: '', startX: 0, startY: 0, origX: 0, origY: 0, origW: 0, origH: 0, moved: false },
         selectedKeys: [],
-        // 右侧属性栏是否收起（收起后仅保留竖向「属性」手柄）
-        attrPanelHidden: false,
+        // 右侧面板：'' 都关闭；'attr' 文字属性；'element' 元素（互斥，同时只显示一个）
+        sidePanel: '',
         multiSelectMode: false,
         suppressClick: false,
         marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
@@ -642,9 +647,9 @@
       }
     },
     watch: {
-      // 取消选中后重新展开属性栏，避免下次选中时仍是收起状态
+      // 取消选中后自动收起属性面板
       selectedKeys(val) {
-        if (!val.length) this.attrPanelHidden = false
+        if (!val.length && this.sidePanel === 'attr') this.sidePanel = ''
       }
     },
     mounted() {
@@ -1204,6 +1209,10 @@
         }
         return val === undefined ? null : val
       },
+      // 模板事件桥接：避免模板内联箭头函数导致 Vue 2 编译报错
+      onStyleChange(field, val) {
+        this.setMultiStyle(field, val)
+      },
       // 多选批量写入：应用到全部选中元素（跳过空值，避免破坏定位样式）
       setMultiStyle(field, val) {
         if (val === null || val === undefined || val === '') return
@@ -1285,9 +1294,10 @@
         var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
         if (attr) attr.value = val
       },
-      openElementPanel() {
-        // 再点一次「元素」即关闭
-        this.elementPanelVisible = !this.elementPanelVisible
+      toggleSidePanel(panel) {
+        // 互斥：同一时间只显示一个面板；再点当前面板即全部关闭
+        if (panel === 'attr' && !this.selectedKeys.length) return
+        this.sidePanel = this.sidePanel === panel ? '' : panel
       },
       toggleMultiSelect() {
         this.multiSelectMode = !this.multiSelectMode
@@ -1933,8 +1943,10 @@
   box-sizing: border-box;
 }
 
-/* 画布 + 右侧属性栏：横向排布，属性栏贴附屏幕右侧 */
+/* 画布 + 右侧面板：面板覆盖在画布上，不压缩画布 */
 .lem-content {
+  position: relative;
+  --lem-side-w: 126px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2259,33 +2271,35 @@
   opacity: 0.35;
 }
 
-/* 属性栏：贴附屏幕右侧，字段单列排列 */
+/* 面板：覆盖在画布右侧（不压缩画布），属性/元素互斥 */
 .lem-side {
-  flex: 0 0 126px;
-  width: 126px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--lem-side-w);
+  z-index: 30;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   background: #fff;
   border-left: 1px solid #eee;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  animation: lem-side-in 0.18s ease-out;
 }
 
-/* 收起态：仅保留竖向「属性」手柄 */
-.lem-side--hidden {
-  flex-basis: 22px;
-  width: 22px;
-  background: #1890ff;
-  border-left: none;
+@keyframes lem-side-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 
 .lem-side-head {
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: 34px;
-  padding: 0 6px 0 8px;
+  padding: 0 8px;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
 }
@@ -2297,16 +2311,6 @@
   white-space: nowrap;
 }
 
-.lem-side-collapse {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  color: #999;
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 .lem-side-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -2315,98 +2319,80 @@
   padding: 8px;
 }
 
-.lem-side-handle {
-  flex: 1;
+/* 悬浮切换卡片：固定在屏幕下方，贴面板左侧或屏幕右边缘 */
+.lem-side-tabs {
+  position: absolute;
+  right: 0;
+  bottom: 16px;
+  z-index: 40;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lem-side-tabs--attached {
+  right: var(--lem-side-w);
+}
+
+.lem-side-tab {
+  width: 34px;
+  height: 64px;
+  background: #1890ff;
+  color: #fff;
+  border-radius: 8px 0 0 8px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 12px;
-  letter-spacing: 2px;
-  writing-mode: vertical-rl;
+  gap: 2px;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.15);
   cursor: pointer;
   user-select: none;
 }
 
-/* 窄屏再收窄，保证画布可用宽度 */
+.lem-side-tab .anticon {
+  font-size: 12px;
+  line-height: 12px;
+}
+
+.lem-side-tab > span {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+  font-size: 11px;
+  line-height: 11px;
+}
+
+/* 未选中元素时属性卡片置灰（点击无反应） */
+.lem-side-tab--disabled {
+  opacity: 0.45;
+}
+
+/* 窄屏收窄面板宽度 */
 @media (max-width: 360px) {
-  .lem-side {
-    flex-basis: 114px;
-    width: 114px;
-  }
-
-  .lem-side--hidden {
-    flex-basis: 22px;
-    width: 22px;
+  .lem-content {
+    --lem-side-w: 114px;
   }
 }
 
-@keyframes lem-panel-up {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-/* 元素选择弹层：全宽，从底边栏上沿向上弹出，遮罩不覆盖底边栏 */
-.lem-sheet-mask {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: calc(58px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 200;
-}
-
-.lem-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  box-sizing: border-box;
-  max-height: 46vh;
-  background: #fff;
-  border-radius: 12px 12px 0 0;
-  display: flex;
-  flex-direction: column;
-  animation: lem-panel-up 0.18s ease-out;
-}
-
-.lem-sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
-}
-
-.lem-sheet-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.lem-sheet-body {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 12px 16px 16px;
-}
-
+/* 数据表选择：窄栏内纵向排列 */
 .lem-provider {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .lem-provider-label {
   flex: none;
-  font-size: 13px;
-  color: #666;
+  font-size: 11px;
+  color: #999;
+}
+
+.lem-provider-select {
+  width: 100%;
 }
 
 .lem-panel-multi-tip {
@@ -2470,42 +2456,44 @@
   white-space: nowrap;
 }
 
-.lem-elem-list {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
+/* 元素列表：窄栏单列，中文名在上、字段 key 在下 */
 .lem-elem-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 8px;
+  gap: 4px;
+  padding: 6px 4px;
   border-bottom: 1px solid #f5f5f5;
-  font-size: 14px;
-  color: #333;
+}
+
+.lem-elem-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .lem-elem-item .anticon {
-  color: #1890ff;
+  color: #bfbfbf;
   flex: 0 0 auto;
-  margin-left: 8px;
 }
 
-/* 字段名（左）+ 中文名（中）+ 选择按钮（右） */
-.lem-elem-key {
-  flex: 0 0 46%;
-  font-size: 13px;
+.lem-elem-icon--on {
+  color: #1890ff;
+}
+
+.lem-elem-cn {
+  font-size: 12px;
+  line-height: 16px;
   color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.lem-elem-cn {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-left: 8px;
-  font-size: 13px;
+.lem-elem-key {
+  font-size: 11px;
+  line-height: 14px;
   color: #999;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2514,19 +2502,23 @@
 
 /* 勾选式元素列表：分组标题 + 已选中高亮 */
 .lem-elem-group-title {
-  font-size: 12px;
+  font-size: 11px;
   color: #999;
-  padding: 8px 8px 4px;
+  padding: 5px 4px;
   background: #fafafa;
+  margin-top: 2px;
 }
 
 .lem-elem-item-active {
   background: #e6f7ff;
+}
+
+.lem-elem-item-active .lem-elem-cn {
   color: #1890ff;
 }
 
 .lem-add-custom {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 /* 明细列元素：逐行重复，行高固定 20px，与发货单渲染页保持一致 */

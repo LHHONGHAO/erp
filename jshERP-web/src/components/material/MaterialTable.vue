@@ -384,17 +384,6 @@
       clearMobileSelection() {
         this.mobileSelectedKeys = []
       },
-      /** 暴露给父组件：获取手机端已选行（去重后的商品ID） */
-      getMobileSelectedMaterialIds() {
-        var rows = this.mobileList.filter(r =>
-          this.mobileSelectedKeys.indexOf(r.skuRowKey || r.id) > -1
-        )
-        var ids = []
-        for (var i = 0; i < rows.length; i++) {
-          if (ids.indexOf(rows[i].id) === -1) ids.push(rows[i].id)
-        }
-        return ids
-      },
       onAction(act, record) {
         if (act && typeof act.click === 'function') {
           act.click(record)

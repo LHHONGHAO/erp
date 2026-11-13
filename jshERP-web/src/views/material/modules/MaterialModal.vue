@@ -596,7 +596,7 @@
   import OcrRecognizeModal from './OcrRecognizeModal'
   import JEditableTable from '@/components/jeecg/JEditableTable'
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
-  import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, checkMaterialBarCode, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
+  import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
   import { autoJumpNextInput, handleIntroJs, removeByVal, addBigNumbers } from '@/utils/util'
   import { getAction, httpAction, postAction } from '@/api/manage'
   import JImageUpload from '@/components/jeecg/JImageUpload'
@@ -1395,24 +1395,6 @@
           this.$set(this.batchSpecFilters, module.name, [])
         }
       },
-      clearSpecFilters() {
-        this.batchSpecFilters = {}
-      },
-      selectAllSpecValues() {
-        for (let i = 0; i < this.specModules.length; i++) {
-          let module = this.specModules[i]
-          let allValues = module.values.map(function(v) { return v.text }).filter(function(t) { return t })
-          this.$set(this.batchSpecFilters, module.name, allValues)
-        }
-      },
-      batchSetPrice(type) {
-        if(this.specModules.length > 0 || this.model.id){
-          this.$refs.priceModalForm.add(type);
-          this.$refs.priceModalForm.disableSubmit = false;
-        } else {
-          this.$message.warning('抱歉，只有添加规格后才能进行批量操作！');
-        }
-      },
       close () {
         this.$emit('close')
         this.visible = false
@@ -1974,23 +1956,6 @@
       parseParam(param) {
         return param ? param: ""
       },
-      validateBarCode(type, value, row, column, callback, target) {
-        let params = {
-          barCode: value,
-          id: row.id.length >= 20?0: row.id
-        };
-        checkMaterialBarCode(params).then((res)=>{
-          if(res && res.code===200) {
-            if(!res.data.status){
-              callback(true);
-            } else {
-              callback(false, '该条码已经存在');
-            }
-          } else {
-            callback(false, res.data);
-          }
-        });
-      },
       loadTreeData(){
         let that = this;
         let params = {};
@@ -2323,10 +2288,6 @@
           this.$message.error('商品识别失败，请稍后重试')
         })
       },
-      aggFieldLabel(field) {
-        let item = (this.basePropertyList || []).find(p => p.field === field)
-        return item ? item.anotherName : field
-      },
       /** 属性名归一化：去掉空格与分隔符，便于「检测员：」「检测员」比对 */
       normOcrLabel(label) {
         return (label || '').replace(/[\s:：=＝|｜\-—–、，,.;；。]/g, '').toLowerCase()
@@ -2610,14 +2571,6 @@
           if (!dim.imagePath) this.$set(dim, 'imagePath', hit.imagePath || result.imagePath || '')
           if (!dim.rawText) this.$set(dim, 'rawText', hit.rawText || result.rawText || '')
         })
-      },
-      /** 识别值的子规格归属，如「被套：200*230」 */
-      aggSubLabel(val) {
-        let subValues = (val && val.subValues) || {}
-        return Object.keys(subValues)
-          .filter(name => subValues[name])
-          .map(name => name + '：' + subValues[name])
-          .join(' ')
       },
       /** 判断已填写的规格值是否与聚合结果中的维度值相同 */
       isSameSpecValue(module, item, val) {
@@ -3800,15 +3753,6 @@
     max-width: 100%;
     min-width: 1200px;
   }
-  .tag-info {
-    font-size:14px;
-    height:32px;
-    line-height:32px;
-    width:100%;
-    padding: 0px 11px;
-    color: #bbb;
-    background-color: #ffffff;
-  }
   .spec-ocr-bar {
     display: flex;
     justify-content: flex-end;
@@ -3821,33 +3765,12 @@
     margin-bottom: 12px;
     background: #fff;
   }
-  /* 单图识别结果预览 */
-  .agg-tip {
-    padding: 8px 12px;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #595959;
-    background: #f6ffed;
-    border: 1px solid #b7eb8f;
-    border-radius: 4px;
-  }
-  .agg-tip-warn {
-    color: #ad6800;
-    background: #fffbe6;
-    border-color: #ffe58f;
-  }
-  .agg-conflict-item {
-    margin-top: 4px;
-  }
   .agg-props {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 20px;
     font-size: 13px;
     color: #262626;
-  }
-  .agg-prop {
-    min-width: 150px;
   }
   .agg-section-head {
     display: flex;
@@ -3939,9 +3862,6 @@
   .agg-unmatched-value-input {
     flex: 1 1 120px;
     min-width: 80px;
-  }
-  .agg-unmatched-value {
-    color: #595959;
   }
   .agg-unmatched-target {
     color: #1890ff;
@@ -4055,10 +3975,6 @@
     color: #262626;
     margin-bottom: 4px;
   }
-  .agg-dim-empty {
-    font-weight: normal;
-    color: #bfbfbf;
-  }
   .agg-values {
     display: flex;
     flex-wrap: wrap;
@@ -4098,10 +4014,6 @@
     color: #ad6800;
     background: #fffbe6;
     border-color: #ffe58f;
-  }
-  .agg-sub-label {
-    font-size: 12px;
-    color: #8c8c8c;
   }
   /* 头部 */
   .spec-header {
@@ -4146,13 +4058,6 @@
   .spec-main {
     display: flex;
     align-items: flex-start;
-  }
-  .spec-main-label {
-    font-size: 14px;
-    color: #333;
-    margin-right: 21px;
-    margin-top: 7px;
-    white-space: nowrap;
   }
   .spec-values-list {
     flex: 1;

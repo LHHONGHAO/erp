@@ -432,11 +432,6 @@
         }
         this.selectedMaterialIds = ids
       },
-      onClearSelected() {
-        this.selectedRowKeys = []
-        this.selectionRows = []
-        this.selectedMaterialIds = []
-      },
       // 批量操作时使用去重后的商品ID
       runBatchWithMaterialIds(methodName, arg) {
         var originKeys = this.selectedRowKeys
@@ -500,12 +495,6 @@
         // 记录来源页面，编辑页返回按钮可回到商品列表
         sessionStorage.setItem('materialEditFrom', this.$route.fullPath)
         this.$router.push('/material/edit')
-      },
-      handleCopyAdd(record) {
-        this.$refs.modalForm.action = "copyAdd";
-        this.$refs.modalForm.edit(record);
-        this.$refs.modalForm.title = "复制新增";
-        this.$refs.modalForm.disableSubmit = false;
       },
       // 打印SKU标签：先按模板实际尺寸预览，预览内可选择「打印」或「编辑」
       handlePrintLabel(record, sku) {
@@ -849,40 +838,7 @@
     margin-top: 24px;
   }
 
-  /* ==================== 电脑端：删除查询条件后保持的原有样式 ==================== */
-  .item-info {
-    float:left;
-    width:38px;
-    height:38px;
-    margin-left:6px
-  }
-  .item-img {
-    cursor:pointer;
-    position: static;
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .row-sku-img {
-    width: 100px;
-    height: 80px;
-    object-fit: cover;
-    border-radius: 12px;
-    vertical-align: middle;
-  }
-  .row-sku-img-placeholder {
-    font-size: 12px;
-    color: #ccc;
-  }
-  .spec-display-cell {
-    white-space: pre-line;
-    line-height: 18px;
-    word-break: break-all;
-    text-align: left;
-  }
-
-  /* 主表表头：抖音来客风格 */
+  /* ==================== 主表 ==================== */
   .ant-table-thead > tr > th,
   .ant-table-header > table > .ant-table-thead > tr > th {
     background: #F7F9FC !important;
@@ -896,71 +852,5 @@
     padding: 0 !important;
     background: #FAFBFD !important;
     border-bottom: 1px solid #F0F2F5 !important;
-  }
-  .sku-list-container {
-    padding: 0 !important;
-    margin: 0 !important;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .sku-row {
-    display: flex;
-    align-items: center;
-    padding: 0;
-    border-bottom: 1px solid #F0F2F5;
-    box-sizing: border-box;
-    width: 100%;
-    position: relative;
-  }
-  .sku-row-header {
-    font-weight: 500;
-    color: #4F535C;
-    background: #F7F9FC;
-    font-size: 14px;
-    height: 40px;
-  }
-  .sku-row-header:hover {
-    background: #F7F9FC !important;
-  }
-  .sku-row-data {
-    color: #1D2129;
-    background: #FFFFFF;
-    padding: 12px 16px;
-  }
-  .sku-row-data:hover {
-    background: #FAFBFD;
-  }
-  .sku-cell {
-    padding: 0 8px;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border: 0 none;
-    box-sizing: border-box;
-    position: relative;
-  }
-  .sku-cell-img { width: 80px; flex-shrink: 0; text-align: center; }
-  .sku-cell-code { width: 170px; flex-shrink: 0; text-align: center; font-family: Consolas, Monaco, monospace; }
-  .sku-cell-spec { flex: 1.5; min-width: 100px; text-align: center; }
-  .sku-cell-stock { width: 90px; flex-shrink: 0; text-align: center; }
-  .sku-cell-price { width: 90px; flex-shrink: 0; text-align: center; }
-  .sku-cell-action { width: 180px; flex-shrink: 0; text-align: center; margin-left: auto; }
-  .sku-print-link { color: #1890ff; cursor: pointer; }
-  .sku-print-link:hover { color: #40a9ff; }
-  .sku-img { cursor: pointer; width: 54px; height: 54px; object-fit: cover; border-radius: 4px; vertical-align: middle; }
-  .sku-img-placeholder { display: inline-block; width: 54px; height: 54px; line-height: 54px; text-align: center; font-size: 12px; color: #ccc; background: #f5f5f5; border-radius: 4px; }
-  .sku-empty { text-align: center; padding: 16px; color: #999; font-size: 13px; border-bottom: 1px solid #F0F2F5; }
-  .sku-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 1; }
-  .sku-resize-handle:hover { background: #1890ff; }
-  .sku-row-header .sku-cell { position: relative; user-select: none; }
-</style>
-<!-- 操作列：宽度已按「按钮总宽 + 20px」计算 -->
-<style>
-  .ant-table-header > table > .ant-table-thead > tr > th.mt-action-col,
-  .ant-table-thead > tr > th.mt-action-col.mt-action-col,
-  .ant-table-tbody > tr > td.mt-action-col.mt-action-col {
-    padding-left: 0 !important;
-    padding-right: 0 !important;
   }
 </style>

@@ -96,7 +96,6 @@ export default {
       pasteLoading: false,
       ocrError: '',
       imageUrl: '',
-      previewVisible: false,
       pasteText: '',
       form: {
         contacts: '',
@@ -687,52 +686,9 @@ export default {
   margin: 0 auto;
   padding: 12px;
 }
-.addr-card {
-  margin-bottom: 12px;
-  background: #fff;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-.addr-ocr-box {
-  margin-bottom: 12px;
-}
 /* 页面高度计算锚点：位于标准面板底部 */
 .addr-last-marker {
   height: 0;
-}
-.addr-preview-full {
-  display: block;
-  width: 100%;
-  max-height: 78vh;
-  object-fit: contain;
-  cursor: zoom-out;
-}
-.addr-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 14px 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-}
-.addr-card__head-right {
-  display: flex;
-  align-items: center;
-}
-.addr-copy-btn {
-  padding: 2px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  color: #1890ff;
-  background: #e6f4ff;
-  border: 1px solid #bae0ff;
-  border-radius: 10px;
-  cursor: pointer;
-}
-.addr-copy-btn:active {
-  opacity: 0.7;
 }
 .addr-row {
   display: flex;
@@ -746,51 +702,6 @@ export default {
   flex-shrink: 0;
   font-size: 15px;
   color: #595959;
-}
-.addr-row__input {
-  flex: 1;
-  padding: 0;
-  font-size: 16px;
-  line-height: 22px;
-  border: none;
-  box-shadow: none;
-  background: transparent;
-}
-.addr-row__input::placeholder {
-  color: #bfbfbf;
-}
-/* 账号行：账号输入框 + 右侧平台下拉框 */
-.addr-account-input {
-  flex: 1;
-  min-width: 0;
-}
-.addr-platform-select {
-  flex: 0 0 auto;
-  /* 宽度 = 五个字符 + 下拉箭头 */
-  width: calc(5em + 34px);
-  margin-left: 8px;
-  font-size: 13px;
-}
-.addr-platform-select /deep/ .ant-select-selection {
-  height: 30px;
-  border-radius: 15px;
-  background: #f0f7ff;
-  border-color: #cfe4ff;
-}
-.addr-platform-select /deep/ .ant-select-selection__rendered {
-  margin-left: 10px;
-  margin-right: 24px;
-}
-.addr-platform-select /deep/ .ant-select-selection-selected-value {
-  max-width: none;
-  padding-right: 0;
-  font-size: 13px;
-  line-height: 28px;
-  color: #1890ff;
-}
-.addr-platform-select /deep/ .ant-select-arrow {
-  right: 8px;
-  color: #1890ff;
 }
 .addr-actions {
   margin-top: 16px;
@@ -926,13 +837,6 @@ export default {
     border-top: 1px solid #eee;
     z-index: 20;
   }
-  .addr-bottom-space {
-    /* 底部留白已由 .addr-body 的内边距统一承载，不叠加占位 */
-    height: 0;
-  }
-}
-.addr-file-input {
-  display: none;
 }
 @media (min-width: 769px) {
   .addr-bottom-space {

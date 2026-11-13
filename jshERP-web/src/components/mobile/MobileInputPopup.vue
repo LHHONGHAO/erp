@@ -1,6 +1,5 @@
 <template>
   <div v-if="visible" class="mip-root" :style="rootStyle">
-    <div v-if="title" class="mip-title">{{ title }}</div>
     <div class="mip-box">
       <input
         ref="input"
@@ -26,7 +25,7 @@
 <script>
 /**
  * 手机端标准输入弹层
- * 交互与全局键盘输入弹层保持一致：按屏宽铺满、带标题、框内右侧确认按钮；
+ * 交互与全局键盘输入弹层保持一致：按屏宽铺满、框内右侧确认按钮；
  * 只有点击确认按钮才会提交，失焦/点击弹层外只关闭不回填，回车不触发提交。
  * 输入框标记 data-kb-overlay="off"，避免被全局键盘弹层二次接管。
  */
@@ -45,11 +44,6 @@ export default {
     placeholder: {
       type: String,
       default: '请输入'
-    },
-    /** 弹层标题，为空时不显示 */
-    title: {
-      type: String,
-      default: ''
     },
     confirmText: {
       type: String,
@@ -207,7 +201,7 @@ export default {
 </script>
 
 <style lang="less" scoped>
-/* 与全局键盘输入弹层一致的铺满式底部条：标题 + 框内确认按钮 */
+/* 与全局键盘输入弹层一致的铺满式底部条：输入框 + 框内确认按钮 */
 .mip-root {
   position: fixed;
   left: 0;
@@ -223,16 +217,6 @@ export default {
   background: #fff;
   border-top: 1px solid #e8e8e8;
   font-size: 15px;
-}
-.mip-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  color: #262626;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .mip-box {
   display: flex;

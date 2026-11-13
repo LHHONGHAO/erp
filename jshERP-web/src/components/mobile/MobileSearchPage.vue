@@ -1,7 +1,7 @@
 <template>
   <div class="mobile-search-page">
     <!-- 标准顶栏（49px）：返回 + 标题 + 右侧操作 -->
-    <mobile-top-bar :title="title" :show-back="showBack" @back="$emit('back')">
+    <mobile-top-bar :title="title" @back="$emit('back')">
       <template #actions>
         <slot name="actions"></slot>
       </template>
@@ -18,11 +18,6 @@
         ref="searchBar"
         :value="value"
         :placeholder="placeholder"
-        :show-scan="showScan"
-        :show-camera="showCamera"
-        :show-filter="showFilter"
-        :search-text="searchText"
-        :filter-text="filterText"
         :auto-scan-close="autoScanClose"
         @input="$emit('input', $event)"
         @search="$emit('search', $event)"
@@ -43,7 +38,7 @@ import MobileSearchBar from './MobileSearchBar'
 
 /**
  * 手机端标准「信息搜索页面」模板
- * 顶栏（返回/标题/操作）+ 可滚动信息列表 + 底部搜索栏（拍照/输入/扫码/搜索/筛选）
+ * 顶栏（返回/标题/操作）+ 可滚动信息列表 + 底部搜索栏（拍照/输入/扫码/筛选）
  */
 export default {
   name: 'MobileSearchPage',
@@ -62,38 +57,11 @@ export default {
       type: String,
       default: '请输入关键字'
     },
-    showBack: {
-      type: Boolean,
-      default: true
-    },
-    showScan: {
-      type: Boolean,
-      default: true
-    },
-    showCamera: {
-      type: Boolean,
-      default: true
-    },
-    showFilter: {
-      type: Boolean,
-      default: true
-    },
-    searchText: {
-      type: String,
-      default: '搜索'
-    },
-    filterText: {
-      type: String,
-      default: '筛选'
-    },
     /** 识别到内容后是否自动关闭扫码页，false 时由调用页决定关闭时机 */
     autoScanClose: {
       type: Boolean,
       default: true
     }
-  },
-  data() {
-    return {}
   },
   methods: {
     // 供调用页主动关闭标准扫码页

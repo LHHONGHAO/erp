@@ -1,27 +1,25 @@
 <template>
   <div class="msb-wrap">
-    <!-- 白色胶囊搜索框：拍照 + 输入 + 扫码 -->
-    <div class="msb-search-bar">
-      <div class="msb-search-box">
-        <span v-if="showCamera" class="msb-camera" @click="$emit('camera')">
-          <a-icon type="camera" />
-          <span class="msb-ai-tag">AI</span>
-        </span>
-        <span class="msb-display" @click="inputVisible = true">
-          <span v-if="value" class="msb-display-text">{{ value }}</span>
-          <span v-else class="msb-display-placeholder">{{ placeholder }}</span>
-        </span>
-        <a-icon v-if="showScan" type="scan" class="msb-scan" @click="openScanPage" />
-      </div>
+    <!-- 白色胶囊搜索框：拍照 + 展示态关键字 + 扫码 -->
+    <div class="msb-search-box">
+      <span class="msb-camera" @click="$emit('camera')">
+        <a-icon type="camera" />
+        <span class="msb-ai-tag">AI</span>
+      </span>
+      <span class="msb-display" @click="inputVisible = true">
+        <span v-if="value" class="msb-display-text">{{ value }}</span>
+        <span v-else class="msb-display-placeholder">{{ placeholder }}</span>
+      </span>
+      <a-icon type="scan" class="msb-scan" @click="openScanPage" />
     </div>
-    <a-button v-if="showFilter" class="msb-filter-btn" icon="filter" @click="$emit('filter')">{{ filterText }}</a-button>
+    <a-button class="msb-filter-btn" icon="filter" @click="$emit('filter')">筛选</a-button>
 
     <!-- 标准输入弹层：输入内容后点按钮才触发搜索 -->
     <mobile-input-popup
       :visible="inputVisible"
       :value="value"
       :placeholder="placeholder"
-      :confirm-text="searchText"
+      confirm-text="搜索"
       @cancel="inputVisible = false"
       @confirm="onInputConfirm" />
 
@@ -35,7 +33,7 @@ import MobileScanPage from './MobileScanPage'
 import MobileInputPopup from './MobileInputPopup'
 
 /**
- * 手机端标准搜索底栏：拍照 + 搜索框 + 扫码 + 筛选
+ * 手机端标准搜索底栏：拍照 + 展示态搜索框 + 扫码 + 筛选
  * 点击搜索框弹出标准输入弹层，弹层内确认后才触发搜索。
  * 供标准搜索页面、商品选择弹层等复用，业务行为保持一致。
  */
@@ -51,26 +49,6 @@ export default {
     placeholder: {
       type: String,
       default: '请输入关键字'
-    },
-    showScan: {
-      type: Boolean,
-      default: true
-    },
-    showCamera: {
-      type: Boolean,
-      default: true
-    },
-    showFilter: {
-      type: Boolean,
-      default: true
-    },
-    searchText: {
-      type: String,
-      default: '搜索'
-    },
-    filterText: {
-      type: String,
-      default: '筛选'
     },
     /** 识别到内容后是否自动关闭扫码页，false 时由调用页决定关闭时机 */
     autoScanClose: {
@@ -131,12 +109,6 @@ export default {
   align-items: center;
 }
 /* 搜索区：白色胶囊输入框，扫码/拍照位于输入框两侧 */
-.msb-search-bar {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
 .msb-search-box {
   flex: 1;
   min-width: 0;

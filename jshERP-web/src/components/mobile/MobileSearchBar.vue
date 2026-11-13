@@ -7,17 +7,23 @@
           <a-icon type="camera" />
           <span class="msb-ai-tag">AI</span>
         </span>
-        <a-input
-          :placeholder="placeholder"
-          :value="value"
-          class="msb-input"
-          @change="handleInput"
-          @pressEnter="doSearch" />
+        <span class="msb-display" @click="inputVisible = true">
+          <span v-if="value" class="msb-display-text">{{ value }}</span>
+          <span v-else class="msb-display-placeholder">{{ placeholder }}</span>
+        </span>
         <a-icon v-if="showScan" type="scan" class="msb-scan" @click="openScanPage" />
       </div>
-      <a-button type="primary" class="msb-search-btn" @click="doSearch">{{ searchText }}</a-button>
     </div>
     <a-button v-if="showFilter" class="msb-filter-btn" icon="filter" @click="$emit('filter')">{{ filterText }}</a-button>
+
+    <!-- 标准输入弹层：输入内容后点按钮才触发搜索 -->
+    <mobile-input-popup
+      :visible="inputVisible"
+      :value="value"
+      :placeholder="placeholder"
+      :confirm-text="searchText"
+      @cancel="inputVisible = false"
+      @confirm="onInputConfirm" />
 
     <!-- 标准条码扫描页 -->
     <mobile-scan-page ref="scanPage" :visible="scanVisible" @close="scanVisible = false" @result="onScanResult" />
@@ -26,14 +32,16 @@
 
 <script>
 import MobileScanPage from './MobileScanPage'
+import MobileInputPopup from './MobileInputPopup'
 
 /**
- * 手机端标准搜索底栏：拍照 + 搜索框 + 扫码 + 搜索 + 筛选
+ * 手机端标准搜索底栏：拍照 + 搜索框 + 扫码 + 筛选
+ * 点击搜索框弹出标准输入弹层，弹层内确认后才触发搜索。
  * 供标准搜索页面、商品选择弹层等复用，业务行为保持一致。
  */
 export default {
   name: 'MobileSearchBar',
-  components: { MobileScanPage },
+  components: { MobileScanPage, MobileInputPopup },
   props: {
     /** 搜索关键字，支持 v-model */
     value: {
@@ -73,15 +81,17 @@ export default {
   data() {
     return {
       /** 标准条码扫描页是否打开 */
-      scanVisible: false
+      scanVisible: false,
+      /** 标准输入弹层是否打开 */
+      inputVisible: false
     }
   },
   methods: {
-    handleInput(e) {
-      this.$emit('input', e.target.value)
-    },
-    doSearch() {
-      this.$emit('search', this.value)
+    /** 输入弹层确认：回填关键字并触发搜索 */
+    onInputConfirm(text) {
+      this.inputVisible = false
+      this.$emit('input', text)
+      this.$emit('search', text)
     },
     openScanPage() {
       this.scanVisible = true
@@ -145,26 +155,28 @@ export default {
   color: #999;
   cursor: pointer;
 }
-.msb-input {
+/* 搜索框展示态：点击后弹出标准输入弹层 */
+.msb-display {
   flex: 1;
   min-width: 0;
-  margin: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
+  display: flex;
+  align-items: center;
+  height: 42px;
   font-size: 14px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.msb-display-text {
   color: #333;
-  height: auto;
-  border-radius: 0;
-  &::placeholder {
-    color: #b7b7b7;
-  }
-  &:focus,
-  &.ant-input:focus {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-  }
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msb-display-placeholder {
+  color: #b7b7b7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .msb-camera {
   position: relative;
@@ -192,15 +204,6 @@ export default {
   color: #fff;
   border-radius: 6px;
   font-weight: 700;
-}
-/* 搜索按钮：与搜索框同为胶囊形、同高 */
-.msb-search-btn {
-  flex-shrink: 0;
-  height: 42px;
-  margin-left: 8px;
-  padding: 0 18px;
-  border-radius: 21px;
-  font-size: 15px;
 }
 /* 筛选按钮：单行「图标 + 文字」，与搜索框同高 */
 .msb-filter-btn {

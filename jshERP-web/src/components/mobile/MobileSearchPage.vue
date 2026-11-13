@@ -12,7 +12,7 @@
       <slot></slot>
     </div>
 
-    <!-- 标准底边栏：拍照 + 搜索框 + 扫码 + 搜索 + 筛选（复用标准搜索底栏组件） -->
+    <!-- 标准底边栏：拍照 + 搜索框 + 扫码 + 筛选（复用标准搜索底栏组件） -->
     <mobile-bottom-bar left-auto>
       <mobile-search-bar
         ref="searchBar"

@@ -56,7 +56,7 @@
         @cancel="ocrVisible = false" />
     </div>
 
-    <!-- 底部：多选确认 + 标准搜索底栏（拍照/搜索框/扫码/搜索/筛选） -->
+    <!-- 底部：多选确认 + 标准搜索底栏（拍照/搜索框/扫码/筛选） -->
     <template #footer>
       <div class="mpp-picker__footer-area">
         <div v-if="selectedGoods.length > 0" class="mpp-picker__selected-bar">

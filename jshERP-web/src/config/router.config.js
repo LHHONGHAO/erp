@@ -86,6 +86,18 @@ export const constantRouterMap = [
           component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobilePageDemo')
         }
       ]
+    },
+    {
+      path: '/mobile-modal-demo',
+      component: BlankLayout,
+      children: [
+        {
+          path: '',
+          name: 'MobileModalDemo',
+          meta: { title: '标准弹层页面预览' },
+          component: () => import(/* webpackChunkName: "mobile-preview" */ '@/views/system/MobileModalDemo')
+        }
+      ]
     }
   ] : []),
   {

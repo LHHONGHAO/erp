@@ -268,6 +268,7 @@ function unbindViewport () {
 
 /** 打开弹层 */
 function openOverlay (el) {
+  ensureOverlay()
   if (!rootEl) return
   touchStartValue = el.value || ''
   buildField(el)

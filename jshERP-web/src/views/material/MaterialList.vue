@@ -71,15 +71,8 @@
     <!-- 弹窗组件（手机端也复用） -->
     <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
     <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
-    <label-edit-modal ref="labelEditModal"></label-edit-modal>
     <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
-    <label-edit-mobile
-      v-if="labelEditorVisible"
-      embedded
-      initial-type="label"
-      initial-business-type="product"
-      :initial-template-id="labelEditorTemplateId"
-      @close="labelEditorVisible = false" />
+    <label-edit-modal-page ref="labelEditor" />
     <ocr-recognize-modal
       :visible="ocrVisible"
       :extractOnly="true"
@@ -263,6 +256,7 @@
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
         <label-edit-modal ref="labelEditModal"></label-edit-modal>
         <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+        <label-edit-modal-page ref="labelEditor" />
       </a-card>
     </a-col>
   </a-row>
@@ -271,7 +265,7 @@
   import MaterialModal from './modules/MaterialModal'
   import ImportFileModal from '@/components/tools/ImportFileModal'
   import LabelEditModal from './modules/LabelEditModal'
-  import LabelEditMobile from './modules/LabelEditMobile'
+  import LabelEditModalPage from './modules/LabelEditModalPage'
   import LabelPrintModal from './modules/LabelPrintModal'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
@@ -293,7 +287,7 @@
       MaterialModal,
       ImportFileModal,
       LabelEditModal,
-      LabelEditMobile,
+      LabelEditModalPage,
       LabelPrintModal,
       OcrRecognizeModal,
       MaterialTable,
@@ -307,9 +301,6 @@
         categoryTree:[],
         mPropertyListShort: '',
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
-        // 手机端标签编辑弹层
-        labelEditorVisible: false,
-        labelEditorTemplateId: null,
         // 显示方式：spu=单类显示（每个商品一行），sku=单品显示（每个SKU一行）
         displayMode: 'sku',
         model: {},
@@ -516,21 +507,18 @@
         }
         this.$refs.labelPrintModal.open(record, sku, this.categoryTree)
       },
-      // 预览弹层点「编辑」：打开标签编辑弹层，并按其当前模板加载标签数据
+      // 预览弹层点「编辑」：打开标准标签编辑弹层页面，并按其当前模板加载标签数据
       handleEditLabel({ record, sku, categoryTree, templateId }) {
         var isMobile = window.innerWidth <= 768
         if (isMobile) {
-          // 手机端改为标准弹层内嵌编辑页，不再跳转独立路由；商品数据仍需经 sessionStorage 传递
-          try {
-            sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-              record: record || {},
-              sku: sku || {},
-              provider: 'product.label',
-              businessType: 'product'
-            }))
-          } catch (e) { /* 忽略 */ }
-          this.labelEditorTemplateId = templateId || null
-          this.labelEditorVisible = true
+          this.$refs.labelEditor.open({
+            type: 'label',
+            businessType: 'product',
+            provider: 'product.label',
+            templateId: templateId || null,
+            record: record || {},
+            sku: sku || {}
+          })
         } else {
           this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId, 'label', 'product')
         }

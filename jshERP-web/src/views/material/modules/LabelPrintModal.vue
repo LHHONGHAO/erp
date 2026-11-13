@@ -619,14 +619,8 @@
       </div>
     </div>
   </a-modal>
-    <!-- 标签编辑：以标准弹层方式内嵌，不再跳转独立路由页 -->
-    <label-edit-mobile
-      v-if="labelEditorVisible"
-      embedded
-      :initial-type="labelEditorType"
-      :initial-business-type="labelEditorBusinessType"
-      :initial-template-id="labelEditorTemplateId"
-      @close="labelEditorVisible = false" />
+    <!-- 标签编辑：统一走标准复用弹层页面 -->
+    <label-edit-modal-page ref="labelEditor" />
   </div>
 </template>
 
@@ -640,6 +634,7 @@
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
   import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveGoodsLayout, applyTextOverflow } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
+  import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { getAction, postAction } from '@/api/manage'
   import {
@@ -659,17 +654,12 @@
   export default {
     name: 'LabelPrintModal',
     // 异步引入，避免与内嵌在标签编辑页里的本组件形成循环依赖
-    components: { LabelPaper, MobileModalPage, PrinterDeviceConfig, LabelEditMobile: () => import('./LabelEditMobile') },
+    components: { LabelPaper, MobileModalPage, PrinterDeviceConfig, LabelEditModalPage },
     data() {
       return {
         visible: false,
         // 设备列表当前分类：cloud / network / local
         deviceTab: 'cloud',
-        // 标签编辑弹层
-        labelEditorVisible: false,
-        labelEditorType: '',
-        labelEditorBusinessType: '',
-        labelEditorTemplateId: null,
         record: {},
         sku: {},
         categoryTree: [],
@@ -1180,7 +1170,7 @@
         this.directEntry = opts.directEntry !== false
         this.printTitle = opts.title || ''
         // 重新打开打印页时关闭可能残留的编辑弹层
-        this.labelEditorVisible = false
+        if (this.$refs.labelEditor) this.$refs.labelEditor.close()
         this.type = type || 'delivery'
         this.record = {}
         this.sku = {}
@@ -2060,19 +2050,16 @@
         var isAddress = this.type === 'address'
         var ctx = null
         try { ctx = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { ctx = null }
-        try {
-          sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-            record: (ctx && ctx.record) || this.record || {},
-            sku: {},
-            template: null,
-            provider: isAddress ? '' : 'table.jsh_supplier',
-            businessType: isAddress ? '' : 'member'
-          }))
-        } catch (e) { /* 忽略 */ }
         this.visible = false
-        var query = { type: isAddress ? 'address' : 'member' }
-        if (!isAddress) query.businessType = 'member'
-        this.$router.push({ path: '/label/edit-mobile', query: query })
+        this.$refs.labelEditor.open({
+          type: isAddress ? 'address' : 'member',
+          businessType: isAddress ? '' : 'member',
+          provider: isAddress ? '' : 'table.jsh_supplier',
+          templateId: null,
+          record: (ctx && ctx.record) || this.record || {},
+          sku: {},
+          template: null
+        })
       },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
@@ -2084,31 +2071,22 @@
           templateId: this.template ? this.template.id : null
         }
         this.visible = false
-        // 弹层直达方式（无父组件监听 edit）→ 直接跳转统一标签编辑页
+        // 弹层直达方式（无父组件监听 edit）→ 直接打开标准标签编辑弹层页面
         if (this.directEntry && !(this.$listeners && this.$listeners.edit)) {
           var isAddress = this.type === 'address'
           // 打开弹层时未携带 record（如地址识别页）→ 沿用进入打印前写入的上下文数据，避免编辑时字段为空
           var prevRecord = null
           try { prevRecord = (JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') || {}).record } catch (e) { prevRecord = null }
-          // 把商品数据和当前模板带到编辑页，否则编辑页拿不到 record/sku，字段会全部为空
-          try {
-            sessionStorage.setItem('jsh.labelEdit.context', JSON.stringify({
-              record: (this.record && Object.keys(this.record).length) ? this.record : (prevRecord || {}),
-              sku: this.sku || {},
-              template: this.template || null,
-              provider: (this.template && this.template.provider) || (isAddress ? '' : (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label'))),
-              businessType: isAddress ? '' : (this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product'))
-            }))
-          } catch (e) { /* 忽略 */ }
-          var query = { type: this.type || 'label' }
-          if (!isAddress) {
-            query.businessType = this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product')
-          }
-          // 改为标准弹层内嵌编辑，保持当前页面不跳转
-          this.labelEditorType = query.type
-          this.labelEditorBusinessType = query.businessType || ''
-          this.labelEditorTemplateId = payload.templateId || null
-          this.labelEditorVisible = true
+          var businessType = isAddress ? '' : (this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product'))
+          this.$refs.labelEditor.open({
+            type: this.type || 'label',
+            businessType: businessType,
+            provider: (this.template && this.template.provider) || (isAddress ? '' : (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label'))),
+            templateId: payload.templateId || null,
+            record: (this.record && Object.keys(this.record).length) ? this.record : (prevRecord || {}),
+            sku: this.sku || {},
+            template: this.template || null
+          })
           return
         }
         setTimeout(() => this.$emit('edit', payload), 200)

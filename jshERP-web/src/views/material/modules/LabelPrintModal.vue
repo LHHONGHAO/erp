@@ -847,10 +847,6 @@
         return this.printers.length > 0 || this.agentPrinterItems.length > 0
           || this.wifiPrinters.length > 0 || !!this.btDevice
       },
-      printerTypeLabel() {
-        var map = { backend: '后端', bluetooth: '蓝牙', wifi: 'Wi-Fi', cloud: '云打印' }
-        return map[this.printerType] || '后端'
-      },
       // 手机端：预览标签样式（宽度优先填满，高度自然溢出）
       previewStyle() {
         return {
@@ -1129,10 +1125,6 @@
           var scaleH = availH / self.labelHeight
           self.previewScale = Math.min(scaleW, scaleH)
         })
-      },
-      // 是否为独立编码元素
-      isCodeItem(key) {
-        return isCodeKey(key)
       },
       // 编码元素的图形布局：尺寸取元素自身宽高，按打印机能力换算
       codeLayout(codeKey) {
@@ -2676,9 +2668,6 @@
     color: #999;
     line-height: 1.5;
   }
-  .lp-default-tag {
-    color: #999;
-  }
   .lp-preview {
     position: relative;
     background: #fff;
@@ -2762,35 +2751,6 @@
   .lp-mobile .lp-footer .ant-btn {
     margin: 4px;
   }
-  /* ===== 打印机类型标签 ===== */
-  .lp-printer-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
-  .lp-tab {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    font-size: 12px;
-    border-radius: 14px;
-    background: #f0f0f0;
-    color: #666;
-    cursor: pointer;
-    white-space: nowrap;
-    .anticon {
-      margin-right: 4px;
-    }
-    &.active {
-      background: #1890ff;
-      color: #fff;
-    }
-    &.disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-  }
   /* 打印机选择：只读展示框 + 添加按钮 */
   .lp-printer-picker {
     display: flex;
@@ -2838,9 +2798,6 @@
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 16px;
-  }
-  .lmpl-add-card {
-    margin: 12px 16px 16px;
   }
   .lps-add-title {
     font-size: 14px;
@@ -2955,35 +2912,6 @@
       margin-left: 8px;
     }
   }
-  /* 打印机搜索区 */
-  .lp-printer-search {
-    margin-top: 8px;
-  }
-  /* Wi-Fi 打印机列表项 */
-  .lp-device-main {
-    flex: 1;
-    min-width: 0;
-    margin-right: 8px;
-  }
-  .lp-device-name {
-    font-size: 13px;
-    color: #333;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .lp-device-sub {
-    font-size: 11px;
-    color: #999;
-    margin-top: 2px;
-  }
-  .lp-device-status {
-    margin-right: 6px;
-  }
-  .lp-device-del {
-    color: #ff4d4f;
-    cursor: pointer;
-  }
   /* 添加打印机表单 */
   .lp-add-item {
     margin-bottom: 12px;
@@ -2993,140 +2921,12 @@
     color: #666;
     margin-bottom: 4px;
   }
-  .lp-device-info {
-    margin-top: 8px;
-    padding: 6px 10px;
-    background: #f6ffed;
-    border: 1px solid #b7eb8f;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #52c41a;
-    .anticon {
-      margin-right: 4px;
-    }
-  }
-  .lp-device-list {
-    margin-top: 8px;
-    max-height: 160px;
-    overflow-y: auto;
-    border: 1px solid #f0f0f0;
-    border-radius: 4px;
-  }
-  .lp-device-item {
-    display: flex;
-    align-items: center;
-    padding: 8px 10px;
-    font-size: 13px;
-    cursor: pointer;
-    border-bottom: 1px solid #f5f5f5;
-    .anticon {
-      margin-right: 6px;
-      color: #1890ff;
-    }
-    &:last-child {
-      border-bottom: none;
-    }
-    &.selected {
-      background: #e6f7ff;
-    }
-    &:hover {
-      background: #fafafa;
-    }
-  }
-
-  /* ===== 手机端标准页面 ===== */
-  .lp-mobile-page {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #f0f2f5;
-    display: flex;
-    flex-direction: column;
-    z-index: 2900;
-  }
-  /* 顶栏：蓝底 + 白色图标文字 */
-  .lmp-header {
-    flex: none;
-    height: 49px;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    padding: 0 8px 0 0;
-  }
-  .lmp-header-blue {
-    background: #1890ff;
-    border-bottom: none;
-  }
-  .lmp-header-blue .lmp-title,
-  .lmp-header-blue .lmp-back,
-  .lmp-header-blue .lmp-settings,
-  .lmp-header-blue .lmp-edit,
-  .lmp-header-blue .lmp-close {
-    color: #fff;
-  }
-  .lmp-header-blue .lmp-subtitle {
-    color: rgba(255, 255, 255, 0.75);
-  }
-  /* 返回按钮：与底边栏等高（58px）的正方形，左边贴屏幕左边 */
-  .lmp-back,
-  .lmp-settings,
-  .lmp-edit,
-  .lmp-close {
-    font-size: 22px;
-    color: #333;
-    cursor: pointer;
-    width: 58px;
-    height: 58px;
-    line-height: 1;
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  /* 右侧「编辑」「关闭」：两个按钮并排，尺寸略小于返回按钮，避免挤压标题 */
-  .lmp-edit,
-  .lmp-close {
-    width: 44px;
-    font-size: 21px;
-  }
-  .lmp-back {
-    margin-left: 0;
-  }
-  .lmp-settings.placeholder,
-  .lmp-edit.placeholder {
-    visibility: hidden;
-  }
-  .lmp-title-block {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .lmp-title {
-    font-size: 16px;
-    font-weight: 500;
-    color: #262626;
-    max-width: 60vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    line-height: 1.2;
-  }
-  .lmp-subtitle {
-    font-size: 11px;
-    color: #999;
-    margin-top: 1px;
-  }
   /* 主内容：中间空白全部为预览区域 */
   .lmp-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    /* 底部 padding 必须 >= footer 高度(70px + safe-area) + 1px 间距，否则最后一张卡片被遮挡 */
-    padding: 5px 10px calc(71px + env(safe-area-inset-bottom)) 10px;
+    padding: 5px 10px 10px;
     display: flex;
     flex-direction: column;
   }
@@ -3280,16 +3080,11 @@
     text-align: center;
     font-weight: 500;
   }
-  /* 底部打印按钮 */
+  /* 底部打印按钮（位于标准弹层 footer 插槽内） */
   .lmp-footer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     background: #fff;
     border-top: 1px solid #eee;
-    z-index: 3001;
   }
   .lmp-print-btn {
     height: 46px;
@@ -3406,18 +3201,6 @@
     border: 1px solid #91d5ff;
     background: #e6f7ff;
   }
-  /* ===== 编辑设备页（lme = label mobile edit） ===== */
-  .lme-info {
-    padding: 10px 10px 0;
-  }
-  .lme-section {
-    padding: 14px 4px 6px;
-    font-size: 13px;
-    color: #8c8c8c;
-  }
-  .lme-grid {
-    padding-top: 6px;
-  }
   .lmb-cell.active {
     background: #e6f7ff;
     border-radius: 10px;
@@ -3480,13 +3263,6 @@
     font-size: 13px;
     color: #999;
     margin-bottom: 20px;
-  }
-  .lmpl-primary-btn {
-    max-width: 280px;
-    margin: 16px auto 0;
-    height: 44px;
-    font-size: 15px;
-    border-radius: 22px;
   }
   .lmpl-add-btn {
     margin-top: 12px;

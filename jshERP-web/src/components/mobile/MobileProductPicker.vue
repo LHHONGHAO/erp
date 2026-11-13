@@ -1,6 +1,6 @@
 <template>
   <!-- 复用手机端标准弹层页面：蓝底顶栏 + 标题左对齐 + 副标题同行 + 右侧关闭 -->
-  <mobile-modal-page :visible="visible" :title="title" @close="handleClose">
+  <mobile-modal-page :visible="visible" :title="title" @close="$emit('close')">
     <div class="mpp-picker">
       <div class="mpp-picker__scroll">
         <!-- 最近使用按次数排在前面，与全部商品逐行展示，已出现过的商品不再重复 -->
@@ -180,9 +180,6 @@ export default {
     }
   },
   methods: {
-    handleClose() {
-      this.$emit('close')
-    },
     goodsKey(item) {
       var id = (item.id === 0 || item.id) ? item.id : item.name
       return String(id) + '_' + (item.meId || 0)

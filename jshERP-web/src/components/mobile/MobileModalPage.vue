@@ -6,10 +6,10 @@
         <div class="mmp-title">{{ title }}</div>
         <div v-if="subtitle" class="mmp-subtitle">{{ subtitle }}</div>
       </div>
-      <div class="mmp-tools">
+      <div v-if="$slots.actions" class="mmp-tools">
         <slot name="actions"></slot>
       </div>
-      <div v-if="closable" class="mmp-close" @click="$emit('close')">
+      <div class="mmp-close" @click="$emit('close')">
         <a-icon type="close" title="关闭" />
       </div>
     </div>
@@ -38,8 +38,7 @@ export default {
   props: {
     visible: { type: Boolean, default: false },
     title: { type: String, default: '' },
-    subtitle: { type: String, default: '' },
-    closable: { type: Boolean, default: true }
+    subtitle: { type: String, default: '' }
   }
 }
 </script>

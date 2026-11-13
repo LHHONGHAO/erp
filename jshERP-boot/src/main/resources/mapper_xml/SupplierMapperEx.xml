@@ -142,4 +142,39 @@
         </if>
         limit 1
     </select>
+
+    <!-- 地址打印保存会员：按联系人/电话/平台账号粗筛候选会员，精确判定在 Java 内完成 -->
+    <select id="findMemberCandidates" resultMap="com.jsh.erp.datasource.mappers.SupplierMapper.BaseResultMap">
+        select * from jsh_supplier
+        where type = '会员'
+        and ifnull(delete_flag,'0') !='1'
+        and (
+            1 = 0
+            <if test="contacts != null and contacts !=''">
+                or contacts = #{contacts}
+            </if>
+            <if test="phones != null and phones.size() > 0">
+                <foreach collection="phones" item="phone">
+                    <if test="phone != null and phone !=''">
+                        or replace(replace(replace(replace(replace(ifnull(telephone,''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') like concat('%', #{phone}, '%')
+                        or replace(replace(replace(replace(replace(ifnull(phone_num,''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') like concat('%', #{phone}, '%')
+                    </if>
+                </foreach>
+            </if>
+            <if test="wechatAccount != null and wechatAccount !=''">
+                or wechat_account = #{wechatAccount}
+            </if>
+            <if test="douyinAccount != null and douyinAccount !=''">
+                or douyin_account = #{douyinAccount}
+            </if>
+            <if test="alipayAccount != null and alipayAccount !=''">
+                or alipay_account = #{alipayAccount}
+            </if>
+            <if test="otherAccount != null and otherAccount !=''">
+                or other_account = #{otherAccount}
+            </if>
+        )
+        order by id desc
+        limit 100
+    </select>
 </mapper>

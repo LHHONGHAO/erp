@@ -54,4 +54,15 @@ public interface SupplierMapperEx {
             @Param("contacts") String contacts,
             @Param("telephone") String telephone,
             @Param("type") String type);
+
+    /**
+     * 地址打印保存会员前的候选会员粗筛（联系人/电话/平台账号任一命中）
+     */
+    List<Supplier> findMemberCandidates(
+            @Param("contacts") String contacts,
+            @Param("phones") List<String> phones,
+            @Param("wechatAccount") String wechatAccount,
+            @Param("douyinAccount") String douyinAccount,
+            @Param("alipayAccount") String alipayAccount,
+            @Param("otherAccount") String otherAccount);
 }

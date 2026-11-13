@@ -573,4 +573,15 @@ public class SupplierController extends BaseController {
         return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
     }
 
+    /**
+     * 地址打印成功后保存会员信息：先比对已有会员，命中则补充更新，未命中则新增
+     */
+    @PostMapping(value = "/saveMemberFromAddress")
+    @ApiOperation(value = "地址打印保存会员（自动比对）")
+    public String saveMemberFromAddress(@RequestBody JSONObject jsonObject,
+                                        HttpServletRequest request) throws Exception {
+        JSONObject data = supplierService.saveMemberFromAddress(jsonObject, request);
+        return returnJson(data, ErpInfo.OK.name, ErpInfo.OK.code);
+    }
+
 }

@@ -3,9 +3,10 @@
  *
  * 手机浏览器弹出软键盘时会遮挡页面输入框。这里不再滚动页面，而是：
  * 1. 输入框获得焦点时让页面保持原状（记录并恢复滚动位置）；
- * 2. 在键盘上方弹出独立输入弹层，预填该输入框的当前值并自动聚焦、全选；
- * 3. 键盘收起或点击「完成」时把弹层内容回填到原输入框；
- * 4. 点击「取消」则不回填，直接关闭弹层。
+ * 2. 在键盘上方弹出独立输入弹层（按屏宽铺满），标题取原输入框的标签，
+ *    预填该输入框的当前值并自动聚焦、全选；
+ * 3. 只有点击弹层内的「确认」按钮才把内容回填到原输入框；
+ * 4. 键盘收起、回车、点击弹层外等其它动作只关闭弹层，不回填数据。
  *
  * 由 main.js 全局安装，页面无需接入。
  */
@@ -22,14 +23,45 @@ const SKIP_INPUT_TYPES = [
 // 带搜索能力的组合组件，其输入框需要保留原始焦点
 const SKIP_SELECTOR = '.ant-select, .ant-cascader, .ant-tree-select, .ant-picker, [role="combobox"], [aria-autocomplete]'
 
+// 弹层输入控件样式（与框内布局配合）
+const INPUT_STYLE = [
+  'flex:1',
+  'min-width:0',
+  'height:44px',
+  'padding:0 12px',
+  'box-sizing:border-box',
+  'border:none',
+  'background:transparent',
+  'font-size:16px',
+  'color:#262626',
+  'outline:none'
+].join(';')
+
+const TEXTAREA_STYLE = [
+  'flex:1',
+  'min-width:0',
+  'min-height:44px',
+  'max-height:96px',
+  'padding:11px 12px',
+  'box-sizing:border-box',
+  'border:none',
+  'background:transparent',
+  'font-size:16px',
+  'line-height:22px',
+  'color:#262626',
+  'outline:none',
+  'resize:none'
+].join(';')
+
 let installed = false
 let activeEl = null
 let rootEl = null
+let titleEl = null
 let fieldEl = null
-let touchStartValue = ''
 let scrollSnapshot = []
 let baselineHeight = 0
 let viewportBound = false
+let lastOkTouch = 0
 
 /** 仅手机/平板等触摸设备启用，桌面端保持原生输入体验 */
 function isMobileEnv () {
@@ -103,91 +135,172 @@ function restoreScroll () {
   })
 }
 
+/** 标题文本归一化：去星号、去结尾冒号、压缩空白、限长 */
+function normalizeTitle (text) {
+  let value = String(text || '').replace(/\s+/g, ' ').trim()
+  value = value.replace(/[*＊]/g, '').replace(/[:：]\s*$/, '').trim()
+  return value.length > 30 ? value.slice(0, 30) + '…' : value
+}
+
+function textOf (node) {
+  if (!node || node.nodeType !== 1) return ''
+  if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(node.tagName)) return ''
+  return normalizeTitle(node.textContent || node.innerText || '')
+}
+
+/** 取原输入框的标题：显式属性 > label > 表单标签 > 相邻文本 > 占位符 */
+function resolveFieldTitle (el) {
+  const explicit = normalizeTitle(el.getAttribute('data-kb-title') || el.getAttribute('data-title'))
+  if (explicit) return explicit
+
+  if (el.id) {
+    try {
+      const label = document.querySelector('label[for="' + CSS.escape(el.id) + '"]')
+      const text = textOf(label)
+      if (text) return text
+    } catch (e) {}
+  }
+
+  const aria = normalizeTitle(el.getAttribute('aria-label'))
+  if (aria) return aria
+
+  const formItem = el.closest('.ant-form-item')
+  if (formItem) {
+    const text = textOf(formItem.querySelector('.ant-form-item-label'))
+    if (text) return text
+  }
+
+  // 常见结构：<span>名称：</span><div><input/></div>
+  const candidates = [el.previousElementSibling, el.parentElement && el.parentElement.previousElementSibling]
+  for (let i = 0; i < candidates.length; i++) {
+    const text = textOf(candidates[i])
+    if (text) return text
+  }
+
+  return normalizeTitle(el.getAttribute('placeholder'))
+}
+
 /** 创建（或复用）弹层 DOM */
 function ensureOverlay () {
   if (rootEl) return rootEl
   const root = document.createElement('div')
   root.id = OVERLAY_ID
+  // 弹层按屏宽铺满，不再使用浮动卡片布局
   root.style.cssText = [
     'position:fixed',
     'left:0',
     'right:0',
+    'width:100%',
+    'max-width:100vw',
     'bottom:0',
     'z-index:100000',
     'display:none',
-    'padding:8px 10px',
+    'margin:0',
+    'padding:10px 12px',
+    'padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))',
     'box-sizing:border-box',
     'background:#fff',
     'border-top:1px solid #e8e8e8',
-    'border-radius:12px 12px 0 0',
-    'box-shadow:0 -4px 16px rgba(0,0,0,.12)',
-    'font-size:14px'
+    'font-size:15px'
   ].join(';')
 
-  const row = document.createElement('div')
-  row.style.cssText = 'display:flex;align-items:flex-end;gap:8px'
+  const title = document.createElement('div')
+  title.setAttribute('data-kb-title-role', '1')
+  title.style.cssText = [
+    'display:none',
+    'margin:0 0 8px',
+    'font-size:14px',
+    'font-weight:600',
+    'line-height:20px',
+    'color:#262626',
+    'white-space:nowrap',
+    'overflow:hidden',
+    'text-overflow:ellipsis'
+  ].join(';')
 
-  const maskWrap = document.createElement('div')
-  maskWrap.style.cssText = 'flex:1;min-width:0;display:flex'
+  const box = document.createElement('div')
+  box.style.cssText = [
+    'display:flex',
+    'align-items:stretch',
+    'width:100%',
+    'box-sizing:border-box',
+    'border:1px solid #d9d9d9',
+    'border-radius:8px',
+    'background:#fff',
+    'overflow:hidden'
+  ].join(';')
 
   const field = document.createElement('input')
   field.type = 'text'
   field.setAttribute('data-kb-field', '1')
-  field.style.cssText = [
-    'flex:1',
-    'min-width:0',
-    'height:44px',
-    'padding:0 12px',
-    'box-sizing:border-box',
-    'border:1px solid #d9d9d9',
-    'border-radius:8px',
-    'font-size:15px',
-    'color:#262626',
-    'background:#fff',
-    'outline:none'
-  ].join(';')
-  maskWrap.appendChild(field)
+  field.style.cssText = INPUT_STYLE
 
-  const cancelBtn = document.createElement('button')
-  cancelBtn.type = 'button'
-  cancelBtn.textContent = '取消'
-  cancelBtn.style.cssText = 'flex:0 0 auto;height:44px;padding:0 10px;border:none;border-radius:8px;background:#f5f5f5;color:#595959;font-size:15px'
-
+  // 框内右侧的确认按钮：只有它会把内容回填到原输入框
   const okBtn = document.createElement('button')
   okBtn.type = 'button'
-  okBtn.textContent = '完成'
-  okBtn.style.cssText = 'flex:0 0 auto;height:44px;padding:0 14px;border:none;border-radius:8px;background:#1890ff;color:#fff;font-size:15px'
+  okBtn.textContent = '确认'
+  okBtn.style.cssText = [
+    'flex:0 0 auto',
+    'align-self:flex-start',
+    'height:44px',
+    'padding:0 18px',
+    'border:none',
+    'border-left:1px solid #e8e8e8',
+    'border-radius:0',
+    'background:#1890ff',
+    'color:#fff',
+    'font-size:15px',
+    'font-weight:500',
+    'outline:none'
+  ].join(';')
 
-  // 按钮按下时阻止输入框失焦，保证取消/完成由 click 统一处理
+  // 按下按钮时阻止输入框失焦，避免弹层先被关闭
   const keepFocus = e => e.preventDefault()
-  cancelBtn.addEventListener('mousedown', keepFocus)
   okBtn.addEventListener('mousedown', keepFocus)
-  cancelBtn.addEventListener('touchstart', keepFocus, { passive: false })
-  okBtn.addEventListener('touchstart', keepFocus, { passive: false })
-  cancelBtn.addEventListener('click', cancel)
-  okBtn.addEventListener('click', commit)
+  okBtn.addEventListener('touchstart', e => {
+    e.preventDefault()
+    lastOkTouch = Date.now()
+  }, { passive: false })
+  okBtn.addEventListener('touchend', e => {
+    e.preventDefault()
+    commit()
+  }, { passive: false })
+  okBtn.addEventListener('click', () => {
+    if (Date.now() - lastOkTouch < 600) return
+    commit()
+  })
 
-  row.appendChild(maskWrap)
-  row.appendChild(cancelBtn)
-  row.appendChild(okBtn)
-  root.appendChild(row)
+  box.appendChild(field)
+  box.appendChild(okBtn)
+  root.appendChild(title)
+  root.appendChild(box)
   document.body.appendChild(root)
 
   rootEl = root
+  titleEl = title
   fieldEl = field
   bindOverlayEvents(field)
   return root
 }
 
 function bindOverlayEvents (field) {
-  // 键盘收起导致弹层输入框失焦：视为确认，回填原输入框
+  // 键盘收起导致弹层输入框失焦：只关闭弹层，不回填
   field.addEventListener('blur', () => {
-    if (!activeEl) return
+    const el = activeEl
     setTimeout(() => {
-      if (!activeEl) return
-      if (document.activeElement && rootEl.contains(document.activeElement)) return
-      commit()
+      if (!activeEl || activeEl !== el) return
+      const focusEl = document.activeElement
+      if (focusEl && rootEl && rootEl.contains(focusEl)) return
+      // 焦点已切到页面其它输入框时交给 focusin 处理
+      if (focusEl && isEditableTarget(focusEl)) return
+      closeOverlay()
     }, 0)
+  })
+  // 回车等键盘动作不回填、不关闭，等待用户点击确认
+  field.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return
+    if (field.tagName === 'TEXTAREA') return
+    e.preventDefault()
   })
   field.addEventListener('input', () => {
     if (field.tagName !== 'TEXTAREA') return
@@ -204,17 +317,11 @@ function buildField (el) {
   if (isTextarea) {
     next = document.createElement('textarea')
     next.rows = 2
-    next.style.cssText = [
-      'flex:1', 'min-width:0', 'max-height:96px', 'padding:10px 12px',
-      'box-sizing:border-box', 'border:1px solid #d9d9d9', 'border-radius:8px',
-      'font-size:15px', 'line-height:20px', 'color:#262626', 'background:#fff',
-      'outline:none', 'resize:none'
-    ].join(';')
+    next.style.cssText = TEXTAREA_STYLE
   } else {
     next = document.createElement('input')
     next.type = 'text'
-    next.style.cssText = current ? current.style.cssText : ''
-    next.style.height = '44px'
+    next.style.cssText = INPUT_STYLE
   }
   next.setAttribute('data-kb-field', '1')
   const type = (el.getAttribute('type') || 'text').toLowerCase()
@@ -236,6 +343,17 @@ function buildField (el) {
 function positionOverlay () {
   if (!rootEl || !activeEl) return
   rootEl.style.bottom = getKeyboardHeight() + 'px'
+  const vv = window.visualViewport
+  if (vv && vv.width) {
+    // 按可视区屏宽铺满，兼容横屏与页面缩放
+    rootEl.style.left = Math.round(vv.offsetLeft) + 'px'
+    rootEl.style.right = 'auto'
+    rootEl.style.width = Math.round(vv.width) + 'px'
+  } else {
+    rootEl.style.left = '0'
+    rootEl.style.right = '0'
+    rootEl.style.width = '100%'
+  }
 }
 
 function onViewportChange () {
@@ -270,8 +388,13 @@ function unbindViewport () {
 function openOverlay (el) {
   ensureOverlay()
   if (!rootEl) return
-  touchStartValue = el.value || ''
   buildField(el)
+  // 弹层标题取原输入框的标题
+  const title = resolveFieldTitle(el)
+  if (titleEl) {
+    titleEl.textContent = title
+    titleEl.style.display = title ? 'block' : 'none'
+  }
   rootEl.style.display = 'block'
   positionOverlay()
   bindViewport()
@@ -306,7 +429,7 @@ function fireEvent (el, type) {
   el.dispatchEvent(evt)
 }
 
-/** 回填并关闭 */
+/** 点击确认：回填并关闭 */
 function commit () {
   const el = activeEl
   if (!el) return
@@ -324,11 +447,10 @@ function commit () {
   restoreScroll()
 }
 
-/** 取消：不回填，直接关闭 */
-function cancel () {
+/** 关闭弹层：不回填数据 */
+function closeOverlay () {
   activeEl = null
   unbindViewport()
-  if (fieldEl) fieldEl.value = touchStartValue
   if (rootEl) rootEl.style.display = 'none'
   restoreScroll()
 }
@@ -337,8 +459,8 @@ function onFocusIn (e) {
   const el = e.target
   if (!isEditableTarget(el)) return
   if (activeEl === el) return
-  // 切换输入框：先把上一项回填
-  if (activeEl) commit()
+  // 切换输入框时不回填上一项，直接关闭原弹层
+  if (activeEl) closeOverlay()
   activeEl = el
   snapshotScroll(el)
   openOverlay(el)
@@ -347,9 +469,9 @@ function onFocusIn (e) {
 function onDocumentClick (e) {
   if (!activeEl || !rootEl) return
   if (rootEl.contains(e.target)) return
-  // 点击其它输入框由 focusin 负责切换，这里只处理点到弹层之外（例如关闭了原弹层）
+  // 点击其它输入框由 focusin 负责切换，这里只处理点到弹层之外
   if (isEditableTarget(e.target)) return
-  commit()
+  closeOverlay()
 }
 
 export function installKeyboardInputOverlay () {

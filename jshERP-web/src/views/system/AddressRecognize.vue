@@ -45,12 +45,37 @@
       @close="goodsPickerVisible = false" />
 
     <!-- 打印标签页：会员标签模板存在时自动按模板加载，识别结果按字段回填 -->
-    <label-print-modal ref="labelPrintModal" />
+    <label-print-modal ref="labelPrintModal" @print-success="onPrintSuccess" />
+
+    <!-- 会员比对：自动匹配不唯一时由用户选择更新已有会员或新建 -->
+    <a-modal
+      :visible="matchVisible"
+      title="发现可能重复的会员"
+      :footer="null"
+      :maskClosable="false"
+      :z-index="2100"
+      @cancel="matchVisible = false">
+      <div class="addr-match-tip">按{{ matchMatchedBy || '联系人/电话' }}找到以下会员，请选择要更新的会员，或直接新建。</div>
+      <div class="addr-match-list">
+        <div v-for="item in matchCandidates" :key="item.id" class="addr-match-item" @click="chooseExisting(item)">
+          <div class="addr-match-head">
+            <span class="addr-match-card">{{ item.supplier }}</span>
+            <span class="addr-match-score">{{ item.score }} 分</span>
+          </div>
+          <div class="addr-match-line">联系人：{{ item.contacts || '-' }}</div>
+          <div class="addr-match-line">电话：{{ formatMatchText(item.telephone) }}</div>
+          <div class="addr-match-line">地址：{{ formatMatchText(item.address) }}</div>
+        </div>
+      </div>
+      <a-button type="primary" block @click="createNewMember">不更新，新建会员</a-button>
+      <a-button block class="addr-match-cancel" @click="matchVisible = false">暂不保存</a-button>
+    </a-modal>
   </div>
 </template>
 
 <script>
 import { postAction } from '@/api/manage'
+import { saveMemberFromAddress } from '@/api/api'
 import { mixinDevice } from '@/utils/mixin'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
 import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
@@ -94,7 +119,12 @@ export default {
       goodsRows: [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }],
       goodsTargetIndex: 0,
       // 商品选择整页弹层
-      goodsPickerVisible: false
+      goodsPickerVisible: false,
+      // 会员保存：打印成功后自动比对保存，多个候选时弹层确认
+      memberSaving: false,
+      matchVisible: false,
+      matchCandidates: [],
+      matchMatchedBy: ''
     }
   },
   beforeDestroy() {
@@ -545,6 +575,67 @@ export default {
       this.goodsPickerVisible = false
       this.syncPageHeight()
     },
+    // ===== 打印成功后生成会员信息 =====
+    /** 打印成功回调：先与已有会员比对，命中则补充更新，未命中则新增 */
+    onPrintSuccess() {
+      var that = this
+      var hasInfo = String(this.form.contacts || '').trim() || String(this.form.telephone || '').trim()
+        || String(this.form.account || '').trim()
+      if (!hasInfo) return
+      // 防止打印机回调重复触发导致重复保存
+      if (this.memberSaving) return
+      this.memberSaving = true
+      this.saveMember().finally(function() {
+        that.memberSaving = false
+      })
+    },
+    /** 保存会员：extra 用于确认弹层选择（decision=update/create + supplierId） */
+    saveMember(extra) {
+      var that = this
+      var payload = Object.assign({
+        contacts: this.form.contacts,
+        telephone: this.form.telephone,
+        address: this.form.address,
+        account: this.form.account,
+        platform: this.form.platform,
+        remark: this.form.remark
+      }, extra || {})
+      return saveMemberFromAddress(payload).then(function(res) {
+        if (!(res && res.code === 200 && res.data)) {
+          that.$message.error((res && res.data && res.data.message) || '会员信息保存失败')
+          return
+        }
+        var data = res.data
+        if (data.action === 'create') {
+          that.$message.success('已新增会员 ' + (data.memberId || ''))
+        } else if (data.action === 'update') {
+          var changes = (data.changes || []).join('；')
+          that.$message.success('已更新会员 ' + (data.memberId || '') + (changes ? '（' + changes + '）' : ''))
+        } else if (data.action === 'skip') {
+          that.$message.info(data.reason ? ('未保存：' + data.reason) : '会员信息未变化，已跳过')
+        } else if (data.action === 'confirm') {
+          that.matchCandidates = data.candidates || []
+          that.matchMatchedBy = data.matchedBy || ''
+          that.matchVisible = true
+        }
+      }).catch(function() {
+        that.$message.error('会员信息保存失败')
+      })
+    },
+    /** 确认弹层：更新选中的已有会员 */
+    chooseExisting(candidate) {
+      this.matchVisible = false
+      this.saveMember({ decision: 'update', supplierId: candidate.id })
+    },
+    /** 确认弹层：不更新，直接新建会员 */
+    createNewMember() {
+      this.matchVisible = false
+      this.saveMember({ decision: 'create' })
+    },
+    /** 弹层内多行信息展示 */
+    formatMatchText(value) {
+      return value ? String(value).replace(/\n/g, '、') : '-'
+    },
     printResult() {
       var self = this
       var values = {}
@@ -755,6 +846,53 @@ export default {
   background: #1890ff;
   border-color: #1890ff;
   font-weight: 500;
+}
+/* ===== 会员比对确认弹层 ===== */
+.addr-match-tip {
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  color: #8c8c8c;
+}
+.addr-match-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.addr-match-item {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #f7f9fc;
+  border: 1px solid #e8eef7;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.addr-match-item:active {
+  background: #eef5ff;
+}
+.addr-match-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.addr-match-card {
+  font-size: 15px;
+  font-weight: 600;
+  color: #262626;
+}
+.addr-match-score {
+  font-size: 12px;
+  color: #1890ff;
+}
+.addr-match-line {
+  font-size: 13px;
+  line-height: 20px;
+  color: #595959;
+  word-break: break-all;
+}
+.addr-match-cancel {
+  margin-top: 8px;
 }
 @media (max-width: 768px) {
   /* 顶栏 49px 已由全局布局占位；内容区自己滚动，

@@ -1,5 +1,6 @@
 package com.jsh.erp.service;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.constants.BusinessConstants;
 import com.jsh.erp.constants.ExceptionConstants;
@@ -773,5 +774,378 @@ public class SupplierService {
     public Supplier checkMemberDuplicate(String contacts, String telephone) {
         List<Supplier> list = supplierMapperEx.findByContactsOrPhone(contacts, telephone, "会员");
         return (list != null && !list.isEmpty()) ? list.get(0) : null;
+    }
+
+    /**
+     * 地址打印成功后保存会员信息：
+     * 保存前先与已有会员比对（电话 > 平台账号 > 联系人与地址），命中则补充更新，未命中则新增。
+     * decision: create 强制新建；update 强制更新指定 supplierId；不传则按比对结果自动处理。
+     */
+    @Transactional(value = "transactionManager", rollbackFor = Exception.class)
+    public JSONObject saveMemberFromAddress(JSONObject obj, HttpServletRequest request) throws Exception {
+        JSONObject result = new JSONObject();
+        String contacts = normalizeText(obj.getString("contacts"));
+        String platform = normalizeText(obj.getString("platform"));
+        String account = normalizeText(obj.getString("account"));
+        String remark = normalizeText(obj.getString("remark"));
+        String accountField = accountFieldOf(platform);
+        List<String> phones = splitLines(obj.getString("telephone"), true);
+        List<String> addresses = splitLines(obj.getString("address"), false);
+        // 联系人、电话、账号全空：不产生会员数据
+        if (contacts.isEmpty() && phones.isEmpty() && account.isEmpty()) {
+            result.put("action", "skip");
+            result.put("reason", "联系人和电话均为空");
+            return result;
+        }
+        String decision = normalizeText(obj.getString("decision"));
+        Long supplierId = obj.getLong("supplierId");
+
+        // 强制更新：直接对指定会员做合并补充
+        if ("update".equals(decision) && supplierId != null) {
+            Supplier target = supplierMapper.selectByPrimaryKey(supplierId);
+            if (target != null && "会员".equals(target.getType())) {
+                return mergeMember(target, contacts, phones, addresses, accountField, account, remark, request);
+            }
+            decision = "create";
+        }
+        // 强制新建
+        if ("create".equals(decision)) {
+            return createMember(contacts, phones, addresses, accountField, account, remark, request);
+        }
+
+        // 自动比对：先粗筛候选，再在 Java 内精确打分
+        List<String> candidatePhones = new ArrayList<>();
+        for (String phone : phones) {
+            String normalized = normalizePhone(phone);
+            if (!normalized.isEmpty()) candidatePhones.add(normalized);
+        }
+        List<Supplier> candidates = supplierMapperEx.findMemberCandidates(contacts, candidatePhones,
+                "wechat".equals(accountField) ? account : null,
+                "douyin".equals(accountField) ? account : null,
+                "alipay".equals(accountField) ? account : null,
+                "other".equals(accountField) ? account : null);
+        List<CandidateMatch> matches = new ArrayList<>();
+        if (candidates != null) {
+            for (Supplier candidate : candidates) {
+                CandidateMatch match = scoreCandidate(candidate, contacts, phones, addresses, accountField, account);
+                if (match.score > 0) {
+                    matches.add(match);
+                }
+            }
+        }
+        matches.sort((a, b) -> {
+            if (a.score != b.score) return b.score - a.score;
+            return Long.compare(b.supplier.getId() == null ? 0 : b.supplier.getId(),
+                    a.supplier.getId() == null ? 0 : a.supplier.getId());
+        });
+
+        if (!matches.isEmpty()) {
+            CandidateMatch best = matches.get(0);
+            // 最高分 >=80 自动合并；60~79 或前两名分差 <5 时交由前端确认
+            boolean ambiguous = matches.size() > 1 && best.score - matches.get(1).score < 5;
+            if (best.score >= 80 && !ambiguous) {
+                return mergeMember(best.supplier, contacts, phones, addresses, accountField, account, remark, request);
+            }
+            if (best.score >= 60) {
+                JSONObject confirm = new JSONObject();
+                confirm.put("action", "confirm");
+                confirm.put("matchedBy", best.matchedBy);
+                JSONArray candidateArr = new JSONArray();
+                int limit = Math.min(matches.size(), 5);
+                for (int i = 0; i < limit; i++) {
+                    CandidateMatch match = matches.get(i);
+                    JSONObject item = new JSONObject();
+                    item.put("id", match.supplier.getId());
+                    item.put("supplier", match.supplier.getSupplier());
+                    item.put("contacts", match.supplier.getContacts());
+                    item.put("telephone", match.supplier.getTelephone());
+                    item.put("address", match.supplier.getAddress());
+                    item.put("score", match.score);
+                    item.put("matchedBy", match.matchedBy);
+                    candidateArr.add(item);
+                }
+                confirm.put("candidates", candidateArr);
+                return confirm;
+            }
+        }
+        return createMember(contacts, phones, addresses, accountField, account, remark, request);
+    }
+
+    /**
+     * 新增会员：生成卡号后直接保存
+     */
+    private JSONObject createMember(String contacts, List<String> phones, List<String> addresses,
+                                    String accountField, String account, String remark,
+                                    HttpServletRequest request) throws Exception {
+        Supplier supplier = new Supplier();
+        supplier.setSupplier(generateMemberId());
+        supplier.setType("会员");
+        supplier.setEnabled(true);
+        User user = userService.getCurrentUser();
+        supplier.setCreator(user == null ? null : user.getId());
+        supplier.setContacts(contacts.isEmpty() ? null : contacts);
+        String telephoneText = String.join("\n", mergeUnique(new ArrayList<>(), phones, 6, true));
+        supplier.setTelephone(telephoneText.isEmpty() ? null : telephoneText);
+        supplier.setPhoneNum(telephoneText.isEmpty() ? null : telephoneText);
+        String addressText = String.join("\n", mergeUnique(new ArrayList<>(), addresses, 6, false));
+        supplier.setAddress(addressText.isEmpty() ? null : addressText);
+        if (!account.isEmpty()) {
+            setAccountValue(supplier, accountField, account);
+        }
+        supplier.setDescription(buildDescription(remark));
+        supplierMapper.insertSelective(supplier);
+        logService.insertLog("商家",
+                new StringBuffer(BusinessConstants.LOG_OPERATION_TYPE_ADD).append(supplier.getSupplier()).toString(), request);
+
+        JSONObject result = new JSONObject();
+        result.put("action", "create");
+        result.put("memberId", supplier.getSupplier());
+        result.put("supplier", JSONObject.toJSON(supplier));
+        result.put("changes", new JSONArray());
+        return result;
+    }
+
+    /**
+     * 合并更新已有会员：电话/地址追加去重，联系人/账号/备注仅在原值为空时补充
+     */
+    private JSONObject mergeMember(Supplier supplier, String contacts, List<String> phones, List<String> addresses,
+                                   String accountField, String account, String remark,
+                                   HttpServletRequest request) throws Exception {
+        JSONArray changes = new JSONArray();
+        // 电话：原多行 + 新增，去重后最多 6 条
+        List<String> oldPhones = splitLines(supplier.getTelephone(), true);
+        List<String> mergedPhones = mergeUnique(oldPhones, phones, 6, true);
+        String oldPhoneText = String.join("\n", oldPhones);
+        String newPhoneText = String.join("\n", mergedPhones);
+        if (!newPhoneText.equals(oldPhoneText)) {
+            supplier.setTelephone(newPhoneText.isEmpty() ? null : newPhoneText);
+            supplier.setPhoneNum(newPhoneText.isEmpty() ? null : newPhoneText);
+            changes.add("补充电话 " + newPhoneText.replace("\n", "、"));
+        }
+        // 地址：原多行 + 新增，去重后最多 6 条
+        List<String> oldAddresses = splitLines(supplier.getAddress(), false);
+        List<String> mergedAddresses = mergeUnique(oldAddresses, addresses, 6, false);
+        String oldAddressText = String.join("\n", oldAddresses);
+        String newAddressText = String.join("\n", mergedAddresses);
+        if (!newAddressText.equals(oldAddressText)) {
+            supplier.setAddress(newAddressText.isEmpty() ? null : newAddressText);
+            changes.add("补充地址 " + newAddressText.replace("\n", "、"));
+        }
+        // 联系人：原值为空才写入
+        if (isEmpty(supplier.getContacts()) && !contacts.isEmpty()) {
+            supplier.setContacts(contacts);
+            changes.add("补充联系人 " + contacts);
+        }
+        // 平台账号：原值为空才写入
+        if (isEmpty(getAccountValue(supplier, accountField)) && !account.isEmpty()) {
+            setAccountValue(supplier, accountField, account);
+            changes.add("补充账号 " + account);
+        }
+        // 备注：原值为空才写入，并标记来源
+        if (isEmpty(supplier.getDescription()) && (!remark.isEmpty() || !changes.isEmpty())) {
+            supplier.setDescription(buildDescription(remark));
+            changes.add("补充备注");
+        }
+        if (changes.isEmpty()) {
+            JSONObject skip = new JSONObject();
+            skip.put("action", "skip");
+            skip.put("memberId", supplier.getSupplier());
+            skip.put("supplier", JSONObject.toJSON(supplier));
+            skip.put("changes", changes);
+            return skip;
+        }
+        supplierMapper.updateByPrimaryKeySelective(supplier);
+        logService.insertLog("商家",
+                new StringBuffer(BusinessConstants.LOG_OPERATION_TYPE_EDIT).append(supplier.getSupplier()).toString(), request);
+
+        JSONObject result = new JSONObject();
+        result.put("action", "update");
+        result.put("memberId", supplier.getSupplier());
+        result.put("supplier", JSONObject.toJSON(supplier));
+        result.put("changes", changes);
+        return result;
+    }
+
+    /**
+     * 候选会员打分：电话一致 100、平台账号一致 90、联系人与地址一致 80、联系人相同且地址相近 60
+     */
+    private CandidateMatch scoreCandidate(Supplier supplier, String contacts, List<String> phones,
+                                          List<String> addresses, String accountField, String account) {
+        // R1：任一电话归一化后一致
+        if (!phones.isEmpty()) {
+            Set<String> existingPhones = new HashSet<>();
+            for (String phone : splitLines(supplier.getTelephone(), true)) {
+                existingPhones.add(normalizePhone(phone));
+            }
+            for (String phone : splitLines(supplier.getPhoneNum(), true)) {
+                existingPhones.add(normalizePhone(phone));
+            }
+            existingPhones.remove("");
+            for (String phone : phones) {
+                if (!normalizePhone(phone).isEmpty() && existingPhones.contains(normalizePhone(phone))) {
+                    return new CandidateMatch(supplier, 100, "电话一致");
+                }
+            }
+        }
+        // R2：平台 + 账号完全一致
+        if (!account.isEmpty()) {
+            String existingAccount = getAccountValue(supplier, accountField);
+            if (!existingAccount.isEmpty() && existingAccount.trim().equalsIgnoreCase(account)) {
+                return new CandidateMatch(supplier, 90, "平台账号一致");
+            }
+        }
+        // R3/R4：联系人相同，再看地址
+        if (!contacts.isEmpty() && contacts.equals(supplier.getContacts())) {
+            List<String> existingAddresses = splitLines(supplier.getAddress(), false);
+            double bestSimilarity = 0;
+            for (String address : addresses) {
+                String input = normalizeAddress(address);
+                if (input.isEmpty()) continue;
+                for (String existing : existingAddresses) {
+                    String old = normalizeAddress(existing);
+                    if (old.isEmpty()) continue;
+                    if (old.equals(input) || old.contains(input) || input.contains(old)) {
+                        return new CandidateMatch(supplier, 80, "联系人与地址一致");
+                    }
+                    bestSimilarity = Math.max(bestSimilarity, addressSimilarity(old, input));
+                }
+            }
+            if (bestSimilarity >= 0.75) {
+                return new CandidateMatch(supplier, 60, "联系人相同，地址相近");
+            }
+        }
+        return new CandidateMatch(supplier, 0, null);
+    }
+
+    /**
+     * 地址相似度：按二元组 Dice 系数计算
+     */
+    private double addressSimilarity(String left, String right) {
+        if (left.isEmpty() || right.isEmpty()) return 0;
+        if (left.equals(right)) return 1;
+        Set<String> leftSet = bigrams(left);
+        Set<String> rightSet = bigrams(right);
+        int intersection = 0;
+        for (String item : leftSet) {
+            if (rightSet.contains(item)) intersection++;
+        }
+        return (2.0 * intersection) / (leftSet.size() + rightSet.size());
+    }
+
+    private Set<String> bigrams(String text) {
+        Set<String> set = new HashSet<>();
+        if (text.length() == 1) {
+            set.add(text);
+            return set;
+        }
+        for (int i = 0; i < text.length() - 1; i++) {
+            set.add(text.substring(i, i + 2));
+        }
+        return set;
+    }
+
+    private void setAccountValue(Supplier supplier, String field, String value) {
+        if ("wechat".equals(field)) supplier.setWechatAccount(value);
+        else if ("douyin".equals(field)) supplier.setDouyinAccount(value);
+        else if ("alipay".equals(field)) supplier.setAlipayAccount(value);
+        else supplier.setOtherAccount(value);
+    }
+
+    private String getAccountValue(Supplier supplier, String field) {
+        String value = null;
+        if ("wechat".equals(field)) value = supplier.getWechatAccount();
+        else if ("douyin".equals(field)) value = supplier.getDouyinAccount();
+        else if ("alipay".equals(field)) value = supplier.getAlipayAccount();
+        else value = supplier.getOtherAccount();
+        return value == null ? "" : value.trim();
+    }
+
+    private String accountFieldOf(String platform) {
+        if (platform == null) return "other";
+        if (platform.contains("微信")) return "wechat";
+        if (platform.contains("抖音")) return "douyin";
+        if (platform.contains("支付宝")) return "alipay";
+        return "other";
+    }
+
+    /**
+     * 合并列表：按归一化值去重，保留原有顺序，最多 limit 条
+     */
+    private List<String> mergeUnique(List<String> existing, List<String> added, int limit, boolean isPhone) {
+        List<String> merged = new ArrayList<>();
+        Set<String> keys = new HashSet<>();
+        List<String> all = new ArrayList<>();
+        if (existing != null) all.addAll(existing);
+        if (added != null) all.addAll(added);
+        for (String item : all) {
+            if (item == null || item.trim().isEmpty()) continue;
+            String value = item.trim();
+            String key = isPhone ? normalizePhone(value) : normalizeAddress(value);
+            if (key.isEmpty() || keys.contains(key)) continue;
+            keys.add(key);
+            merged.add(value);
+            if (merged.size() >= limit) break;
+        }
+        return merged;
+    }
+
+    /**
+     * 多行/多值拆分：电话同时按逗号、分号拆分，地址只按换行拆分
+     */
+    private List<String> splitLines(String text, boolean splitByComma) {
+        List<String> list = new ArrayList<>();
+        if (text == null) return list;
+        String[] parts = text.split(splitByComma ? "[\\r\\n,，;；、]+" : "[\\r\\n]+");
+        for (String part : parts) {
+            String value = part == null ? "" : part.trim();
+            if (!value.isEmpty()) list.add(value);
+        }
+        return list;
+    }
+
+    private String normalizeText(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String normalizePhone(String value) {
+        if (value == null) return "";
+        String digits = value.replaceAll("[^0-9]", "");
+        // 去掉国际区号 +86
+        if (digits.length() >= 13 && digits.startsWith("86")) {
+            digits = digits.substring(2);
+        }
+        return digits;
+    }
+
+    private String normalizeAddress(String value) {
+        if (value == null) return "";
+        return value.replaceAll("[\\s　,，。.、;；:：]", "");
+    }
+
+    private boolean isEmpty(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    /**
+     * 备注：用户备注 + 来源标记
+     */
+    private String buildDescription(String remark) {
+        String source = "来源：地址打印 " + new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        return remark.isEmpty() ? source : remark + "\n" + source;
+    }
+
+    /**
+     * 候选会员比对结果
+     */
+    private static class CandidateMatch {
+        private final Supplier supplier;
+        private final int score;
+        private final String matchedBy;
+
+        private CandidateMatch(Supplier supplier, int score, String matchedBy) {
+            this.supplier = supplier;
+            this.score = score;
+            this.matchedBy = matchedBy;
+        }
     }
 }

@@ -2,7 +2,7 @@
 <template>
   <div class="mcl-root">
     <!-- 手机端：标准手机页面布局（全局蓝底顶栏 + 可滚动内容 + 底部操作栏） -->
-    <mobile-page v-if="device === 'mobile'" class="mcl-page" :standalone="false" body-padding="0">
+    <mobile-page v-if="device === 'mobile'" class="mcl-page" :standalone="false" body-padding="0 0 calc(76px + env(safe-area-inset-bottom))">
       <div class="mcl-body">
         <!-- 当前选择 -->
         <div class="mcl-card">
@@ -65,8 +65,13 @@
             <a-form-item label="上级目录">
               <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
                              allow-clear :treeDefaultExpandAll="true"
-                             :treeData="treeData" v-decorator="[ 'parentId' ]" placeholder="请选择上级目录">
+                             :treeData="treeData" v-decorator="[ 'parentId' ]" placeholder="请选择上级目录"
+                             @change="onParentChange">
               </a-tree-select>
+            </a-form-item>
+            <!-- 单位：仅子类目维护，一级类目无单位属性 -->
+            <a-form-item label="单位" v-if="!isTopLevelCategory">
+              <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="['unit']"/>
             </a-form-item>
             <a-form-item label="排序">
               <a-input v-decorator="[ 'sort' ]"/>
@@ -78,8 +83,8 @@
         </div>
         <div v-else class="mcl-card mcl-empty">请先在上方选择一个类别</div>
 
-        <!-- 类别规格设置 -->
-        <div v-if="selectedKeys.length > 0 && hasSelectedCategory" class="mcl-card">
+        <!-- 类别规格设置：仅二级及以下类目维护，一级类目无规格值 -->
+        <div v-if="selectedKeys.length > 0 && hasSelectedCategory && !isTopLevelCategory" class="mcl-card">
           <div class="mcl-card-title">类别规格设置</div>
           <div v-for="(module, mIndex) in specModules" :key="mIndex" class="mcl-spec-card">
             <div class="mcl-spec-head">
@@ -106,8 +111,8 @@
 
       <template slot="footer">
         <div class="mcl-footer">
-          <a-button block @click="emptyCurrForm">重置</a-button>
-          <a-button type="primary" block :disabled="selectedKeys.length === 0" @click="submitCurrForm">保存</a-button>
+          <a-button @click="emptyCurrForm">重置</a-button>
+          <a-button type="primary" :disabled="selectedKeys.length === 0" @click="submitCurrForm">保存</a-button>
         </div>
       </template>
     </mobile-page>
@@ -116,7 +121,7 @@
     <a-row v-else :gutter="10">
     <a-col :md="12" :sm="24">
       <a-card :bordered="false">
-        <!-- 按钮操作区域；手机端由全局蓝底顶栏承载（添加/刷新），批量删除仅桌面端 -->
+        <!-- 按钮操作区域；手机端由全局蓝底顶栏承载（删除/添加），批量删除仅桌面端 -->
         <a-row style="margin-left: 14px" v-if="device !== 'mobile'">
           <a-button v-if="btnEnableList.indexOf(1)>-1" @click="handleAdd()" type="primary">添加类别</a-button>
           <a-button v-if="btnEnableList.indexOf(1)>-1" title="删除多条数据" @click="batchDel" type="default">批量删除</a-button>
@@ -183,8 +188,13 @@
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="上级目录">
             <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}"
                            allow-clear :treeDefaultExpandAll="true"
-                           :treeData="treeData" v-decorator="[ 'parentId' ]" placeholder="请选择上级目录">
+                           :treeData="treeData" v-decorator="[ 'parentId' ]" placeholder="请选择上级目录"
+                           @change="onParentChange">
             </a-tree-select>
+          </a-form-item>
+          <!-- 单位：仅子类目维护，一级类目无单位属性 -->
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位" v-if="!isTopLevelCategory">
+            <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="[ 'unit' ]"/>
           </a-form-item>
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="排序">
             <a-input v-decorator="[ 'sort' ]"/>
@@ -192,8 +202,8 @@
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="备注">
             <a-textarea placeholder="请输入备注":rows="2" v-decorator.trim="[ 'remark' ]" />
           </a-form-item>
-          <!-- 当前类别规格配置 -->
-          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="类别规格设置" v-if="hasSelectedCategory">
+          <!-- 当前类别规格配置：仅二级及以下类目维护，一级类目无规格值 -->
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="类别规格设置" v-if="hasSelectedCategory && !isTopLevelCategory">
             <div v-for="(module, mIndex) in specModules" :key="mIndex" style="border:1px solid #eee;border-radius:4px;padding:10px;margin-top:10px;">
               <div style="display:flex;align-items:center;gap:8px;">
                 <a-input v-model="module.name" style="width:220px" placeholder="请输入规格大类（即商品规格卡片标题）" />
@@ -300,6 +310,9 @@ export default {
       },
       orgCategoryDisabled:false,
       specModules: [],
+      treeLoadSeq: 0,
+      // 表单里当前选择的上级目录，用于判断是否为一级类目
+      formParentId: null,
     }
   },
   computed: {
@@ -308,6 +321,12 @@ export default {
     },
     hasSelectedCategory() {
       return this.currSelected && this.currSelected.id != null
+    },
+    // 一级类目：无上级目录，不维护单位，也不配置规格值
+    isTopLevelCategory() {
+      if (!this.hasSelectedCategory) return false
+      const parentId = this.formParentId
+      return parentId === null || parentId === undefined || parentId === ''
     }
   },
   mounted() {
@@ -328,13 +347,13 @@ export default {
     clearMobileHeaderActions()
   },
   methods: {
-    // 注册手机端顶部按钮：添加类别（需有按钮权限）、刷新；批量删除仅桌面端
+    // 注册手机端顶部按钮：删除当前类别、添加类别（需有按钮权限）
     registerHeaderActions() {
       const actions = []
+      actions.push({ key: 'delete', icon: 'delete', handler: this.handleDeleteSelected })
       if (this.btnEnableList.indexOf(1) > -1) {
         actions.push({ key: 'add', icon: 'plus', handler: this.handleAdd })
       }
-      actions.push({ key: 'refresh', icon: 'reload', handler: this.refresh })
       setMobileHeaderActions(actions)
     },
     loadData() {
@@ -342,14 +361,17 @@ export default {
     },
     loadTree() {
       let that = this
-      that.treeData = []
-      that.categoryTree = []
+      // created 与 activated 会同时触发加载，用序号只采用最后一次请求结果，避免类别重复加载两遍
+      const seq = ++this.treeLoadSeq
       let params = {};
       params.id='';
       queryMaterialCategoryTreeList(params).then((res) => {
+        if (seq !== that.treeLoadSeq) return
+        that.treeData = []
+        that.categoryTree = []
+        that.allTreeKeys = []
+        that.iExpandedKeys = []
         if (res) {
-          //类别全选后，再添加类别，选中数量增多
-          this.allTreeKeys = [];
           for (let i = 0; i < res.length; i++) {
             let temp = res[i]
             that.categoryTree.push(temp)
@@ -426,6 +448,30 @@ export default {
         })
       }
     },
+    // 手机端顶栏：删除当前选中的类别
+    handleDeleteSelected() {
+      if (!this.hasSelectedCategory) {
+        this.$message.warning('请先选择一个类别!')
+        return
+      }
+      let that = this
+      const selected = this.currSelected
+      this.$confirm({
+        title: '确认删除',
+        content: '确定要删除类别「' + (selected.title || selected.name || '') + '」吗?',
+        onOk: function () {
+          return deleteAction(that.url.delete, {id: selected.id}).then((res) => {
+            if (res.code == 200) {
+              that.$message.success(res.data.message || '删除成功!')
+              that.onClearSelected()
+              that.loadTree()
+            } else {
+              that.$message.warning((res.data && res.data.message) || '删除失败')
+            }
+          })
+        }
+      })
+    },
     nodeModalOk() {
       this.loadTree()
     },
@@ -463,12 +509,14 @@ export default {
             record.remark = res.data.remark;
             record.categoryLevel = res.data.categoryLevel;
             record.specConfig = res.data.specConfig
+            record.unit = res.data.unit
             this.specModules = this.parseSpecConfig(record.specConfig)
             console.log('onSelect-record', record)
             this.currSelected = Object.assign({}, record)
             this.model = this.currSelected
             this.selectedKeys = [record.key]
             this.model.parentId = record.parentId
+            this.formParentId = record.parentId
             this.setValuesToForm(record)
           }
         }
@@ -489,7 +537,18 @@ export default {
     setValuesToForm(record) {
       this.$nextTick(() => {
         this.form.setFieldsValue(pick(record, 'name','serialNo', 'parentId', 'sort', 'remark'))
+        // 子类目才回填单位（一级类目无单位属性，输入框不渲染）
+        if (!this.isTopLevelCategory) {
+          this.form.setFieldsValue({ unit: record.unit || '' })
+        }
       })
+    },
+    // 改变上级目录：切换一级/子类目时同步单位输入框
+    onParentChange(value) {
+      this.formParentId = value === undefined || value === '' ? null : value
+      if (this.isTopLevelCategory) {
+        this.form.setFieldsValue({ unit: '' })
+      }
     },
     getCurrSelectedTitle() {
       return !this.currSelected.title ? '' : this.currSelected.title
@@ -499,6 +558,7 @@ export default {
       this.checkedKeys = []
       this.currSelected = {}
       this.form.resetFields()
+      this.formParentId = null
       this.selectedKeys = []
       this.specModules = []
     },
@@ -519,36 +579,43 @@ export default {
             return
           }
           let formData = Object.assign(this.currSelected, values)
-          const configuredModules = this.specModules.map(item => ({
-            name: (item.name || '').trim(),
-            enableImage: !!item.enableImage,
-            childNames: (item.childNames || []).map(name => (name || '').trim()).filter(Boolean)
-          }))
-          if (configuredModules.some(item => !item.name)) {
-            this.$message.warning('请填写所有规格名称')
-            return
+          // 一级类目无单位属性：保存时清空单位
+          if (this.isTopLevelCategory) {
+            formData.unit = null
           }
-          const names = configuredModules.map(item => item.name.toLowerCase())
-          if (new Set(names).size !== names.length) {
-            this.$message.warning('规格名称不能重复')
-            return
-          }
-          // 每个规格大类（商品规格卡片标题）下至少需要一个子规格
-          const emptyChildModule = configuredModules.find(item => item.childNames.length === 0)
-          if (emptyChildModule) {
-            this.$message.warning('规格大类「' + emptyChildModule.name + '」至少需要一个子规格')
-            return
-          }
-          for (let i = 0; i < configuredModules.length; i++) {
-            const childNames = configuredModules[i].childNames
-            if (new Set(childNames.map(name => name.toLowerCase())).size !== childNames.length) {
-              this.$message.warning('同一规格下的子规格名称不能重复')
+          // 一级类目无规格值：不校验规格，也不覆盖已有规格配置
+          if (!this.isTopLevelCategory) {
+            const configuredModules = this.specModules.map(item => ({
+              name: (item.name || '').trim(),
+              enableImage: !!item.enableImage,
+              childNames: (item.childNames || []).map(name => (name || '').trim()).filter(Boolean)
+            }))
+            if (configuredModules.some(item => !item.name)) {
+              this.$message.warning('请填写所有规格名称')
               return
             }
-          }
-          // 保存当前类别的规格配置
-          if (this.hasSelectedCategory) {
-            formData.specConfig = configuredModules.length ? JSON.stringify(configuredModules) : null
+            const names = configuredModules.map(item => item.name.toLowerCase())
+            if (new Set(names).size !== names.length) {
+              this.$message.warning('规格名称不能重复')
+              return
+            }
+            // 每个规格大类（商品规格卡片标题）下至少需要一个子规格
+            const emptyChildModule = configuredModules.find(item => item.childNames.length === 0)
+            if (emptyChildModule) {
+              this.$message.warning('规格大类「' + emptyChildModule.name + '」至少需要一个子规格')
+              return
+            }
+            for (let i = 0; i < configuredModules.length; i++) {
+              const childNames = configuredModules[i].childNames
+              if (new Set(childNames.map(name => name.toLowerCase())).size !== childNames.length) {
+                this.$message.warning('同一规格下的子规格名称不能重复')
+                return
+              }
+            }
+            // 保存当前类别的规格配置
+            if (this.hasSelectedCategory) {
+              formData.specConfig = configuredModules.length ? JSON.stringify(configuredModules) : null
+            }
           }
           console.log('Received values of form: ', formData)
           httpAction(this.url.edit, formData, 'put').then((res) => {
@@ -877,23 +944,51 @@ export default {
   margin-top: 8px;
 }
 
+/* 标准底栏：按钮高 40px，右对齐 */
 .mcl-footer {
   display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .mcl-footer .ant-btn {
-  flex: 1 1 0;
-  margin: 0;
+  height: 40px;
+  padding: 0 20px;
+  font-size: 15px;
 }
 
 .mcl-footer .ant-btn + .ant-btn {
   margin-left: 10px;
+}
+
+.mcl-footer .ant-btn-primary {
+  min-width: 96px;
+  font-weight: 500;
 }
 </style>
 <style>
 /* 手机端：MobilePage 内部节点与表单行样式（子组件内部结构，scoped 无法命中） */
 .mcl-page .mobile-page-body {
   background: #f0f2f5;
+}
+
+/* 页面高度按动态视口计算，避免 iOS 底部工具栏遮挡底栏 */
+.mcl-page.mobile-page-fill.mobile-page-no-header {
+  height: calc(100vh - 49px);
+  height: calc(100dvh - 49px);
+}
+
+/* 底栏固定贴屏幕底部，并预留 iPhone 底部安全区 */
+.mcl-page .mobile-page-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid #eee;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .mcl-page .ant-tree {

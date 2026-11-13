@@ -460,7 +460,6 @@
       @cancel="handleSpecRecognizeOcrClose" />
     <!-- 单图识别结果预览：标准弹层，底部栏提供属性设置与保存 -->
     <a-modal
-      :title="aggregateModalTitle"
       :visible="specAggregateVisible"
       :width="isMobileView ? '100%' : 760"
       :zIndex="1150"
@@ -488,7 +487,6 @@
       <a-spin :spinning="specAggregateLoading">
         <!-- 顶栏独立卡片：识别到的文字，置顶显示且不随内容滚动 -->
         <div v-if="specAggregateResult && allOcrTags.length" class="agg-ocr-card">
-          <div class="agg-ocr-title">识别内容（点击后只填入值）</div>
           <div class="agg-ocr-list">
             <a-tag v-for="(tag, tIndex) in ocrTagList" :key="'ocr-' + tIndex" class="agg-ocr-item"
                    :title="formatOcrCardTag(tag)" @click="fillFocusedInput(tag)">{{ formatOcrCardTag(tag) }}</a-tag>
@@ -1222,6 +1220,8 @@
               'categoryId','enableSerialNumber','barCode','weight','remark','mfrs',
               'otherField1','otherField2','otherField3','otherField4','otherField5','otherField6','otherField7',
               'fabric','safetyCategory','executiveStandard','grade','inspection','filler'))
+            // 单位为空时按类目默认单位补全
+            this.applyCategoryUnitFromTree()
             // 回填完成后记录初始数据快照
             this.captureInitialSnapshot()
             // 若存在本地草稿（例如刷新前自动保存的），恢复它
@@ -2004,6 +2004,8 @@
             }
             that.applyCategoryImageStateFromCategory();
             that.tryApplyPresetCategory();
+            that.applyCategoryUnitFromTree();
+            that.applyCategoryUnitToAggregate();
           }
         })
       },
@@ -2100,6 +2102,7 @@
         // 在 categoryTree 中查找选中节点
         const selectedNode = this.findNodeById(this.categoryTree, value)
         if (!selectedNode) return
+        this.applyCategoryUnit(selectedNode)
         if (selectedNode.specConfig) {
           let categorySpecs = []
           try {
@@ -2123,6 +2126,40 @@
         this.specLocked = false
         this.onSpecChange()
         this.$nextTick(() => this.loadAllCategorySpecSuggestions())
+      },
+      /** 取类目默认单位（单位只维护在子类目上） */
+      resolveCategoryUnit(node) {
+        if (!node) return ''
+        return (node.unit || '').trim()
+      },
+      /** 选择类别时带出类目默认单位，已填写则不覆盖 */
+      applyCategoryUnit(node) {
+        const unit = this.resolveCategoryUnit(node)
+        if (!unit) return
+        const current = this.form.getFieldValue('unit')
+        if (current === undefined || current === null || String(current).trim() === '') {
+          this.form.setFieldsValue({ unit: unit })
+        }
+      },
+      /** 编辑已有商品时，单位为空则按类目默认单位补全 */
+      applyCategoryUnitFromTree() {
+        const categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        if (!categoryId) return
+        const node = this.findNodeById(this.categoryTree, categoryId)
+        if (node) this.applyCategoryUnit(node)
+      },
+      /** 识别结果页：单位为空时按所选类目默认单位填充 */
+      applyCategoryUnitToAggregate() {
+        const result = this.specAggregateResult
+        if (!result || !result.commonProps) return
+        const current = result.commonProps.unit
+        if (current !== undefined && current !== null && String(current).trim() !== '') return
+        const categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
+        if (!categoryId) return
+        const node = this.findNodeById(this.categoryTree, categoryId)
+        const unit = this.resolveCategoryUnit(node)
+        if (!unit) return
+        this.$set(result.commonProps, 'unit', unit)
       },
       // 递归查找节点
       findNodeById(nodes, id) {
@@ -2277,6 +2314,7 @@
           this.baseOcrRawMap = Object.assign({}, res.data.commonPropsRaw || {})
           this.prepareAggregateSpecGroups()
           this.prepareAggregateProps()
+          this.applyCategoryUnitToAggregate()
           this.autoNormalizeUnmatchedProps()
           this.aggFocus = null
         }).catch(() => {
@@ -2606,6 +2644,10 @@
         this.aggSaving = false
         this.aggSaveHint = ''
         this.aggSaveHintError = false
+        // AI添加：关闭识别结果弹层后回到新增商品入口页
+        if (this.aiMode) {
+          this.$emit('agg-close')
+        }
       },
       /** 识别结果页底部保存提示（弹层内可见，避免提示被弹层遮挡） */
       showAggSaveHint(text, isError) {
@@ -3917,7 +3959,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     padding: 6px 8px;
     background: #fff;
     border-radius: 12px;
@@ -3930,11 +3972,6 @@
     max-height: 24vh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-  }
-  .agg-ocr-title {
-    margin-bottom: 4px;
-    font-size: 12px;
-    color: #8c8c8c;
   }
   .agg-ocr-item {
     flex: 0 0 auto;
@@ -4942,6 +4979,10 @@
   padding: 8px;
   background: #fff;
   border-radius: 12px;
+}
+/* 收紧内容区与卡片之间的纵向间距 */
+.mm-sheet-modal.agg-sheet-modal .ant-modal-body {
+  padding: 8px;
 }
 /* 底边栏：保存反馈提示 + 属性设置图标 + 保存主按钮 */
 .agg-footer-wrap {

@@ -67,6 +67,9 @@ public class SpecRecognizeService {
     @Resource
     private UserService userService;
 
+    @Resource
+    private MaterialCategoryService materialCategoryService;
+
     /**
      * 识别单张图片
      *
@@ -76,6 +79,8 @@ public class SpecRecognizeService {
      * @param labelAliases 前端维护的属性名别名 {识别到的属性名: 基础属性字段}
      */
     public JSONObject recognize(JSONObject image, Long categoryId, JSONArray dimensions, JSONObject labelAliases) {
+        // 属性补全/归一的统计与学习样本以一级类目为准
+        categoryId = materialCategoryService.resolveRootCategoryId(categoryId);
         String rawText = image == null ? "" : trim(image.getString("rawText"));
         String imagePath = image == null ? "" : trim(image.getString("imagePath"));
         JSONObject result = new JSONObject();

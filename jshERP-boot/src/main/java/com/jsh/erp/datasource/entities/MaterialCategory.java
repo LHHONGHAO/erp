@@ -21,6 +21,9 @@ public class MaterialCategory {
 
     private String specConfig;
 
+    /** 默认单位：商品录入选择该类别时自动带出 */
+    private String unit;
+
     private Date createTime;
 
     private Date updateTime;
@@ -99,6 +102,14 @@ public class MaterialCategory {
 
     public void setSpecConfig(String specConfig) {
         this.specConfig = specConfig == null ? null : specConfig.trim();
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit == null ? null : unit.trim();
     }
 
     public Date getCreateTime() {

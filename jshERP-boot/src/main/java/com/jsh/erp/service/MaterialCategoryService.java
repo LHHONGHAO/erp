@@ -53,6 +53,24 @@ public class MaterialCategoryService {
         return result;
     }
 
+    /**
+     * 属性补全/归一以一级类目为准：二级类目上溯到其父级，一级类目取自身
+     */
+    public Long resolveRootCategoryId(Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        try {
+            MaterialCategory category = materialCategoryMapper.selectByPrimaryKey(categoryId);
+            if (category != null && category.getParentId() != null) {
+                return category.getParentId();
+            }
+        } catch (Exception e) {
+            JshException.readFail(logger, e);
+        }
+        return categoryId;
+    }
+
     public List<MaterialCategory> getMaterialCategoryListByIds(String ids)throws Exception {
         List<Long> idList = StringUtil.strToLongList(ids);
         List<MaterialCategory> list = new ArrayList<>();

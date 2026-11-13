@@ -44,6 +44,7 @@ import DictTag from '@/components/DictTag'
 import DataTablePro from '@/components/DataTablePro'
 import { initModalDrag } from '@/utils/dragModal'
 import { installScrollBlank } from '@/utils/scrollBlank'
+import { installKeyboardInputOverlay } from '@/utils/keyboardInputOverlay'
 
 Vue.config.productionTip = false
 Vue.component('DictTag', DictTag)
@@ -68,6 +69,8 @@ new Vue({
     initModalDrag()
     // 全局页面上下空白检测：所有页面加载、路由切换、尺寸/内容变化、滚动停止后自动执行
     installScrollBlank(router)
+    // 移动端键盘输入弹层：键盘弹出时页面保持原状，改在键盘上方弹层输入
+    installKeyboardInputOverlay()
     // store.commit('SET_SIDEBAR_TYPE', Vue.ls.get(SIDEBAR_TYPE, true))
     store.commit('SET_SIDEBAR_TYPE', true)
     store.commit('TOGGLE_THEME', Vue.ls.get(DEFAULT_THEME, config.navTheme))

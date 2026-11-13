@@ -141,6 +141,99 @@ public class PrintAgentController {
     }
 
     /**
+     * 配对预登记：页面填写设备端生成的「设备ID + 配对码」后调用。
+     * 设备随后凭这两个值调用 /printAgent/device/pair 换取 Token。
+     */
+    @PostMapping(value = "/pair/prepare")
+    public BaseResponseInfo preparePairing(@RequestBody JSONObject body) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        String deviceId = trimText(body.getString("deviceId"));
+        String pairCode = trimText(body.getString("pairCode"));
+        if (deviceId == null || pairCode == null) {
+            res.code = 400;
+            res.data = "设备ID和配对码不能为空";
+            return res;
+        }
+        try {
+            JSONObject data = store.preparePairing(deviceId, pairCode, 10);
+            // 旧 Token 已清空，断开在线连接让代理重新配对
+            PrintAgentSession session = registry.get(deviceId);
+            if (session != null && session.isOpen()) {
+                try {
+                    session.getSession().close();
+                } catch (Exception ignored) {
+                    // 关闭失败不影响配对
+                }
+            }
+            res.code = 200;
+            res.data = data;
+        } catch (Exception e) {
+            logger.error("打印设备配对预登记失败: " + e.getMessage(), e);
+            res.code = 500;
+            res.data = "登记失败：" + e.getMessage();
+        }
+        return res;
+    }
+
+    /**
+     * 查询配对状态，页面据此轮询「待配对 / 已配对」
+     */
+    @GetMapping(value = "/pair/status")
+    public BaseResponseInfo pairingStatus(@RequestParam(value = "deviceId") String deviceId) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        JSONObject agent = store.findByDeviceId(deviceId);
+        if (agent == null) {
+            res.code = 404;
+            res.data = "设备不存在";
+            return res;
+        }
+        PrintAgentSession session = registry.get(deviceId);
+        JSONObject data = new JSONObject(true);
+        data.put("deviceId", deviceId);
+        data.put("paired", agent.getString("paired"));
+        data.put("revoked", agent.getString("revoked"));
+        data.put("pairExpireAt", agent.getString("pairExpireAt"));
+        data.put("online", session != null && session.isOpen());
+        res.code = 200;
+        res.data = data;
+        return res;
+    }
+
+    /**
+     * 吊销设备：清空凭据并断开连接，代理无法再接入
+     */
+    @PostMapping(value = "/revoke")
+    public BaseResponseInfo revoke(@RequestBody JSONObject body) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        String deviceId = trimText(body.getString("deviceId"));
+        if (deviceId == null) {
+            res.code = 400;
+            res.data = "缺少设备ID";
+            return res;
+        }
+        boolean ok = store.revokeAgent(deviceId);
+        PrintAgentSession session = registry.get(deviceId);
+        if (session != null && session.isOpen()) {
+            try {
+                session.getSession().close();
+            } catch (Exception ignored) {
+                // 关闭失败不影响吊销
+            }
+        }
+        res.code = ok ? 200 : 500;
+        res.data = ok ? "ok" : "吊销失败，设备不存在";
+        return res;
+    }
+
+    private String trimText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
      * 测试打印：下发一张内置测试标签，用于确认代理、打印机与纸张通路是否正常
      */
     @PostMapping(value = "/test")

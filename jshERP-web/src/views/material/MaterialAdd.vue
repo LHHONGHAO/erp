@@ -46,7 +46,7 @@
           <input ref="aiCameraInput" type="file" accept="image/*" capture="environment" class="ma-ai-file" @change="onAiFilesChange" />
           <input ref="aiGalleryInput" type="file" accept="image/*" class="ma-ai-file" @change="onAiFilesChange" />
         </div>
-        <material-modal v-else ref="form" inline :aiMode="mode === 'ai'" @close="onClose" @ok="onSaved" />
+        <material-modal v-else ref="form" inline :aiMode="mode === 'ai'" @close="onClose" @agg-close="returnToCategoryGate" @ok="onSaved" />
       </template>
     </div>
     <!-- 类别新增弹层：手机端为全屏蓝底标准弹层，桌面端为居中弹窗 -->

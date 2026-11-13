@@ -49,6 +49,9 @@ public class SpecValueSampleService {
     @Resource
     private PlatformTransactionManager transactionManager;
 
+    @Resource
+    private MaterialCategoryService materialCategoryService;
+
     /**
      * 规格值比对：精确匹配 -> 别名匹配 -> 数值模糊匹配（单位缺失/写法不同）
      */
@@ -61,6 +64,8 @@ public class SpecValueSampleService {
      * childName 用于隔离同一规格名下的不同子项（尺寸下的被套/床单/枕套、花色下的颜色）
      */
     public JSONObject match(String rawText, Long categoryId, Long attributeId, String childName) {
+        // 学习样本按一级类目隔离
+        categoryId = materialCategoryService.resolveRootCategoryId(categoryId);
         String scopeChild = cut(childName == null ? "" : childName.trim(), 64);
         JSONObject result = new JSONObject();
         String normKey = SpecValueNormalizer.normKey(rawText);
@@ -259,6 +264,8 @@ public class SpecValueSampleService {
      */
     public JSONObject learn(String rawText, String correctedValue, Long categoryId, Long attributeId,
                             String childName, Long materialId, Long userId) {
+        // 学习样本按一级类目沉淀
+        categoryId = materialCategoryService.resolveRootCategoryId(categoryId);
         String scopeChild = cut(childName == null ? "" : childName.trim(), 64);
         JSONObject result = new JSONObject();
         if (!StringUtil.isNotEmpty(rawText) && !StringUtil.isNotEmpty(correctedValue)) {

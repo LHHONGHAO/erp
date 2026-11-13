@@ -1,6 +1,5 @@
 package com.jsh.erp.print;
 
-import com.alibaba.fastjson.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -41,21 +40,14 @@ public class PrintAgentHandshakeInterceptor implements HandshakeInterceptor {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
-        JSONObject agent = store.findByDeviceId(deviceId);
-        if (agent == null) {
-            logger.warn("打印代理鉴权失败，设备未登记: {}", deviceId);
-            response.setStatusCode(HttpStatus.FORBIDDEN);
-            return false;
-        }
-        if (!"1".equals(agent.getString("enabled"))) {
-            logger.warn("打印代理鉴权失败，设备已停用: {}", deviceId);
-            response.setStatusCode(HttpStatus.FORBIDDEN);
-            return false;
-        }
-        String expect = agent.getString("token");
-        if (expect == null || !expect.equals(token)) {
-            logger.warn("打印代理鉴权失败，Token 不正确: {}", deviceId);
-            response.setStatusCode(HttpStatus.FORBIDDEN);
+        String check = store.checkToken(deviceId, token);
+        if (!"ok".equals(check)) {
+            logger.warn("打印代理鉴权失败({}): {}", check, deviceId);
+            HttpStatus status = "not_registered".equals(check)
+                    ? HttpStatus.FORBIDDEN
+                    : ("pending".equals(check) || "expired".equals(check)
+                    ? HttpStatus.UNAUTHORIZED : HttpStatus.FORBIDDEN);
+            response.setStatusCode(status);
             return false;
         }
         attributes.put("deviceId", deviceId);

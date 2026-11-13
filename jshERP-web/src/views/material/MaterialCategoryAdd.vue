@@ -20,6 +20,10 @@
           placeholder="请选择上级目录"
           @change="onParentChange" />
       </a-form-item>
+      <!-- 单位：仅子类目维护，一级类目无单位属性 -->
+      <a-form-item label="单位" v-if="parentId">
+        <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="['unit']" />
+      </a-form-item>
       <a-form-item label="排序">
         <a-input v-decorator="['sort']" />
       </a-form-item>
@@ -207,6 +211,10 @@
             return
           }
           const formData = Object.assign({}, values)
+          // 一级类目无单位、无规格值
+          if (!this.parentId) {
+            formData.unit = null
+          }
           formData.specConfig = configuredModules.length ? JSON.stringify(configuredModules) : null
           this.confirmLoading = true
           httpAction(this.url.add, formData, 'post').then(res => {

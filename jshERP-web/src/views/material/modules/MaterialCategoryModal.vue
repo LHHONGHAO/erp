@@ -43,6 +43,10 @@
                  @change="onParentChange">
             </a-tree-select>
           </a-form-item>
+          <!-- 单位：仅子类目维护，一级类目无单位属性 -->
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位" v-if="parentId">
+            <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="[ 'unit' ]"/>
+          </a-form-item>
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="排序">
             <a-input v-decorator="[ 'sort' ]"/>
           </a-form-item>
@@ -166,11 +170,12 @@
         this.form.resetFields();
         this.model = Object.assign({}, record || {});
         this.parentId = this.model.parentId;
-        this.specModules = this.parseSpecConfig(this.model.specConfig)
+        // 一级类目无规格值
+        this.specModules = this.model.parentId ? this.parseSpecConfig(this.model.specConfig) : []
         this.visible = true;
         this.loadTreeData();
         this.$nextTick(() => {
-          this.form.setFieldsValue(pick(record, 'name','serialNo', 'parentId', 'sort', 'remark'))
+          this.form.setFieldsValue(pick(record, 'name','serialNo', 'parentId', 'unit', 'sort', 'remark'))
         });
       },
       close () {
@@ -185,6 +190,10 @@
           if (!err) {
             that.confirmLoading = true;
             let formData = Object.assign(this.model, values);
+            // 一级类目无单位、无规格值
+            if (!this.parentId) {
+              formData.unit = null
+            }
             const configuredModules = this.specModules.map(item => ({
               name: (item.name || '').trim(),
               enableImage: !!item.enableImage,

@@ -56,7 +56,10 @@ public class TenantConfig {
                     // 这里可以判断是否过滤表
                     if ("jsh_sequence".equals(tableName) || "jsh_function".equals(tableName)
                             || "jsh_platform_config".equals(tableName) || "jsh_tenant".equals(tableName)
-                            || "jsh_sys_dict_data".equals(tableName) || "jsh_sys_dict_type".equals(tableName)) {
+                            || "jsh_sys_dict_data".equals(tableName) || "jsh_sys_dict_type".equals(tableName)
+                            // 系统级表：打印代理与列配置不参与租户隔离，避免被追加不存在的 tenant_id 条件
+                            || "print_agent".equals(tableName) || "print_task".equals(tableName)
+                            || "print_template".equals(tableName) || "jsh_table_column_config".equals(tableName)) {
                         res = true;
                     } else {
                         res = false;

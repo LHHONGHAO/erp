@@ -21,12 +21,19 @@
   指定 Maven mvn.cmd 路径，不传则自动探测
 .PARAMETER Port
   HTTPS 服务端口，默认 9999（HTTP 固定 9998，用于证书安装与兼容访问）
+.PARAMETER DbUser
+  数据库账号；不传则依次读取环境变量 SPRING_DATASOURCE_USERNAME、deploy.local.json 的 dbUser
+.PARAMETER DbPassword
+  数据库口令；不传则依次读取环境变量 SPRING_DATASOURCE_PASSWORD、deploy.local.json 的 dbPassword
+.PARAMETER UpgradeSql
+  可选的数据库升级 SQL 文件（如 docs\category_unit_upgrade.sql），启动前自动执行
 .EXAMPLE
   .\deploy-local.ps1                # 完整部署
   .\deploy-local.ps1 -SkipBoot      # 只更新前端
   .\deploy-local.ps1 -SkipWeb       # 只更新后端
   .\deploy-local.ps1 -StartOnly     # 只启动（不构建）
   .\deploy-local.ps1 -StopOnly      # 只停止
+  .\deploy-local.ps1 -UpgradeSql .\jshERP-boot\docs\category_unit_upgrade.sql
 #>
 param(
     [switch]$SkipWeb,
@@ -37,7 +44,10 @@ param(
     [switch]$NoPull,
     [string]$JavaHome = '',
     [string]$MvnPath  = '',
-    [int]$Port        = 9999
+    [int]$Port        = 9999,
+    [string]$DbUser   = '',
+    [string]$DbPassword = '',
+    [string]$UpgradeSql = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,6 +80,28 @@ if (($DataDirFull -ieq $BackupDirFull) -or
     throw 'dataDir 和 backupDir 必须是互相独立的目录'
 }
 $DataDirs = @('upload', 'export', 'config', 'logs')
+
+# 本机私有配置（不入库）：数据库账号口令等，避免写入仓库
+$localCfgPath = Join-Path $Root 'deploy.local.json'
+$localCfg = @{}
+if (Test-Path $localCfgPath) {
+    try {
+        (Get-Content $localCfgPath -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties |
+            ForEach-Object { $localCfg[$_.Name] = $_.Value }
+    } catch {
+        Write-Warning "deploy.local.json 解析失败，已忽略: $_"
+    }
+}
+if (-not $DbUser) {
+    if ($env:SPRING_DATASOURCE_USERNAME) { $DbUser = $env:SPRING_DATASOURCE_USERNAME }
+    elseif ($localCfg['dbUser']) { $DbUser = [string]$localCfg['dbUser'] }
+}
+if (-not $DbPassword) {
+    if ($env:SPRING_DATASOURCE_PASSWORD) { $DbPassword = $env:SPRING_DATASOURCE_PASSWORD }
+    elseif ($localCfg['dbPassword']) { $DbPassword = [string]$localCfg['dbPassword'] }
+}
+$script:DbUser = $DbUser
+$script:DbPassword = $DbPassword
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  JSH_ERP 本地部署脚本" -ForegroundColor Cyan
@@ -159,6 +191,115 @@ function Stop-OldService([int]$ListenPort) {
     Start-Sleep -Milliseconds 500
 }
 
+function Test-TcpPort {
+    param([string]$TargetHost, [int]$TargetPort, [int]$TimeoutMs = 1500)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $iar = $client.BeginConnect($TargetHost, $TargetPort, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs)) { return $false }
+        $client.EndConnect($iar)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
+
+function Assert-Dependencies {
+    Write-Step "检查依赖服务（MySQL / Redis）"
+    if (-not (Test-TcpPort '127.0.0.1' 3306)) {
+        Write-Fail "MySQL 127.0.0.1:3306 未监听，请先启动 MySQL 服务（如 MySQL84）"
+        exit 1
+    }
+    Write-Ok "MySQL 3306 正常"
+    if (-not (Test-TcpPort '127.0.0.1' 6379)) {
+        Write-Fail "Redis 127.0.0.1:6379 未监听，请先启动 Redis 服务"
+        exit 1
+    }
+    Write-Ok "Redis 6379 正常"
+    if (-not $script:DbUser) {
+        Write-Warn "未提供数据库账号（-DbUser / SPRING_DATASOURCE_USERNAME / deploy.local.json），外部配置口令不一致时启动会失败"
+    }
+}
+
+function Find-MysqlClient {
+    $found = Get-ChildItem -Path "$env:ProgramFiles\MySQL" -Recurse -Filter 'mysql.exe' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like '*\bin\mysql.exe' } |
+        Select-Object -First 1 -ExpandProperty FullName
+    return $found
+}
+
+function Invoke-DbUpgrade([string]$SqlFile) {
+    $SqlFile = (Resolve-Path $SqlFile -ErrorAction Stop).Path
+    if (-not $script:DbUser) {
+        Write-Fail "数据库升级需要账号口令：请传 -DbUser/-DbPassword，或配置 deploy.local.json"
+        exit 1
+    }
+    $mysql = Find-MysqlClient
+    if (-not $mysql) {
+        Write-Fail "未找到 mysql.exe，无法执行数据库升级"
+        exit 1
+    }
+    Write-Step "执行数据库升级 $SqlFile"
+    $env:MYSQL_PWD = $script:DbPassword
+    try {
+        $sql = Get-Content $SqlFile -Raw -Encoding UTF8
+        $out = & $mysql '--host=127.0.0.1' "--user=$($script:DbUser)" '--default-character-set=utf8mb4' '--database=jsh_erp' '-e' $sql 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw ($out | Out-String)
+        }
+        if ($out) { Write-Host "    $($out | Out-String)".TrimEnd() -ForegroundColor DarkGray }
+        Write-Ok "数据库升级完成"
+    } finally {
+        Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
+    }
+}
+
+function Write-StartScript {
+    # 生成/更新开机自启脚本（含本机数据库口令，放在数据目录同级，不入仓库）
+    if (-not $script:DbUser) { return }
+    $parent = Split-Path -Parent $DataDir
+    if (-not $parent) { return }
+    $cmdPath = Join-Path $parent 'start-jsh-erp.cmd'
+    $staticDir = ($StaticLink -replace '\\', '/')
+    $dataDirArg = ($DataDir -replace '\\', '/')
+    $logDir = Join-Path $DataDir 'logs'
+    $lines = @(
+        '@echo off',
+        'chcp 65001 >nul',
+        'title JSH_ERP 服务',
+        "set SPRING_DATASOURCE_USERNAME=$($script:DbUser)",
+        "set SPRING_DATASOURCE_PASSWORD=$($script:DbPassword)",
+        'set SPRING_REDIS_HOST=127.0.0.1',
+        'set SPRING_REDIS_PORT=6379',
+        "if not exist `"$logDir`" mkdir `"$logDir`"",
+        "cd /d `"$BootDir`"",
+        "`"$javaExe`" -Xms256m -Xmx1024m -Dspring.profiles.active=dev -Dfile.encoding=UTF-8 `"-Dspring.resources.static-locations=file:$staticDir/`" `"-Djsh.data.dir=$dataDirArg`" `"-Dlogs.home=$logDirArg`" -jar `"$Jar`" >> `"$(Join-Path $logDir 'app-console.log')`" 2>&1"
+    )
+    [IO.File]::WriteAllText($cmdPath, ($lines -join "`r`n") + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    Write-Ok "开机启动脚本已更新: $cmdPath"
+}
+
+function Show-StartupFailure {
+    # 启动失败时输出日志尾部，避免只看到“端口未监听”
+    $logDir = Join-Path $DataDir 'logs'
+    $candidates = @(
+        (Join-Path $logDir 'jshERP.log'),
+        (Join-Path $BootDir 'deploy-backend.log'),
+        (Join-Path $logDir 'app-console.log')
+    )
+    foreach ($f in $candidates) {
+        if (Test-Path $f) {
+            Write-Host "    ---- $f (最后 30 行) ----" -ForegroundColor DarkGray
+            Get-Content $f -Tail 30 -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "    $_" -ForegroundColor DarkGray
+            }
+            break
+        }
+    }
+}
+
 function Find-Java {
     param([string]$Hint)
     $candidates = @()
@@ -166,6 +307,8 @@ function Find-Java {
     $candidates += @(
         "$env:USERPROFILE\.jdks\jdk8u492-b09",
         "C:\Program Files\Eclipse Adoptium\jdk-8.0.492.9-hotspot",
+        "$env:ProgramFiles\Eclipse Adoptium\jdk8",
+        "C:\Program Files\Eclipse Adoptium\jdk8",
         "C:\Program Files\Java\jdk1.8.0_*",
         "$env:ProgramFiles\Java\jdk1.8.0_*"
     )
@@ -184,12 +327,35 @@ function Find-Java {
     throw "未找到 JDK 8，请通过 -JavaHome 指定"
 }
 
+function Install-Jdk8 {
+    # 本机未安装 JDK 时，自动使用项目根目录随附的 OpenJDK8 安装包静默安装
+    $msi = Get-ChildItem -Path $Root -Filter 'OpenJDK8U-jdk_x64_windows_hotspot_*.msi' -File -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $msi) { return $false }
+    Write-Step "未检测到 JDK8，自动安装 $($msi.Name)"
+    $installDir = "$env:ProgramFiles\Eclipse Adoptium\jdk8"
+    $logPath = Join-Path $Root 'jdk8-install.log'
+    $p = Start-Process msiexec.exe -ArgumentList @(
+        '/i', "`"$($msi.FullName)`"", '/qn',
+        'ADDLOCAL=FeatureMain,FeatureEnvironment,FeatureJarFileRunWith,FeatureJavaHome',
+        "INSTALLDIR=`"$installDir`"", '/l*v', "`"$logPath`""
+    ) -Wait -PassThru
+    if ($p.ExitCode -ne 0) {
+        Write-Fail "JDK 安装失败（退出码 $($p.ExitCode)），详见 $logPath"
+        return $false
+    }
+    Write-Ok "JDK 已安装到 $installDir"
+    return (Test-Path (Join-Path $installDir 'bin\java.exe'))
+}
+
 function Find-Maven {
     param([string]$Hint)
     if ($Hint -and (Test-Path $Hint)) { return $Hint }
     $candidates = @()
     if ($env:MAVEN_HOME) { $candidates += "$env:MAVEN_HOME\bin\mvn.cmd" }
     $candidates += @(
+        "$Root\tools\apache-maven-3.6.3\bin\mvn.cmd",
+        "$Root\tools\apache-maven-*\bin\mvn.cmd",
         "C:\Program Files\apache-maven-3.9.16\bin\mvn.cmd",
         "C:\apache-maven-*\bin\mvn.cmd",
         "$env:USERPROFILE\apache-maven-*\bin\mvn.cmd"
@@ -247,6 +413,8 @@ function Launch-Service {
         "-Dlogs.home=$logDirArg",
         '-jar', $Jar
     )
+    # 同步开机自启脚本（含本机数据库口令，位于数据目录同级，不入仓库）
+    Write-StartScript
     $proc = Start-Process -FilePath $javaExe `
         -ArgumentList $argList `
         -WorkingDirectory $BootDir `
@@ -266,7 +434,18 @@ function Launch-Service {
 
     if (-not (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {
         Write-Warn "$($waited)s 内未监听到 $Port 端口"
+        if ($proc.HasExited) { Write-Warn "Java 进程已退出，退出码 $($proc.ExitCode)" }
+        Show-StartupFailure
         Write-Host "    请检查日志: $Log" -ForegroundColor DarkGray
+        exit 1
+    } else {
+        # HTTP 健康检查（HTTP 连接器固定 9998）
+        try {
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$HttpPort/user/randomImage" -UseBasicParsing -TimeoutSec 15
+            Write-Ok "HTTP 健康检查通过（$($resp.StatusCode)）"
+        } catch {
+            Write-Warn "HTTP 健康检查失败: $_"
+        }
     }
 
     # 取默认路由所在网卡的 IPv4，避免误取 WSL/Hyper-V 虚拟网卡地址
@@ -304,11 +483,29 @@ if ($StopOnly) {
     exit 0
 }
 
-# 自动探测工具链
-$env:JAVA_HOME = Find-Java -Hint $JavaHome
+# 自动探测工具链（未安装 JDK 时尝试用随附 msi 静默安装）
+try {
+    $env:JAVA_HOME = Find-Java -Hint $JavaHome
+} catch {
+    if (Install-Jdk8) {
+        $env:JAVA_HOME = Find-Java -Hint $JavaHome
+    } else {
+        Write-Fail $_.Exception.Message
+        exit 1
+    }
+}
 $env:Path     = "$env:JAVA_HOME\bin;$env:Path"
 $javaExe      = Join-Path $env:JAVA_HOME 'bin\java.exe'
 Write-Ok "JDK  : $env:JAVA_HOME"
+
+# 数据库凭据通过环境变量注入，优先级高于 jshERP-boot/application-dev.yml
+if ($script:DbUser) {
+    $env:SPRING_DATASOURCE_USERNAME = $script:DbUser
+    Write-Ok "DB账号: $script:DbUser"
+} else {
+    Write-Warn "未提供数据库账号，将使用 application-dev.yml 中的配置"
+}
+if ($script:DbPassword) { $env:SPRING_DATASOURCE_PASSWORD = $script:DbPassword }
 
 $mvn = Find-Maven -Hint $MvnPath
 Write-Ok "Maven: $mvn"
@@ -332,6 +529,12 @@ $npmCmd = (Get-Command npm.cmd -ErrorAction Stop).Source
 $gitCmd = (Get-Command git.exe -ErrorAction Stop).Source
 Write-Ok "npm  : $npmCmd"
 Write-Ok "git  : $gitCmd"
+
+# ---------- 依赖检查与数据库升级 ----------
+Assert-Dependencies
+if ($UpgradeSql) {
+    Invoke-DbUpgrade $UpgradeSql
+}
 
 # ---------- 停止旧服务 ----------
 Stop-OldService $Port

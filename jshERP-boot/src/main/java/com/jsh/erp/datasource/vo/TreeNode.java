@@ -46,6 +46,11 @@ public class TreeNode {
     private String specConfig;
 
     /**
+     * unit 类目默认单位
+     * */
+    private String unit;
+
+    /**
      * categoryLevel 类目级别
      * */
     private Short categoryLevel;
@@ -133,6 +138,14 @@ public class TreeNode {
 
     public void setSpecConfig(String specConfig) {
         this.specConfig = specConfig;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
     }
 
     public Short getCategoryLevel() {

@@ -1081,6 +1081,10 @@
       isGoodsTable(key) {
         return key === GOODS_TABLE_KEY
       },
+      // 文字类元素：宽度可拖到文字自然宽度以下触发折行，高度由内容自动撑开
+      isTextElem(key) {
+        return !this.isCode(key) && !this.isGoodsTable(key) && key !== 'dn_table'
+      },
       isGoodsKey(key) {
         return key === GOODS_KEY
       },
@@ -1220,6 +1224,10 @@
         this.selectedKeys.forEach(function(key) {
           if (!self.attrStyles[key]) self.$set(self.attrStyles, key, {})
           self.$set(self.attrStyles[key], field, val)
+          // 文字类改宽度后高度跟随内容：清掉固定高度，避免折行被裁切
+          if (field === 'width' && self.isTextElem(key) && self.attrStyles[key].height) {
+            self.$delete(self.attrStyles[key], 'height')
+          }
         })
         this.pushSnapshot()
       },
@@ -1448,13 +1456,19 @@
           var s = self.attrStyles[k] || {}
           dragOrigins[k] = { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
         })
-        // 缩放边框时的最小尺寸：不得小于文字本身占用的尺寸
+        // 缩放边框时的最小尺寸
         var minW = 12
         var minH = 12
         if (mode === 'resize') {
-          var natural = this.measureContentSize(key)
-          if (natural.width > 0) minW = natural.width
-          if (natural.height > 0) minH = natural.height
+          if (this.isTextElem(key)) {
+            // 文字类允许拖窄到文字自然宽度以下：由文字自动折行，高度随内容增长
+            minW = 12
+            minH = 12
+          } else {
+            var natural = this.measureContentSize(key)
+            if (natural.width > 0) minW = natural.width
+            if (natural.height > 0) minH = natural.height
+          }
         }
         this.dragging = {
           active: true,
@@ -1518,13 +1532,20 @@
             this.$set(this.attrStyles[d.key], 'y', Math.round(newY))
           }
         } else if (d.mode === 'resize') {
-          // 调整文字框尺寸：不得小于文字本身大小，避免文字被压缩重叠
           var minW = d.minW || 12
-          var minH = d.minH || 12
-          var newW = Math.max(minW, Math.round(d.origW + dx / this.zoom))
-          var newH = Math.max(minH, Math.round(d.origH + dy / this.zoom))
-          this.$set(this.attrStyles[d.key], 'width', newW)
-          this.$set(this.attrStyles[d.key], 'height', newH)
+          if (this.isTextElem(d.key)) {
+            // 文字类：只改宽度，清掉固定高度，让文字折行后自动撑高/回缩
+            var textW = Math.max(minW, Math.round(d.origW + dx / this.zoom))
+            this.$set(this.attrStyles[d.key], 'width', textW)
+            if (this.attrStyles[d.key].height) this.$delete(this.attrStyles[d.key], 'height')
+          } else {
+            // 其他元素（条码/表格等）：保持原宽高联动
+            var minH = d.minH || 12
+            var newW = Math.max(minW, Math.round(d.origW + dx / this.zoom))
+            var newH = Math.max(minH, Math.round(d.origH + dy / this.zoom))
+            this.$set(this.attrStyles[d.key], 'width', newW)
+            this.$set(this.attrStyles[d.key], 'height', newH)
+          }
         }
       },
       onPointerUp() {

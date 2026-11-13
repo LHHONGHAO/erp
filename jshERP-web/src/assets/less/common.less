@@ -194,7 +194,8 @@
 
 /* ============================================================
    手机端标准弹层页面（全屏浮层）
-   顶栏白底、标题居中、右侧关闭，内容区可滚动，底部单个主按钮。
+   顶栏蓝底 49px、标题左对齐、副标题同行、右侧关闭固定；
+   内容区可滚动，底部操作区白底、最小高度 58px。
    用法：
    1) a-modal 在手机端追加 wrapClassName "mm-sheet-modal"；
    2) title 插槽使用下面的 .mm-sheet-header 结构；
@@ -222,7 +223,7 @@
 .mm-sheet-modal .ant-modal-header {
   flex: none;
   padding: 0;
-  background: #fff;
+  background: #1890ff;
   border-bottom: none;
 }
 .mm-sheet-modal .ant-modal-body {
@@ -260,53 +261,71 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 60px;
-  padding: 8px 56px;
+  height: 49px;
+  min-height: 49px;
+  padding: 0 44px 0 58px;
   box-sizing: border-box;
+  background: #1890ff;
 }
 .mm-sheet-title-block {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  max-width: 100%;
+  gap: 8px;
+  /* 与标准手机顶栏标题左边一致：返回区 58px + 8px */
+  padding-left: 8px;
 }
 .mm-sheet-title {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: rgba(0, 0, 0, 0.85);
-  text-align: center;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #fff;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mm-sheet-subtitle {
-  margin-top: 2px;
-  font-size: 11px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
+  font-size: 12px;
   line-height: 1.2;
-  color: #999;
-  text-align: center;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mm-sheet-close,
 .mm-sheet-back {
   position: absolute;
   top: 0;
   width: 44px;
-  height: 100%;
+  height: 49px;
   min-height: 49px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
   line-height: 1;
-  color: #c8c8c8;
+  color: #fff;
   cursor: pointer;
+  user-select: none;
+}
+.mm-sheet-close:active,
+.mm-sheet-back:active {
+  background: rgba(255, 255, 255, 0.2);
 }
 .mm-sheet-close {
   right: 0;
 }
 .mm-sheet-back {
   left: 0;
+  width: 58px;
 }

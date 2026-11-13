@@ -1,6 +1,6 @@
 <template>
   <div>
-    <!-- 会员信息：标准页面弹层（标题居中 + 右侧关闭） -->
+    <!-- 会员信息：标准页面弹层（标题左对齐 + 右侧关闭） -->
     <mobile-modal-page :visible="visible" title="会员信息" @close="close">
       <div class="mp-print">
         <!-- 会员详细字段（仅保留详情卡片） -->

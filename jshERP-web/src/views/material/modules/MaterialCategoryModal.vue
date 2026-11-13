@@ -18,7 +18,7 @@
       cancelText="取消"
       okText="保存">
       <template slot="title">
-        <!-- 手机端标准弹层顶栏：白底、标题居中、右侧关闭 -->
+        <!-- 手机端标准弹层顶栏：蓝底、标题左对齐、副标题同行、右侧关闭 -->
         <div v-if="isMobile()" class="mm-sheet-header">
           <div class="mm-sheet-title-block">
             <div class="mm-sheet-title">{{ title }}</div>

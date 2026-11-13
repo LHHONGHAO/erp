@@ -1,5 +1,5 @@
 <template>
-  <!-- 复用手机端标准弹层页面：白底顶栏 + 标题居中 + 右侧关闭 -->
+  <!-- 复用手机端标准弹层页面：蓝底顶栏 + 标题左对齐 + 副标题同行 + 右侧关闭 -->
   <mobile-modal-page :visible="visible" :title="title" @close="handleClose">
     <div class="mpp-picker">
       <div class="mpp-picker__scroll">
@@ -90,7 +90,7 @@ import { recordGoodsUsage, getRecentGoods } from './goodsUsage'
 
 /**
  * 手机端标准商品选择/添加弹层
- * 1. 与打印弹层同一套标准页面样式（白底顶栏、标题居中、右侧关闭）
+ * 1. 与打印弹层同一套标准页面样式（蓝底顶栏、标题左对齐、副标题同行、右侧关闭）
  * 2. 近 N 天选择次数前 N 名的商品按次数排在列表前面，与全部商品逐行展示且不重复
  * 3. 单选：点击商品直接回填并关闭；多选：勾选后点「确定」批量回填
  * 4. 底部复用标准搜索底栏：拍照识别 / 搜索框 / 扫码 / 搜索 / 筛选

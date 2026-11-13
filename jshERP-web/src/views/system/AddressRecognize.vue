@@ -36,7 +36,7 @@
       <a-button type="primary" block class="addr-print-btn" @click="printResult">打印</a-button>
     </div>
 
-    <!-- 商品选择：标准整页弹层（白底顶栏 + 标题居中 + 右侧关闭），复用后可跨页面使用 -->
+    <!-- 商品选择：标准整页弹层（蓝底顶栏 + 标题左对齐 + 右侧关闭），复用后可跨页面使用 -->
     <mobile-product-picker
       :visible="goodsPickerVisible"
       title="添加商品"

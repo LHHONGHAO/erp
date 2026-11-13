@@ -9,7 +9,7 @@
   <div>
   <!-- 手机端：两个全屏页面（打印标签页 / 设备列表页） -->
   <template v-if="isMobile">
-    <!-- 页面 1：打印标签预览（标准页面弹层：标题居中 + 右侧关闭，无返回） -->
+    <!-- 页面 1：打印标签预览（标准页面弹层：蓝底顶栏 + 标题左对齐 + 副标题同行 + 右侧关闭，无返回） -->
     <mobile-modal-page
       :visible="visible && !showPrinterSheet"
       :title="mobileTitle"

@@ -1,5 +1,5 @@
 <template>
-  <!-- 手机端标准弹层页面：白底顶栏、标题居中、右侧关闭 -->
+  <!-- 手机端标准弹层页面：蓝底顶栏、标题左对齐、右侧关闭 -->
   <mobile-modal-page class="mca-page" :visible="true" title="新增品类" @close="goBack">
     <div class="mca-body">
       <a-form :form="form">

@@ -15,7 +15,10 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 打印代理与打印任务的存储
@@ -38,6 +41,7 @@ public class PrintAgentStore {
     @PostConstruct
     public void init() {
         createAgentTable();
+        ensureAgentColumns();
         createTaskTable();
     }
 
@@ -46,7 +50,10 @@ public class PrintAgentStore {
                 "`id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键'," +
                 "`device_id` varchar(64) NOT NULL COMMENT '设备编号，与代理配置一致'," +
                 "`name` varchar(100) DEFAULT NULL COMMENT '设备名称'," +
+                "`store_name` varchar(100) DEFAULT NULL COMMENT '门店名称'," +
+                "`printer_model` varchar(100) DEFAULT NULL COMMENT '打印机型号'," +
                 "`token` varchar(64) DEFAULT NULL COMMENT '设备 Token'," +
+                "`paired` varchar(1) DEFAULT '0' COMMENT '配对状态 1已配对 0待配对'," +
                 "`printers` longtext COMMENT '打印机列表 JSON'," +
                 "`version` varchar(32) DEFAULT NULL COMMENT '代理版本'," +
                 "`last_seen` datetime DEFAULT NULL COMMENT '最后在线时间'," +
@@ -62,6 +69,40 @@ public class PrintAgentStore {
             logger.info("打印代理设备表 print_agent 已就绪");
         } catch (Exception e) {
             logger.error("初始化打印代理设备表失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 存量表补齐配对相关列，并把已有 Token 的设备回填为已配对，保证升级后设备不掉线
+     */
+    private void ensureAgentColumns() {
+        String[][] columns = {
+                {"store_name", "varchar(100) DEFAULT NULL COMMENT '门店名称'"},
+                {"printer_model", "varchar(100) DEFAULT NULL COMMENT '打印机型号'"},
+                {"paired", "varchar(1) DEFAULT '0' COMMENT '配对状态 1已配对 0待配对'"}
+        };
+        try (Connection conn = dataSource.getConnection()) {
+            for (String[] column : columns) {
+                if (hasColumn(conn, column[0])) {
+                    continue;
+                }
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("ALTER TABLE print_agent ADD COLUMN `" + column[0] + "` " + column[1]);
+                }
+                logger.info("打印代理设备表补充字段 print_agent.{}", column[0]);
+            }
+            try (Statement stmt = conn.createStatement()) {
+                stmt.executeUpdate("UPDATE print_agent SET paired = '1' " +
+                        "WHERE (paired IS NULL OR paired = '0') AND token IS NOT NULL AND token <> ''");
+            }
+        } catch (Exception e) {
+            logger.error("初始化打印代理配对字段失败: " + e.getMessage(), e);
+        }
+    }
+
+    private boolean hasColumn(Connection conn, String column) throws Exception {
+        try (ResultSet rs = conn.getMetaData().getColumns(conn.getCatalog(), null, "print_agent", column)) {
+            return rs.next();
         }
     }
 
@@ -138,6 +179,8 @@ public class PrintAgentStore {
             throw new IllegalArgumentException("设备编号不能为空");
         }
         String name = trim(body.getString("name"));
+        String storeName = trim(body.getString("storeName"));
+        String printerModel = trim(body.getString("printerModel"));
         String token = trim(body.getString("token"));
         String printers = printersText(body.get("printers"));
         String enabled = "0".equals(body.getString("enabled")) ? "0" : "1";
@@ -147,15 +190,17 @@ public class PrintAgentStore {
                     JSONObject old = findById(id);
                     token = old == null ? generateToken() : old.getString("token");
                 }
-                String sql = "UPDATE print_agent SET device_id = ?, name = ?, token = ?, printers = ?, " +
-                        "enabled = ?, updated_at = NOW() WHERE id = ?";
+                String sql = "UPDATE print_agent SET device_id = ?, name = ?, store_name = ?, printer_model = ?, " +
+                        "token = ?, printers = ?, enabled = ?, updated_at = NOW() WHERE id = ?";
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     ps.setString(1, deviceId);
                     ps.setString(2, name);
-                    ps.setString(3, token);
-                    ps.setString(4, printers);
-                    ps.setString(5, enabled);
-                    ps.setLong(6, id);
+                    ps.setString(3, storeName);
+                    ps.setString(4, printerModel);
+                    ps.setString(5, token);
+                    ps.setString(6, printers);
+                    ps.setString(7, enabled);
+                    ps.setLong(8, id);
                     ps.executeUpdate();
                 }
                 return id;
@@ -166,14 +211,16 @@ public class PrintAgentStore {
             if (token == null) {
                 token = generateToken();
             }
-            String sql = "INSERT INTO print_agent (device_id, name, token, printers, enabled, created_at, updated_at) " +
-                    "VALUES (?, ?, ?, ?, ?, NOW(), NOW())";
+            String sql = "INSERT INTO print_agent (device_id, name, store_name, printer_model, token, paired, printers, enabled, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, ?, ?, '1', ?, ?, NOW(), NOW())";
             try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, deviceId);
                 ps.setString(2, name);
-                ps.setString(3, token);
-                ps.setString(4, printers);
-                ps.setString(5, enabled);
+                ps.setString(3, storeName);
+                ps.setString(4, printerModel);
+                ps.setString(5, token);
+                ps.setString(6, printers);
+                ps.setString(7, enabled);
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
                     if (rs.next()) {
@@ -210,21 +257,6 @@ public class PrintAgentStore {
             logger.error("删除打印代理失败: " + e.getMessage(), e);
             return false;
         }
-    }
-
-    /**
-     * 重置设备 Token，返回新 Token
-     */
-    public String resetToken(Long id) throws Exception {
-        String token = generateToken();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "UPDATE print_agent SET token = ?, updated_at = NOW() WHERE id = ?")) {
-            ps.setString(1, token);
-            ps.setLong(2, id);
-            ps.executeUpdate();
-        }
-        return token;
     }
 
     /**
@@ -298,6 +330,103 @@ public class PrintAgentStore {
             logger.error("合并打印机配置失败: " + e.getMessage());
             return incoming;
         }
+    }
+
+    // ------------------------------------------------------------------ 配对
+
+    /** 配对码 → 配对会话；单实例部署，放在进程内即可，10 分钟自动过期 */
+    private static final Map<String, JSONObject> PAIR_SESSIONS = new ConcurrentHashMap<>();
+
+    private static final long PAIR_TTL_MS = 10 * 60 * 1000L;
+
+    /**
+     * 主机页生成 6 位配对码，10 分钟有效、一次性
+     */
+    public JSONObject createPairCode() {
+        long now = System.currentTimeMillis();
+        PAIR_SESSIONS.entrySet().removeIf(e -> e.getValue().getLongValue("expireAt") < now);
+        String code;
+        do {
+            code = String.format("%06d", ThreadLocalRandom.current().nextInt(0, 1000000));
+        } while (PAIR_SESSIONS.containsKey(code));
+        JSONObject session = new JSONObject(true);
+        session.put("pairCode", code);
+        session.put("expireAt", now + PAIR_TTL_MS);
+        session.put("paired", false);
+        PAIR_SESSIONS.put(code, session);
+        return session;
+    }
+
+    /**
+     * 主机页轮询：配对码是否已被代理使用，已使用时带出设备信息
+     */
+    public JSONObject pairStatus(String pairCode) {
+        JSONObject session = pairCode == null ? null : PAIR_SESSIONS.get(pairCode);
+        if (session == null || session.getLongValue("expireAt") < System.currentTimeMillis()) {
+            return null;
+        }
+        JSONObject data = new JSONObject(true);
+        data.put("pairCode", pairCode);
+        data.put("paired", session.getBooleanValue("paired"));
+        data.put("expireAt", session.getLongValue("expireAt"));
+        data.put("deviceId", session.getString("deviceId"));
+        data.put("storeName", session.getString("storeName"));
+        data.put("printerModel", session.getString("printerModel"));
+        data.put("printers", session.get("printers"));
+        return data;
+    }
+
+    /**
+     * 代理凭配对码完成配对：登记设备、下发 Token 与设备编号，配对码随即失效
+     */
+    public JSONObject pairDevice(String pairCode, String storeName, String printerModel,
+                                 String printers, String version, String clientIp) throws Exception {
+        JSONObject session = pairCode == null ? null : PAIR_SESSIONS.get(pairCode);
+        if (session == null || session.getLongValue("expireAt") < System.currentTimeMillis()) {
+            throw new IllegalArgumentException("配对码不正确或已过期");
+        }
+        String deviceId;
+        String token;
+        synchronized (session) {
+            if (session.getBooleanValue("paired")) {
+                throw new IllegalArgumentException("配对码已使用，请在主机重新生成");
+            }
+            deviceId = generateDeviceId();
+            token = generateToken();
+            String insertedPrinter = printers == null || printers.trim().isEmpty() ? "[]" : printers;
+            String sql = "INSERT INTO print_agent (device_id, store_name, printer_model, token, paired, printers, " +
+                    "version, client_ip, enabled, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, ?, '1', ?, ?, ?, '1', NOW(), NOW())";
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, deviceId);
+                ps.setString(2, trim(storeName));
+                ps.setString(3, trim(printerModel));
+                ps.setString(4, token);
+                ps.setString(5, insertedPrinter);
+                ps.setString(6, trim(version));
+                ps.setString(7, trim(clientIp));
+                ps.executeUpdate();
+            }
+            session.put("paired", true);
+            session.put("deviceId", deviceId);
+            session.put("storeName", trim(storeName));
+            session.put("printerModel", trim(printerModel));
+            session.put("printers", JSONArray.parseArray(insertedPrinter));
+        }
+        return findByDeviceId(deviceId);
+    }
+
+    /**
+     * 设备编号：agent- + 6 位易辨识字符，配对成功后由主机分配
+     */
+    private String generateDeviceId() {
+        String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        StringBuilder builder = new StringBuilder("agent-");
+        for (int i = 0; i < 6; i++) {
+            builder.append(alphabet.charAt(ThreadLocalRandom.current().nextInt(alphabet.length())));
+        }
+        return builder.toString();
     }
 
     // ------------------------------------------------------------------ 任务
@@ -413,7 +542,10 @@ public class PrintAgentStore {
         item.put("id", rs.getLong("id"));
         item.put("deviceId", rs.getString("device_id"));
         item.put("name", rs.getString("name"));
+        item.put("storeName", rs.getString("store_name"));
+        item.put("printerModel", rs.getString("printer_model"));
         item.put("token", rs.getString("token"));
+        item.put("paired", rs.getString("paired"));
         item.put("enabled", rs.getString("enabled"));
         item.put("version", rs.getString("version"));
         item.put("clientIp", rs.getString("client_ip"));

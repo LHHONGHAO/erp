@@ -4,12 +4,9 @@
     :title="headerTemplateName"
     :subtitle="headerSubtitle"
     @close="handleBack">
-    <!-- 顶栏显示模板名称，名称后可重命名 -->
-    <template #title-extra>
-      <a-icon type="edit" class="lem-title-edit" title="编辑模板名称" @click="openRename" />
-    </template>
+    <!-- 顶栏只保留一个编辑按钮：统一编辑标题、副标题与标签尺寸 -->
     <template #actions>
-      <a-icon type="edit" class="mmp-icon" title="标签尺寸" @click="openSizeEditor" />
+      <a-icon type="edit" class="mmp-icon" title="编辑标签信息" @click="openEditInfo" />
       <a-icon type="setting" class="mmp-icon" title="设置" @click="openSettings" />
     </template>
     <div class="lem-page">
@@ -287,48 +284,6 @@
       </div>
     </div>
 
-    <!-- 尺寸编辑弹窗 -->
-    <a-modal
-      :visible="sizeEditorVisible"
-      title="标签尺寸"
-      :zIndex="3010"
-      @ok="confirmSizeEdit"
-      @cancel="sizeEditorVisible = false"
-      ok-text="确定"
-      cancel-text="取消"
-    >
-      <div class="lem-size-editor">
-        <div class="lem-size-row">
-          <span class="lem-size-label">宽度</span>
-          <a-input-number
-            v-model="editWidthMm"
-            :min="10"
-            :max="500"
-            style="width: 120px"
-            addon-after="mm"
-          />
-        </div>
-        <div class="lem-size-row">
-          <span class="lem-size-label">高度</span>
-          <a-input-number
-            v-model="editHeightMm"
-            :min="10"
-            :max="800"
-            style="width: 120px"
-            addon-after="mm"
-          />
-        </div>
-        <div class="lem-size-presets">
-          <div class="lem-size-preset-item" @click="applyPreset(60, 40)">60×40</div>
-          <div class="lem-size-preset-item" @click="applyPreset(40, 30)">40×30</div>
-          <div class="lem-size-preset-item" @click="applyPreset(80, 50)">80×50</div>
-          <div class="lem-size-preset-item" @click="applyPreset(100, 60)">100×60</div>
-          <div class="lem-size-preset-item" @click="applyPreset(148, 212)">148×212</div>
-          <div class="lem-size-preset-item" @click="applyPreset(210, 297)">A4</div>
-        </div>
-      </div>
-    </a-modal>
-
     <!-- 保存 / 打印设置融合弹层：顶栏「保存」与「设置」共用，差异只在保存后的去向 -->
     <a-modal
       :title="saveSheetEntry === 'settings' ? '打印设置' : '保存模板'"
@@ -388,25 +343,66 @@
         <div class="lem-save-hint">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
       </div>
     </a-modal>
-    <!-- 模板重命名：顶栏模板名称后的编辑按钮 -->
+    <!-- 顶栏唯一编辑按钮：弹层编辑标题、副标题与标签尺寸 -->
     <a-modal
-      title="编辑模板名称"
+      title="编辑标签信息"
       :visible="renameVisible"
       :width="'86%'"
       :zIndex="3030"
       ok-text="确定"
       cancel-text="取消"
-      @ok="confirmRename"
+      @ok="confirmEditInfo"
       @cancel="renameVisible = false"
     >
-      <a-input
-        v-model="renameValue"
-        placeholder="请输入模板名称"
-        :maxLength="40"
-        allowClear
-        @pressEnter="confirmRename"
-      />
-      <div class="lem-save-hint">名称随模板保存，保存后生效</div>
+      <div class="lem-size-row">
+        <span class="lem-size-label">标题</span>
+        <a-input
+          v-model="renameValue"
+          placeholder="请输入标题"
+          :maxLength="40"
+          allowClear
+        />
+      </div>
+      <div class="lem-size-row">
+        <span class="lem-size-label">副标题</span>
+        <a-input
+          v-model="subtitleValue"
+          placeholder="请输入副标题"
+          :maxLength="60"
+          allowClear
+        />
+      </div>
+      <div class="lem-size-editor">
+        <div class="lem-size-row">
+          <span class="lem-size-label">宽度</span>
+          <a-input-number
+            v-model="editWidthMm"
+            :min="10"
+            :max="500"
+            style="width: 120px"
+            addon-after="mm"
+          />
+        </div>
+        <div class="lem-size-row">
+          <span class="lem-size-label">高度</span>
+          <a-input-number
+            v-model="editHeightMm"
+            :min="10"
+            :max="800"
+            style="width: 120px"
+            addon-after="mm"
+          />
+        </div>
+        <div class="lem-size-presets">
+          <div class="lem-size-preset-item" @click="applyPreset(60, 40)">60×40</div>
+          <div class="lem-size-preset-item" @click="applyPreset(40, 30)">40×30</div>
+          <div class="lem-size-preset-item" @click="applyPreset(80, 50)">80×50</div>
+          <div class="lem-size-preset-item" @click="applyPreset(100, 60)">100×60</div>
+          <div class="lem-size-preset-item" @click="applyPreset(148, 212)">148×212</div>
+          <div class="lem-size-preset-item" @click="applyPreset(210, 297)">A4</div>
+        </div>
+      </div>
+      <div class="lem-save-hint">标题保存时作为模板名称；副标题仅调整当前页面顶栏显示</div>
     </a-modal>
     <!-- 打印标签弹层（不再跳转打印页面） -->
     <label-print-modal ref="labelPrintModal" />
@@ -541,9 +537,12 @@
         newTemplateName: '',
         // 顶栏模板名称（与页面标题并列显示）
         currentTemplateName: '',
-        // 模板名称重命名弹层
+        // 顶栏副标题自定义文案；为空时回退为业务名称
+        subtitleText: '',
+        // 顶栏编辑弹层：标题、副标题与标签尺寸
         renameVisible: false,
         renameValue: '',
+        subtitleValue: '',
         templateCategoryId: null,
         categoryTree: [],
         // 发货单模板（统一模板表记录）
@@ -557,12 +556,10 @@
         sidePanel: '',
         multiSelectMode: false,
         marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
-        sizeEditorVisible: false,
         editWidthMm: 148,
         editHeightMm: 212,
         // wrap 是否溢出需要滚动：true → flex-start + scrollLeft 居中；false → center 直接居中
-        wrapScrolling: false
-      }
+        wrapScrolling: false      }
     },
     computed: {
       currentTitle() {
@@ -607,9 +604,9 @@
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         return cfg.title.replace('编辑', '') + '模板'
       },
-      // 顶栏副标题：业务名称 + 标签尺寸，避免顶栏出现多个重复标题
+      // 顶栏副标题：自定义副标题（缺省用业务名称）+ 标签尺寸
       headerSubtitle() {
-        return this.currentTitle + ' · ' + this.sizeLabel
+        return (this.subtitleText || this.currentTitle) + ' · ' + this.sizeLabel
       },
       labelStyle() {
         return {
@@ -1924,19 +1921,29 @@
       closeSaveSheet() {
         this.saveSheetVisible = false
       },
-      /** 顶栏模板名称后的编辑按钮：重命名当前模板 */
-      openRename() {
+      /** 顶栏唯一编辑按钮：统一编辑标题、副标题与标签尺寸 */
+      openEditInfo() {
         this.renameValue = this.headerTemplateName
+        this.subtitleValue = this.subtitleText || this.currentTitle
+        this.editWidthMm = this.labelWidthMm
+        this.editHeightMm = this.labelHeightMm
         this.renameVisible = true
       },
-      confirmRename() {
+      confirmEditInfo() {
         var name = (this.renameValue || '').trim()
         if (!name) {
-          this.$message.warning('请输入模板名称')
+          this.$message.warning('请输入标题')
           return
         }
         this.currentTemplateName = name
         this.newTemplateName = name
+        this.subtitleText = (this.subtitleValue || '').trim()
+        if (this.editWidthMm > 0 && this.editHeightMm > 0) {
+          this.labelWidth = Math.round(this.editWidthMm * PX_PER_MM)
+          this.labelHeight = Math.round(this.editHeightMm * PX_PER_MM)
+          // 尺寸变化后重新按窗口适配
+          this.fitLabelAfterLoad()
+        }
         this.renameVisible = false
       },
       /** 模板只保存布局与打印设置；方向/份数/设备不写入模板 */
@@ -2189,18 +2196,6 @@
       handleBack() {
         this.$emit('close')
       },
-      openSizeEditor() {
-        this.editWidthMm = this.labelWidthMm
-        this.editHeightMm = this.labelHeightMm
-        this.sizeEditorVisible = true
-      },
-      confirmSizeEdit() {
-        this.labelWidth = Math.round(this.editWidthMm * PX_PER_MM)
-        this.labelHeight = Math.round(this.editHeightMm * PX_PER_MM)
-        this.sizeEditorVisible = false
-        // 尺寸变化后重新按窗口适配
-        this.fitLabelAfterLoad()
-      },
       applyPreset(wMm, hMm) {
         this.editWidthMm = wMm
         this.editHeightMm = hMm
@@ -2210,21 +2205,6 @@
 </script>
 
 <style lang="scss" scoped>
-/* 顶栏：模板名称作为标题，名称后可重命名 */
-.lem-title-edit {
-  flex: none;
-  font-size: 15px;
-  line-height: 1;
-  color: #fff;
-  padding: 4px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.lem-title-edit:active {
-  background: rgba(255, 255, 255, 0.2);
-}
-
 .lem-page {
   flex: 1;
   min-height: 0;

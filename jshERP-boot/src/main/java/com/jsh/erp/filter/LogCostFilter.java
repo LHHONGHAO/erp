@@ -51,6 +51,11 @@ public class LogCostFilter implements Filter {
             chain.doFilter(request, response);
             return;
         }
+        // 打印代理自助接入：通信码与一次性配对码即凭证，不依赖登录会话
+        if (path.startsWith("/printAgent/device/")) {
+            chain.doFilter(request, response);
+            return;
+        }
         //具体，比如：处理若用户未登录，则跳转到登录页
         Object userId = redisService.getObjectFromSessionByKey(servletRequest,"userId");
         if(userId!=null) { //如果已登录，不阻止

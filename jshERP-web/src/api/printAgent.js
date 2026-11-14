@@ -15,16 +15,6 @@ export function deletePrintAgent(parameter) {
   return postAction('/printAgent/delete', parameter)
 }
 
-/** 重置设备 Token */
-export function resetPrintAgentToken(parameter) {
-  return postAction('/printAgent/token', parameter)
-}
-
-/** 下发测试标签 */
-export function testPrintAgent(parameter) {
-  return postAction('/printAgent/test', parameter)
-}
-
 /** 按标签内容下发打印 */
 export function printViaAgent(parameter) {
   return postAction('/printAgent/print', parameter)
@@ -33,4 +23,14 @@ export function printViaAgent(parameter) {
 /** 打印任务记录 */
 export function getPrintAgentTasks(parameter) {
   return getAction('/printAgent/tasks', parameter)
+}
+
+/** 生成配对码（10 分钟有效、一次性） */
+export function generatePrintAgentPairCode(parameter) {
+  return postAction('/printAgent/pair/code', parameter)
+}
+
+/** 轮询配对状态 */
+export function getPrintAgentPairStatus(parameter) {
+  return getAction('/printAgent/pair/status', parameter)
 }

@@ -2,23 +2,27 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // Config 是代理的全部配置。
 type Config struct {
-	DeviceID  string    `json:"deviceId"`
-	Token     string    `json:"token"`
-	Server    Server    `json:"server"`
-	Printers  []Printer `json:"printers"`
-	Limits    Limits    `json:"limits"`
-	Reconnect Reconnect `json:"reconnect"`
-	Log       Log       `json:"log"`
+	DeviceID     string    `json:"deviceId"`
+	Token        string    `json:"token"`
+	StoreName    string    `json:"storeName"`
+	PrinterModel string    `json:"printerModel"`
+	Server       Server    `json:"server"`
+	Printers     []Printer `json:"printers"`
+	Limits       Limits    `json:"limits"`
+	Reconnect    Reconnect `json:"reconnect"`
+	Log          Log       `json:"log"`
 }
 
 // Server 云端接入配置。
@@ -93,6 +97,40 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// LoadLoose 读取配置但不做校验，用于首次配对时还没有 deviceId/token 的场景。
+func LoadLoose(path string) (*Config, error) {
+	cfg := Default()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("读取配置 %s 失败: %w", path, err)
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, cfg); err != nil {
+			return nil, fmt.Errorf("解析配置 %s 失败: %w", path, err)
+		}
+	}
+	return cfg, nil
+}
+
+// Save 将配置写回文件，权限 0600。
+func Save(path string, cfg *Config) error {
+	raw, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 // Validate 校验配置合法性，避免运行期出现难以定位的失败。

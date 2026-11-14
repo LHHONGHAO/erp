@@ -44,6 +44,8 @@ func run(args []string) error {
 	switch cmd {
 	case "serve":
 		return runServe(args)
+	case "pair":
+		return runPair(args)
 	case "print":
 		return runPrint(args)
 	case "selftest":
@@ -56,7 +58,7 @@ func run(args []string) error {
 		fmt.Printf("erp-print-agent %s\n", version)
 		return nil
 	default:
-		return fmt.Errorf("未知命令 %q，可用命令: serve | print | selftest | check | fetch-ca | version", cmd)
+		return fmt.Errorf("未知命令 %q，可用命令: serve | pair | print | selftest | check | fetch-ca | version", cmd)
 	}
 }
 

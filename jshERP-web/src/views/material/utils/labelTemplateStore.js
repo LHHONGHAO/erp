@@ -1,48 +1,54 @@
 /**
  * 标签模板存储（唯一数据源：print_template 表）
  *
- * 一个模板一行，config 保存完整 v3 JSON；对外仍返回编辑器内部结构
+ * 一个模板一行，config 保存完整 v2 JSON；对外返回编辑器内部结构
  * （selectedAttrs/attrStyles/...），编辑器交互不变。
- * 不再使用 localStorage 缓存，也不再读取旧表 jsh_label_template_config。
+ *
+ * 只支持 v2：加载到旧结构时返回 outdated=true，由调用方提示删除后重建。
  */
 import { listPrintTemplates, savePrintTemplate, deletePrintTemplate } from './labelProviderApi'
-import { legacyToSchema, schemaToLegacy } from './labelSchema'
+import {
+  editorStateToV2,
+  v2ToEditorState,
+  v2ToSchemaView,
+  isLabelTemplateV2,
+  parseTemplateRaw
+} from './labelTemplateV2'
 
 /** 服务端行 → 编辑器内部模板结构 */
 function fromServer(row) {
-  var cfg = row.config
-  if (typeof cfg === 'string') {
-    try {
-      cfg = JSON.parse(cfg)
-    } catch (e) {
-      cfg = {}
-    }
+  var cfg = parseTemplateRaw(row.config)
+  var base = {
+    id: row.id,
+    serverId: row.id,
+    name: row.name || (cfg && cfg.name) || '未命名标签',
+    businessType: row.businessType || (cfg && cfg.businessType) || '',
+    version: row.version || 1,
+    outdated: !isLabelTemplateV2(cfg),
+    selectedAttrs: []
   }
-  cfg = cfg && typeof cfg === 'object' ? cfg : {}
-  var legacy = cfg.elements ? schemaToLegacy(cfg) : JSON.parse(JSON.stringify(cfg))
-  legacy.id = row.id
-  legacy.serverId = row.id
-  legacy.name = row.name || cfg.name || '未命名标签'
-  legacy.businessType = row.businessType || cfg.businessType || ''
-  legacy.provider = (cfg.dataSource && cfg.dataSource.provider) || legacy.provider || ''
-  legacy.version = row.version || 1
-  legacy.overflowMode = legacy.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
-  // 保留 v3 原始结构，供预览模块按 elements 直接渲染
-  legacy.schema = cfg.elements ? cfg : null
-  return legacy
+  if (base.outdated) return base
+  var state = v2ToEditorState(cfg)
+  Object.assign(base, state)
+  base.name = row.name || state.name || '未命名标签'
+  base.businessType = row.businessType || state.businessType || ''
+  // 模板分类信息（商品类型通用模板）
+  var meta = state.meta || {}
+  base.type = meta.type || 'normal'
+  base.categoryId = meta.categoryId || null
+  base.categoryName = meta.categoryName || null
+  base.materialId = meta.materialId || null
+  // v2 原始结构 + 渲染视图，供预览模块按 elements 直接渲染
+  base.v2 = cfg
+  base.schema = v2ToSchemaView(cfg)
+  return base
 }
 
 /** 发货单模板由发货单适配器管理，不进入标签模板列表 */
 function isDeliveryRow(row) {
-  var cfg = row && row.config
-  if (typeof cfg === 'string') {
-    try {
-      cfg = JSON.parse(cfg)
-    } catch (e) {
-      cfg = null
-    }
-  }
-  return row.businessType === 'shipping.delivery' || (cfg && cfg.meta && cfg.meta.kind === 'delivery-note')
+  var cfg = parseTemplateRaw(row.config) || {}
+  var meta = cfg.meta || {}
+  return row.businessType === 'shipping.delivery' || meta.kind === 'delivery-note'
 }
 
 /** 拉取模板列表（PC/手机共用同一份数据） */
@@ -53,23 +59,48 @@ export function fetchLabelTemplates() {
   })
 }
 
+/** 编辑器结构（或已是 v2）→ v2 */
+export function toTemplateV2(tpl) {
+  if (isLabelTemplateV2(tpl)) return tpl
+  var provider = tpl.provider || tpl.businessType || 'product.label'
+  return editorStateToV2({
+    name: tpl.name,
+    provider: provider,
+    businessType: provider,
+    selectedAttrs: tpl.selectedAttrs,
+    attrStyles: tpl.attrStyles,
+    attrLabels: tpl.attrLabels,
+    allAttrs: tpl.allAttrs || tpl.customLabels || [],
+    goodsFields: tpl.goodsFields,
+    labelWidth: tpl.labelWidth || tpl.width || 320,
+    labelHeight: tpl.labelHeight || tpl.height || 240,
+    overflowMode: tpl.overflowMode,
+    pageMode: tpl.pageMode,
+    maxRowsPerPage: tpl.maxRowsPerPage,
+    repeatHeader: tpl.repeatHeader
+  }, {
+    type: tpl.type,
+    materialId: tpl.materialId,
+    categoryId: tpl.categoryId,
+    categoryName: tpl.categoryName,
+    kind: tpl.meta && tpl.meta.kind
+  })
+}
+
 /** 保存单个模板：有 serverId 更新，无则新增；返回后端响应 */
 export function saveLabelTemplate(tpl) {
-  var schema = legacyToSchema(tpl)
+  var schema = toTemplateV2(tpl)
   // 模板必须绑定业务数据源：businessType 与 dataSource.provider 保持一致
-  var provider = tpl.provider || schema.dataSource.provider || ''
-  if (!provider && schema.businessType && schema.businessType !== 'shipping.delivery') {
-    provider = schema.businessType
-  }
+  var provider = schema.dataSource.provider || tpl.provider || schema.businessType
   if (!provider) provider = 'product.label'
   schema.dataSource.provider = provider
   schema.businessType = provider
   var payload = {
     id: tpl.serverId || null,
     name: tpl.name || schema.name,
-    businessType: schema.businessType,
-    width: schema.size.width,
-    height: schema.size.height,
+    businessType: provider,
+    width: schema.paper.width,
+    height: schema.paper.height,
     config: schema
   }
   return savePrintTemplate(payload).then(function(res) {

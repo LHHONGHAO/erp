@@ -374,13 +374,12 @@
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
-  import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
+  import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate, toTemplateV2 } from '@/views/material/utils/labelTemplateStore'
   import { fetchProviders } from '@/views/material/utils/labelProviderApi'
   import { fetchDeliveryTemplate, saveDeliveryTemplate as persistDeliveryTemplate, DELIVERY_BUSINESS_TYPE } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { legacyToSchema } from '@/views/material/utils/labelSchema'
   import LabelPrintModal from './LabelPrintModal'
-  import { computeSpacer, setupLabelScroll } from '@/utils/label-scroll'
+  import { setupLabelScroll } from '@/utils/label-scroll'
 
   // 像素与毫米转换常量（96dpi: 1mm ≈ 3.779528px）
   var PX_PER_MM = 3.779528
@@ -396,15 +395,15 @@
         sku: {},
         categoryTree: [],
         allAttrs: [],
-        // 业务数据源（适配器标识）与其字段/数据
+        // 业务数据源（适配器标识）
         providerList: [],
         provider: '',
-        providerFields: [],
-        providerData: {},
         businessType: '',
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 多商品分页方式：仅透传保存，避免 PC 端覆盖移动端设置
+        pageMode: 'none',
         currentAttrKey: null,
         // 多选：Shift + 点击可同时选中多个文本标签
         selectedKeys: [],
@@ -531,14 +530,6 @@
           return label ? (label + ': ' + value) : value
         }).join('\n')
       },
-      // 当前选中的属性
-      getCurrentAttr() {
-        return this.allAttrs.find(a => a.key === this.currentAttrKey)
-      },
-      getCurrentAttrLabel() {
-        var attr = this.getCurrentAttr
-        return attr ? attr.label : ''
-      },
       // 属性名编辑：显示当前属性名，可直接输入修改，留空表示不显示属性名
       // 多选时：属性名一致显示该名称，不一致显示为空
       currentLabelEdit: {
@@ -638,8 +629,6 @@
         this.attrStyles = {}
         this.attrLabels = {}
         this.provider = ''
-        this.providerFields = []
-        this.providerData = {}
         this.currentAttrKey = null
         this.selectedKeys = []
         this.editingKey = null
@@ -800,10 +789,6 @@
           style.overflow = 'hidden'
         }
         return style
-      },
-      // 是否为独立编码元素
-      isCodeItem(key) {
-        return isCodeKey(key)
       },
       // 编码元素的图形布局：按属性值生成图形，尺寸取元素自身宽高
       codeLayout(codeKey) {
@@ -1448,8 +1433,6 @@
       applyProviderData(provider) {
         var self = this
         if (!provider) {
-          this.providerFields = []
-          this.providerData = {}
           this.allAttrs = this.buildAttrList()
           return Promise.resolve()
         }
@@ -1459,8 +1442,6 @@
           sku: this.sku
         }).then(function(result) {
           if (self.provider !== provider) return
-          self.providerFields = result.fields || []
-          self.providerData = result.values || {}
           self.allAttrs = self.buildProviderAttrs(result.attrs)
           // 模板未显式设置标签名的字段，按数据源字段名补上
           ;(result.attrs || []).forEach(function(attr) {
@@ -1502,6 +1483,23 @@
       loadDeliveryTemplate() {
         var self = this
         fetchDeliveryTemplate().then(function(tpl) {
+          if (tpl && tpl.outdated) {
+            self.$confirm({
+              title: '旧模板已不支持',
+              content: '模板「' + (tpl.name || '发货单模板') + '」为旧结构，无法继续使用。请删除后重新创建。',
+              okText: '删除旧模板',
+              cancelText: '稍后处理',
+              onOk: function() {
+                return deleteLabelTemplate(tpl).then(function() {
+                  self.deliveryTemplate = null
+                  self.applyDefaultDeliveryLayout()
+                  self.$message.success('旧模板已删除')
+                })
+              }
+            })
+            self.$nextTick(function() { self.markClean() })
+            return
+          }
           if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) {
             self.deliveryTemplate = tpl
             self.selectedAttrs = JSON.parse(JSON.stringify(tpl.selectedAttrs))
@@ -1509,6 +1507,9 @@
             self.attrLabels = JSON.parse(JSON.stringify(tpl.attrLabels || {}))
             self.labelWidth = tpl.labelWidth || tpl.width || 560
             self.labelHeight = tpl.labelHeight || tpl.height || 800
+            self.pageMode = tpl.pageMode === 'fit' || tpl.pageMode === 'each' ? tpl.pageMode : 'none'
+            self.maxRowsPerPage = Math.max(0, parseInt(tpl.maxRowsPerPage, 10) || 0)
+            self.repeatHeader = tpl.repeatHeader !== false
             self.resetHistory()
           } else {
             self.applyDefaultDeliveryLayout()
@@ -1623,7 +1624,11 @@
           attrLabels: cleanLabels,
           customLabels: customLabels,
           labelWidth: this.labelWidth,
-          labelHeight: this.labelHeight
+          labelHeight: this.labelHeight,
+          overflowMode: this.overflowMode,
+          pageMode: (tpl && tpl.pageMode) || this.pageMode || 'none',
+          maxRowsPerPage: (tpl && tpl.maxRowsPerPage) || this.maxRowsPerPage || 0,
+          repeatHeader: tpl && tpl.repeatHeader === false ? false : this.repeatHeader !== false
         })
       },
       // 保存单个模板到统一模板表（config 内为 v3 结构）
@@ -1720,7 +1725,11 @@
           attrStyles: JSON.parse(JSON.stringify(this.attrStyles)),
           attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
           labelWidth: this.labelWidth,
-          labelHeight: this.labelHeight
+          labelHeight: this.labelHeight,
+          overflowMode: this.overflowMode,
+          pageMode: base.pageMode || this.pageMode || 'none',
+          maxRowsPerPage: this.maxRowsPerPage || 0,
+          repeatHeader: this.repeatHeader !== false
         })
         persistDeliveryTemplate(tpl).then(function(res) {
           if (res && res.code === 200) {
@@ -1793,6 +1802,25 @@
         var self = this
         var tpl = this.templates.find(function(t) { return t.id === tplId })
         if (!tpl) return
+        if (tpl.outdated) {
+          this.$confirm({
+            title: '旧模板已不支持',
+            content: '模板「' + (tpl.name || '该模板') + '」为旧结构，无法继续使用。请删除后重新创建。',
+            okText: '删除旧模板',
+            cancelText: '稍后处理',
+            onOk: function() {
+              return deleteLabelTemplate(tpl).then(function() {
+                self.templates = self.templates.filter(function(item) { return item.id !== tpl.id })
+                self.selectedTemplateId = null
+                self.$message.success('旧模板已删除')
+              })
+            }
+          })
+          return
+        }
+        this.pageMode = tpl.pageMode === 'fit' || tpl.pageMode === 'each' ? tpl.pageMode : 'none'
+        this.maxRowsPerPage = Math.max(0, parseInt(tpl.maxRowsPerPage, 10) || 0)
+        this.repeatHeader = tpl.repeatHeader !== false
         // 重建基础属性
         this.allAttrs = this.buildAttrList()
         // 恢复自定义标签
@@ -1890,9 +1918,8 @@
         var self = this
         var exist = this.selectedTemplateId ? this.templates.find(function(t) { return t.id === self.selectedTemplateId }) : null
         var base = exist ? JSON.parse(JSON.stringify(exist)) : { id: 'unsaved', name: '', type: 'normal' }
-        var tpl = this.buildTplPayload(base)
-        // 附带新版 v3 结构，预览模块按 elements 直接渲染
-        tpl.schema = legacyToSchema(tpl)
+        // 与保存模板使用同一 v2 结构，预览按同一套规则还原，样式保持一致
+        var tpl = toTemplateV2(this.buildTplPayload(base))
         this.$refs.labelPrintModal.open(this.record, this.sku, tpl)
       }
     },

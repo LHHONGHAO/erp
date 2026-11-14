@@ -12,13 +12,21 @@ function buildHtml(options) {
   var heightPx = options.heightPx || 240
   var widthMm = (widthPx / PX_PER_MM).toFixed(2)
   var heightMm = (heightPx / PX_PER_MM).toFixed(2)
+  // 多页：每个商品分页一页，页间强制分页；单页时保持原有结构
+  var pages = Array.isArray(options.pages) && options.pages.length
+    ? options.pages
+    : [options.bodyHtml || '']
+  var bodyHtml = pages.map(function(html, index) {
+    var breakStyle = index < pages.length - 1 ? 'page-break-after:always;break-after:page;' : ''
+    return '<div class="label" style="' + breakStyle + '">' + html + '</div>'
+  }).join('')
   return '<html><head><title>打印标签</title><style>' +
     '@page{size:' + widthMm + 'mm ' + heightMm + 'mm;margin:0}' +
     'html,body{margin:0;padding:0}' +
     'body{font-family:Arial,"Microsoft YaHei",sans-serif;-webkit-print-color-adjust:exact}' +
     '.label{position:relative;width:' + widthPx + 'px;height:' + heightPx + 'px;overflow:hidden}' +
     '</style></head><body>' +
-    '<div class="label">' + (options.bodyHtml || '') + '</div>' +
+    bodyHtml +
     '</body></html>'
 }
 

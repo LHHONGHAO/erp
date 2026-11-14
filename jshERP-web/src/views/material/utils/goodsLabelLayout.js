@@ -129,7 +129,8 @@ export function buildGoodsTable(rows, style, paperWidth) {
   const fontSize = s.fontSize || 12
   const lineHeight = fontSize * (s.lineHeight || 1.2)
   const x = s.x || 0
-  const width = s.width > 0 ? s.width : Math.max(60, paperWidth - x - 10)
+  // 未设置宽度时默认「标签宽 - 左边距」，按宽度折行，不再横向溢出
+  const width = s.width > 0 ? s.width : Math.max(20, paperWidth - x)
   const widths = columnWidths(width)
   const bold = s.fontWeight === 'bold'
   const headHeight = Math.round(lineHeight) + CELL_PAD * 2
@@ -160,6 +161,105 @@ export function buildGoodsTable(rows, style, paperWidth) {
 }
 
 /**
+ * 商品行是否有内容（空行不参与分行/分页）
+ * @param {Object} row
+ * @returns {Boolean}
+ */
+export function hasGoodsValue(row) {
+  if (!row || typeof row !== 'object') return false
+  if (row.name || row.spec1 || row.spec2 || row.spec3) return true
+  // 数据源明细行：除内部 key 外任一字段有值即视为有效
+  return Object.keys(row).some(function(key) {
+    return key !== 'key' && row[key] != null && row[key] !== ''
+  })
+}
+
+/**
+ * 多个商品按标签可用高度拆页
+ *
+ * @param {Object} options
+ * @param {Array}  options.rows        商品行（空行会被忽略）
+ * @param {Object} options.style       商品元素样式（x/y/width/fontSize/lineHeight）
+ * @param {Object} options.table       表格模式下的表格数据（buildGoodsTable 的返回值）
+ * @param {Number} options.paperWidth  标签宽度（px）
+ * @param {Number} options.paperHeight 标签高度（px）
+ * @param {Array}  options.goodsFields 商品组合字段
+ * @param {String} options.goodsLabel  商品组合前缀（属性名）
+ * @param {String} options.mode        none | fit | each
+ * @param {Number} options.maxRowsPerPage fit 模式下每页最多商品行数（0 或空 = 只按高度）
+ * @returns {{pages: Array<{rows: Array, rowIndexes: number[]}>, count: number}}
+ */
+export function paginateGoodsRows(options) {
+  const opts = options || {}
+  const rows = (opts.rows || []).filter(hasGoodsValue)
+  const indexOfAll = rows.map(function(_, i) { return i })
+  if (!rows.length) return { pages: [{ rows: [], rowIndexes: [] }], count: 1 }
+  if (opts.mode === 'each') {
+    // 每个商品按数量拆分：数量 2 的商品输出 2 张，每张只记 1 件
+    const eachPages = []
+    rows.forEach(function(row, i) {
+      const qty = Math.min(99, Math.max(1, parseInt(row && row.qty, 10) || 1))
+      for (let n = 0; n < qty; n++) eachPages.push({ rows: [row], rowIndexes: [i] })
+    })
+    return { pages: eachPages, count: eachPages.length }
+  }
+  if (opts.mode !== 'fit') {
+    return { pages: [{ rows: rows, rowIndexes: indexOfAll }], count: 1 }
+  }
+
+  const style = opts.style || {}
+  const table = opts.table
+  const paperHeight = opts.paperHeight > 0 ? opts.paperHeight : 0
+  const top = style.y || 0
+  const fontSize = style.fontSize || 12
+  const lineHeight = fontSize * (style.lineHeight || 1.3)
+  const bold = style.fontWeight === 'bold'
+  const width = style.width > 0 ? style.width : Math.max(20, (opts.paperWidth || 0) - (style.x || 0))
+  const prefix = opts.goodsLabel ? opts.goodsLabel + ': ' : ''
+  // 可用高度 = 标签底边 - 商品元素顶边（表格模式再减去重复表头）
+  let pageHeight = paperHeight > top ? paperHeight - top : 0
+  if (table) pageHeight = Math.max(0, pageHeight - (table.headHeight || 0))
+  // 尺寸未知时保持单页，避免误拆
+  if (!pageHeight) {
+    return { pages: [{ rows: rows, rowIndexes: indexOfAll }], count: 1 }
+  }
+
+  const heights = rows.map(function(row, i) {
+    if (table && table.rows && table.rows[i]) return table.rows[i].height || lineHeight
+    const lines = measureTextLines(
+      prefix + goodsLine(row, opts.goodsFields),
+      width,
+      fontSize,
+      bold,
+      style.letterSpacing || 0
+    )
+    return Math.max(lineHeight, lines * lineHeight)
+  })
+
+  // 每页商品行上限：0 表示只按高度分页
+  const maxRows = Math.max(0, parseInt(opts.maxRowsPerPage, 10) || 0)
+  const pages = []
+  let current = { rows: [], rowIndexes: [] }
+  let used = 0
+  rows.forEach(function(row, i) {
+    const height = heights[i]
+    const fullByRows = maxRows > 0 && current.rows.length >= maxRows
+    // 当前页已有内容且（放不下本行 或 已达行数上限）时换页；单行超高时独占一页
+    if (current.rows.length && (fullByRows || used + height > pageHeight + 0.5)) {
+      pages.push(current)
+      current = { rows: [], rowIndexes: [] }
+      used = 0
+    }
+    current.rows.push(row)
+    current.rowIndexes.push(i)
+    used += height
+  })
+  if (current.rows.length) pages.push(current)
+  if (!pages.length) pages.push({ rows: [], rowIndexes: [] })
+  return { pages: pages, count: pages.length }
+}
+
+/**
  * 解析地址打印的动态排版
  * @param {Object} options
  * @param {Array}  options.selectedAttrs 已选元素 key
@@ -176,7 +276,13 @@ export function resolveGoodsLayout(options) {
   const values = opts.values || {}
   const paperWidth = opts.paperWidth || 320
   const goodsRows = normalizeGoodsRows(values)
-  const goodsText = goodsRows.map(function(row) { return goodsLine(row, opts.goodsFields) }).join('\n')
+  const goodsLines = goodsRows.map(function(row) { return goodsLine(row, opts.goodsFields) })
+  const goodsText = goodsLines.join('\n')
+  // 每个商品值占一行，且每行都带「属性名: 」前缀（与单行元素的字号、宽度一致）
+  const goodsPrefix = opts.goodsLabel ? opts.goodsLabel + ': ' : ''
+  const goodsDisplay = goodsPrefix
+    ? goodsLines.map(function(line) { return goodsPrefix + line }).join('\n')
+    : goodsText
 
   const styles = {}
   Object.keys(attrStyles).forEach(function(key) {
@@ -202,9 +308,8 @@ export function resolveGoodsLayout(options) {
       actualHeight = table.height
     } else {
       const width = style.width > 0 ? style.width : Math.max(20, paperWidth - (style.x || 0))
-      // 组合元素前面有「属性名: 」前缀，测量行数时一并计入
-      const prefix = opts.goodsLabel ? opts.goodsLabel + ': ' : ''
-      actualHeight = Math.max(lineHeight, measureTextLines(prefix + goodsText, width, fontSize, style.fontWeight === 'bold', style.letterSpacing || 0) * lineHeight)
+      // 逐行带前缀后测量行数，前缀可能额外占行
+      actualHeight = Math.max(lineHeight, measureTextLines(goodsDisplay, width, fontSize, style.fontWeight === 'bold', style.letterSpacing || 0) * lineHeight)
     }
     // 商品表 / 商品组合同样按实际高度排版：多行下移，少行回缩上移
     const delta = Math.round(actualHeight - originalHeight)
@@ -225,6 +330,7 @@ export function resolveGoodsLayout(options) {
     styles: styles,
     goodsRows: goodsRows,
     goodsText: goodsText,
+    goodsDisplay: goodsDisplay,
     table: table
   }
 }
@@ -351,7 +457,12 @@ export function resolveLabelLayout(options) {
   })
   const texts = {}
   textKeys.forEach(function(key) {
-    const value = key === GOODS_KEY ? goods.goodsText : (values[key] == null ? '' : values[key])
+    // 商品组合已按行带好属性名前缀，直接使用，避免重复拼接
+    if (key === GOODS_KEY) {
+      texts[key] = goods.goodsDisplay
+      return
+    }
+    const value = values[key] == null ? '' : values[key]
     texts[key] = labels[key] ? labels[key] + ': ' + value : value
   })
   const overflow = applyTextOverflow({
@@ -365,6 +476,7 @@ export function resolveLabelLayout(options) {
     texts: overflow.texts,
     table: goods.table,
     goodsRows: goods.goodsRows,
-    goodsText: goods.goodsText
+    goodsText: goods.goodsText,
+    goodsDisplay: goods.goodsDisplay
   }
 }

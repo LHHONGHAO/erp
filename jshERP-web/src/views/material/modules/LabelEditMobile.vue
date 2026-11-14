@@ -1,9 +1,13 @@
 <template>
   <mobile-modal-page
     :visible="true"
-    :title="currentTitle"
-    :subtitle="sizeLabel"
+    :title="headerTemplateName"
+    :subtitle="headerSubtitle"
     @close="handleBack">
+    <!-- 顶栏显示模板名称，名称后可重命名 -->
+    <template #title-extra>
+      <a-icon type="edit" class="lem-title-edit" title="编辑模板名称" @click="openRename" />
+    </template>
     <template #actions>
       <a-icon type="edit" class="mmp-icon" title="标签尺寸" @click="openSizeEditor" />
       <a-icon type="setting" class="mmp-icon" title="设置" @click="openSettings" />
@@ -37,7 +41,6 @@
             <rect x="4" y="12" width="8" height="3"/>
           </svg>
         </a-button>
-        <a-button size="small" icon="close" title="取消选择" :disabled="!selectedKeys.length" @click="clearSelection" />
       </div>
     </div>
 
@@ -128,6 +131,7 @@
     <div class="lem-side" v-if="sidePanel === 'attr'" ref="sidePanel">
       <div class="lem-side-head">
         <span class="lem-side-title">文字属性</span>
+        <a class="lem-side-close" @click="closeAll">全部关闭</a>
       </div>
       <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
@@ -325,10 +329,10 @@
       </div>
     </a-modal>
 
-    <!-- 保存模板弹窗：与 PC 端一致（模板名称 + 商品类型） -->
+    <!-- 保存 / 打印设置融合弹层：顶栏「保存」与「设置」共用，差异只在保存后的去向 -->
     <a-modal
-      title="保存模板"
-      :visible="saveModalVisible"
+      :title="saveSheetEntry === 'settings' ? '打印设置' : '保存模板'"
+      :visible="saveSheetVisible"
       :width="'92%'"
       :maskClosable="false"
       :zIndex="3020"
@@ -337,7 +341,7 @@
       ok-text="保存"
       cancel-text="取消"
       @ok="confirmSaveTemplate"
-      @cancel="saveModalVisible = false"
+      @cancel="closeSaveSheet"
     >
       <div class="lem-save-field">
         <div class="lem-save-label">模板名称</div>
@@ -351,6 +355,29 @@
         </div>
         <div class="lem-save-hint">{{ overflowWrapEnabled ? '文字超出标签宽度自动折行，下方内容依次下移' : '文字超出标签宽度保持单行，末尾补省略号后裁切' }}</div>
       </div>
+      <div class="lem-save-field">
+        <div class="lem-save-label">多个商品打印方式</div>
+        <a-radio-group v-model="pageMode" class="lem-settings-radio">
+          <a-radio value="none">多行连续（全部画在一张）</a-radio>
+          <a-radio value="fit">分页（按标签高度自动续页）</a-radio>
+          <a-radio value="each">每件一张标签（按商品数量拆页）</a-radio>
+        </a-radio-group>
+        <div v-if="pageMode === 'fit'" class="lem-save-field lem-save-field--inline">
+          <span class="lem-save-label">每页商品行数</span>
+          <a-input-number v-model="maxRowsPerPage" :min="0" :max="5" size="small" style="width: 90px" />
+          <span class="lem-save-hint">0 表示只按标签高度续页</span>
+        </div>
+        <div class="lem-save-hint">设置随模板保存，预览与打印共用；商品数量为 2 时打印 2 张，每张记 1 件</div>
+      </div>
+      <div class="lem-save-field" v-if="selectedAttrs.length">
+        <div class="lem-save-label">参与多行/分页的标签</div>
+        <a-checkbox-group v-model="flowElementKeys" class="lem-flow-group">
+          <a-checkbox v-for="key in selectedAttrs" :key="key" :value="key" class="lem-flow-check">
+            {{ flowElementLabel(key) }}
+          </a-checkbox>
+        </a-checkbox-group>
+        <div class="lem-save-hint">勾选的标签参与多行打印/分页打印，未勾选的标签每张重复显示</div>
+      </div>
       <div v-if="templateType === 'label'" class="lem-save-field">
         <div class="lem-save-label">商品类型</div>
         <a-select v-model="templateCategoryId" style="width:100%" placeholder="不选择则保存为普通模板" allowClear>
@@ -360,6 +387,26 @@
         <div v-if="conflictTemplate" class="lem-save-conflict">该类型已有模板「{{ conflictTemplate.name }}」，保存后将覆盖</div>
         <div class="lem-save-hint">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
       </div>
+    </a-modal>
+    <!-- 模板重命名：顶栏模板名称后的编辑按钮 -->
+    <a-modal
+      title="编辑模板名称"
+      :visible="renameVisible"
+      :width="'86%'"
+      :zIndex="3030"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmRename"
+      @cancel="renameVisible = false"
+    >
+      <a-input
+        v-model="renameValue"
+        placeholder="请输入模板名称"
+        :maxLength="40"
+        allowClear
+        @pressEnter="confirmRename"
+      />
+      <div class="lem-save-hint">名称随模板保存，保存后生效</div>
     </a-modal>
     <!-- 打印标签弹层（不再跳转打印页面） -->
     <label-print-modal ref="labelPrintModal" />
@@ -371,14 +418,15 @@
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import LabelPrintModal from './LabelPrintModal'
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
-  import { isCodeKey, codeSourceKey, renderCodeDataUrl, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
-  import { fetchLabelTemplates, saveLabelTemplate } from '@/views/material/utils/labelTemplateStore'
+  import { isCodeKey } from '@/views/material/utils/labelCode'
+  import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate, saveDeliveryTemplate as persistDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
+  import { editorStateToV2, v2ToEditorState, isLabelTemplateV2 } from '@/views/material/utils/labelTemplateV2'
   import { fetchProviders, fetchProviderFields, fetchLabelData } from '@/views/material/utils/labelProviderApi'
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, resolveLabelLayout } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -474,13 +522,28 @@
         labelHeight: 240,
         // 超长文本处理：wrap=自动折行并下移下方内容，ellipsis=单行省略号裁切
         overflowMode: 'wrap',
+        // 多商品分页：none=多行连续，fit=按高度续页，each=每件一张标签（随模板保存）
+        pageMode: 'none',
+        // fit 模式下每页最多商品行数（0 = 只按标签高度续页）
+        maxRowsPerPage: 0,
+        // 续页时重复商品表头
+        repeatHeader: true,
+        // 参与多行/分页打印的元素（打印设置里勾选）
+        flowElementKeys: [],
         zoom: 1,
         customCounter: 0,
         templates: [],
         selectedTemplateId: null,
-        // 保存模板弹窗（与 PC 端一致：模板名称 + 商品类型）
-        saveModalVisible: false,
+        // 「保存 / 打印设置」融合弹层
+        saveSheetVisible: false,
+        // 入口：'save' 顶栏保存按钮（保存后关闭编辑页）；'settings' 设置按钮（保存后返回编辑页）
+        saveSheetEntry: 'save',
         newTemplateName: '',
+        // 顶栏模板名称（与页面标题并列显示）
+        currentTemplateName: '',
+        // 模板名称重命名弹层
+        renameVisible: false,
+        renameValue: '',
         templateCategoryId: null,
         categoryTree: [],
         // 发货单模板（统一模板表记录）
@@ -493,7 +556,6 @@
         // 右侧面板：'' 都关闭；'attr' 文字属性；'element' 元素（互斥，同时只显示一个）
         sidePanel: '',
         multiSelectMode: false,
-        suppressClick: false,
         marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
         sizeEditorVisible: false,
         editWidthMm: 148,
@@ -539,6 +601,16 @@
       sizeLabel() {
         return this.labelWidthMm + 'mm × ' + this.labelHeightMm + 'mm'
       },
+      // 顶栏模板名称：未保存/未加载时显示默认名称
+      headerTemplateName() {
+        if (this.currentTemplateName) return this.currentTemplateName
+        var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        return cfg.title.replace('编辑', '') + '模板'
+      },
+      // 顶栏副标题：业务名称 + 标签尺寸，避免顶栏出现多个重复标题
+      headerSubtitle() {
+        return this.currentTitle + ' · ' + this.sizeLabel
+      },
       labelStyle() {
         return {
           width: this.labelWidth + 'px',
@@ -555,7 +627,14 @@
       sidePanelReserve() {
         if (this.sidePanel !== 'attr') return 0
         var narrow = typeof window !== 'undefined' && window.innerWidth <= 360
-        return (narrow ? 142 : 158) + 20
+        return (narrow ? 164 : 180) + 20
+      },
+      // 编辑区与打印分页保持一致：每件一张时只展示第一条商品行（每张标签内容相同）
+      editorGoodsRows() {
+        var rows = (this.record && this.record.goodsRows) || []
+        if (this.pageMode !== 'each') return rows
+        var first = rows.filter(function(r) { return hasGoodsValue(r) })[0]
+        return first ? [first] : []
       },
       // 标签最终布局（与打印预览、打印数据共用同一函数）
       labelLayout() {
@@ -568,7 +647,7 @@
           attrStyles: this.attrStyles,
           values: values,
           labels: this.attrLabels,
-          goodsRows: (this.record && this.record.goodsRows) || [],
+          goodsRows: this.editorGoodsRows,
           paperWidth: this.labelWidth,
           goodsLabel: this.attrLabels[GOODS_KEY] || '',
           goodsFields: this.goodsFields,
@@ -739,7 +818,9 @@
         this.deliveryTemplate = null
         this.allAttrs = this.buildAttrs(cfg.attrsBuilder)
         var loaded
-        if (context && context.template && context.template.selectedAttrs) {
+        var hasContextTemplate = !!(context && context.template && context.template.selectedAttrs)
+        if (hasContextTemplate) {
+          // 以打印预览当前使用的模板（已补全字段与样式）为准，保证编辑框与预览一致
           this.applyTemplateSnapshot(context.template, cfg)
           this.selectedTemplateId = context.template.id || null
           // 列表仍要加载，供后续切换/保存，但不再用列表里的模板覆盖刚恢复的布局
@@ -898,7 +979,7 @@
           }
         ]
       },
-      /** 统一的模板加载入口，根据 storage 类型分发 */
+      /** 统一的模板加载入口，根据 storage 类型分发（只支持 v2，旧结构提示删除） */
       loadTemplate(cfg, skipApply) {
         var self = this
         if (cfg.storage === 'localTemplates') {
@@ -906,66 +987,128 @@
           return fetchLabelTemplates().then(function(templates) {
             self.templates = templates || []
             if (skipApply) return
-            var target = templateId ? templates.find(t => t.id === templateId) : (templates[0] || null)
-            if (target && target.selectedAttrs) {
-              self.applyTemplateSnapshot(target, cfg)
-              self.selectedTemplateId = target.id
-            }
-          })
-        } else if (cfg.storage === 'deliveryTemplate') {
-          // 发货单模板：统一模板表适配器（兼容旧 platformConfig）
-          return fetchDeliveryTemplate().then(function(tpl) {
-            if (skipApply) {
-              if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) self.deliveryTemplate = tpl
+            var target = templateId
+              ? templates.find(function(t) {
+                return String(t.id) === String(templateId) || String(t.serverId) === String(templateId)
+              })
+              : (templates[0] || null)
+            if (!target) return
+            if (target.outdated) {
+              self.selectedTemplateId = null
+              self.promptOutdatedTemplate(target, cfg)
               return
             }
-            if (tpl && tpl.selectedAttrs && tpl.selectedAttrs.length) {
-              self.deliveryTemplate = tpl
-              self.applyTemplateSnapshot(tpl, cfg)
-            } else {
-              self.applyDefaultLayout(cfg)
+            self.applyTemplateSnapshot(target, cfg)
+            self.selectedTemplateId = target.id
+          })
+        } else if (cfg.storage === 'deliveryTemplate') {
+          return fetchDeliveryTemplate().then(function(tpl) {
+            if (skipApply) {
+              if (tpl && !tpl.outdated) self.deliveryTemplate = tpl
+              return
             }
+            if (!tpl) {
+              self.applyDefaultLayout(cfg)
+              return
+            }
+            if (tpl.outdated) {
+              self.deliveryTemplate = null
+              self.promptOutdatedTemplate(tpl, cfg)
+              return
+            }
+            self.deliveryTemplate = tpl
+            self.applyTemplateSnapshot(tpl, cfg)
           }).catch(function() {
             if (skipApply) return
             self.applyDefaultLayout(cfg)
           })
         } else if (cfg.storage === 'platformConfig') {
-          var tryLoad = function(key, isFallback) {
-            return getAction('/platformConfig/getUiConfig', { key: key }).then(function(res) {
-              if (skipApply) return
-              var data = (res && res.code === 200) ? res.data : null
-              var snap = self.parseConfigData(data)
-              if (snap && snap.selectedAttrs && snap.selectedAttrs.length) {
-                self.applyTemplateSnapshot(snap, cfg)
-                // 从旧 key 迁移过来的话，顺便写一份到新 key
-                if (isFallback && cfg.platformConfigKey && cfg.platformConfigKey !== key) {
-                  self.postSnapshot(cfg.platformConfigKey, snap)
-                }
-              } else if (!isFallback && cfg.legacyPlatformConfigKey) {
-                return tryLoad(cfg.legacyPlatformConfigKey, true)
-              } else {
-                self.applyDefaultLayout(cfg)
-              }
-            }).catch(function() {
-              if (!isFallback && cfg.legacyPlatformConfigKey) {
-                return tryLoad(cfg.legacyPlatformConfigKey, true)
-              }
+          return getAction('/platformConfig/getUiConfig', { key: cfg.platformConfigKey, _t: Date.now() }).then(function(res) {
+            if (skipApply) return
+            var raw = self.parseConfigData(res && res.code === 200 ? res.data : null)
+            if (!raw || (typeof raw === 'object' && !Object.keys(raw).length)) {
               self.applyDefaultLayout(cfg)
+              return
+            }
+            if (!isLabelTemplateV2(raw)) {
+              self.promptOutdatedTemplate({
+                name: cfg.title + '模板',
+                platformKey: cfg.platformConfigKey
+              }, cfg)
+              return
+            }
+            var state = v2ToEditorState(raw)
+            if (!state.selectedAttrs.length) {
+              self.applyDefaultLayout(cfg)
+              return
+            }
+            self.applyTemplateSnapshot(state, cfg)
+          }).catch(function() {
+            if (skipApply) return
+            self.applyDefaultLayout(cfg)
+          })
+        }
+      },
+      /**
+       * 旧模板不再兼容：提示删除后重建
+       * platformKey 表示模板存在 platformConfig（无删除接口，写空值即视为删除）
+       */
+      promptOutdatedTemplate(tpl, cfg) {
+        var self = this
+        var name = (tpl && tpl.name) || '该模板'
+        var done = function() {
+          self.$message.success('旧模板已删除')
+          self.applyDefaultLayout(cfg || TYPE_CONFIG[self.templateType] || TYPE_CONFIG.label)
+        }
+        this.$confirm({
+          title: '旧模板已不支持',
+          content: '模板「' + name + '」为旧结构，无法继续使用。请删除后重新创建。',
+          okText: '删除旧模板',
+          cancelText: '稍后处理',
+          onOk: function() {
+            var task = (tpl && tpl.platformKey)
+              ? postAction('/platformConfig/saveUiConfig', { key: tpl.platformKey, value: '' })
+              : deleteLabelTemplate(tpl)
+            return Promise.resolve(task).then(done).catch(function() {
+              self.$message.error('删除失败，请稍后重试')
             })
           }
-          return tryLoad(cfg.platformConfigKey, false)
-        }
+        })
       },
       /** 把持久化快照应用到当前编辑状态 */
       applyTemplateSnapshot(snap, cfg) {
+        var self = this
         this.selectedAttrs = JSON.parse(JSON.stringify(snap.selectedAttrs))
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        // 自定义文本的值随模板保存，加载时合并回属性列表
+        if (Array.isArray(snap.customLabels)) {
+          snap.customLabels.forEach(function(custom) {
+            var exist = self.allAttrs.find(function(a) { return a.key === custom.key })
+            if (exist) {
+              exist.value = custom.value
+              exist.label = custom.label || exist.label
+            } else {
+              self.allAttrs.push(JSON.parse(JSON.stringify(custom)))
+            }
+          })
+        }
         // 旧模板没有 goodsFields：保留当前默认（全部字段）
         if (Array.isArray(snap.goodsFields)) this.goodsFields = snap.goodsFields.slice()
-        if (snap.width) this.labelWidth = snap.width
-        if (snap.height) this.labelHeight = snap.height
+        var width = snap.width || snap.labelWidth
+        var height = snap.height || snap.labelHeight
+        if (width) this.labelWidth = width
+        if (height) this.labelHeight = height
+        // 顶栏展示当前模板名称
+        if (snap.name) this.currentTemplateName = snap.name
         this.overflowMode = snap.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
+        this.pageMode = snap.pageMode === 'fit' || snap.pageMode === 'each' ? snap.pageMode : 'none'
+        this.maxRowsPerPage = Math.max(0, parseInt(snap.maxRowsPerPage, 10) || 0)
+        this.repeatHeader = snap.repeatHeader !== false
+        // 旧模板没有 flowElementKeys：默认商品元素参与多行/分页
+        this.flowElementKeys = Array.isArray(snap.flowElementKeys)
+          ? snap.flowElementKeys.filter(function(key) { return self.selectedAttrs.indexOf(key) >= 0 })
+          : this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || key === GOODS_TABLE_KEY })
         this.restoreMissingAttrs(snap.selectedAttrs)
         this.fitLabelAfterLoad()
       },
@@ -1072,6 +1215,12 @@
         this.selectedAttrs = selected
         this.attrStyles = styles
         this.attrLabels = labels
+        // 默认勾选商品类元素参与多行/分页打印
+        this.flowElementKeys = selected.filter(function(key) {
+          return key === GOODS_KEY || key === GOODS_TABLE_KEY
+        })
+        // 默认布局没有已保存模板，顶栏使用默认模板名称
+        this.currentTemplateName = cfg.title.replace('编辑', '') + '模板'
         this.fitLabelAfterLoad()
       },
       // 模板里的自定义标签不在固定字段清单中，需补回 allAttrs 才能在编辑器预览/编辑
@@ -1102,7 +1251,7 @@
           fontSize: (style.fontSize || 12) + 'px',
           fontWeight: style.fontWeight || 'normal',
           letterSpacing: (style.letterSpacing || 0) + 'px',
-          lineHeight: style.lineHeight || 1.2
+          lineHeight: String(style.lineHeight || 1.3)
         }
         if (key === GOODS_TABLE_KEY) {
           var table = this.goodsTableData
@@ -1111,16 +1260,14 @@
           result.whiteSpace = 'normal'
           return result
         }
-        // 指定宽度时文字按框内宽度自动换行（与打印一致）
-        if (style.width) {
-          result.width = style.width + 'px'
-          result.whiteSpace = 'pre-wrap'
-          result.wordBreak = 'break-all'
-          result.overflowWrap = 'anywhere'
-          // 块级排版：属性名与属性值连续折行，而不是各自成块
-          result.display = 'block'
-          result.padding = '0'
-        }
+        // 与打印预览保持一致：未设置宽度时按「标签宽 - 左边距」折行
+        var wrapWidth = style.width > 0 ? style.width : Math.max(20, this.labelWidth - (style.x || 0))
+        result.width = wrapWidth + 'px'
+        result.whiteSpace = 'pre-wrap'
+        result.wordBreak = 'break-all'
+        result.overflowWrap = 'anywhere'
+        result.display = 'block'
+        result.padding = '0'
         // 指定高度时由内容层裁切，元素本身保持 overflow:visible，避免裁掉手柄
         if (style.height) {
           result.height = style.height + 'px'
@@ -1139,6 +1286,12 @@
       },
       isGoodsKey(key) {
         return key === GOODS_KEY
+      },
+      /** 打印设置里展示的元素名称 */
+      flowElementLabel(key) {
+        if (this.attrLabels && this.attrLabels[key]) return this.attrLabels[key]
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return attr && attr.label ? attr.label : key
       },
       // 勾选/取消商品组合字段：顺序固定为 商品名称 → 规格值1 → 规格值2 → 规格值3
       onGoodsFieldsChange(values) {
@@ -1159,29 +1312,6 @@
       },
       isSelected(key) {
         return this.selectedKeys.indexOf(key) > -1
-      },
-      selectElement(key) {
-        // 拖动结束后紧随的 click 不应改变选择状态
-        if (this.suppressClick) {
-          this.suppressClick = false
-          return
-        }
-        // 点击一次选中、再次点击取消（toggle）
-        var idx = this.selectedKeys.indexOf(key)
-        if (idx > -1) {
-          this.selectedKeys.splice(idx, 1)
-          if (this.currentAttrKey === key) {
-            this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
-          }
-        } else {
-          // 如果之前已多选且点在另一个未选中项上 → 开始多选（保留已选中）
-          if (this.selectedKeys.length > 0) {
-            this.selectedKeys.push(key)
-          } else {
-            this.selectedKeys = [key]
-          }
-          this.currentAttrKey = key
-        }
       },
       clearSelection() {
         this.selectedKeys = []
@@ -1390,6 +1520,15 @@
           })
         })
       },
+      closeAll() {
+        // 全部关闭：清空所有选中元素并收起侧边属性面板
+        var self = this
+        this.clearSelection()
+        this.sidePanel = ''
+        this.$nextTick(function() {
+          centerScroll(self.$refs.previewWrap, self, 'wrapScrolling')
+        })
+      },
       toggleSidePanel(panel) {
         // 互斥：同一时间只显示一个面板；再点当前面板即全部关闭
         if (panel === 'attr' && !this.selectedKeys.length) return
@@ -1403,29 +1542,6 @@
             centerScroll(self.$refs.previewWrap, self, 'wrapScrolling')
           }
         })
-      },
-      toggleMultiSelect() {
-        this.multiSelectMode = !this.multiSelectMode
-        // 退出多选时收敛为单选；进入多选保留当前选中项作为起点
-        if (!this.multiSelectMode) {
-          this.selectedKeys = this.currentAttrKey ? [this.currentAttrKey] : []
-        }
-      },
-      copyElement() {
-        if (!this.currentAttrKey) return
-        var srcKey = this.currentAttrKey
-        var newKey = srcKey + '_copy_' + Date.now()
-        var srcAttr = this.allAttrs.find(function(a) { return a.key === srcKey })
-        if (srcAttr) {
-          this.allAttrs.push({ key: newKey, label: srcAttr.label, value: srcAttr.value, isCustom: true })
-        }
-        this.selectedAttrs.push(newKey)
-        this.$set(this.attrStyles, newKey, JSON.parse(JSON.stringify(this.attrStyles[srcKey] || {})))
-        if (this.attrStyles[newKey]) this.attrStyles[newKey].x += 10
-        this.$set(this.attrLabels, newKey, this.attrLabels[srcKey] || '')
-        this.selectedKeys = [newKey]
-        this.currentAttrKey = newKey
-        this.pushSnapshot()
       },
       pushSnapshot() {
         var snap = JSON.stringify({
@@ -1770,75 +1886,112 @@
         if (style.width > 0) return style.width
         return Math.max(60, this.labelWidth - (style.x || 0) - 10)
       },
+      /** 顶栏「保存」：打开融合弹层，保存后关闭编辑页 */
       saveTemplate() {
+        this.openSaveSheet('save')
+      },
+      /** 顶栏「设置」：打开同一个融合弹层，保存后返回编辑页 */
+      openSettings() {
+        this.openSaveSheet('settings')
+      },
+      /** 打开「保存 / 打印设置」融合弹层，按入口决定保存后的去向 */
+      openSaveSheet(entry) {
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         var self = this
-        // 统一保存逻辑：所有类型先弹「保存模板」，再按类型走各自的模板数据模块保存
-        if (cfg.storage === 'localTemplates') {
-          var exist = this.selectedTemplateId
-            ? this.templates.find(function(t) { return t.id === self.selectedTemplateId })
-            : null
-          this.loadCategoryTree().then(function() {
-            self.newTemplateName = exist ? (exist.name || '') : ''
+        this.saveSheetEntry = entry || 'save'
+        var show = function() {
+          if (cfg.storage === 'localTemplates') {
+            var exist = self.selectedTemplateId
+              ? self.templates.find(function(t) { return t.id === self.selectedTemplateId })
+              : null
+            self.newTemplateName = self.currentTemplateName || (exist ? (exist.name || '') : '')
             var catId = exist && exist.type === 'default' ? exist.categoryId : null
             var valid = catId && self.categoryList.some(function(c) { return String(c.value) === String(catId) })
             self.templateCategoryId = valid ? catId : null
-            self.saveModalVisible = true
-          })
+          } else if (cfg.storage === 'deliveryTemplate') {
+            self.newTemplateName = self.currentTemplateName ||
+              ((self.deliveryTemplate && self.deliveryTemplate.name) || '发货单模板')
+            self.templateCategoryId = null
+          } else {
+            self.newTemplateName = self.headerTemplateName
+            self.templateCategoryId = null
+          }
+          self.saveSheetVisible = true
+        }
+        if (cfg.storage === 'localTemplates') this.loadCategoryTree().then(show)
+        else show()
+      },
+      closeSaveSheet() {
+        this.saveSheetVisible = false
+      },
+      /** 顶栏模板名称后的编辑按钮：重命名当前模板 */
+      openRename() {
+        this.renameValue = this.headerTemplateName
+        this.renameVisible = true
+      },
+      confirmRename() {
+        var name = (this.renameValue || '').trim()
+        if (!name) {
+          this.$message.warning('请输入模板名称')
           return
         }
-        if (cfg.storage === 'deliveryTemplate') {
-          this.newTemplateName = (this.deliveryTemplate && this.deliveryTemplate.name) || '发货单模板'
-        } else {
-          this.newTemplateName = cfg.title.replace('编辑', '') + '模板'
-        }
-        this.templateCategoryId = null
-        this.saveModalVisible = true
+        this.currentTemplateName = name
+        this.newTemplateName = name
+        this.renameVisible = false
       },
-      /** 发货单/小票：使用统一模板数据保存（不涉及商品类型） */
+      /** 模板只保存布局与打印设置；方向/份数/设备不写入模板 */
+      buildV2(name, cfg) {
+        return editorStateToV2({
+          name: name,
+          provider: this.provider || this.businessType || '',
+          businessType: this.provider || this.businessType || '',
+          selectedAttrs: this.selectedAttrs,
+          attrStyles: this.attrStyles,
+          attrLabels: this.attrLabels,
+          allAttrs: this.allAttrs,
+          goodsFields: this.goodsFields,
+          labelWidth: this.labelWidth,
+          labelHeight: this.labelHeight,
+          overflowMode: this.overflowMode,
+          pageMode: this.pageMode,
+          maxRowsPerPage: this.maxRowsPerPage,
+          repeatHeader: this.repeatHeader,
+          flowElementKeys: this.flowElementKeys
+        }, {
+          type: this.templateType,
+          kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null
+        })
+      },
+      /** 发货单/小票/会员/地址：使用统一模板数据保存（不涉及商品类型） */
       persistUnifiedTemplate(cfg, name) {
         var self = this
-        var payload = {
-          name: name,
-          selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
-          attrStyles: JSON.parse(JSON.stringify(this.attrStyles)),
-          attrLabels: JSON.parse(JSON.stringify(this.attrLabels)),
-          goodsFields: this.goodsFields.slice(),
-          width: this.labelWidth,
-          height: this.labelHeight,
-          overflowMode: this.overflowMode
-        }
+        var v2 = this.buildV2(name, cfg)
         if (cfg.storage === 'deliveryTemplate') {
           var base = this.deliveryTemplate || {}
-          var tpl = Object.assign({}, base, {
+          var tpl = Object.assign({}, v2, {
             name: name,
-            businessType: 'shipping.delivery',
-            provider: this.provider || 'shipping.delivery',
-            selectedAttrs: payload.selectedAttrs,
-            attrStyles: payload.attrStyles,
-            attrLabels: payload.attrLabels,
-            labelWidth: payload.width,
-            labelHeight: payload.height,
-            overflowMode: payload.overflowMode
+            serverId: base.serverId || null,
+            deliveryNote: base.deliveryNote
           })
-          persistDeliveryTemplate(tpl).then(function(res) {
+          return persistDeliveryTemplate(tpl).then(function(res) {
             if (res && res.code === 200 && res.data != null) {
-              tpl.serverId = res.data
-              tpl.id = res.data
-              self.deliveryTemplate = tpl
+              self.deliveryTemplate = Object.assign({}, base, v2ToEditorState(v2), { serverId: res.data, id: res.data })
             }
             self.showSaveResult(res, cfg)
+            return res && res.code === 200
           }).catch(function() {
             self.$message.error(cfg.title + '保存失败，请检查网络')
-          })
-        } else if (cfg.storage === 'platformConfig') {
-          // 单 key 覆盖写模式
-          this.postSnapshot(cfg.platformConfigKey, payload).then(function(res) {
-            self.showSaveResult(res, cfg)
-          }).catch(function() {
-            self.$message.error(cfg.title + '保存失败，请检查网络')
+            return false
           })
         }
+        // 单 key 覆盖写模式
+        return this.postSnapshot(cfg.platformConfigKey, v2).then(function(res) {
+          self.showSaveResult(res, cfg)
+          return res && res.code === 200
+        }).catch(function() {
+          self.$message.error(cfg.title + '保存失败，请检查网络')
+          return false
+        })
       },
       /** 加载商品类目树（保存模板弹窗的「商品类型」选项，仅二级类目可选） */
       loadCategoryTree() {
@@ -1904,10 +2057,14 @@
           customLabels: customLabels,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
-          overflowMode: this.overflowMode
+          overflowMode: this.overflowMode,
+          pageMode: this.pageMode,
+          maxRowsPerPage: this.maxRowsPerPage,
+          repeatHeader: this.repeatHeader,
+          flowElementKeys: this.flowElementKeys.slice()
         })
       },
-      /** 保存弹窗确认：不选商品类型=普通模板，选了=该类型的通用模板（同类型只保留一个） */
+      /** 融合弹层确认：不选商品类型=普通模板，选了=该类型的通用模板（同类型只保留一个） */
       confirmSaveTemplate() {
         var name = (this.newTemplateName || '').trim()
         if (!name) {
@@ -1915,13 +2072,19 @@
           return
         }
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
-        // 发货单/小票：同一套保存入口，按各自模板数据模块落地
+        var self = this
+        // 保存成功后的去向：设置入口返回编辑页，保存入口关闭编辑页
+        var finish = function(ok) {
+          if (!ok) return
+          self.currentTemplateName = name
+          self.saveSheetVisible = false
+          if (self.saveSheetEntry === 'save') self.handleBack()
+        }
+        // 发货单/小票/会员/地址：同一套保存入口，按各自模板数据模块落地
         if (cfg.storage !== 'localTemplates') {
-          this.saveModalVisible = false
-          this.persistUnifiedTemplate(cfg, name)
+          this.persistUnifiedTemplate(cfg, name).then(finish)
           return
         }
-        var self = this
         var isCategoryTpl = !!this.templateCategoryId
         var exist = this.selectedTemplateId
           ? this.templates.find(function(t) { return t.id === self.selectedTemplateId })
@@ -1947,8 +2110,7 @@
         if (idx > -1) this.templates.splice(idx, 1, tpl)
         else this.templates.push(tpl)
         this.selectedTemplateId = tpl.id
-        this.saveModalVisible = false
-        this.persistTemplate(tpl, '模板已保存')
+        this.persistTemplate(tpl, '模板已保存').then(function() { finish(true) })
       },
       /** 保存单个模板到统一模板表，成功后从服务端刷新列表，拿到权威 id/version */
       persistTemplate(tpl, successMsg) {
@@ -1996,15 +2158,15 @@
           if (attr.key) snapshotValues[attr.key] = attr.value == null ? '' : attr.value
         })
         try {
-          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
-            labelWidth: this.labelWidth,
-            labelHeight: this.labelHeight,
-            selectedAttrs: this.selectedAttrs,
-            attrStyles: this.attrStyles,
-            attrLabels: this.attrLabels,
-            overflowMode: this.overflowMode,
-            values: snapshotValues
-          }))
+          var cfgInfo = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+          var currentId = this.selectedTemplateId
+          var current = currentId
+            ? this.templates.find(function(t) { return t.id === currentId })
+            : null
+          // 快照与保存模板使用同一 v2 结构，预览按同一套规则还原，样式保持一致
+          var snapshot = this.buildV2((current && current.name) || cfgInfo.title.replace('编辑', '') + '模板', cfgInfo)
+          snapshot.values = snapshotValues
+          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify(snapshot))
         } catch (e) { /* 忽略 */ }
         // 标签模板可能有多个：带上当前模板标识，打印弹层从统一模板存储读取对应模板
         var templateId = ''
@@ -2023,9 +2185,6 @@
           name: templateName,
           directEntry: false
         })
-      },
-      openSettings() {
-        this.$message.info('设置功能开发中')
       },
       handleBack() {
         this.$emit('close')
@@ -2051,6 +2210,21 @@
 </script>
 
 <style lang="scss" scoped>
+/* 顶栏：模板名称作为标题，名称后可重命名 */
+.lem-title-edit {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  color: #fff;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.lem-title-edit:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .lem-page {
   flex: 1;
   min-height: 0;
@@ -2065,7 +2239,7 @@
 /* 画布 + 右侧面板：面板覆盖在画布上，不压缩画布 */
 .lem-content {
   position: relative;
-  --lem-side-w: 158px;
+  --lem-side-w: 180px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2109,9 +2283,10 @@
 .lem-elem {
   position: absolute;
   cursor: move;
-  /* 左右不留内边距：文字始终从元素 x 起始，与指定宽度的元素、打印位置保持一致 */
-  padding: 2px 0;
-  border: 1px solid transparent;
+  /* 与打印预览一致：无内边距/边框，文字从元素 x 起始，宽度即文本框宽度 */
+  padding: 0;
+  border: none;
+  box-sizing: border-box;
   white-space: nowrap;
   touch-action: none;
   user-select: none;
@@ -2304,15 +2479,33 @@
   flex: none;
 }
 
-/* 多选按钮激活态 */
-.lem-tool-active,
-.lem-tool-active span {
-  color: #1890ff;
-}
-
 /* 保存模板弹窗 */
+.lem-settings-radio {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lem-settings-radio .ant-radio-wrapper {
+  font-size: 14px;
+  white-space: normal;
+}
 .lem-save-field {
   margin-bottom: 14px;
+}
+
+.lem-save-field--inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+}
+
+.lem-save-field--inline .lem-save-label {
+  margin-bottom: 0;
+}
+
+.lem-save-field--inline .lem-save-hint {
+  margin-top: 0;
 }
 
 .lem-save-label {
@@ -2345,6 +2538,17 @@
   font-size: 12px;
   line-height: 1.5;
   color: #999;
+}
+
+/* 参与多行/分页打印的元素勾选 */
+.lem-flow-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lem-flow-check {
+  margin-left: 0;
 }
 
 .lem-save-conflict {
@@ -2432,10 +2636,20 @@
   flex: none;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   height: 34px;
   padding: 0 8px;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
+}
+
+.lem-side-close {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  color: #1890ff;
+  padding: 6px 2px;
+  white-space: nowrap;
 }
 
 .lem-side-title {
@@ -2504,7 +2718,7 @@
 /* 窄屏收窄面板宽度 */
 @media (max-width: 360px) {
   .lem-content {
-    --lem-side-w: 142px;
+    --lem-side-w: 164px;
   }
 }
 

@@ -22,6 +22,16 @@
               <span v-if="g.name" class="addr-goods-text">{{ g.name }}<template v-if="g.spec"> · {{ g.spec }}</template></span>
               <span v-else class="addr-goods-placeholder">点击添加商品</span>
             </div>
+            <!-- 数量：按数量分页打印时每件一张，默认 1 -->
+            <div v-if="g.name" class="addr-goods-qty" @click.stop>
+              <a-icon
+                class="addr-goods-qty-btn"
+                :class="{ disabled: (g.qty || 1) <= 1 }"
+                type="minus"
+                @click.stop="changeGoodsQty(idx, -1)" />
+              <span class="addr-goods-qty-num">×{{ g.qty || 1 }}</span>
+              <a-icon class="addr-goods-qty-btn" type="plus" @click.stop="changeGoodsQty(idx, 1)" />
+            </div>
             <a-icon v-if="g.name" class="addr-goods-del" type="delete" @click.stop="removeGoodsRow(idx)" />
           </div>
         </contact-recognize-panel>
@@ -432,7 +442,7 @@ export default {
       // 一个商品一行，打印时按行数换行排版
       return list.join('\n')
     },
-    /** 商品多行数据（打印/模板编辑用）：名称 + 规格值1/2/3 */
+    /** 商品多行数据（打印/模板编辑用）：名称 + 规格值1/2/3 + 数量 */
     goodsRowList() {
       return this.goodsRows.filter(function(g) {
         return g && (g.name || g.spec1 || g.spec2 || g.spec3)
@@ -441,9 +451,17 @@ export default {
           name: g.name || '',
           spec1: g.spec1 || '',
           spec2: g.spec2 || '',
-          spec3: g.spec3 || ''
+          spec3: g.spec3 || '',
+          qty: Math.min(99, Math.max(1, parseInt(g.qty, 10) || 1))
         }
       })
+    },
+    /** 调整商品数量：按数量分页打印时一件一张，范围 1-99 */
+    changeGoodsQty(index, delta) {
+      var row = this.goodsRows[index]
+      if (!row) return
+      var next = Math.min(99, Math.max(1, (parseInt(row.qty, 10) || 1) + delta))
+      this.$set(row, 'qty', next)
     },
     /** 保证商品列表末尾始终有一行「点击添加商品」触发行 */
     ensureGoodsTailRow() {
@@ -543,13 +561,18 @@ export default {
         spec: goods.spec || '',
         spec1: goods.spec1 || '',
         spec2: goods.spec2 || '',
-        spec3: goods.spec3 || ''
+        spec3: goods.spec3 || '',
+        qty: Math.min(99, Math.max(1, parseInt(goods.qty, 10) || 1))
       }
     },
     /** 单选：弹层已由组件关闭，这里回填当前行 */
     handlePickGoods(goods) {
       if (!goods || !goods.name) return
-      this.$set(this.goodsRows, this.goodsTargetIndex, this.toGoodsRow(goods))
+      var prev = this.goodsRows[this.goodsTargetIndex]
+      var row = this.toGoodsRow(goods)
+      // 重新选择商品时保留该行已填数量
+      if (prev && prev.qty) row.qty = prev.qty
+      this.$set(this.goodsRows, this.goodsTargetIndex, row)
       // 选中后自动补一行「点击添加商品」触发行
       this.ensureGoodsTailRow()
       this.goodsPickerVisible = false
@@ -742,6 +765,30 @@ export default {
   margin-left: 8px;
   font-size: 20px;
   color: #ff4d4f;
+}
+/* 商品数量：分页打印时按数量拆成多张 */
+.addr-goods-qty {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  border: 1px solid #d9d9d9;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.addr-goods-qty-btn {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #1890ff;
+}
+.addr-goods-qty-btn.disabled {
+  color: #d9d9d9;
+}
+.addr-goods-qty-num {
+  min-width: 28px;
+  text-align: center;
+  font-size: 12px;
+  color: #333;
 }
 .addr-print-btn {
   height: 46px;

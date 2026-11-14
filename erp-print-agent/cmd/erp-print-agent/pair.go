@@ -9,11 +9,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/jsherp/erp-print-agent/internal/config"
 )
+
+// defaultCAFile 根证书落盘位置，与 IPK 内置的 ca.pem 一致。
+const defaultCAFile = "/etc/erp-print-agent/ca.pem"
 
 // pairRequest 是 /printAgent/device/pair 的请求体，门店、型号与打印机随配对一起上报。
 type pairRequest struct {
@@ -122,6 +126,21 @@ func runPair(args []string) error {
 	if strings.TrimSpace(data.ServerURL) != "" {
 		cfg.Server.URL = data.ServerURL
 	}
+
+	// 配对成功后自动下发主机根证书，后续 WebSocket 才能通过 TLS 校验，无需手动拷贝
+	caPath := strings.TrimSpace(cfg.Server.CAFile)
+	if caPath == "" {
+		caPath = defaultCAFile
+	}
+	caPem, caErr := fetchRootCA(client, base)
+	if caErr != nil {
+		fmt.Fprintf(os.Stderr, "警告: 根证书自动下发失败(%v)，如握手报证书错误可在高级里手动放置 ca.pem\n", caErr)
+	} else if err := os.WriteFile(caPath, caPem, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "警告: 根证书写入 %s 失败(%v)\n", caPath, err)
+	} else {
+		cfg.Server.CAFile = caPath
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("配对成功但配置校验失败: %w", err)
 	}
@@ -130,6 +149,26 @@ func runPair(args []string) error {
 	}
 	fmt.Printf("配对成功: 设备=%s 云端=%s\n", cfg.DeviceID, cfg.Server.URL)
 	return nil
+}
+
+// fetchRootCA 从主机的免登录入口下载根证书，配对成功后自动下发，供 WebSocket 的 TLS 校验信任自签证书。
+func fetchRootCA(client *http.Client, base string) ([]byte, error) {
+	resp, err := client.Get(base + "/cert/jsh-root-ca.crt")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	pemData, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(pemData, []byte("BEGIN CERTIFICATE")) {
+		return nil, fmt.Errorf("返回内容不是 PEM 证书")
+	}
+	return pemData, nil
 }
 
 // httpBaseURL 把 ws/wss 地址转换成 http/https 地址，用于调用配对接口。

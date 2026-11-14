@@ -39,6 +39,9 @@ public class PrintAgentController {
     @Resource
     private LabelPrinterService labelPrinterService;
 
+    @Resource
+    private PrintPrinterStore printerStore;
+
     /**
      * 设备列表（含在线状态与实时运行信息）
      */
@@ -151,6 +154,62 @@ public class PrintAgentController {
     }
 
     /**
+     * 打印机型号库（主机维护，供代理选择并下发驱动参数）
+     */
+    @GetMapping(value = "/printers")
+    public BaseResponseInfo printers() {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            res.code = 200;
+            res.data = printerStore.listAll();
+        } catch (Exception e) {
+            logger.error("查询打印机型号失败: " + e.getMessage(), e);
+            res.code = 500;
+            res.data = new JSONArray();
+        }
+        return res;
+    }
+
+    /**
+     * 新增或修改打印机型号参数
+     */
+    @PostMapping(value = "/printer/save")
+    public BaseResponseInfo savePrinter(@RequestBody JSONObject body) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        try {
+            res.code = 200;
+            res.data = printerStore.save(body);
+        } catch (IllegalArgumentException e) {
+            res.code = 500;
+            res.data = e.getMessage();
+        } catch (Exception e) {
+            logger.error("保存打印机型号失败: " + e.getMessage(), e);
+            res.code = 500;
+            res.data = "保存失败：" + e.getMessage();
+        }
+        return res;
+    }
+
+    @PostMapping(value = "/printer/delete")
+    public BaseResponseInfo deletePrinter(@RequestBody JSONObject body) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        Long id = body.getLong("id");
+        if (id == null) {
+            res.code = 500;
+            res.data = "缺少型号 id";
+            return res;
+        }
+        if (printerStore.delete(id)) {
+            res.code = 200;
+            res.data = "ok";
+        } else {
+            res.code = 500;
+            res.data = "删除失败，型号不存在";
+        }
+        return res;
+    }
+
+    /**
      * 业务页面调用：按标签内容下发到指定设备/打印机
      */
     @PostMapping(value = "/print")
@@ -161,14 +220,23 @@ public class PrintAgentController {
         if (printerId == null || printerId.trim().isEmpty()) {
             printerId = firstPrinterId(deviceId);
         }
+        JSONObject printerConfig = findPrinterConfig(deviceId, printerId);
+        // 型号只对应指令方式：标签尺寸、份数由打印请求决定，这里只按型号取指令集
+        JSONObject driver = printerStore.findByModel(printerConfig == null ? null : printerConfig.getString("model"));
         int copies = body.getIntValue("copies") > 0 ? body.getIntValue("copies") : 1;
         int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
         int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
+        int density = body.getIntValue("density");
+        int speed = body.getIntValue("speed");
         JSONArray items = body.getJSONArray("items");
         String image = body.getString("image");
+        logger.info("收到打印请求 device=" + deviceId + " printer=" + printerId
+                + " size=" + width + "x" + height + " copies=" + copies
+                + " image=" + (image != null && !image.isEmpty())
+                + " items=" + (items == null ? 0 : items.size()));
         try {
-            String cmdSet = resolvePrinterCmdSet(deviceId, printerId);
-            byte[] data = labelPrinterService.buildLabel(cmdSet, width, height, items, copies, image);
+            String cmdSet = resolvePrinterCmdSet(printerConfig, driver);
+            byte[] data = labelPrinterService.buildLabel(cmdSet, width, height, items, copies, image, density, speed);
             JSONObject task = dispatcher.dispatch(deviceId, printerId, data, 15000);
             res.code = 200;
             res.data = task;
@@ -220,27 +288,37 @@ public class PrintAgentController {
     }
 
     /**
-     * 读取打印机配置的指令集（TSPL / CPCL / DDPL / ESC-POS），未配置时默认 TSPL
+     * 读取设备的某台打印机配置（型号、指令集等）
      */
-    private String resolvePrinterCmdSet(String deviceId, String printerId) {
+    private JSONObject findPrinterConfig(String deviceId, String printerId) {
         if (deviceId == null) {
-            return "TSPL";
+            return null;
         }
         JSONObject agent = store.findByDeviceId(deviceId);
         if (agent == null) {
-            return "TSPL";
+            return null;
         }
         JSONArray printers = agent.getJSONArray("printers");
         if (printers == null) {
-            return "TSPL";
+            return null;
         }
         for (int i = 0; i < printers.size(); i++) {
             JSONObject printer = printers.getJSONObject(i);
             if (printerId != null && printerId.equals(printer.getString("id"))) {
-                String cmdSet = printer.getString("cmdSet");
-                return cmdSet == null || cmdSet.trim().isEmpty() ? "TSPL" : cmdSet.trim();
+                return printer;
             }
         }
-        return "TSPL";
+        return null;
+    }
+
+    /**
+     * 指令集优先级：打印机自身配置 > 型号库参数 > 默认 TSPL
+     */
+    private String resolvePrinterCmdSet(JSONObject printerConfig, JSONObject driver) {
+        String cmdSet = printerConfig == null ? null : printerConfig.getString("cmdSet");
+        if (cmdSet == null || cmdSet.trim().isEmpty()) {
+            cmdSet = driver == null ? null : driver.getString("cmdSet");
+        }
+        return cmdSet == null || cmdSet.trim().isEmpty() ? "TSPL" : cmdSet.trim();
     }
 }

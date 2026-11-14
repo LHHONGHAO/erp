@@ -34,3 +34,18 @@ export function generatePrintAgentPairCode(parameter) {
 export function getPrintAgentPairStatus(parameter) {
   return getAction('/printAgent/pair/status', parameter)
 }
+
+/** 打印机型号库列表（主机下发给代理的型号来源） */
+export function getPrintPrinterList() {
+  return getAction('/printAgent/printers')
+}
+
+/** 新增/修改打印机型号参数 */
+export function savePrintPrinter(parameter) {
+  return postAction('/printAgent/printer/save', parameter)
+}
+
+/** 删除打印机型号 */
+export function deletePrintPrinter(parameter) {
+  return postAction('/printAgent/printer/delete', parameter)
+}

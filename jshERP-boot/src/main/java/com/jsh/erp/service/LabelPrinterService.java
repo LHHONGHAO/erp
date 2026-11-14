@@ -9,6 +9,8 @@ import com.google.zxing.oned.Code128Writer;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 import com.google.zxing.qrcode.encoder.Encoder;
 import com.google.zxing.qrcode.encoder.QRCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.print.Doc;
@@ -48,6 +50,8 @@ import java.util.Map;
  */
 @Service
 public class LabelPrinterService {
+
+    private final Logger logger = LoggerFactory.getLogger(LabelPrinterService.class);
 
     /** 打印机分辨率（D45 为 203dpi，即 8 点/mm） */
     private static final int PRINTER_DPI = 203;
@@ -103,7 +107,15 @@ public class LabelPrinterService {
      * 按打印机配置的指令集构建标签数据（TSPL / CPCL / DDPL / ESC-POS），供远程代理下发
      */
     public byte[] buildLabel(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
-        return buildJob(cmdSet, widthPx, heightPx, items, copies, image);
+        return buildJob(cmdSet, widthPx, heightPx, items, copies, image, 0, 0);
+    }
+
+    /**
+     * 按型号库参数构建标签数据，density/speed 仅 TSPL 有效，0 表示不指定
+     */
+    public byte[] buildLabel(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies,
+                             String image, int density, int speed) throws IOException {
+        return buildJob(cmdSet, widthPx, heightPx, items, copies, image, density, speed);
     }
 
     /**
@@ -122,14 +134,15 @@ public class LabelPrinterService {
      * 打印标签到网络打印机：按前端选择的指令集拼装指令后通过 Socket 直接发送到 ip:port
      */
     public void printNetworkLabel(String ip, int port, String cmdSet, int copies, int widthPx, int heightPx, JSONArray items, String image) throws Exception {
-        byte[] data = buildJob(cmdSet, widthPx, heightPx, items, copies, image);
+        byte[] data = buildJob(cmdSet, widthPx, heightPx, items, copies, image, 0, 0);
         sendToSocket(ip, port, data);
     }
 
     /**
      * 按指令集分发：TSPL（默认）、CPCL、DDPL，均优先使用整张位图，避免中文编码问题
      */
-    private byte[] buildJob(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+    private byte[] buildJob(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies,
+                            String image, int density, int speed) throws IOException {
         String cmd = cmdSet == null ? "" : cmdSet.trim().toUpperCase();
         if ("CPCL".equals(cmd)) {
             return buildCpclJob(widthPx, heightPx, image, copies);
@@ -140,7 +153,7 @@ public class LabelPrinterService {
         if ("ESC/POS".equals(cmd) || "ESCPOS".equals(cmd)) {
             return buildEscPosJob(widthPx, heightPx, image, copies);
         }
-        return buildTsplJob(widthPx, heightPx, items, copies, image);
+        return buildTsplJob(widthPx, heightPx, items, copies, image, density, speed);
     }
 
     private void sendToSocket(String ip, int port, byte[] data) throws Exception {
@@ -167,11 +180,25 @@ public class LabelPrinterService {
      * 拼装 TSPL 打印任务：标签尺寸 + 逐元素指令
      */
     private byte[] buildTsplJob(int widthPx, int heightPx, JSONArray items, int copies, String image) throws IOException {
+        return buildTsplJob(widthPx, heightPx, items, copies, image, 0, 0);
+    }
+
+    /**
+     * 拼装 TSPL 打印任务，density/speed 为型号库参数，0 表示不指定（使用打印机默认）
+     */
+    private byte[] buildTsplJob(int widthPx, int heightPx, JSONArray items, int copies, String image,
+                                int density, int speed) throws IOException {
         if (image != null && !image.trim().isEmpty()) {
-            return buildBitmapJob(widthPx, heightPx, image, copies);
+            return buildBitmapJob(widthPx, heightPx, image, copies, density, speed);
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeLine(out, "SIZE " + toMm(toDots(widthPx)) + " mm," + toMm(toDots(heightPx)) + " mm");
+        if (speed > 0) {
+            writeLine(out, "SPEED " + speed);
+        }
+        if (density > 0) {
+            writeLine(out, "DENSITY " + density);
+        }
         writeLine(out, "CLS");
         if (items != null) {
             for (int i = 0; i < items.size(); i++) {
@@ -193,11 +220,16 @@ public class LabelPrinterService {
         return out.toByteArray();
     }
 
+    private byte[] buildBitmapJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+        return buildBitmapJob(widthPx, heightPx, image, copies, 0, 0);
+    }
+
     /**
      * 按整张图片拼装 TSPL 任务：图片缩放到打印点尺寸后转为 1 位单色位图，用 BITMAP 指令下发
      * 这样文字、粗体、字距、Logo、条码全部由前端渲染，打印机只负责打点，效果与本地打印一致
      */
-    private byte[] buildBitmapJob(int widthPx, int heightPx, String image, int copies) throws IOException {
+    private byte[] buildBitmapJob(int widthPx, int heightPx, String image, int copies,
+                                  int density, int speed) throws IOException {
         BufferedImage source = decodeImage(image);
         int dotsWidth = Math.max(1, toDots(widthPx));
         int dotsHeight = Math.max(1, toDots(heightPx));
@@ -211,22 +243,35 @@ public class LabelPrinterService {
         int widthBytes = (dotsWidth + 7) / 8;
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeLine(out, "SIZE " + toMm(dotsWidth) + " mm," + toMm(dotsHeight) + " mm");
+        if (speed > 0) {
+            writeLine(out, "SPEED " + speed);
+        }
+        if (density > 0) {
+            writeLine(out, "DENSITY " + density);
+        }
         writeLine(out, "CLS");
         // TSPL 的 BITMAP 后面必须跟二进制位图数据，不能是 "00,FF" 这类文本
         out.write(("BITMAP 0,0," + widthBytes + "," + dotsHeight + ",0,").getBytes(CHARSET));
+        int blackPixels = 0;
         for (int y = 0; y < dotsHeight; y++) {
             for (int byteIndex = 0; byteIndex < widthBytes; byteIndex++) {
                 int value = 0;
                 for (int bit = 0; bit < 8; bit++) {
                     int x = byteIndex * 8 + bit;
+                    boolean black = x < dotsWidth && isBlack(target.getRGB(x, y));
                     // 汉印固件的 BITMAP 位图 1=白 0=黑，与标准 TSPL 相反；行尾补白，避免右侧出现黑边
-                    if (x >= dotsWidth || !isBlack(target.getRGB(x, y))) {
+                    if (!black) {
                         value |= (0x80 >> bit);
+                    } else {
+                        blackPixels++;
                     }
                 }
                 out.write(value);
             }
         }
+        // 位图诊断：黑色像素为 0 说明前端渲染的标签是空白的
+        logger.info("TSPL位图 dots={}x{} black={} 原图字节={}", dotsWidth, dotsHeight, blackPixels,
+                image == null ? 0 : image.length());
         writeLine(out, "");
         writeLine(out, "PRINT 1," + Math.max(1, copies));
         return out.toByteArray();
@@ -407,7 +452,8 @@ public class LabelPrinterService {
         int widthDots = item.getIntValue("width") > 0 ? toDots(item.getIntValue("width")) : 0;
         int heightDots = item.getIntValue("height") > 0 ? toDots(item.getIntValue("height")) : 0;
         List<String> lines = wrapText(text, widthDots, scale);
-        int maxLines = heightDots > 0 ? Math.max(0, heightDots / lineStep) : lines.size();
+        // 高度略小于一行行高时仍要打印第一行，避免整张标签空白
+        int maxLines = heightDots > 0 ? Math.max(1, heightDots / lineStep) : lines.size();
         for (int i = 0; i < lines.size() && i < maxLines; i++) {
             String line = lines.get(i);
             if (!line.isEmpty()) {

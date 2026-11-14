@@ -37,6 +37,7 @@ type Server struct {
 type Printer struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
+	Model            string `json:"model,omitempty"`
 	Host             string `json:"host"`
 	Port             int    `json:"port"`
 	ConnectTimeoutMs int    `json:"connectTimeoutMs"`

@@ -10,6 +10,7 @@ local tpl = require "luci.template"
 local CONFIG = "/etc/erp-print-agent/config.json"
 local INIT = "/etc/init.d/erp-print-agent"
 local BIN = "/usr/bin/erp-print-agent"
+local MODELS_CACHE = "/etc/erp-print-agent/models.json"
 
 function index()
 	local page = entry({"admin", "services", "erp_print_agent"}, call("action_page"), _("远程打印"), 60)
@@ -57,12 +58,27 @@ local function is_enabled()
 	return fs.access("/etc/rc.d/S95erp-print-agent") and true or false
 end
 
+-- 型号由主机下发：用代理自带的 models 命令拉取，失败时回退上一次的缓存文件
+local function load_models()
+	local raw = trim(sys.exec(BIN .. " models -config " .. CONFIG .. " -cache " .. MODELS_CACHE .. " 2>/dev/null"))
+	local ok, list = false, nil
+	if raw ~= "" then
+		ok, list = pcall(jsonc.parse, raw)
+	end
+	if not (ok and type(list) == "table") then
+		ok, list = pcall(jsonc.parse, fs.readfile(MODELS_CACHE) or "")
+		if not (ok and type(list) == "table") then
+			list = {}
+		end
+	end
+	return list
+end
+
 -- 注意：LuCI 模板环境的查找顺序是 viewns(含 _G 与 ucode 桥接 L) 优先于 scope，
 -- 因此像 config / error / version 这类与全局同名的变量名会被全局值覆盖，必须换名。
 local function render(opts)
-	local cfg, raw = read_config()
+	local cfg = read_config()
 	opts.agentcfg = opts.agentcfg or cfg
-	opts.cfgraw = opts.cfgraw or raw
 	opts.running = is_running()
 	opts.enabled = is_enabled()
 	opts.binver = trim(sys.exec(BIN .. " version 2>/dev/null"))
@@ -73,6 +89,7 @@ local function render(opts)
 	local printers = current.printers or {}
 	-- 嵌入 script 前转义 "<"，避免打印机名称中出现 </script> 截断页面
 	opts.printers_json = (jsonc.stringify(printers):gsub("<", "\\u003c"))
+	opts.models_json = (jsonc.stringify(load_models()):gsub("<", "\\u003c"))
 	tpl.render("erp_print_agent/index", opts)
 end
 
@@ -105,6 +122,7 @@ local function collect_printers()
 		printers[#printers + 1] = {
 			id = id,
 			name = trim(item.name),
+			model = trim(item.model),
 			host = trim(item.host),
 			port = port,
 			connectTimeoutMs = tonumber(item.connectTimeoutMs) or 3000,
@@ -120,31 +138,24 @@ end
 
 -- 保存表单；deviceId/token 只保留原值，由配对流程下发
 local function persist_form()
-	local custom = trim(http.formvalue("rawjson"))
-	local cfg
+	local cfg = read_config() or {}
+	cfg.server = cfg.server or {}
+	cfg.server.url = trim(http.formvalue("serverUrl"))
+	cfg.storeName = trim(http.formvalue("storeName"))
 
-	if custom ~= "" then
-		local ok, obj = pcall(jsonc.parse, custom)
-		if not ok or type(obj) ~= "table" then
-			return nil, "JSON 语法错误，未保存"
-		end
-		cfg = obj
-	else
-		cfg = read_config() or {}
-		cfg.server = cfg.server or {}
-		cfg.log = cfg.log or {}
-		cfg.server.url = trim(http.formvalue("serverUrl"))
-		cfg.server.serverName = trim(http.formvalue("serverName"))
-		cfg.server.insecureSkipVerify = (http.formvalue("insecureSkipVerify") == "1")
-		cfg.storeName = trim(http.formvalue("storeName"))
-		cfg.printerModel = trim(http.formvalue("printerModel"))
-		cfg.log.level = http.formvalue("logLevel") or cfg.log.level or "info"
+	local printers, perr = collect_printers()
+	if not printers then
+		return nil, perr
+	end
+	cfg.printers = printers
 
-		local printers, perr = collect_printers()
-		if not printers then
-			return nil, perr
+	-- 型号是打印机属性，这里汇总第一台已填写型号的打印机，供主机列表与配对上报沿用；
+	-- 全部留空时保留原值，避免旧配置的型号被清空
+	for _, p in ipairs(printers) do
+		if p.model ~= "" then
+			cfg.printerModel = p.model
+			break
 		end
-		cfg.printers = printers
 	end
 
 	local ok, err = pcall(function()
@@ -205,7 +216,17 @@ function action_test()
 		return
 	end
 
-	local out = sys.exec(BIN .. " selftest -config " .. CONFIG .. " 2>&1") or ""
+	-- 只测试点击的那台打印机
+	local printerId = trim(http.formvalue("printerId"))
+	if printerId ~= "" and not printerId:match("^[%w_%-%.]+$") then
+		render({ errtext = "打印机编号不合法" })
+		return
+	end
+	local cmd = BIN .. " selftest -config " .. CONFIG
+	if printerId ~= "" then
+		cmd = cmd .. " -printer " .. printerId
+	end
+	local out = sys.exec(cmd .. " 2>&1") or ""
 	if not out:find("已发送", 1, true) then
 		render({ errtext = "测试打印失败：" .. trim(out) })
 		return

@@ -68,6 +68,10 @@ try {
     Copy-Item (Join-Path $root 'packaging\openwrt\files\config.json') (Join-Path $stageDir 'etc\erp-print-agent\config.json')
     Copy-Item (Join-Path $root 'packaging\openwrt\luci\controller\erp_print_agent.lua') (Join-Path $stageDir 'usr\lib\lua\luci\controller\erp_print_agent.lua')
     Copy-Item (Join-Path $root 'packaging\openwrt\luci\view\erp_print_agent\index.htm') (Join-Path $stageDir 'usr\lib\lua\luci\view\erp_print_agent\index.htm')
+    # LuCI 模板解析器不接受 CRLF（会报 unfinished string），暂存时统一转成 LF
+    $stagedView = Join-Path $stageDir 'usr\lib\lua\luci\view\erp_print_agent\index.htm'
+    $viewText = [IO.File]::ReadAllText($stagedView) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText($stagedView, $viewText, (New-Object System.Text.UTF8Encoding($false)))
     $caFile = Join-Path $root 'packaging\openwrt\files\ca.pem'
     if (Test-Path $caFile) {
         Copy-Item $caFile (Join-Path $stageDir 'etc\erp-print-agent\ca.pem')

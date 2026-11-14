@@ -13,7 +13,7 @@ import java.io.IOException;
 
 @WebFilter(filterName = "LogCostFilter", urlPatterns = {"/*"},
         initParams = {@WebInitParam(name = "filterPath",
-                      value = "/printAgent/device#/platformConfig/getPlatform#/v2/api-docs#/webjars#" +
+                      value = "/platformConfig/getPlatform#/v2/api-docs#/webjars#" +
                               "/systemConfig/static#/api/plugin/wechat/weChat/share#" +
                               "/api/plugin/general-ledger/pdf/voucher#/api/plugin/tenant-statistics/tenantClean#" +
                               "/cert")})

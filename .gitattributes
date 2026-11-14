@@ -2,3 +2,4 @@
 *.css linguist-language=Java
 *.html linguist-language=Java
 *.vue linguist-language=Java
+erp-print-agent/packaging/openwrt/luci/** text eol=lf

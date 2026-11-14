@@ -84,9 +84,7 @@
 </template>
 
 <script>
-import { postAction } from '@/api/manage'
 import { saveMemberFromAddress } from '@/api/api'
-import { mixinDevice } from '@/utils/mixin'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
 import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
 import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
@@ -98,15 +96,10 @@ import MobileProductPicker from '@/components/mobile/MobileProductPicker'
  */
 export default {
   name: 'AddressRecognize',
-  mixins: [mixinDevice, scrollBlankMixin],
+  mixins: [scrollBlankMixin],
   components: { LabelPrintModal, ContactRecognizePanel, MobileProductPicker },
   data() {
     return {
-      ocrLoading: false,
-      pasteLoading: false,
-      ocrError: '',
-      imageUrl: '',
-      pasteText: '',
       form: {
         contacts: '',
         telephone: '',
@@ -136,12 +129,6 @@ export default {
       matchMatchedBy: ''
     }
   },
-  beforeDestroy() {
-    if (this.imageUrl) {
-      URL.revokeObjectURL(this.imageUrl)
-    }
-  },
-  computed: {},
   methods: {
     /** 识别完成：内容高度可能变化，重算页面高度 */
     onRecognized() {
@@ -158,276 +145,6 @@ export default {
       this.goodsRows = [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }]
       this.syncPageHeight()
     },
-    getPlaceholder(label) {
-      return this.ocrLoading ? '识别中...' : ('请输入' + label)
-    },
-    // ===== 复制地址 =====
-    /** 待复制内容：只保留联系人、电话、地址 */
-    buildCopyText() {
-      var parts = []
-      var contacts = String(this.form.contacts || '').trim()
-      var telephone = String(this.form.telephone || '').trim()
-      var address = this.joinAddressParts(this.form.address)
-      if (contacts) parts.push('联系人：' + contacts)
-      if (telephone) parts.push('电话：' + telephone)
-      if (address) parts.push('地址：' + address)
-      return parts.join('\n')
-    },
-    /** 把识别出的地址按 省/市/区县/乡镇街道 拆开，再用 / 拼成整体 */
-    joinAddressParts(address) {
-      var text = String(address || '').replace(/\s+/g, ' ').trim()
-      if (!text) return ''
-      if (text.indexOf('/') > -1) return text
-      var patterns = [
-        /^([^省市区县旗镇乡]{2,10}?(?:省|自治区|特别行政区))/,
-        /^([^省区县旗镇乡]{2,10}?(?:市|自治州|地区|盟))/,
-        /^([^省市县旗镇乡]{2,10}?(?:区|县|旗))/,
-        /^([^省市区县]{2,10}?(?:镇|乡|街道))/
-      ]
-      var parts = []
-      patterns.forEach(function(pattern) {
-        var match = text.match(pattern)
-        if (match && match[1]) {
-          parts.push(match[1])
-          text = text.slice(match[1].length)
-        }
-      })
-      if (text) parts.push(text)
-      return parts.join('/')
-    },
-    /** 复制地址：把输入框内容写入剪贴板 */
-    copyAddress() {
-      var text = this.buildCopyText()
-      if (!text) {
-        this.$message.warning('请先填写地址信息')
-        return
-      }
-      this.copyToClipboard(text)
-    },
-    copyToClipboard(text) {
-      var that = this
-      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(function() {
-          that.$message.success('地址信息已复制')
-        }).catch(function() {
-          that.copyByTextarea(text)
-        })
-      } else {
-        this.copyByTextarea(text)
-      }
-    },
-    /** 非安全上下文（http）下的兜底复制方案 */
-    copyByTextarea(text) {
-      var textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.setAttribute('readonly', '')
-      textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;'
-      document.body.appendChild(textarea)
-      textarea.select()
-      textarea.setSelectionRange(0, text.length)
-      var copied = false
-      try {
-        copied = document.execCommand('copy')
-      } catch (e) {
-        copied = false
-      }
-      document.body.removeChild(textarea)
-      if (copied) this.$message.success('地址信息已复制')
-      else this.$message.error('复制失败，请长按输入框手动复制')
-    },
-    resetResult() {
-      this.form = {
-        contacts: '',
-        telephone: '',
-        account: '',
-        platform: '抖音',
-        remark: '',
-        address: ''
-      }
-      this.goodsRows = [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }]
-      this.ocrError = ''
-      this.ocrLoading = false
-      this.pasteLoading = false
-      // 清空后内容减少，重新计算页面高度
-      this.syncPageHeight()
-    },
-    triggerCamera() {
-      this.$refs.cameraInput && this.$refs.cameraInput.click()
-    },
-    triggerGallery() {
-      this.$refs.galleryInput && this.$refs.galleryInput.click()
-    },
-    onPick(event) {
-      var input = event.target
-      var file = input.files && input.files[0]
-      // 允许重复选择同一张图片
-      input.value = ''
-      if (file) {
-        this.recognizeImage(file)
-      }
-    },
-    clearAll() {
-      if (this.imageUrl) {
-        URL.revokeObjectURL(this.imageUrl)
-      }
-      this.imageUrl = ''
-      this.pasteText = ''
-      this.resetResult()
-    },
-    recognizeImage(file) {
-      var that = this
-      this.ocrLoading = true
-      this.ocrError = ''
-      if (this.imageUrl) {
-        URL.revokeObjectURL(this.imageUrl)
-      }
-      this.imageUrl = URL.createObjectURL(file)
-      // 第一步：图片识别文字（接口返回 rawText）
-      this.compressImage(file).then(function(blob) {
-        var formData = new FormData()
-        formData.append('file', blob, 'address.jpg')
-        return postAction('/ocr/recognizeProduct', formData)
-      }).then(function(res) {
-        if (!(res && res.code === 200 && res.data)) {
-          throw new Error((res && res.data && res.data.message) ? res.data.message : '图片识别文字失败')
-        }
-        var text = (res.data.rawText || '').trim()
-        if (!text) {
-          throw new Error('未识别到文字，请更换清晰的图片')
-        }
-        // 第二步：文字识别地址
-        return postAction('/ocr/parseAddressText', { text: text })
-      }).then(function(res) {
-        if (!(res && res.code === 200 && res.data)) {
-          throw new Error((res && res.data && res.data.message) ? res.data.message : '文字识别地址失败')
-        }
-        that.ocrLoading = false
-        that.fillFields(res.data)
-      }).catch(function(err) {
-        that.ocrLoading = false
-        var errMsg = err && err.message ? err.message : '识别失败'
-        that.ocrError = errMsg
-        that.$message.error(errMsg)
-      })
-    },
-    /**
-     * 压缩图片：百度文字识别要求 base64 后不超过 4MB（原图约 3MB），
-     * 手机拍照普遍 3~8MB，直接上传会报 input oversize，这里先缩到 1600px 内
-     */
-    compressImage(file) {
-      return new Promise(function(resolve) {
-        if (!file || !/^image\//.test(file.type)) {
-          resolve(file)
-          return
-        }
-        var url = URL.createObjectURL(file)
-        var img = new Image()
-        img.onload = function() {
-          var maxSide = 1600
-          var scale = Math.min(1, maxSide / Math.max(img.width, img.height))
-          var canvas = document.createElement('canvas')
-          canvas.width = Math.round(img.width * scale)
-          canvas.height = Math.round(img.height * scale)
-          var ctx = canvas.getContext('2d')
-          ctx.fillStyle = '#fff'
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-          URL.revokeObjectURL(url)
-          var toBlob = function(quality, callback) {
-            if (canvas.toBlob) {
-              canvas.toBlob(callback, 'image/jpeg', quality)
-            } else {
-              callback(null)
-            }
-          }
-          toBlob(0.82, function(blob) {
-            if (!blob) {
-              resolve(file)
-              return
-            }
-            if (blob.size <= 2500000) {
-              resolve(blob)
-              return
-            }
-            toBlob(0.6, function(smaller) {
-              resolve(smaller && smaller.size < blob.size ? smaller : blob)
-            })
-          })
-        }
-        img.onerror = function() {
-          URL.revokeObjectURL(url)
-          resolve(file)
-        }
-        img.src = url
-      })
-    },
-    parsePastedText() {
-      var text = this.pasteText.trim()
-      if (!text) {
-        this.$message.warn('请先粘贴文本内容')
-        return
-      }
-      this.pasteLoading = true
-      this.ocrError = ''
-      var that = this
-      postAction('/ocr/parseAddressText', { text: text }).then(function(res) {
-        that.pasteLoading = false
-        if (res && res.code === 200 && res.data) {
-          that.fillFields(res.data)
-        } else {
-          var msg = (res && res.data && res.data.message) ? res.data.message : '解析失败'
-          that.ocrError = msg
-          that.$message.error(msg)
-        }
-      }).catch(function(err) {
-        that.pasteLoading = false
-        var errMsg = '解析请求失败：' + (err && err.message ? err.message : '未知错误')
-        that.ocrError = errMsg
-        that.$message.error(errMsg)
-      })
-    },
-    /**
-     * 清理识别文本：去掉与地址无关的无效内容
-     * 1. 纯数字/符号碎片（如快递单表格的行号 8、9、10）
-     * 2. 订单号、运单号、重量、金额等物流/单据信息
-     * 保留含中文的行、电话行，并去重
-     */
-    cleanOcrText(text) {
-      var lines = String(text || '').split(/\r?\n/)
-      var seen = {}
-      var result = []
-      lines.forEach(function(line) {
-        var item = line.replace(/\s+/g, ' ').trim()
-        if (!item) return
-        var hasChinese = /[\u4e00-\u9fa5]/.test(item)
-        var digits = item.replace(/\D/g, '')
-        var isPhone = /^[+\d][\d\s()-]{5,19}$/.test(item) && digits.length >= 7
-        // 非中文且不是电话的碎片行（行号、金额符号、分隔线等）直接丢弃
-        if (!hasChinese && !isPhone) return
-        // 与地址无关的单据/物流信息
-        if (/^(订单号|运单号|快递单号|流水号|单号|重量|体积|数量|金额|合计|小计|单价|价格|日期|时间)[:：]?/.test(item)) return
-        if (seen[item]) return
-        seen[item] = true
-        result.push(item)
-      })
-      return result.join('\n')
-    },
-    fillFields(data) {
-      if (data.rawText) {
-        // 回填编辑框前清理与地址无关的内容（表格行号、订单/物流信息等）
-        this.pasteText = this.cleanOcrText(data.rawText)
-      }
-      this.form.contacts = data.contacts || ''
-      this.form.telephone = data.telephone || ''
-      // 识别结果按 省/市/区县/乡镇街道 用 / 拼接后回填，复制与打印均使用该格式
-      this.form.address = this.joinAddressParts(data.address || '')
-      // 识别结果回填后文本可能变多导致页面加高，重新计算页面高度
-      this.syncPageHeight()
-    },
-    /**
-     * 打印：打开「地址打印」页，只使用本页输入框数据
-     * 地址打印模板独立存储（address_layout），与会员标签模板（member_layout）互不影响
-     */
     // ===== 商品选择 =====
     goodsValue() {
       var list = []

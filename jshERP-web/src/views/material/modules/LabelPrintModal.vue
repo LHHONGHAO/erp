@@ -632,7 +632,7 @@
   import { fetchLabelTemplates } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveGoodsLayout, applyTextOverflow } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
@@ -962,49 +962,35 @@
         return (this.record && this.record.goodsRows) || []
       },
       /**
-       * 商品明细表/商品组合的动态排版：
-       * 表格及组合元素按商品行数变高，下方元素顺移（预览与打印共用同一结果）
+       * 标签最终布局（编辑预览 / 打印预览 / 打印数据共用同一函数）
+       * 商品明细表、商品组合、文字折行、上下归位都在这里一次算完
        */
-      goodsLayout() {
-        return resolveGoodsLayout({
+      labelLayout() {
+        return resolveLabelLayout({
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
-          values: Object.assign({}, this.attrValues, { goodsRows: this.goodsRowsForLayout }),
+          values: this.attrValues,
+          labels: this.attrLabels,
+          goodsRows: this.goodsRowsForLayout,
           paperWidth: this.labelWidth,
           goodsLabel: this.attrLabels[GOODS_KEY] || '',
-          goodsFields: this.goodsFields
+          goodsFields: this.goodsFields,
+          mode: this.overflowMode
         })
       },
-      goodsTableData() {
-        return this.goodsLayout.table
+      goodsLayout() {
+        return this.labelLayout
       },
-      // 超长文本处理模式：随模板保存，wrap=自动折行并下移后续行，ellipsis=单行省略号裁切
+      goodsTableData() {
+        return this.labelLayout.table
+      },
+      // 超长文本处理模式：随模板保存，wrap=自动折行并按实际行数上下归位，ellipsis=单行省略号裁切
       overflowMode() {
         return this.template && this.template.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
       },
-      // 元素 key → 最终显示文本（含「属性名：」前缀）
-      overflowTexts() {
-        var self = this
-        var map = {}
-        this.renderItems.forEach(function(item) {
-          if (item.isCode) return
-          var label = self.attrLabels[item.key] || ''
-          var value = item.key === GOODS_KEY
-            ? self.goodsLayout.goodsText
-            : (item.attr.value == null ? '' : item.attr.value)
-          map[item.key] = label ? label + ': ' + value : value
-        })
-        return map
-      },
-      // 折行顺移 / 省略号裁切结果（预览与打印共用）
+      // 折行 / 省略号裁切结果（预览与打印共用）
       overflowLayout() {
-        return applyTextOverflow({
-          mode: this.overflowMode,
-          styles: this.goodsLayout.styles,
-          keys: this.renderItems.filter(function(item) { return !item.isCode }).map(function(item) { return item.key }),
-          texts: this.overflowTexts,
-          paperWidth: this.labelWidth
-        })
+        return this.labelLayout
       },
       // 预览 schema：套用折行后的实际坐标与高度
       previewSchema() {
@@ -1026,7 +1012,7 @@
             changed = true
           }
           var height = style.height / PX_PER_MM
-          if (style.height > 0 && el.height != null && Math.abs((el.height || 0) - height) > 0.01) {
+          if (style.height > 0 && Math.abs((el.height || 0) - height) > 0.01) {
             next = Object.assign({}, next, { height: Math.round(height * 100) / 100 })
             changed = true
           }

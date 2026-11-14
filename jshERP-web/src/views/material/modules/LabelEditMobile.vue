@@ -98,8 +98,8 @@
             </div>
           </template>
           <template v-else>
-            <span class="lem-elem-label" v-if="attrLabels[key]">{{ attrLabels[key] }}：</span>
-            <span class="lem-elem-value">{{ getAttrValue(key) }}</span>
+            <span class="lem-elem-label" v-if="displayParts[key] && displayParts[key].label">{{ displayParts[key].label }}</span>
+            <span class="lem-elem-value">{{ displayParts[key] ? displayParts[key].value : '' }}</span>
           </template>
           <span
             v-if="currentAttrKey === key"
@@ -378,7 +378,7 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, resolveGoodsLayout } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, resolveLabelLayout } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -551,16 +551,48 @@
       scrollSpacer() {
         return computeSpacer(this.labelWidth, this.zoom)
       },
-      // 商品明细行数据（地址识别页带回的多行商品）
-      goodsRowsData() {
-        return resolveGoodsLayout({
+      // 标签最终布局（与打印预览、打印数据共用同一函数）
+      labelLayout() {
+        var values = {}
+        this.allAttrs.forEach(function(attr) {
+          values[attr.key] = attr.value == null ? '' : attr.value
+        })
+        return resolveLabelLayout({
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
-          values: this.record || {},
+          values: values,
+          labels: this.attrLabels,
+          goodsRows: (this.record && this.record.goodsRows) || [],
           paperWidth: this.labelWidth,
-          goodsLabel: this.attrLabels.goods || '',
-          goodsFields: this.goodsFields
+          goodsLabel: this.attrLabels[GOODS_KEY] || '',
+          goodsFields: this.goodsFields,
+          mode: this.overflowMode
         })
+      },
+      // 兼容原有调用：商品明细行数据
+      goodsRowsData() {
+        return this.labelLayout
+      },
+      // 元素 key → 实际显示文本（含「属性名: 」前缀 / 省略号裁切结果）
+      displayParts() {
+        var self = this
+        var map = {}
+        this.selectedAttrs.forEach(function(key) {
+          var texts = self.labelLayout.texts || {}
+          var text = texts[key]
+          if (text == null) {
+            var label = self.attrLabels[key] || ''
+            var value = self.getAttrValue(key)
+            text = label ? label + ': ' + value : value
+          }
+          text = text == null ? '' : String(text)
+          var firstLine = text.split('\n')[0]
+          var idx = firstLine.indexOf(': ')
+          map[key] = idx > -1
+            ? { label: text.slice(0, idx + 2), value: text.slice(idx + 2) }
+            : { label: '', value: text }
+        })
+        return map
       },
       // 商品组合可勾选的字段（商品名称 / 规格值1-3）
       goodsFieldOptions() {
@@ -1039,8 +1071,8 @@
         return attr ? attr.value : ''
       },
       getElementStyle(key) {
-        // 商品明细表/商品组合会按商品行数变高，使用运行时重排后的坐标与高度
-        var resolved = this.goodsRowsData.styles[key]
+        // 使用统一布局结果：商品明细 / 文字折行 / 上下归位后的实际坐标与高度
+        var resolved = this.labelLayout.styles[key]
         var style = resolved || this.attrStyles[key] || {}
         var result = {
           left: (style.x || 0) + 'px',

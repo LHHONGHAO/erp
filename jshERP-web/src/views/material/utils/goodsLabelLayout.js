@@ -43,7 +43,7 @@ function measureCtx() {
 /**
  * 文本在指定宽度下折行后的行数（至少 1 行）
  */
-export function measureTextLines(text, width, fontSize, bold) {
+export function measureTextLines(text, width, fontSize, bold, letterSpacing) {
   const value = text == null ? '' : String(text)
   if (!value) return 1
   const lines = value.split('\n')
@@ -51,6 +51,10 @@ export function measureTextLines(text, width, fontSize, bold) {
   const ctx = measureCtx()
   if (!ctx) return lines.length
   ctx.font = (bold ? 'bold ' : '') + (fontSize || 12) + 'px sans-serif'
+  const spacing = letterSpacing || 0
+  const measure = function(txt) {
+    return ctx.measureText(txt).width + txt.length * spacing
+  }
   let total = 0
   lines.forEach(function(line) {
     if (!line) {
@@ -61,7 +65,7 @@ export function measureTextLines(text, width, fontSize, bold) {
     let current = ''
     for (let i = 0; i < line.length; i++) {
       const ch = line.charAt(i)
-      if (current && ctx.measureText(current + ch).width > width) {
+      if (current && measure(current + ch) > width) {
         count++
         current = ch
       } else {
@@ -133,7 +137,7 @@ export function buildGoodsTable(rows, style, paperWidth) {
     const cells = [row.name, row.spec1, row.spec2, row.spec3]
     let maxLines = 1
     cells.forEach(function(cell, i) {
-      maxLines = Math.max(maxLines, measureTextLines(cell, widths[i] - CELL_PAD * 2, fontSize, bold))
+      maxLines = Math.max(maxLines, measureTextLines(cell, widths[i] - CELL_PAD * 2, fontSize, bold, s.letterSpacing || 0))
     })
     return {
       cells: cells,
@@ -198,11 +202,12 @@ export function resolveGoodsLayout(options) {
       actualHeight = table.height
     } else {
       const width = style.width > 0 ? style.width : Math.max(20, paperWidth - (style.x || 0))
-      // 组合元素前面有「属性名：」前缀，测量行数时一并计入
-      const prefix = opts.goodsLabel ? opts.goodsLabel + '：' : ''
-      actualHeight = Math.max(lineHeight, measureTextLines(prefix + goodsText, width, fontSize, style.fontWeight === 'bold') * lineHeight)
+      // 组合元素前面有「属性名: 」前缀，测量行数时一并计入
+      const prefix = opts.goodsLabel ? opts.goodsLabel + ': ' : ''
+      actualHeight = Math.max(lineHeight, measureTextLines(prefix + goodsText, width, fontSize, style.fontWeight === 'bold', style.letterSpacing || 0) * lineHeight)
     }
-    const delta = Math.max(0, Math.ceil(actualHeight - originalHeight))
+    // 商品表 / 商品组合同样按实际高度排版：多行下移，少行回缩上移
+    const delta = Math.round(actualHeight - originalHeight)
     const sourceBottom = baseY + originalHeight
     Object.keys(styles).forEach(function(other) {
       if (other === key) return
@@ -225,20 +230,24 @@ export function resolveGoodsLayout(options) {
 }
 
 /** 单行文本超出宽度时裁切，末尾补省略号 */
-export function truncateText(text, width, fontSize, bold) {
+export function truncateText(text, width, fontSize, bold, letterSpacing) {
   const value = text == null ? '' : String(text)
   if (!value || !width || width <= 0) return value
   const ctx = measureCtx()
   if (!ctx) return value
   ctx.font = (bold ? 'bold ' : '') + (fontSize || 12) + 'px sans-serif'
-  if (ctx.measureText(value).width <= width) return value
+  const spacing = letterSpacing || 0
+  const measure = function(txt) {
+    return ctx.measureText(txt).width + txt.length * spacing
+  }
+  if (measure(value) <= width) return value
   const ellipsis = '…'
-  if (ctx.measureText(ellipsis).width > width) return ''
+  if (measure(ellipsis) > width) return ''
   let low = 0
   let high = value.length
   while (low < high) {
     const mid = Math.ceil((low + high) / 2)
-    if (ctx.measureText(value.slice(0, mid) + ellipsis).width <= width) low = mid
+    if (measure(value.slice(0, mid) + ellipsis) <= width) low = mid
     else high = mid - 1
   }
   return value.slice(0, low) + ellipsis
@@ -247,12 +256,13 @@ export function truncateText(text, width, fontSize, bold) {
 /**
  * 文本超宽处理（预览与打印共用）
  *
- * mode = 'wrap'     ：按元素宽度自动折行，折行多出的高度让下方元素整体下移；
+ * mode = 'wrap'     ：按元素宽度自动折行，元素高度取实际行数；
+ *                     折行多出的高度让下方元素整体下移，行数少于模板预留高度时上方元素逐行上移；
  * mode = 'ellipsis' ：保持单行，超出宽度末尾补省略号裁切（显式换行的每行分别处理）。
  *
  * @param {Object} options.styles      已解析样式（含 x/y/width/height/fontSize/lineHeight）
  * @param {Array}  options.keys        需要处理的文本元素 key
- * @param {Object} options.texts       元素 key → 显示文本（含「属性名：」前缀）
+ * @param {Object} options.texts       元素 key → 显示文本（含「属性名: 」前缀）
  * @param {string} options.mode        wrap | ellipsis
  * @returns {{styles:Object, texts:Object}}
  */
@@ -275,28 +285,86 @@ export function applyTextOverflow(options) {
     const raw = texts[key] == null ? '' : String(texts[key])
     resultTexts[key] = raw
     const width = style.width > 0 ? style.width : 0
-    if (!width) return
     const fontSize = style.fontSize || 12
     const bold = style.fontWeight === 'bold'
     const lineHeight = fontSize * (style.lineHeight || 1.3)
     if (mode === 'ellipsis') {
+      if (!width) return
       resultTexts[key] = raw.split('\n').map(function(line) {
-        return truncateText(line, width, fontSize, bold)
+        return truncateText(line, width, fontSize, bold, style.letterSpacing || 0)
       }).join('\n')
       return
     }
+    // 按实际内容行数排版：多行增高下移，少行回缩上移
     const originalHeight = style.height > 0 ? style.height : lineHeight
-    const actualHeight = Math.max(originalHeight, measureTextLines(raw, width, fontSize, bold) * lineHeight)
-    const delta = Math.ceil(actualHeight - originalHeight)
-    if (delta > 0) {
+    const lines = width
+      ? measureTextLines(raw, width, fontSize, bold, style.letterSpacing || 0)
+      : raw.split('\n').length
+    const actualHeight = Math.max(lineHeight, lines * lineHeight)
+    const delta = Math.round(actualHeight - originalHeight)
+    if (delta !== 0) {
       const bottom = (style.y || 0) + originalHeight
       Object.keys(styles).forEach(function(other) {
         if (other === key) return
         if ((styles[other].y || 0) >= bottom - 0.5) styles[other].y = (styles[other].y || 0) + delta
       })
-      style.height = Math.round(actualHeight)
     }
+    style.height = Math.round(actualHeight)
   })
 
   return { styles: styles, texts: resultTexts }
+}
+
+/**
+ * 标签最终布局（编辑预览 / 打印预览 / 打印数据共用）
+ *
+ * 先按商品明细计算动态高度并推动下方元素，再按文字实际行数折行 / 上下归位。
+ *
+ * @param {Object} options.selectedAttrs 已选元素 key
+ * @param {Object} options.attrStyles    模板保存样式
+ * @param {Object} options.values        业务值（key → 值）
+ * @param {Object} options.labels        元素 key → 属性名
+ * @param {Array}  options.goodsRows     商品明细行
+ * @param {Array}  options.goodsFields   商品组合字段
+ * @param {Number} options.paperWidth    标签宽度（px）
+ * @param {String} options.mode          wrap | ellipsis
+ * @returns {{styles:Object, texts:Object, table:Object|null, goodsRows:Array, goodsText:String}}
+ */
+export function resolveLabelLayout(options) {
+  const opts = options || {}
+  const labels = opts.labels || {}
+  const values = Object.assign({}, opts.values || {}, {
+    goodsRows: opts.goodsRows || (opts.values && opts.values.goodsRows) || []
+  })
+  const allKeys = opts.selectedAttrs || Object.keys(opts.attrStyles || {})
+  // 明细表由表格自身排版，不参与文字折行
+  const textKeys = allKeys.filter(function(key) {
+    return key !== GOODS_TABLE_KEY && key !== 'dn_table' && key !== 'dn_table_total' && key.indexOf('code__') !== 0
+  })
+  const goods = resolveGoodsLayout({
+    selectedAttrs: allKeys,
+    attrStyles: opts.attrStyles,
+    values: values,
+    paperWidth: opts.paperWidth,
+    goodsLabel: opts.goodsLabel || labels[GOODS_KEY] || '',
+    goodsFields: opts.goodsFields
+  })
+  const texts = {}
+  textKeys.forEach(function(key) {
+    const value = key === GOODS_KEY ? goods.goodsText : (values[key] == null ? '' : values[key])
+    texts[key] = labels[key] ? labels[key] + ': ' + value : value
+  })
+  const overflow = applyTextOverflow({
+    mode: opts.mode,
+    styles: goods.styles,
+    keys: textKeys,
+    texts: texts
+  })
+  return {
+    styles: overflow.styles,
+    texts: overflow.texts,
+    table: goods.table,
+    goodsRows: goods.goodsRows,
+    goodsText: goods.goodsText
+  }
 }

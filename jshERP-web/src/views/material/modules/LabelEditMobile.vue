@@ -45,7 +45,7 @@
     <div class="lem-content">
     <!-- 预览区 -->
     <div class="lem-preview-wrap" ref="previewWrap" :class="wrapScrolling ? 'lem-preview-wrap--scrolling' : 'lem-preview-wrap--fitting'">
-      <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
+      <div class="lem-scroll-spacer" :style="{ width: (scrollSpacer + sidePanelReserve) + 'px' }"></div>
       <div
         class="lem-label"
         ref="labelCanvas"
@@ -61,6 +61,8 @@
           :style="getElementStyle(key)"
           @pointerdown.stop.prevent="startPointerDrag(key, $event, 'move')"
         >
+          <!-- 内容层单独裁切，手柄放在内容层之外，避免被 overflow 裁掉 -->
+          <div class="lem-elem-inner">
           <template v-if="isCode(key)">
             <img v-if="codeImages[key]" :src="codeImages[key]" class="lem-code-img" />
             <span v-else class="lem-code-placeholder">编码</span>
@@ -101,6 +103,7 @@
             <span class="lem-elem-label" v-if="displayParts[key] && displayParts[key].label">{{ displayParts[key].label }}</span>
             <span class="lem-elem-value">{{ displayParts[key] ? displayParts[key].value : '' }}</span>
           </template>
+          </div>
           <span
             v-if="currentAttrKey === key"
             class="lem-resize-handle"
@@ -111,17 +114,18 @@
             v-if="currentAttrKey === key && !isCode(key)"
             class="lem-delete-btn"
             :style="deleteBtnAntiScaleStyle"
-            @click.stop="removeAttr(currentAttrKey)"
+            @pointerdown.stop.prevent="noop"
+            @click.stop="removeAttr(key)"
           >×</span>
         </div>
         <!-- 框选矩形 -->
         <div v-if="marquee.visible" class="lem-marquee" :style="marqueeStyle"></div>
       </div>
-      <div class="lem-scroll-spacer" :style="{ width: scrollSpacer + 'px' }"></div>
+      <div class="lem-scroll-spacer" :style="{ width: (scrollSpacer + sidePanelReserve) + 'px' }"></div>
     </div>
 
     <!-- 属性面板：覆盖在画布右侧，不压缩画布；与元素面板互斥 -->
-    <div class="lem-side" v-if="sidePanel === 'attr'">
+    <div class="lem-side" v-if="sidePanel === 'attr'" ref="sidePanel">
       <div class="lem-side-head">
         <span class="lem-side-title">文字属性</span>
       </div>
@@ -260,10 +264,6 @@
     <!-- 工具栏：固定在屏幕底边 -->
     <div class="lem-toolbar">
       <div class="lem-toolbar-scroll">
-        <div class="lem-tool-btn" :class="{ 'lem-tool-btn--disabled': !selectedKeys.length }" @click="deleteSelected">
-          <a-icon type="delete" />
-          <span>删除</span>
-        </div>
         <div class="lem-tool-btn" @click="zoomIn">
           <a-icon type="zoom-in" />
           <span>放大</span>
@@ -551,6 +551,12 @@
       scrollSpacer() {
         return computeSpacer(this.labelWidth, this.zoom)
       },
+      // 属性面板打开时，左右各补一段可滚动余量，让画布可左移，手柄不被面板盖住
+      sidePanelReserve() {
+        if (this.sidePanel !== 'attr') return 0
+        var narrow = typeof window !== 'undefined' && window.innerWidth <= 360
+        return (narrow ? 142 : 158) + 20
+      },
       // 标签最终布局（与打印预览、打印数据共用同一函数）
       labelLayout() {
         var values = {}
@@ -680,7 +686,23 @@
     watch: {
       // 取消选中后自动收起属性面板
       selectedKeys(val) {
-        if (!val.length && this.sidePanel === 'attr') this.sidePanel = ''
+        var self = this
+        if (!val.length && this.sidePanel === 'attr') {
+          this.sidePanel = ''
+          this.$nextTick(function() {
+            centerScroll(self.$refs.previewWrap, self, 'wrapScrolling')
+          })
+          return
+        }
+        if (this.sidePanel === 'attr') this.panSelectionIntoView()
+      },
+      currentAttrKey() {
+        if (this.sidePanel === 'attr') this.panSelectionIntoView()
+      },
+      zoom() {
+        if (this.sidePanel !== 'attr') return
+        var self = this
+        setTimeout(function() { self.centerAndPan() }, 80)
       }
     },
     mounted() {
@@ -1099,10 +1121,9 @@
           result.display = 'block'
           result.padding = '0'
         }
-        // 指定高度时超出部分裁掉（与打印一致：只打印框内完整行）
+        // 指定高度时由内容层裁切，元素本身保持 overflow:visible，避免裁掉手柄
         if (style.height) {
           result.height = style.height + 'px'
-          result.overflow = 'hidden'
         }
         return result
       },
@@ -1165,14 +1186,6 @@
       clearSelection() {
         this.selectedKeys = []
         this.currentAttrKey = null
-      },
-      // 删除选中元素（无多选时删除当前焦点元素）
-      deleteSelected() {
-        var keys = this.selectedKeys.slice()
-        if (!keys.length && this.currentAttrKey) keys = [this.currentAttrKey]
-        if (!keys.length) return
-        var self = this
-        keys.forEach(function(k) { self.removeAttr(k) })
       },
       addAttr(key) {
         if (this.selectedAttrs.indexOf(key) !== -1) return
@@ -1333,10 +1346,63 @@
         var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
         if (attr) attr.value = val
       },
+      // 属性面板打开后，把选中元素和手柄平移到面板左侧
+      noop() {},
+      panSelectionIntoView() {
+        var self = this
+        this.$nextTick(function() {
+          self.ensureSelectionVisible()
+        })
+      },
+      ensureSelectionVisible() {
+        var wrap = this.$refs.previewWrap
+        var panel = this.$refs.sidePanel
+        var key = this.currentAttrKey || this.selectedKeys[this.selectedKeys.length - 1]
+        if (!wrap || !panel || !key) return
+        var el = wrap.querySelector('.lem-elem[data-key="' + key + '"]')
+        if (!el) return
+        var elRect = el.getBoundingClientRect()
+        var wrapRect = wrap.getBoundingClientRect()
+        var visibleRight = panel.getBoundingClientRect().left - 8
+        var visibleLeft = wrapRect.left + 8
+        if (elRect.left < visibleLeft) {
+          var maxLeft = wrap.scrollWidth - wrap.clientWidth
+          wrap.scrollLeft = Math.max(0, Math.min(maxLeft, wrap.scrollLeft - (visibleLeft - elRect.left)))
+        }
+        var overflow = (elRect.right + 12) - visibleRight
+        if (overflow > 0) {
+          var max = wrap.scrollWidth - wrap.clientWidth
+          wrap.scrollLeft = Math.min(max, wrap.scrollLeft + overflow)
+        }
+      },
+      centerAndPan() {
+        var self = this
+        this.$nextTick(function() {
+          if (self.sidePanel !== 'attr') return
+          var wrap = self.$refs.previewWrap
+          if (!wrap) return
+          // 面板打开时左右都补了滑动余量，固定用 flex-start 再按 max/2 居中
+          self.wrapScrolling = true
+          self.$nextTick(function() {
+            var max2 = wrap.scrollWidth - wrap.clientWidth
+            wrap.scrollLeft = max2 > 0 ? Math.round(max2 / 2) : 0
+            self.ensureSelectionVisible()
+          })
+        })
+      },
       toggleSidePanel(panel) {
         // 互斥：同一时间只显示一个面板；再点当前面板即全部关闭
         if (panel === 'attr' && !this.selectedKeys.length) return
+        var was = this.sidePanel
         this.sidePanel = this.sidePanel === panel ? '' : panel
+        var self = this
+        this.$nextTick(function() {
+          if (self.sidePanel === 'attr') {
+            self.centerAndPan()
+          } else if (was === 'attr') {
+            centerScroll(self.$refs.previewWrap, self, 'wrapScrolling')
+          }
+        })
       },
       toggleMultiSelect() {
         this.multiSelectMode = !this.multiSelectMode
@@ -1457,6 +1523,12 @@
         clone.style.whiteSpace = 'nowrap'
         clone.style.overflow = 'visible'
         clone.style.outline = 'none'
+        var inner = clone.querySelector('.lem-elem-inner')
+        if (inner) {
+          inner.style.width = 'auto'
+          inner.style.height = 'auto'
+          inner.style.overflow = 'visible'
+        }
         var handles = clone.querySelectorAll('.lem-resize-handle, .lem-delete-btn')
         Array.prototype.forEach.call(handles, function(node) {
           if (node.parentNode) node.parentNode.removeChild(node)
@@ -2048,9 +2120,16 @@
 }
 
 .lem-elem-selected {
-  outline: 1px solid #1890ff;
-  outline-offset: 0;
+  /* 画在框内，避免贴到标签边缘时被裁掉 */
+  box-shadow: inset 0 0 0 1px #1890ff;
   background: rgba(24, 144, 255, 0.05);
+}
+
+/* 内容层：只裁切内容，不裁选手柄 */
+.lem-elem-inner {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .lem-elem-label {
@@ -2137,6 +2216,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 3;
+}
+
+/* 视觉仍是 20px 圆点，透明感应区扩到 44×44 */
+.lem-resize-handle::before,
+.lem-delete-btn::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: transparent;
 }
 
 .lem-resize-handle::after {
@@ -2162,6 +2252,8 @@
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+  touch-action: none;
+  z-index: 4;
 }
 
 /* 框选矩形 */
@@ -2311,11 +2403,6 @@
 
 .lem-tool-btn .anticon {
   font-size: 18px;
-}
-
-/* 无选中元素时「删除」置灰 */
-.lem-tool-btn--disabled {
-  opacity: 0.35;
 }
 
 /* 面板：覆盖在画布右侧（不压缩画布），属性/元素互斥 */

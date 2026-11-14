@@ -3,7 +3,7 @@
 <h2 name="content"><%:远程打印代理%></h2>
 
 <%
-local cfg = config or {}
+local cfg = agentcfg or {}
 local srv = cfg.server or {}
 local lg = cfg.log or {}
 local p1 = (cfg.printers or {})[1] or {}
@@ -18,8 +18,8 @@ local action_url = luci.dispatcher.build_url("admin", "services", "erp_print_age
 	<div class="cbi-section"><p><%:未知操作。%></p></div>
 <% end %>
 
-<% if error then %>
-	<div class="cbi-section"><p style="color:#c00"><%=error%></p></div>
+<% if errtext then %>
+	<div class="cbi-section"><p style="color:#c00"><%=errtext%></p></div>
 <% end %>
 
 <fieldset class="cbi-section">
@@ -35,7 +35,7 @@ local action_url = luci.dispatcher.build_url("admin", "services", "erp_print_age
 				<% end %>
 				&nbsp;|&nbsp;<%:开机自启%>：
 				<% if enabled then %><%:已启用%><% else %><%:未启用%><% end %>
-				&nbsp;|&nbsp;<%:版本%>：<%=version%>
+				&nbsp;|&nbsp;<%:版本%>：<%=binver%>
 			</div>
 		</div>
 		<div class="cbi-value">

@@ -49,13 +49,15 @@ local function is_enabled()
 	return fs.access("/etc/rc.d/S95erp-print-agent") and true or false
 end
 
+-- 注意：LuCI 模板环境的查找顺序是 viewns(含 _G 与 ucode 桥接 L) 优先于 scope，
+-- 因此像 config / error / version 这类与全局同名的变量名会被全局值覆盖，必须换名。
 local function render(opts)
 	local cfg, raw = read_config()
-	opts.config = opts.config or cfg
-	opts.raw = opts.raw or raw
+	opts.agentcfg = opts.agentcfg or cfg
+	opts.cfgraw = opts.cfgraw or raw
 	opts.running = is_running()
 	opts.enabled = is_enabled()
-	opts.version = trim(sys.exec(BIN .. " version 2>/dev/null"))
+	opts.binver = trim(sys.exec(BIN .. " version 2>/dev/null"))
 	opts.token = disp.context.authtoken
 	tpl.render("erp_print_agent/index", opts)
 end
@@ -75,7 +77,7 @@ function action_save()
 	if custom ~= "" then
 		local ok, obj = pcall(jsonc.parse, custom)
 		if not ok or type(obj) ~= "table" then
-			render({ error = "JSON 语法错误，未保存", raw = custom })
+			render({ errtext = "JSON 语法错误，未保存", cfgraw = custom })
 			return
 		end
 		cfg = obj
@@ -110,7 +112,7 @@ function action_save()
 		fs.writefile(CONFIG, jsonc.stringify(cfg) .. "\n")
 	end)
 	if not ok then
-		render({ error = "写入失败: " .. tostring(err), config = cfg })
+		render({ errtext = "写入失败: " .. tostring(err), agentcfg = cfg })
 		return
 	end
 

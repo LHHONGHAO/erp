@@ -64,16 +64,19 @@
           </div>
           <div class="form-tip">设备编号即代理 config.json 中的 deviceId（代理页面「设备 ID」），自动生成，点击可复制；两处必须一致</div>
         </a-form-item>
-        <a-form-item label="设备 Token" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
-          <a-input-group compact>
-            <a-input v-model="form.token" readOnly style="width: calc(100% - 80px)" placeholder="保存后自动生成" />
-            <a-button :disabled="!form.token" @click="copyText(form.token)">复制</a-button>
-          </a-input-group>
-          <div class="form-tip">请把设备编号与 Token 填入代理 /etc/erp-print-agent/config.json</div>
+        <a-form-item label="配对码" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <div class="copy-text" title="点击复制" @click="copyText(form.token)">
+            <span>{{ form.token }}</span>
+            <a-icon type="copy" class="copy-text-icon" />
+          </div>
+          <div class="form-tip">打开弹窗时自动生成，对应代理配置 token；点击可复制</div>
         </a-form-item>
-        <a-form-item label="服务器地址" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
-          <a-input v-model="form.serverUrl" placeholder="wss://www.innas.xyz:9999/ws/print-agent" />
-          <div class="form-tip">对应代理配置 server.url，默认按当前访问地址生成</div>
+        <a-form-item label="通信地址" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
+          <div class="copy-text" title="点击复制" @click="copyText(form.serverUrl)">
+            <span>{{ form.serverUrl }}</span>
+            <a-icon type="copy" class="copy-text-icon" />
+          </div>
+          <div class="form-tip">对应代理配置 server.url，默认按当前访问地址生成；点击可复制</div>
         </a-form-item>
         <a-form-item label="证书主机名" :labelCol="{ span: 5 }" :wrapperCol="{ span: 17 }">
           <a-input v-model="form.certHostname" placeholder="www.innas.xyz" />
@@ -311,13 +314,23 @@
       },
       openCreate() {
         this.form = this.emptyForm()
-        // 设备编号自动生成，无需手动输入
+        // 打开弹窗即自动生成设备编号与配对码（Token），无需点击
         this.form.deviceId = this.generateDeviceId()
+        this.form.token = this.generateToken()
         this.editVisible = true
       },
       // 生成设备编号：agent- + 时间戳36进制 + 随机串，保证唯一性
       generateDeviceId() {
         return 'agent-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+      },
+      // 生成配对码（Token）：32 位十六进制，与后端 generateToken 规则一致
+      generateToken() {
+        const hex = '0123456789abcdef'
+        let s = ''
+        for (let i = 0; i < 32; i++) {
+          s += hex.charAt(Math.floor(Math.random() * 16))
+        }
+        return s
       },
       openEdit(record) {
         this.form = {
@@ -401,7 +414,7 @@
         }
         savePrintAgent(parameter).then(res => {
           if (res && res.code === 200) {
-            this.$message.success(parameter.id ? '保存成功' : '保存成功，请点击“编辑”复制设备编号与 Token 填入代理配置')
+            this.$message.success(parameter.id ? '保存成功' : '保存成功，请把设备编号、配对码与通信地址填入代理配置')
             this.editVisible = false
             this.loadList(false)
           } else {

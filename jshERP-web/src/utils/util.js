@@ -102,6 +102,10 @@ export function generateIndexRouter(data) {
 function generateChildRouters (data) {
   const routers = [];
   for (let item of data) {
+    // 固定路由（已在 constantRouterMap 中注册）只用于菜单展示，不再重复生成动态路由
+    if (item.fixedRoute) {
+      continue
+    }
     let componentPath = "";
     item.route = "1";
     if(item.component.indexOf("layouts")>=0){

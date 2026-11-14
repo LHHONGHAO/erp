@@ -40,7 +40,9 @@ function injectPrintAgentRoute(routes) {
   }
 }
 
-// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表
+// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表。
+// 页面路由已在 router.config.js 的 constantRouterMap 中固定注册（与首页共用 TabLayout），
+// 这里只负责菜单展示与首页「常用页面」的入口，菜单结构变化不会导致页面打不开。
 function injectAddressRecognizeMenu(menuData) {
   if (!Array.isArray(menuData)) return
   const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA'
@@ -56,6 +58,7 @@ function injectAddressRecognizeMenu(menuData) {
       url: '/system/address-recognize',
       component: '/system/AddressRecognize',
       route: '1',
+      fixedRoute: true,
       children: []
     })
   }

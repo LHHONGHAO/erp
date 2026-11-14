@@ -1993,7 +1993,7 @@
 /* 画布 + 右侧面板：面板覆盖在画布上，不压缩画布 */
 .lem-content {
   position: relative;
-  --lem-side-w: 126px;
+  --lem-side-w: 158px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2417,7 +2417,7 @@
 /* 窄屏收窄面板宽度 */
 @media (max-width: 360px) {
   .lem-content {
-    --lem-side-w: 114px;
+    --lem-side-w: 142px;
   }
 }
 
@@ -2449,20 +2449,30 @@
   margin-bottom: 6px;
 }
 
-/* 单列字段：标签在上、控件在下 */
+/* 字段行：属性名与编辑框同行并列 */
 .lem-field {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
+.lem-field > .lem-style-label {
+  flex: 0 0 48px;
+  width: 48px;
+}
+
 .lem-text-input {
-  width: 100%;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
 }
 
 /* 商品信息组合字段勾选 */
 .lem-goods-field-group {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 2px 8px;
@@ -2475,8 +2485,8 @@
 }
 
 .lem-ocr-btn {
-  align-self: flex-end;
-  margin-top: 2px;
+  flex: none;
+  margin-top: 0;
 }
 
 .lem-style-grid {
@@ -2487,17 +2497,22 @@
 
 .lem-style-item {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-/* 控件占满属性栏宽度 */
+/* 控件占满属性栏剩余宽度 */
 .lem-style-control {
-  width: 100% !important;
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0;
 }
 
 .lem-style-label {
+  flex: 0 0 34px;
+  width: 34px;
   font-size: 12px;
   color: #999;
   white-space: nowrap;

@@ -24,8 +24,10 @@ import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 规格值样本库：识别时归一化比对，人工纠正时沉淀样本
@@ -402,6 +404,7 @@ public class SpecValueSampleService {
 
     /**
      * 非数值文本的相似度兜底：同品类、同规格名（含子项）下取最相似的已学标准值
+     * 是否允许兜底、兜底的相似度门槛由「是否常值属性」决定，取值离散的属性要求更高相似度
      */
     private SpecValueSample fuzzyMatch(String normKey, Long attributeId, Long categoryId, String childName, Long tenantId) {
         if (!isTextValue(normKey) || normKey.length() < 5) {
@@ -409,6 +412,7 @@ public class SpecValueSampleService {
         }
         try {
             List<SpecValueSample> samples = specValueSampleMapper.selectByScope(attributeId, categoryId, childName, tenantId, 200);
+            double threshold = fuzzyThreshold(attributeId, samples);
             SpecValueSample best = null;
             double bestScore = 0;
             for (SpecValueSample sample : samples) {
@@ -427,11 +431,57 @@ public class SpecValueSampleService {
                     best = sample;
                 }
             }
-            return bestScore >= 0.65 ? best : null;
+            return bestScore >= threshold ? best : null;
         } catch (Exception e) {
             logger.warn("规格值相似度比对失败：{}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 相似度门槛：常值属性的标准值集合稳定，可容忍 OCR 错字；
+     * 取值变动大的属性（名称、品牌、颜色、生产地址等自由文本）提高门槛，避免把不同值归一成同一标准值
+     */
+    private double fuzzyThreshold(Long attributeId, List<SpecValueSample> samples) {
+        boolean freeText = isFreeTextAttribute(attributeId);
+        boolean constant = isConstantScope(samples);
+        if (freeText) {
+            return constant ? 0.82 : 0.92;
+        }
+        return constant ? 0.65 : 0.85;
+    }
+
+    /**
+     * 非标准属性（自由文本）：取值随商品变化，不能按 OCR 错字做宽松归一。
+     * 负数属性ID与 SpecRecognizeService 中基础属性的样本隔离ID保持一致。
+     */
+    private static boolean isFreeTextAttribute(Long attributeId) {
+        if (attributeId == null) {
+            return false;
+        }
+        return attributeId == -101L   // 商品名称
+                || attributeId == -102L // 品牌
+                || attributeId == -104L // 生产厂商/地址
+                || attributeId == -112L; // 颜色
+    }
+
+    /**
+     * 常值判断：作用域内已学标准值高度集中（去重值少且占比低）视为常值。
+     * 样本不足时按离散处理，宁可严格，避免少量样本把不同取值吸成同一个标准值。
+     */
+    private static boolean isConstantScope(List<SpecValueSample> samples) {
+        if (samples == null || samples.size() < 3) {
+            return false;
+        }
+        Set<String> canonicalValues = new HashSet<>();
+        for (SpecValueSample sample : samples) {
+            String canonical = sample.getCanonicalValue();
+            if (StringUtil.isNotEmpty(canonical)) {
+                canonicalValues.add(SpecValueNormalizer.normKey(canonical));
+            }
+        }
+        int distinct = canonicalValues.size();
+        return distinct <= 20 && distinct * 3 <= samples.size();
     }
 
     /** 文本类值：至少 2 个汉字、且数字占比不超过一半（排除尺寸/纯数字） */

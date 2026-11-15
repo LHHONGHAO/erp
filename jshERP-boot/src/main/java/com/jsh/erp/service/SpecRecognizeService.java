@@ -886,7 +886,10 @@ public class SpecRecognizeService {
             JSONObject learned = specValueSampleService.match(value, categoryId, baseFieldSampleId(field));
             if (learned.getBooleanValue("matched")) {
                 String canonical = learned.getString("canonicalValue");
-                if (StringUtil.isNotEmpty(canonical) && !isPropertyField(canonical)) {
+                // 商品名称是自由文本，不做相似度纠错：否则名称相近但实际不同的商品会被
+                // 归一成同一个已有名称，保存时被误判为同款商品
+                boolean fuzzyName = "name".equals(field) && "similar".equals(learned.getString("matchType"));
+                if (!fuzzyName && StringUtil.isNotEmpty(canonical) && !isPropertyField(canonical)) {
                     return canonical;
                 }
             }

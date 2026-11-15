@@ -67,7 +67,9 @@ export default {
       return {
         bottom: this.keyboardHeight + 'px',
         left: this.popupLeft + 'px',
-        width: this.popupWidth
+        width: this.popupWidth,
+        // 键盘弹起时紧贴键盘顶边，避免底部安全区在键盘上方留下空白
+        paddingBottom: this.keyboardHeight > 0 ? '0px' : undefined
       }
     }
   },

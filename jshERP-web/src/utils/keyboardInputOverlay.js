@@ -342,7 +342,12 @@ function buildField (el) {
 
 function positionOverlay () {
   if (!rootEl || !activeEl) return
-  rootEl.style.bottom = getKeyboardHeight() + 'px'
+  const keyboardHeight = getKeyboardHeight()
+  rootEl.style.bottom = keyboardHeight + 'px'
+  // 键盘弹起时紧贴键盘顶边：不再叠加底部安全区，避免弹层与键盘之间出现大片留白
+  rootEl.style.paddingBottom = keyboardHeight > 0
+    ? '0px'
+    : 'calc(10px + env(safe-area-inset-bottom, 0px))'
   const vv = window.visualViewport
   if (vv && vv.width) {
     // 按可视区屏宽铺满，兼容横屏与页面缩放

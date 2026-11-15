@@ -483,7 +483,6 @@
         <div class="agg-footer-wrap">
           <div v-if="aggSaveHint" class="agg-footer-hint" :class="{ 'is-error': aggSaveHintError }">{{ aggSaveHint }}</div>
           <div class="agg-footer">
-            <a-button class="agg-footer-btn" :disabled="specAggregateLoading || aggSaving" @click="openPriceSheet">价格填写</a-button>
             <a-button type="primary" class="agg-footer-btn" :loading="confirmLoading || aggSaving" @click="saveSpecAggregate">商品保存</a-button>
           </div>
         </div>
@@ -506,7 +505,7 @@
               <div class="agg-prop-field">
                 <a-input :ref="'aggProp_' + prop.field" v-model="specAggregateResult.commonProps[prop.field]" size="small"
                          :class="{ 'agg-input-error': aggFieldErrors[prop.field] }"
-                         @focus="handleAggPropFocus(prop.field)" @change="markAggPropEdited(prop.field)" />
+                         @focus="handleAggPropFocus(prop.field)" @change="markAggPropEdited(prop.field, $event.target.value)" />
                 <a-button v-if="stablePropertyProfile(prop.field) && !specAggregateResult.commonProps[prop.field]"
                           size="small" type="link" class="agg-profile-suggestion"
                           @click="applyStableProfileValue(prop.field)">
@@ -579,17 +578,17 @@
               </div>
             </div>
           </template>
-          <!-- 价格设置已移至独立弹层：底栏「价格填写」打开，保存时同步写入全部 SKU -->
+          <!-- 价格设置与规格设置在独立弹层：底栏「商品保存」校验后打开，保存时同步写入全部 SKU -->
         </div>
       </a-spin>
     </a-modal>
-    <!-- 价格填写弹层：确定后保存商品信息与价格信息 -->
+    <!-- 价格设置弹层：规格设置 + 价格信息，保存后写入商品 -->
     <a-modal
       :visible="priceSheetVisible"
       :width="isMobileView ? '100%' : 560"
       :zIndex="1160"
       :maskClosable="false"
-      :wrapClassName="isMobileView ? 'mm-sheet-modal agg-sheet-modal' : ''"
+      :wrapClassName="isMobileView ? 'mm-sheet-modal agg-sheet-modal price-sheet-modal' : 'price-sheet-modal'"
       @cancel="closePriceSheet">
       <template slot="title">
         <div v-if="isMobileView" class="mm-sheet-header">
@@ -601,32 +600,116 @@
         <span v-else>价格设置</span>
       </template>
       <template slot="footer">
-        <a-button type="primary" :loading="confirmLoading || aggSaving" @click="confirmPriceSheet">确定</a-button>
+        <div class="price-sheet-footer">
+          <span class="price-sheet-footer-hint">选组合 → 填价格，只写入当前组合对应的 SKU</span>
+          <a-button type="primary" :loading="confirmLoading || aggSaving" @click="confirmPriceSheet">保存</a-button>
+        </div>
       </template>
+      <!-- 价格设置页：输入框使用原生键盘，不接管键盘输入弹层 -->
+      <div class="price-sheet-body" data-kb-overlay="off">
       <div class="price-block">
-        <div class="price-block-title">价格信息</div>
-        <div class="agg-price-list">
-          <a-input v-model="batchPurchasePrice" addonBefore="进货价" addonAfter="元" placeholder="请输入" class="agg-price-input" />
-          <a-input v-model="batchCommodityPrice" addonBefore="零售价" addonAfter="元" placeholder="请输入" class="agg-price-input" />
-          <a-input v-model="batchMarketPrice" addonBefore="划线价" addonAfter="元" placeholder="请输入" class="agg-price-input" />
+        <div class="price-block-title">规格设置</div>
+        <div v-for="(module, mIndex) in specModules" :key="'sheet-spec-' + mIndex">
+          <div v-if="module.name" class="sheet-spec-module">
+            <div v-if="(module.childNames || []).length" class="sheet-spec-module-name">{{ module.name }}</div>
+            <div v-for="(val, vIndex) in module.values" :key="'sheet-spec-' + mIndex + '-' + vIndex" class="sheet-spec-value">
+              <template v-if="!(module.childNames || []).length">
+                <div class="agg-value-row">
+                  <span class="agg-value-label">{{ module.name }}：</span>
+                  <a-input :value="val.text" size="small" :placeholder="module.name"
+                           @input="onSheetSpecValueInput(mIndex, vIndex, '', $event.target.value)" />
+                  <div v-if="module.enableImage" class="agg-spec-img-upload" @click="openSheetSpecImage(mIndex, vIndex)">
+                    <img v-if="val.image" :src="getFileAccessHttpUrl(val.image)" />
+                    <a-icon v-else type="plus" />
+                  </div>
+                  <a-icon type="close" class="agg-row-close" @click="removeSpecValue(mIndex, vIndex)" />
+                </div>
+              </template>
+              <div v-for="(child, childIndex) in (module.childNames || [])" :key="child" class="agg-value-row">
+                <span class="agg-value-label">{{ child }}：</span>
+                <a-input :value="val.subValues && val.subValues[child]" size="small" :placeholder="child"
+                         @input="onSheetSpecValueInput(mIndex, vIndex, child, $event.target.value)" />
+                <div v-if="module.enableImage" class="agg-spec-img-upload" @click="openSheetSpecImage(mIndex, vIndex)">
+                  <img v-if="val.image" :src="getFileAccessHttpUrl(val.image)" />
+                  <a-icon v-else type="plus" />
+                </div>
+                <a-icon v-if="childIndex === 0" type="close" class="agg-row-close" @click="removeSpecValue(mIndex, vIndex)" />
+              </div>
+            </div>
+            <a-button type="link" size="small" class="sheet-spec-add" @click="addSpecValue(mIndex)">
+              <a-icon type="plus" />
+              <span>添加规格值</span>
+            </a-button>
+          </div>
         </div>
       </div>
       <div class="price-block">
-        <div class="price-block-title">库存信息</div>
-        <div class="agg-price-list">
-          <a-input v-model="batchStock" addonBefore="期初库存" placeholder="请输入" class="agg-price-input" />
-          <a-input v-model="batchLowSafeStock" addonBefore="最低库存预警" placeholder="请输入" class="agg-price-input" />
-          <a-input v-model="batchHighSafeStock" addonBefore="最高库存预警" placeholder="请输入" class="agg-price-input" />
+        <div class="price-block-title">规格选择框</div>
+        <div v-for="choice in sheetSpecChoices" :key="'sheet-choice-' + choice.mIndex" class="sheet-choice-row">
+          <span class="sheet-choice-name">{{ choice.name }}</span>
+          <div class="sheet-choice-values">
+            <span v-for="text in choice.values" :key="choice.mIndex + '-' + text" class="sheet-choice-tag"
+                  :class="{ 'is-on': (sheetSpecSelection[choice.mIndex] || '') === text }"
+                  @click="selectSheetSpecValue(choice.mIndex, text)">{{ text }}</span>
+          </div>
         </div>
+        <div v-if="!sheetSpecChoices.length" class="sheet-choice-empty">该品类未配置规格值</div>
+        <div class="sheet-choice-combo">当前组合：<span>{{ sheetComboKey || '默认规格' }}</span></div>
       </div>
       <div class="price-block">
-        <div class="price-block-title">仓库与门店</div>
-        <div class="agg-price-list">
-          <a-select v-model="batchDepotId" placeholder="请选择仓库" class="agg-price-input" :options="depotOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
-          <a-select v-model="batchStore" placeholder="请选择门店" class="agg-price-input" :options="storeOptions" allowClear showSearch optionFilterProp="children" :disabled="!batchStockPositive" />
+        <div class="price-block-title">价格填写框</div>
+        <div v-if="sheetSelectedRow" class="sheet-price-grid">
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">进货价</span>
+            <a-input v-model="sheetSelectedRow.purchaseDecimal" class="sheet-price-input" placeholder="0.00" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">零售价 <span class="sheet-price-req">*</span></span>
+            <a-input v-model="sheetSelectedRow.commodityDecimal" class="sheet-price-input" placeholder="必填" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">市场价</span>
+            <a-input v-model="sheetSelectedRow.marketPrice" class="sheet-price-input" placeholder="0.00" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">期初库存</span>
+            <a-input v-model="sheetSelectedRow.stock" class="sheet-price-input" placeholder="0" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">最低库存预警</span>
+            <a-input v-model="sheetSelectedRow.lowSafeStock" class="sheet-price-input" placeholder="0" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">最高库存预警</span>
+            <a-input v-model="sheetSelectedRow.highSafeStock" class="sheet-price-input" placeholder="0" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">仓库</span>
+            <a-select v-model="sheetSelectedRow.depotId" class="sheet-price-input" placeholder="请选择仓库"
+                      :options="depotOptions" allowClear showSearch optionFilterProp="children"
+                      :disabled="!(sheetSelectedRow.stock && Number(sheetSelectedRow.stock) > 0)" />
+          </label>
+          <label class="sheet-price-field">
+            <span class="sheet-price-label">门店</span>
+            <a-select v-model="sheetSelectedRow.store" class="sheet-price-input" placeholder="请选择门店"
+                      :options="storeOptions" allowClear showSearch optionFilterProp="children"
+                      :disabled="!(sheetSelectedRow.stock && Number(sheetSelectedRow.stock) > 0)" />
+          </label>
+        </div>
+        <div v-else class="sheet-choice-empty">当前组合暂无 SKU，请检查规格设置</div>
+      </div>
+      <div class="price-block">
+        <div class="price-block-title">已填写组合</div>
+        <div class="sheet-combo-list">
+          <div v-for="(row, rIndex) in sheetComboRows" :key="'sheet-combo-' + rIndex" class="sheet-combo-row"
+               :class="{ 'is-on': sheetSelectedRow === row }" @click="selectSheetSkuRow(row)">
+            <span class="sheet-combo-name">{{ row.sku || '默认规格' }}</span>
+            <span class="sheet-combo-price" :class="{ 'is-done': row.commodityDecimal }">{{ row.commodityDecimal ? '¥ ' + row.commodityDecimal : '¥ --' }}</span>
+            <span class="sheet-combo-tag" :class="{ 'is-done': row.commodityDecimal }">{{ row.commodityDecimal ? '已填' : '待填' }}</span>
+          </div>
         </div>
       </div>
-      <div class="price-sheet-tip">保存时同步到全部 SKU</div>
+      </div>
     </a-modal>
     <!-- 识别结果页：规格值图片选择（直接打开相册） -->
     <input ref="aggSpecImageInput" type="file" accept="image/*" class="agg-spec-image-input" @change="onAggSpecImageChange" />
@@ -773,6 +856,10 @@
         existMaterial: null,
         // 识别结果页正在添加图片的规格维度（复用规格图片识别弹层）
         pendingAggImageDim: null,
+        // 价格弹层规格设置中正在添加图片的规格值
+        pendingSheetSpecImage: null,
+        // 识别结果是否已写入规格，避免价格弹层里的改写被识别原值覆盖
+        aggSpecApplied: false,
         specAggregateLoading: false,
         specAggregateResult: null,
         // 识别结果页内必填项校验提示（字段 -> 提示文案），校验失败时定位并聚焦对应输入框
@@ -818,6 +905,8 @@
         batchMarketPrice: '',
         batchDepotId: undefined,
         batchStore: undefined,
+        // 价格弹层规格选择框：按规格类顺序记录当前选中的规格值
+        sheetSpecSelection: [],
         // 是否有未保存的改动（用于关闭/刷新前提示）
         formDirty: false,
         // 打开表单时的数据快照，用于对比是否有未保存的内容
@@ -1150,6 +1239,31 @@
         if (this.batchStock === '' || this.batchStock === null || this.batchStock === undefined) return false
         let num = Number(this.batchStock)
         return !isNaN(num) && num > 0
+      },
+      // 价格弹层规格选择框：品类已配置且有值的规格类
+      sheetSpecChoices() {
+        let list = []
+        this.specModules.forEach((module, mIndex) => {
+          if (!module.name) return
+          let values = (module.values || []).map(v => v.text).filter(Boolean)
+          if (!values.length) return
+          list.push({ mIndex: mIndex, name: module.name, values: values })
+        })
+        return list
+      },
+      // 当前选中的规格组合（与 SKU 行的 sku 一致）
+      sheetComboKey() {
+        return this.sheetSpecSelection.filter(Boolean).join('/')
+      },
+      // 当前组合对应的 SKU 行，价格填写框直接编辑该行
+      sheetSelectedRow() {
+        let rows = this.meTable.dataSource || []
+        let key = this.sheetComboKey
+        if (!key) return rows[0] || null
+        return rows.filter(row => (row.sku || '') === key)[0] || null
+      },
+      sheetComboRows() {
+        return this.meTable.dataSource || []
       }
     },
     watch: {
@@ -1167,6 +1281,8 @@
       specAggregateVisible (val) {
         if (!val) return
         this.$nextTick(() => this.freezeSheetHeight())
+        // 键盘收起动画结束后再校正一次，避免按键盘弹起时的可视高度冻结成半屏
+        setTimeout(() => this.freezeSheetHeight(), 350)
       }
     },
     created () {
@@ -1209,18 +1325,22 @@
         if (!this.isMobileView) return
         // 优先用可视视口高度：iOS 的 innerHeight 含被浏览器底栏遮住的区域
         const vv = window.visualViewport
-        const height = Math.round(vv && vv.height ? vv.height : window.innerHeight)
+        const inner = window.innerHeight || 0
+        const vvHeight = vv && vv.height ? vv.height : 0
+        // 软键盘弹起（或收起动画未结束）时可视高度会明显变小，此时按窗口高度冻结，避免弹层只占半屏
+        const height = Math.round(vvHeight && inner - vvHeight <= 120 ? vvHeight : inner)
         document.querySelectorAll('.agg-sheet-modal').forEach(wrap => {
           if (wrap.style.display === 'none') return
           const content = wrap.querySelector('.ant-modal-content')
           if (content) content.style.setProperty('height', height + 'px', 'important')
         })
       },
-      // 视口尺寸变化（旋转、地址栏收放）时重算弹层高度；正在输入（键盘弹起）时不重算
+      // 视口尺寸变化（旋转、地址栏收放、键盘收起）时重算弹层高度；键盘弹起中不重算
       onSheetViewportResize() {
-        if (!this.isMobileView || !this.specAggregateVisible) return
-        const el = document.activeElement
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return
+        if (!this.isMobileView || (!this.specAggregateVisible && !this.priceSheetVisible)) return
+        const vv = window.visualViewport
+        const inner = window.innerHeight || 0
+        if (vv && inner - vv.height > 120) return
         this.$nextTick(() => this.freezeSheetHeight())
       },
       // 手机端适配：窗口宽度变化时切换分页模式并回到首页
@@ -2078,11 +2198,12 @@
                   that.clearDraft();
                   that.confirmLoading = false
                   that.aggSaving = false
+                  that.priceSheetVisible = false
+                  that.specAggregateVisible = false
                   if (that.aiMode) {
                     // AI 商品页：数据已直接入库，关闭识别结果弹层并清空页面数据，不进入商品添加页
-                    that.priceSheetVisible = false
-                    that.specAggregateVisible = false
                     that.specAggregateResult = null
+                    that.aggSpecApplied = false
                     that.aggFieldErrors = {}
                     that.aggSaveHint = ''
                     that.clearAiPageData()
@@ -2495,6 +2616,7 @@
           }
         })
         this.specAggregateResult = null
+        this.aggSpecApplied = false
         this.aggFieldErrors = {}
         this.aggManuallyEditedFields = {}
         this.aggSaving = false
@@ -3067,9 +3189,15 @@
         delete next[field]
         this.aggFieldErrors = next
       },
-      markAggPropEdited(field) {
+      markAggPropEdited(field, value) {
         if (!field) return
         this.$set(this.aggManuallyEditedFields, field, true)
+        // 识别弹层的属性值绑定在识别结果上，编辑时同步进表单，避免必填校验读到旧值
+        let props = this.specAggregateResult && this.specAggregateResult.commonProps
+        if (props && this.basePropertyFields.indexOf(field) >= 0) {
+          let current = value === undefined ? props[field] : value
+          this.form.setFieldsValue({ [field]: current === undefined ? '' : current })
+        }
         this.clearAggFieldError(field)
       },
       handleAggPropFocus(field) {
@@ -3114,8 +3242,8 @@
           if (typeof comp.focus === 'function') comp.focus()
         })
       },
-      /** 把识别结果写回表单：公共属性、规格值与 SKU 行；withBatchPrice 为真时附带价格信息 */
-      applySpecAggregate(withBatchPrice) {
+      /** 把识别结果写回表单：公共属性、规格值与 SKU 行 */
+      applySpecAggregate() {
         let result = this.specAggregateResult
         if (!result) return Promise.resolve(false)
         // 1. 公共属性：只填空白字段，避免覆盖用户已输入内容
@@ -3204,40 +3332,26 @@
               if (skuRow.purchaseDecimal) row.purchaseDecimal = skuRow.purchaseDecimal
               if (skuRow.wholesaleDecimal) row.wholesaleDecimal = skuRow.wholesaleDecimal
             }
-            // 4. 价格填写弹层：仅在价格跟随保存时覆盖写入全部 SKU 行
-            if (withBatchPrice) {
-              rows.forEach(item => {
-                if (this.batchPurchasePrice !== '') item.purchaseDecimal = this.batchPurchasePrice
-                if (this.batchCommodityPrice !== '') item.commodityDecimal = this.batchCommodityPrice
-                if (this.batchMarketPrice !== '') item.marketPrice = this.batchMarketPrice
-                if (this.batchStock !== '') item.stock = this.batchStock
-                if (this.batchLowSafeStock !== '') item.lowSafeStock = this.batchLowSafeStock
-                if (this.batchHighSafeStock !== '') item.highSafeStock = this.batchHighSafeStock
-                if (this.batchDepotId !== undefined && this.batchDepotId !== null && this.batchDepotId !== '') item.depotId = this.batchDepotId
-                if (this.batchStore !== undefined && this.batchStore !== null && this.batchStore !== '') item.store = this.batchStore
-              })
-            }
             this.meTable.dataSource = rows.slice()
             resolve(true)
           })
         })
       },
-      /** 底栏「商品保存」：只保存识别结果页的商品数据，并检测必填项 */
+      /** 底栏「商品保存」：把识别结果写入规格并生成 SKU，校验必填项后打开价格设置 */
       saveSpecAggregate() {
-        this.persistSpecAggregate(false)
-      },
-      /** 底栏「价格填写」：先检测识别结果页必填项，通过后打开价格弹层 */
-      openPriceSheet() {
         if (this.confirmLoading || this.aggSaving) return
         if (this.specAggregateLoading) {
           this.showAggSaveHint('识别结果加载中，请稍候…', false)
           return
         }
-        this.applySpecAggregate(false).then(applied => {
-          if (!applied) {
+        // 识别结果只应用一次：价格弹层里改写过的规格值不再被识别原值覆盖
+        let applied = this.aggSpecApplied ? Promise.resolve(true) : this.applySpecAggregate()
+        applied.then(ok => {
+          if (!ok) {
             this.showAggSaveHint('识别结果为空，请重新识别', true)
             return
           }
+          this.aggSpecApplied = true
           this.validateFields({ skipSave: true }).then(passed => {
             if (!passed) {
               this.focusAggregateRequiredField()
@@ -3245,6 +3359,7 @@
             }
             this.aggFieldErrors = {}
             this.showAggSaveHint('', false)
+            this.initSheetSpecSelection()
             this.priceSheetVisible = true
           })
         })
@@ -3252,48 +3367,89 @@
       closePriceSheet() {
         this.priceSheetVisible = false
       },
-      /** 价格弹层「确定」：保存商品信息与价格信息 */
+      /** 价格弹层「保存」：同步价格到全部 SKU 后保存商品 */
       confirmPriceSheet() {
         if (this.confirmLoading || this.aggSaving) return
-        this.persistSpecAggregate(true)
+        this.persistSpecAggregate()
       },
-      /** 写回识别结果并保存商品；withPrice 为真时同时写入价格弹层的价格信息 */
-      persistSpecAggregate(withPrice) {
+      persistSpecAggregate() {
         if (this.confirmLoading || this.aggSaving) return
-        if (this.specAggregateLoading) {
-          this.showAggSaveHint('识别结果加载中，请稍候…', false)
-          return
-        }
         this.showAggSaveHint('正在保存，请稍候…', false)
         this.aggSaving = true
-        this.applySpecAggregate(!!withPrice).then(applied => {
-          if (!applied) {
+        this.syncSheetSkuRows()
+        this.$nextTick(() => {
+          this.validateFields().then(passed => {
+            if (passed) {
+              this.aggFieldErrors = {}
+              return
+            }
+            // 校验未通过时收起价格弹层，在识别结果页定位并聚焦缺失的必填项
             this.aggSaving = false
-            this.showAggSaveHint('识别结果为空，请重新识别', true)
-            return
-          }
-          if (this.aiMode) {
-            // AI 商品页：保持在识别结果弹层内直接保存，不回填、不跳转商品添加页
-            this.validateFields().then(passed => {
-              if (passed) {
-                this.aggFieldErrors = {}
-                return
-              }
-              // 校验未通过时收起价格弹层，在识别结果页定位并聚焦缺失的必填项
-              this.aggSaving = false
-              this.priceSheetVisible = false
-              this.focusAggregateRequiredField()
-            })
-            return
-          }
-          this.aggSaving = false
-          this.priceSheetVisible = false
-          this.specAggregateVisible = false
-          this.$nextTick(() => this.handleOk())
-        }).catch(() => {
-          this.aggSaving = false
-          this.showAggSaveHint('保存失败，请重试', true)
+            this.priceSheetVisible = false
+            this.focusAggregateRequiredField()
+          })
         })
+      },
+      /** 价格弹层规格选择框：默认选中每个规格类的第一个规格值 */
+      initSheetSpecSelection() {
+        this.sheetSpecSelection = this.specModules.map(module => {
+          if (!module.name) return ''
+          let values = (module.values || []).map(v => v.text).filter(Boolean)
+          return values.length ? values[0] : ''
+        })
+      },
+      selectSheetSpecValue(mIndex, text) {
+        let next = this.sheetSpecSelection.slice()
+        next[mIndex] = text
+        this.sheetSpecSelection = next
+      },
+      /** 点选已填写组合：规格选择框同步到该行 */
+      selectSheetSkuRow(row) {
+        if (!row) return
+        this.sheetSpecSelection = this.specModules.map((module, mIndex) => row['skuField' + (mIndex + 1)] || '')
+      },
+      /** 价格/库存/仓库都直接写在当前组合的 SKU 行上，保存前推给表格 */
+      syncSheetSkuRows() {
+        this.meTable.dataSource = (this.meTable.dataSource || []).slice()
+      },
+      /** 价格弹层规格设置：改写规格值，SKU 行原地跟随组合文本以保留已填价格 */
+      onSheetSpecValueInput(mIndex, vIndex, childName, value) {
+        let module = this.specModules[mIndex]
+        let item = module && module.values && module.values[vIndex]
+        if (!item) return
+        let oldText = item.text || ''
+        if (childName) {
+          if (!item.subValues) this.$set(item, 'subValues', {})
+          this.$set(item.subValues, childName, value)
+          let parts = (module.childNames || []).map(name => ((item.subValues[name] || '') + '').trim())
+          item.text = parts.every(Boolean) ? parts.join('/') : ''
+        } else {
+          item.text = value
+        }
+        this.renameSkuRowsSpecText(mIndex, oldText, item.text)
+      },
+      /** 规格值文本改写时同步 SKU 行的组合文本，已填价格按新组合继续匹配 */
+      renameSkuRowsSpecText(mIndex, oldText, newText) {
+        if (!oldText || oldText === newText) return
+        let field = 'skuField' + (mIndex + 1)
+        let rows = this.meTable.dataSource || []
+        rows.forEach(row => {
+          if (row[field] !== oldText) return
+          row[field] = newText
+          let parts = []
+          for (let i = 0; i < this.specModules.length; i++) {
+            let text = row['skuField' + (i + 1)]
+            if (text) parts.push(text)
+          }
+          row.sku = parts.join('/')
+        })
+      },
+      /** 价格弹层规格设置：为规格值添加图片 */
+      openSheetSpecImage(mIndex, vIndex) {
+        this.pendingSheetSpecImage = { mIndex: mIndex, vIndex: vIndex }
+        this.pendingAggImageDim = null
+        const input = this.$refs.aggSpecImageInput
+        if (input) input.click()
       },
       openSpecImageExtract(mIndex, vIndex) {
         // 先打开图片文字提取框，再在提取框内加载图片
@@ -3316,18 +3472,28 @@
         const files = (e && e.target && e.target.files) || []
         const file = files[0]
         const dim = this.pendingAggImageDim
+        const sheetTarget = this.pendingSheetSpecImage
         this.pendingAggImageDim = null
+        this.pendingSheetSpecImage = null
         if (e && e.target) e.target.value = ''
-        if (!file || !dim) return
+        if (!file || (!dim && !sheetTarget)) return
         const formData = new FormData()
         formData.append('file', file)
         formData.append('biz', 'material')
         uploadHttp.post('/systemConfig/upload', formData).then(res => {
-          if (res && res.code === 200 && res.data) {
-            this.$set(dim, 'image', res.data)
-          } else {
+          if (!(res && res.code === 200 && res.data)) {
             this.$message.error('图片上传失败，请重试')
+            return
           }
+          if (sheetTarget) {
+            const module = this.specModules[sheetTarget.mIndex]
+            const value = module && module.values && module.values[sheetTarget.vIndex]
+            if (!value) return
+            this.$set(value, 'image', res.data)
+            this.updateRowImagesBySpec()
+            return
+          }
+          this.$set(dim, 'image', res.data)
         }).catch(() => {
           this.$message.error('图片上传失败，请重试')
         })
@@ -3770,11 +3936,15 @@
           for (let j = 0; j < activeModules.length; j++) {
             row['skuField' + (activeModules[j].index + 1)] = parts[j] || ''
           }
-          // 保留库存、仓库、门店等用户已填写字段
+          // 保留库存、仓库、门店、条码等用户已填写字段
           if (existRow) {
             if (existRow.stock !== undefined) row.stock = existRow.stock
             if (existRow.depotId !== undefined) row.depotId = existRow.depotId
             if (existRow.store !== undefined) row.store = existRow.store
+            if (existRow.lowSafeStock !== undefined) row.lowSafeStock = existRow.lowSafeStock
+            if (existRow.highSafeStock !== undefined) row.highSafeStock = existRow.highSafeStock
+            if (existRow.barCode !== undefined) row.barCode = existRow.barCode
+            if (existRow.skuCode !== undefined) row.skuCode = existRow.skuCode
           }
           if (currentId) { row.id = currentId }
           meTableData.push(row)
@@ -4407,14 +4577,6 @@
   .agg-price-tip {
     font-size: 12px;
     color: #8c8c8c;
-  }
-  .agg-price-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .agg-price-list .agg-price-input {
-    width: 100%;
   }
   .agg-unmatched {
     margin-top: 8px;
@@ -5417,24 +5579,259 @@
   font-weight: 500;
   border-radius: 24px;
 }
-/* 价格填写弹层：分组卡片与底部确定按钮 */
+/* 价格填写弹层：分组卡片（白底圆角卡片浮在浅灰页面上） */
 .price-block {
-  margin-bottom: 10px;
-  padding: 10px;
+  margin-bottom: 12px;
+  padding: 16px 14px;
   background: #fff;
+  border: 1px solid #ececec;
   border-radius: 12px;
 }
 .price-block-title {
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 12px;
+  font-size: 16px;
   font-weight: 600;
-  color: #262626;
+  line-height: 22px;
+  color: #1a1a1a;
 }
-.price-sheet-tip {
-  padding-bottom: 4px;
+/* 价格弹层底部：提示 + 保存 */
+.price-sheet-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ececec;
+}
+.price-sheet-footer-hint {
+  flex: 1;
   font-size: 12px;
+  line-height: 18px;
   color: #8c8c8c;
+  text-align: left;
+}
+/* 手机端：提示居中在上，保存按钮整行 */
+.mm-sheet-modal .price-sheet-footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: none;
+}
+.mm-sheet-modal .price-sheet-footer-hint {
   text-align: center;
+}
+/* 价格填写框：两列，标签在上、输入框在下 */
+.sheet-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+}
+.sheet-price-field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+.sheet-price-label {
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: #8a8a8a;
+}
+.sheet-price-req {
+  color: #8a8a8a;
+}
+.sheet-price-input {
+  width: 100%;
+}
+.sheet-price-input.ant-input {
+  height: 44px;
+  padding: 0 14px;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  font-size: 16px;
+  color: #1a1a1a;
+  font-family: Menlo, Consolas, monospace;
+}
+.sheet-price-input.ant-input::placeholder {
+  color: #b8b8b8;
+}
+.sheet-price-input.ant-input:hover,
+.sheet-price-input.ant-input:focus {
+  border-color: #37c871;
+  box-shadow: none;
+}
+.sheet-price-input.ant-select .ant-select-selection {
+  height: 44px;
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  font-size: 15px;
+  color: #1a1a1a;
+}
+.sheet-price-input.ant-select .ant-select-selection__rendered {
+  height: 42px;
+  line-height: 42px;
+}
+.sheet-price-input.ant-select .ant-select-selection-selected-value {
+  line-height: 42px;
+}
+.sheet-price-input.ant-select .ant-select-arrow {
+  margin-top: -7px;
+}
+.sheet-price-input.ant-select-focused .ant-select-selection,
+.sheet-price-input.ant-select-open .ant-select-selection {
+  border-color: #37c871;
+  box-shadow: none;
+}
+/* 价格填写弹层：规格设置（规格类与子规格名只读，规格值可维护） */
+.sheet-spec-module {
+  margin-bottom: 6px;
+}
+.sheet-spec-module-name {
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #8a8a8a;
+}
+.sheet-spec-value {
+  padding: 4px 0;
+}
+.sheet-spec-value + .sheet-spec-value {
+  border-top: 1px dashed #f0f0f0;
+}
+.sheet-spec-add {
+  padding-left: 0;
+}
+/* 价格弹层：规格选择框 */
+.sheet-choice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+}
+.sheet-choice-name {
+  flex: none;
+  min-width: 72px;
+  font-size: 14px;
+  line-height: 32px;
+  color: #8a8a8a;
+}
+.sheet-choice-values {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sheet-choice-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #e6e6e6;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 14px;
+  color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.sheet-choice-tag:hover {
+  border-color: #b8b8b8;
+}
+.sheet-choice-tag.is-on {
+  border-color: #37c871;
+  background: #eefdf4;
+  color: #0d6b3c;
+  font-weight: 500;
+}
+.sheet-choice-combo {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed #dcdcdc;
+  font-size: 14px;
+  line-height: 20px;
+  color: #8a8a8a;
+}
+.sheet-choice-combo span {
+  flex: 1;
+  min-width: 0;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+.sheet-choice-empty {
+  padding: 4px 0;
+  font-size: 14px;
+  color: #8a8a8a;
+}
+/* 价格弹层：已填写组合 */
+.sheet-combo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sheet-combo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sheet-combo-row.is-on {
+  border-color: #37c871;
+  background: #f2fdf7;
+}
+.sheet-combo-name {
+  flex: 1;
+  min-width: 0;
+  line-height: 20px;
+  color: #1a1a1a;
+}
+.sheet-combo-price {
+  flex: none;
+  color: #8a8a8a;
+  font-family: Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+.sheet-combo-price.is-done {
+  color: #1a1a1a;
+}
+.sheet-combo-tag {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid #dcdcdc;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+.sheet-combo-tag.is-done {
+  border-color: #b7ecc9;
+  background: #eefdf4;
+  color: #0d6b3c;
+}
+/* 桌面端：弹层内容区浅灰底 + 固定高度内滚动 */
+@media (min-width: 768px) {
+  .price-sheet-modal .ant-modal-body {
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    padding: 16px;
+    background: #f2f4f7;
+  }
+}
+/* 手机端：内容区页边距（浅灰底露出卡片） */
+.mm-sheet-modal.price-sheet-modal .ant-modal-body {
+  padding: 12px 12px 0;
 }
 /* 识别结果页：规格值图片选择输入（隐藏） */
 .agg-spec-image-input {

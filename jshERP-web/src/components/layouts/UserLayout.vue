@@ -269,6 +269,12 @@
     height: 100%;
 
     &.mobile {
+      // 手机端卡片高度随内容变化：固定 460px 加 overflow:hidden 会把版权与版本号裁在卡片外
+      .container .right-form {
+        height: auto;
+        min-height: 460px;
+        padding-bottom: 16px;
+      }
       .container {
         .main {
           max-width: 368px;

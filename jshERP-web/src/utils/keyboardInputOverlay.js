@@ -82,7 +82,7 @@ function isEditableTarget (el) {
   if (tag !== 'INPUT' && tag !== 'TEXTAREA') return false
   if (el.closest('#' + OVERLAY_ID)) return false
   if (el.disabled || el.readOnly) return false
-  if (el.getAttribute('data-kb-overlay') === 'off') return false
+  if (el.closest('[data-kb-overlay="off"]')) return false
   if (!isOptedIn(el)) return false
   if (el.closest(SKIP_SELECTOR)) return false
   if (tag === 'INPUT') {

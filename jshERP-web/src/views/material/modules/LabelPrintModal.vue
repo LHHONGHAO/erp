@@ -1135,11 +1135,6 @@
         // 注意：分页标签文案依赖 pageCount，不能放在这里，否则会和分页计划互相递归
         return map
       },
-      // 指定页的页码文案（如 1/2）
-      pageNoTextFor(page) {
-        var idx = Math.max(0, page || 0)
-        return (idx + 1) + '/' + this.pageCount
-      },
       // 明细行：优先取快照 rows，其次按模板约定的集合路径从记录中取值
       // 条数由实际数组长度决定，模板不保存条数
       goodsRowsForLayout() {
@@ -1339,6 +1334,11 @@
       window.removeEventListener('resize', this._onResize)
     },
     methods: {
+      // 指定页的页码文案（如 1/2）：带参数调用，必须放在 methods，放在 computed 里会被当成取值
+      pageNoTextFor(page) {
+        var idx = Math.max(0, page || 0)
+        return (idx + 1) + '/' + this.pageCount
+      },
       // 手机端：按容器尺寸等比缩放小票/标签
       //   宽度约束：容器宽 - 左右各 8px
       //   高度约束：容器高 - 上边距 16px - 底部控件区

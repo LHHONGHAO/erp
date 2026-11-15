@@ -54,6 +54,15 @@ export const constantRouterMap = [
         name: 'analysis',
         meta: { title: '首页' },
         component: () => import(/* webpackChunkName: "dashboard" */ '@/views/dashboard/Analysis')
+      },
+      {
+        // 地址识别页固定路由：与首页共用同一个 TabLayout，返回首页时不会销毁重建。
+        // 路由在打包时即存在，不依赖后台菜单注入；菜单仅负责展示入口。
+        // 绝对路径子路由会保留最后的完整路径 /system/address-recognize。
+        path: '/system/address-recognize',
+        name: 'AddressRecognize',
+        meta: { title: '地址识别', componentName: 'AddressRecognize', keepAlive: true },
+        component: () => import(/* webpackChunkName: "address-recognize" */ '@/views/system/AddressRecognize')
       }
     ]
   },

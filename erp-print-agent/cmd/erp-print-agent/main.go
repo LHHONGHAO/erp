@@ -54,11 +54,13 @@ func run(args []string) error {
 		return runCheck(args)
 	case "fetch-ca":
 		return runFetchCA(args)
+	case "models":
+		return runModels(args)
 	case "version":
 		fmt.Printf("erp-print-agent %s\n", version)
 		return nil
 	default:
-		return fmt.Errorf("未知命令 %q，可用命令: serve | pair | print | selftest | check | fetch-ca | version", cmd)
+		return fmt.Errorf("未知命令 %q，可用命令: serve | pair | print | selftest | check | fetch-ca | models | version", cmd)
 	}
 }
 

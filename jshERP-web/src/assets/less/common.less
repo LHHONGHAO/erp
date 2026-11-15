@@ -1,3 +1,10 @@
+/* 消息提示层级：需高于手机端全屏弹层页（.mmp-page z-index 2900），否则提示被遮住 */
+.ant-message {
+  z-index: 4000 !important;
+}
+.ant-notification {
+  z-index: 4000 !important;
+}
 /*列表上方操作按钮区域*/
 .ant-card-body .table-operator {
   margin-bottom: 0px;

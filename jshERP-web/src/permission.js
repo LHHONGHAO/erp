@@ -40,6 +40,30 @@ function injectPrintAgentRoute(routes) {
   }
 }
 
+// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表。
+// 页面路由已在 router.config.js 的 constantRouterMap 中固定注册（与首页共用 TabLayout），
+// 这里只负责菜单展示与首页「常用页面」的入口，菜单结构变化不会导致页面打不开。
+function injectAddressRecognizeMenu(menuData) {
+  if (!Array.isArray(menuData)) return
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA'
+    || item.text === '基础资料' || item.text === '基础信息')
+  if (!target) return
+  if (!Array.isArray(target.children)) target.children = []
+  const exists = target.children.some(item => item.url === '/system/address-recognize')
+  if (!exists) {
+    target.children.push({
+      id: 'address-recognize',
+      text: '地址识别',
+      icon: 'environment',
+      url: '/system/address-recognize',
+      component: '/system/AddressRecognize',
+      route: '1',
+      fixedRoute: true,
+      children: []
+    })
+  }
+}
+
 // AI配置页面由前端内置，注入到「系统管理」菜单分组下，不依赖后台菜单表
 function injectAiConfigMenu(menuData) {
   if (!Array.isArray(menuData)) return
@@ -81,6 +105,7 @@ function saveMenuCache(userId, menuData) {
 
 // 把后台菜单转成路由表并注册
 function applyMenuRoutes(menuData) {
+  injectAddressRecognizeMenu(menuData);
   injectAiConfigMenu(menuData);
   const constRoutes = generateIndexRouter(menuData);
   injectMobilePageRoutes(constRoutes)
@@ -130,6 +155,7 @@ router.beforeEach((to, from, next) => {
           store.dispatch('GetPermissionList').then(res => {
             if (res) {
               // 后台返回的是原始菜单，先注入内置页面再写缓存，避免覆盖掉注入结果
+              injectAddressRecognizeMenu(res)
               injectAiConfigMenu(res)
               saveMenuCache(userId, res)
               refreshUserBtnList()
@@ -151,6 +177,7 @@ router.beforeEach((to, from, next) => {
           // 缓存用户的按钮权限
           refreshUserBtnList()
           let constRoutes = [];
+          injectAddressRecognizeMenu(menuData);
           injectAiConfigMenu(menuData);
           constRoutes = generateIndexRouter(menuData);
           injectMobilePageRoutes(constRoutes)

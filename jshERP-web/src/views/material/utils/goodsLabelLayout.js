@@ -377,6 +377,7 @@ export function applyTextOverflow(options) {
   const mode = opts.mode === 'ellipsis' ? 'ellipsis' : 'wrap'
   const source = opts.styles || {}
   const texts = opts.texts || {}
+  const paperWidth = opts.paperWidth > 0 ? opts.paperWidth : 0
   const styles = {}
   Object.keys(source).forEach(function(key) {
     styles[key] = Object.assign({}, source[key])
@@ -390,7 +391,11 @@ export function applyTextOverflow(options) {
     const style = styles[key]
     const raw = texts[key] == null ? '' : String(texts[key])
     resultTexts[key] = raw
-    const width = style.width > 0 ? style.width : 0
+    // 折行/裁切宽度 = min(元素边框宽度, 标签可用宽度)；未设置宽度时用标签可用宽度
+    const labelLimit = paperWidth ? Math.max(20, paperWidth - (style.x || 0)) : 0
+    const width = style.width > 0
+      ? (labelLimit ? Math.min(style.width, labelLimit) : style.width)
+      : labelLimit
     const fontSize = style.fontSize || 12
     const bold = style.fontWeight === 'bold'
     const lineHeight = fontSize * (style.lineHeight || 1.3)
@@ -469,7 +474,8 @@ export function resolveLabelLayout(options) {
     mode: opts.mode,
     styles: goods.styles,
     keys: textKeys,
-    texts: texts
+    texts: texts,
+    paperWidth: opts.paperWidth
   })
   return {
     styles: overflow.styles,

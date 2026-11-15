@@ -173,6 +173,7 @@
       <!-- 底部打印按钮 -->
       <template #footer>
         <div class="lmp-footer">
+          <div v-if="printHint" class="lmp-print-hint">{{ printHint }}</div>
           <a-button
             type="primary"
             block
@@ -222,7 +223,7 @@
             <div v-if="agentPrinterItems.length === 0 && !loadingAgents" class="lmpl-empty">
               <div class="lmpl-empty-icon"><a-icon type="cloud" /></div>
               <div class="lmpl-empty-text">暂无云打印设备</div>
-              <div class="lmpl-empty-sub">可在「远程打印配置」中添加云打印设备</div>
+              <div class="lmpl-empty-sub">点击下方「添加云打印打印机」，填入配对码与链接地址完成配对</div>
             </div>
           </template>
 
@@ -349,6 +350,68 @@
           >{{ t.label }}</div>
         </div>
       </template>
+    </mobile-modal-page>
+
+    <!-- 云打印：配对配置（配对码 + 链接地址 + 打印机品牌选择） -->
+    <mobile-modal-page
+      :visible="visible && cloudAddVisible"
+      title="云打印配置"
+      :subtitle="cloudBrandName"
+      @close="closeCloudConfig">
+      <div class="lmc-form">
+        <div class="lmw-card">
+          <div class="lmw-row">
+            <div class="lmw-label">配对码</div>
+            <input v-model.trim="cloudForm.pairCode" class="lmw-input" placeholder="电脑端「新增设备」生成的配对码" />
+          </div>
+          <div class="lmw-row">
+            <div class="lmw-label">链接地址</div>
+            <input v-model.trim="cloudForm.serverUrl" class="lmw-input" placeholder="如 https://www.innas.xyz:9999" />
+          </div>
+        </div>
+        <div class="lmc-tip">配对码 10 分钟内有效、一次性；链接地址为 ERP 主机地址，配对成功后云打印机将出现在「云打印」列表中。</div>
+        <div class="lmc-section">打印机品牌</div>
+      </div>
+      <div class="lmb-grid lmc-grid">
+        <div
+          v-for="b in wifiBrandList"
+          :key="b.key"
+          class="lmb-cell"
+          :class="{ active: cloudForm.brand === b.key }"
+          @click="chooseCloudBrand(b)">
+          <div class="lmb-logo" :style="{ color: b.color }">{{ b.en || b.name }}</div>
+          <div class="lmb-name">{{ b.name }}</div>
+          <div class="lmb-cmd" @click.stop="openCloudCmdSheet(b)">
+            <span>{{ b.cmd }}</span>
+            <a-icon type="down" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="lmp-footer">
+          <a-button
+            type="primary"
+            block
+            size="large"
+            class="lmp-print-btn"
+            :loading="cloudSaving"
+            @click="saveCloudPrinter">保存</a-button>
+        </div>
+      </template>
+      <!-- 信号传输格式底部弹层 -->
+      <div v-if="cmdSheetBrand" class="lmb-sheet-mask" @click="cmdSheetBrand = null">
+        <div class="lmb-sheet" @click.stop>
+          <div class="lmb-sheet-group">
+            <div
+              v-for="c in wifiCmdOptions"
+              :key="c"
+              class="lmb-sheet-item"
+              @click="confirmCmdSheet(c)"
+            >{{ c }}</div>
+          </div>
+          <div class="lmb-sheet-cancel" @click="cmdSheetBrand = null">取消</div>
+        </div>
+      </div>
     </mobile-modal-page>
 
     <!-- 页面 3：选择品牌（标准弹层页面） -->
@@ -753,6 +816,8 @@
         selectedPrinter: undefined,
         loadingPrinters: false,
         printing: false,
+        // 打印失败原因（直接显示在按钮上方，避免手机端提示被遮挡）
+        printHint: '',
         copies: 1,
         // 手机浏览器（窄屏）时预览/设置改为上下布局
         isMobile: false,
@@ -771,6 +836,10 @@
         // 远程打印机（ERP 打印代理设备）
         agentDevices: [],
         loadingAgents: false,
+        // 云打印配对配置页
+        cloudAddVisible: false,
+        cloudSaving: false,
+        cloudForm: { pairCode: '', serverUrl: '', brand: '' },
         // 打印机编辑（品牌/指令集）
         printerEditVisible: false,
         printerEditDeviceId: '',
@@ -819,8 +888,8 @@
           { key: 'local', label: '本地打印' }
         ]
       },
-      // 远程打印机（打印代理设备下的打印机，扁平化成可选卡片）
-      agentPrinterItems() {
+      // 主机下发的全部远程打印机（打印代理设备下的打印机，扁平化）
+      agentAllPrinters() {
         var list = []
         ;(this.agentDevices || []).forEach(function(dev) {
           if (dev.enabled === 0 || dev.enabled === '0' || dev.enabled === false) return
@@ -846,6 +915,20 @@
           })
         })
         return list
+      },
+      // 云打印列表：直接展示主机已配置（下发）的全部云打印机，供用户选择
+      agentPrinterItems() {
+        return this.agentAllPrinters
+      },
+      // 云打印配置页副标题：当前选中的品牌 + 指令
+      cloudBrandName() {
+        var brand = this.selectedCloudBrand
+        return brand ? brand.name + ' · ' + brand.cmd : ''
+      },
+      selectedCloudBrand() {
+        var key = this.cloudForm.brand
+        if (!key) return null
+        return this.wifiBrandList.find(function(b) { return b.key === key }) || null
       },
       rotationOptions() {
         return [
@@ -1384,11 +1467,17 @@
         this.allAttrs = this.buildAttrList()
         this.copies = 1
         this.printRotation = 0
+        this.printing = false
+        this._batchPrint = false
+        this._printFailed = 0
+        this.printPage = 0
         this.discoveredPrinter = null
         this.btDevice = null
         this.activeWifiId = null
         this.showPrinterSheet = false
+        this.cloudAddVisible = false
         this.wifiAddStep = ''
+        this.printHint = ''
         this.visible = true
         this.loadRouteTemplate({ type: this.type, templateId: opts.templateId, name: opts.name }).then(function(raw) {
           var tpl = null
@@ -1449,10 +1538,16 @@
         }
         this.copies = 1
         this.printRotation = 0
+        this.printing = false
+        this.printHint = ''
+        this._batchPrint = false
+        this._printFailed = 0
+        this.printPage = 0
         this.discoveredPrinter = null
         this.btDevice = null
         this.activeWifiId = null
         this.showPrinterSheet = false
+        this.cloudAddVisible = false
         this.wifiAddStep = ''
         // 恢复上次使用的打印机（localStorage）
         var last = null
@@ -1601,6 +1696,7 @@
             : (this.printerType === 'backend' && this.selectedPrinter && this.selectedPrinter.indexOf('agent:') === 0 ? 'cloud' : (this.printerType === 'cloud' ? 'cloud' : 'local')))
         this.loadPrinters()
         if (this.deviceTab === 'network') this.loadWifiPrinters()
+        this.cloudAddVisible = false
         this.showPrinterSheet = true
       },
       // 手机端：切换设备分类
@@ -1629,11 +1725,101 @@
         this.printerType = 'bluetooth'
         this.selectPrinterAndClose(this.btDevice ? this.btDevice.id : undefined)
       },
-      // 云打印：跳转到远程打印配置页添加云打印设备
+      // 关闭云打印配置页，回到设备列表
+      closeCloudConfig() {
+        this.cloudAddVisible = false
+        this.cmdSheetBrand = null
+        this.showPrinterSheet = true
+      },
+      // 云打印：打开配对配置页（配对码 + 链接地址 + 打印机品牌）
       openCloudPrinterManage() {
         this.showPrinterSheet = false
-        this.visible = false
-        this.$router.push('/system/remote-print')
+        this.cmdSheetBrand = null
+        this.cloudForm = {
+          pairCode: '',
+          serverUrl: (typeof window !== 'undefined' && window.location) ? window.location.origin : '',
+          brand: ''
+        }
+        this.cloudAddVisible = true
+        this.loadAgentPrinters()
+      },
+      // 云打印配置：选择品牌
+      chooseCloudBrand(brand) {
+        this.cloudForm.brand = brand.key
+      },
+      // 云打印配置：调整品牌的信号传输格式
+      openCloudCmdSheet(brand) {
+        this.cloudForm.brand = brand.key
+        this.cmdSheetBrand = brand
+      },
+      // 链接地址归一化：兼容 ws(s):// 通信地址与裸域名，去掉 /ws/print-agent 后缀
+      normalizeCloudBase(url) {
+        var u = String(url || '').trim().replace(/\s+/g, '')
+        if (!u) return ''
+        u = u.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://')
+        if (!/^https?:\/\//i.test(u)) u = 'https://' + u
+        u = u.replace(/\/+$/, '').replace(/\/ws\/print-agent$/i, '')
+        return u
+      },
+      // 云打印配置：用配对码向主机登记云打印机
+      saveCloudPrinter() {
+        var self = this
+        var pairCode = String(this.cloudForm.pairCode || '').trim()
+        if (!pairCode) {
+          this.$message.warning('请输入配对码')
+          return
+        }
+        var base = this.normalizeCloudBase(this.cloudForm.serverUrl)
+        if (!base) {
+          this.$message.warning('请输入链接地址')
+          return
+        }
+        var brand = this.selectedCloudBrand
+        if (!brand) {
+          this.$message.warning('请选择打印机品牌')
+          return
+        }
+        var payload = {
+          pairCode: pairCode,
+          storeName: '',
+          printerModel: brand.name,
+          version: 'mobile',
+          printers: [{
+            id: 'default',
+            name: brand.name + ' ' + brand.cmd,
+            brand: brand.key,
+            cmdSet: brand.cmd,
+            host: '',
+            port: DEFAULT_PRINTER_PORT
+          }]
+        }
+        this.cloudSaving = true
+        fetch(base + '/printAgent/device/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function(resp) {
+          return resp.json()
+        }).then(function(json) {
+          self.cloudSaving = false
+          var data = (json && json.data) || {}
+          if (!json || json.code !== 200 || !data.deviceId) {
+            self.$message.error(typeof data === 'string' ? data : (data.message || '配对失败'))
+            return
+          }
+          self.cloudAddVisible = false
+          self.deviceTab = 'cloud'
+          self.showPrinterSheet = true
+          self.loadAgentPrinters().then(function() {
+            self.printerType = 'backend'
+            self.selectedPrinter = 'agent:' + data.deviceId + ':default'
+            self.persistLastPrinter()
+          })
+          self.$message.success('云打印机已添加')
+        }).catch(function() {
+          self.cloudSaving = false
+          self.$message.error('无法连接链接地址，请检查地址与网络')
+        })
       },
       // 手机端：选中打印机后关闭弹层
       selectPrinterAndClose(name) {
@@ -1731,9 +1917,19 @@
       // 远程打印：前端渲染整张标签，后端生成 TSPL 指令经打印代理下发
       printViaAgentPrinter(agentPrinter) {
         var self = this
-        var items = this.buildLayoutItems()
-        this.printing = true
-        return this.renderLabelToPng().then(function(image) {
+        var items
+        var rendering
+        // 渲染阶段为同步逻辑，异常时给出提示并复位按钮状态
+        try {
+          items = this.buildLayoutItems()
+          this.printing = true
+          rendering = this.renderLabelToPng()
+        } catch (err) {
+          this.printing = false
+          this.msgError('生成打印数据失败：' + ((err && err.message) || err))
+          return Promise.resolve(false)
+        }
+        return rendering.then(function(image) {
           return printViaAgent({
             deviceId: agentPrinter.deviceId,
             printerId: agentPrinter.printerId,
@@ -2507,11 +2703,38 @@
         if (!this._batchPrint) this.$message.success(text)
       },
       msgError(text) {
-        if (!this._batchPrint) this.$message.error(text)
+        if (!this._batchPrint) {
+          // 页内也显示一份：手机端全屏弹层页上 toast 可能看不到
+          this.printHint = text
+          this.$message.error(text)
+        }
+      },
+      msgWarn(text) {
+        this.printHint = text
+        this.$message.warning(text)
       },
       // 打印：直接发送到所选打印机（后端执行），后端不可用时回退浏览器打印
       handlePrint() {
-        if (!this.template) return
+        // 清空上一次的失败提示
+        this.printHint = ''
+        // 同步异常兜底：避免点击后无任何提示、按钮卡在 loading
+        try {
+          this.doHandlePrint()
+        } catch (err) {
+          this.printing = false
+          this._batchPrint = false
+          this._printFailed = 0
+          this.printPage = 0
+          var reason = '打印失败：' + ((err && err.message) || err)
+          this.printHint = reason
+          this.$message.error(reason)
+        }
+      },
+      doHandlePrint() {
+        if (!this.template) {
+          this.msgWarn('标签模板未加载完成，请稍后重试')
+          return
+        }
         // 尚未添加任何打印机：弹层提示，并引导进入打印机设置 / 打印设备页面
         if (this.printerType !== 'cloud' && !this.hasAnyPrinter) {
           this.showAddPrinterDialog()
@@ -2543,7 +2766,8 @@
             self.printing = false
             self.printPage = 0
             if (self._printFailed > 0) {
-              self.$message.error('部分标签打印失败：' + self._printFailed + ' / ' + self.pageCount + ' 张')
+              self.printHint = '部分标签打印失败：' + self._printFailed + ' / ' + self.pageCount + ' 张'
+              self.$message.error(self.printHint)
             } else {
               self.$message.success('已发送 ' + self.pageCount + ' 张标签')
               self.notifyPrintSuccess()
@@ -2572,11 +2796,22 @@
         if (this.selectedPrinter && String(this.selectedPrinter).indexOf('agent:') === 0) {
           var agentPrinter = this.agentPrinterItems.find(function(p) { return p.key === self.selectedPrinter })
           if (!agentPrinter) {
-            this.$message.warning('请先选择打印机')
-            return Promise.resolve(false)
+            // 设备列表可能尚未加载完成：刷新一次后重试
+            return this.loadAgentPrinters().then(function() {
+              var printer = self.agentPrinterItems.find(function(p) { return p.key === self.selectedPrinter })
+              if (!printer) {
+                self.msgWarn('未找到已选云打印机，请重新选择')
+                return false
+              }
+              if (!printer.online) {
+                self.msgWarn('打印代理「' + printer.deviceName + '」当前离线，请检查设备网络')
+                return false
+              }
+              return self.printViaAgentPrinter(printer)
+            })
           }
           if (!agentPrinter.online) {
-            this.$message.warning('打印代理「' + agentPrinter.deviceName + '」当前离线，请检查设备网络')
+            this.msgWarn('打印代理「' + agentPrinter.deviceName + '」当前离线，请检查设备网络')
             return Promise.resolve(false)
           }
           return this.printViaAgentPrinter(agentPrinter)
@@ -2587,7 +2822,7 @@
             && this.agentPrinterItems.length === 0) {
             this.showInstallGuide()
           } else {
-            this.$message.warning('请先选择打印机')
+            this.msgWarn('请先选择打印机')
           }
           return Promise.resolve(false)
         }
@@ -2698,17 +2933,18 @@
           }
           if (item.isCode) {
             // 编码元素：宽高取与预览一致的可打印尺寸
-            var layout = self.codeLayout(item.key)
+            // 注意：变量名不能与上方的 layout 同名，var 会提升并遮蔽外层布局对象
+            var code = self.codeLayout(item.key)
             items.push({
               x: style.x || 0,
               y: style.y || 0,
-              width: layout.imgWidth,
-              height: layout.imgHeight,
+              width: code.imgWidth,
+              height: code.imgHeight,
               codeType: style.codeType,
-              codeText: layout.value,
+              codeText: code.value,
               // 硬件取整参数：后端直接使用，不能自行按宽度重算
-              narrow: layout.narrow,
-              cell: layout.cell,
+              narrow: code.narrow,
+              cell: code.cell,
               // image 仅用于浏览器兜底打印，后端按 codeType + codeText 下发硬件指令
               image: self.codeImages[item.key] || '',
               text: ''
@@ -2728,8 +2964,12 @@
           items.push({
             x: style.x || 0,
             y: style.y || 0,
-            // 未设置宽度时按「标签宽 - 左边距」折行，避免打印时横向溢出
-            width: style.width > 0 ? style.width : Math.max(20, self.labelWidth - (style.x || 0)),
+            // 折行宽度 = min(元素边框宽度, 标签可用宽度)，与布局计算保持一致
+            width: (function() {
+              var limit = Math.max(20, self.labelWidth - (style.x || 0))
+              return style.width > 0 ? Math.min(style.width, limit) : limit
+            })(),
+            // 高度按模板：折行模式下布局已把高度更新为实际行高，省略模式下为模板原始高度
             height: style.height || null,
             fontSize: style.fontSize,
             fontWeight: style.fontWeight,
@@ -2745,7 +2985,7 @@
         var self = this
         var printer = this.wifiPrinters.find(function(p) { return p.id === self.activeWifiId })
         if (!printer) {
-          this.$message.warning('请先点击「添加打印机」配置打印机')
+          this.msgWarn('请先点击「添加打印机」配置打印机')
           return Promise.resolve(false)
         }
         this.printing = true
@@ -2942,9 +3182,10 @@
           if ('letterSpacing' in ctx) ctx.letterSpacing = (item.letterSpacing || 0) + 'px'
           ctx.textBaseline = 'top'
           var lh = item.fontSize * (item.lineHeight || 1.3)
-          // 指定宽度时按框宽逐字换行；指定高度时只绘制框内完整行，超出部分不打印
+          // 文本内容与宽度均来自模板布局结果：折行模式为完整文本，省略模式为已裁切文本
           var lines = self.wrapCanvasText(ctx, String(item.text || ''), item.width)
-          var maxLines = item.height ? Math.max(0, Math.floor(item.height / lh + 0.001)) : lines.length
+          // 元素高度按模板；四舍五入以容纳布局算出的实际行高，至少保留一行避免整张标签空白
+          var maxLines = item.height ? Math.max(1, Math.round(item.height / lh)) : lines.length
           if (item.width || item.height) {
             ctx.save()
             ctx.beginPath()
@@ -3591,6 +3832,14 @@
     background: #fff;
     border-top: 1px solid #eee;
   }
+  .lmp-print-hint {
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #f5222d;
+    text-align: center;
+    word-break: break-all;
+  }
   .lmp-print-btn {
     height: 46px;
     font-size: 16px;
@@ -3912,6 +4161,34 @@
     padding: 0 4px;
     font-size: 12px;
     color: #999;
+  }
+  /* ===== 云打印配对配置页（lmc = label mobile cloud） ===== */
+  .lmc-form {
+    flex: none;
+    padding: 10px 10px 0;
+  }
+  .lmc-tip {
+    margin-top: 10px;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #999;
+  }
+  .lmc-section {
+    margin: 16px 4px 0;
+    font-size: 13px;
+    color: #666;
+  }
+  .lmc-grid {
+    padding-top: 4px;
+  }
+  .lmb-cell.active .lmb-name {
+    color: #1890ff;
+    font-weight: 600;
+  }
+  .lmb-cell.active .lmb-cmd {
+    background: #1890ff;
+    color: #fff;
   }
 </style>
 

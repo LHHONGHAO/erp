@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.utils.BaseResponseInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,6 +29,30 @@ public class PrintAgentPairController {
 
     @Resource
     private PrintAgentStore store;
+
+    @Resource
+    private PrintPrinterStore printerStore;
+
+    /**
+     * 型号下发：代理设置页用设备 Token 拉取主机维护的打印机型号，供打印机的型号下拉选择
+     */
+    @GetMapping(value = "/models")
+    public BaseResponseInfo models(HttpServletRequest request) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        String deviceId = trim(request.getHeader("X-Device-Id"));
+        String authorization = trim(request.getHeader("Authorization"));
+        String token = authorization != null && authorization.startsWith("Bearer ")
+                ? trim(authorization.substring("Bearer ".length())) : null;
+        JSONObject agent = deviceId == null ? null : store.findByDeviceId(deviceId);
+        if (agent == null || token == null || !token.equals(agent.getString("token"))) {
+            res.code = 401;
+            res.data = "设备未授权，请重新配对";
+            return res;
+        }
+        res.code = 200;
+        res.data = printerStore.listEnabled();
+        return res;
+    }
 
     /**
      * 配对：配对码 + 门店/型号/打印机 + 代理版本，换取设备编号、Token 与服务端地址

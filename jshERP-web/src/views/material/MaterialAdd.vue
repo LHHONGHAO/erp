@@ -130,6 +130,12 @@
       initPage () {
         const recordStr = sessionStorage.getItem('materialEditRecord')
         if (!recordStr) {
+          // 从「AI添加商品」菜单直接进入时跳过方式选择，直接进入 AI 添加
+          if ((this.$route.path || '').indexOf('/material/ai_add') > -1) {
+            this.startAiAdd()
+            this.loadGateTree()
+            return
+          }
           this.showCategoryGate = true
           this.loadGateTree()
           this.registerHeaderActions()

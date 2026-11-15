@@ -40,30 +40,6 @@ function injectPrintAgentRoute(routes) {
   }
 }
 
-// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表。
-// 页面路由已在 router.config.js 的 constantRouterMap 中固定注册（与首页共用 TabLayout），
-// 这里只负责菜单展示与首页「常用页面」的入口，菜单结构变化不会导致页面打不开。
-function injectAddressRecognizeMenu(menuData) {
-  if (!Array.isArray(menuData)) return
-  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA'
-    || item.text === '基础资料' || item.text === '基础信息')
-  if (!target) return
-  if (!Array.isArray(target.children)) target.children = []
-  const exists = target.children.some(item => item.url === '/system/address-recognize')
-  if (!exists) {
-    target.children.push({
-      id: 'address-recognize',
-      text: '地址识别',
-      icon: 'environment',
-      url: '/system/address-recognize',
-      component: '/system/AddressRecognize',
-      route: '1',
-      fixedRoute: true,
-      children: []
-    })
-  }
-}
-
 // AI配置页面由前端内置，注入到「系统管理」菜单分组下，不依赖后台菜单表
 function injectAiConfigMenu(menuData) {
   if (!Array.isArray(menuData)) return
@@ -78,27 +54,6 @@ function injectAiConfigMenu(menuData) {
       icon: 'setting',
       url: '/system/ai-config',
       component: '/system/AiConfig',
-      route: '1',
-      children: []
-    })
-  }
-}
-
-// 远程打印配置页面由前端内置，注入到「系统设置 / 系统管理」菜单分组下，不依赖后台菜单表
-function injectRemotePrintMenu(menuData) {
-  if (!Array.isArray(menuData)) return
-  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/system'
-    || item.text === '系统设置' || item.text === '系统管理')
-  if (!target) return
-  if (!Array.isArray(target.children)) target.children = []
-  const exists = target.children.some(item => item.url === '/system/remote-print')
-  if (!exists) {
-    target.children.push({
-      id: 'remote-print-config',
-      text: '远程打印配置',
-      icon: 'printer',
-      url: '/system/remote-print',
-      component: '/print/RemotePrintConfig',
       route: '1',
       children: []
     })

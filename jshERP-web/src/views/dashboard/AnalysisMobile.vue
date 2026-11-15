@@ -147,6 +147,12 @@
         savedPages: [],
         // 新用户没有保存过常用页面时，首次进入按默认加载项生成
         defaultPending: false,
+        // 云端配置是否已返回：未返回前不生成默认项，避免覆盖已保存的常用页面
+        cloudLoaded: false,
+        // 请求序号：丢弃过期响应，避免登录后并发请求互相覆盖
+        fetchSeq: 0,
+        // 是否已触发过 activated（keep-alive 首次挂载也会触发，需要跳过）
+        hasActivated: false,
         pickerVisible: false,
         keyword: '',
         pickedUrls: [],
@@ -219,10 +225,6 @@
           })
           return Object.assign({}, group, { pages: pages })
         }).filter(group => group.pages.length > 0)
-      },
-      storageKey() {
-        let userId = Vue.ls.get(USER_ID) || 'anonymous'
-        return STORAGE_PREFIX + userId
       }
     },
     watch: {
@@ -239,9 +241,24 @@
       this.initStatistics()
       this.initCommonPages()
     },
+    activated() {
+      // keep-alive 页面首次挂载也会触发 activated，这里跳过；
+      // 之后从其他页面返回首页时重新拉取，保证退出重登后也能补加载
+      if (!this.hasActivated) {
+        this.hasActivated = true
+        return
+      }
+      this.initCommonPages()
+    },
     methods: {
+      // USER_ID 存在本地存储中、不具备响应性，用方法实时读取，
+      // 避免 computed 缓存住登录切换前的 key
+      storageKey() {
+        let userId = Vue.ls.get(USER_ID) || 'anonymous'
+        return STORAGE_PREFIX + userId
+      },
       getCachedPages() {
-        let pages = Vue.ls.get(this.storageKey)
+        let pages = Vue.ls.get(this.storageKey())
         return Array.isArray(pages) ? pages : []
       },
       initStatistics() {
@@ -262,9 +279,14 @@
         }
         return value
       },
-      initCommonPages() {
-        // 优先从云端加载，失败时回退到本地缓存
-        getCommonPages().then(res => {
+      initCommonPages(retried) {
+        // 加时间戳跳过浏览器/代理缓存：退出重登后同一 GET 可能直接命中旧响应，
+        // 导致常用页面仍是登录前的数据或空数据
+        let seq = ++this.fetchSeq
+        getCommonPages({ _t: Date.now() }).then(res => {
+          if (seq !== this.fetchSeq) {
+            return
+          }
           let pages = []
           if (res && res.code === 200 && res.data) {
             try {
@@ -273,18 +295,27 @@
               pages = []
             }
           }
-          if (!pages || pages.length === 0) {
+          if (!Array.isArray(pages) || pages.length === 0) {
             // 云端无数据，尝试从本地缓存恢复
-            pages = Vue.ls.get(this.storageKey) || []
+            pages = this.getCachedPages()
           }
+          this.cloudLoaded = true
           this.savedPages = pages
-          this.defaultPending = !pages || pages.length === 0
+          this.defaultPending = pages.length === 0
           this.applyCommonPages()
         }).catch(() => {
-          // 接口失败，使用本地缓存
-          let pages = Vue.ls.get(this.storageKey) || []
+          if (seq !== this.fetchSeq) {
+            return
+          }
+          // 刚登录时会话可能尚未就绪，间隔重试一次再回退缓存
+          if (!retried) {
+            setTimeout(() => this.initCommonPages(true), 800)
+            return
+          }
+          let pages = this.getCachedPages()
+          this.cloudLoaded = true
           this.savedPages = pages
-          this.defaultPending = !pages || pages.length === 0
+          this.defaultPending = pages.length === 0
           this.applyCommonPages()
         })
       },
@@ -297,6 +328,11 @@
       },
       // 按当前菜单过滤出仍可打开的页面，菜单就绪后可重复调用
       applyCommonPages() {
+        // 云端配置未返回前不处理：菜单 watcher 可能早于接口返回触发，
+        // 此时写默认项会把用户已保存的常用页面覆盖掉
+        if (!this.cloudLoaded) {
+          return
+        }
         let validUrls = this.allPages.map(item => item.url)
         // 菜单尚未就绪时保持原样，避免常用页面被过滤成空白
         if (validUrls.length === 0) {
@@ -319,7 +355,7 @@
       // 保存常用页面到云端（同时更新本地缓存）
       persistCommonPages() {
         this.savedPages = this.commonPages
-        Vue.ls.set(this.storageKey, this.commonPages)
+        Vue.ls.set(this.storageKey(), this.commonPages)
         let pagesJson = JSON.stringify(this.commonPages)
         saveCommonPages({ pages: pagesJson }).catch(() => {
           // 保存失败不影响本地显示，但本地缓存已更新

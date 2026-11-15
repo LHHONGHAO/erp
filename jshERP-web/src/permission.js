@@ -173,14 +173,17 @@ router.beforeEach((to, from, next) => {
             const cachedRedirect = decodeURIComponent(from.query.redirect || to.fullPath)
             next(cachedRedirect)
           })
-          // 后台静默刷新菜单与按钮权限，只更新缓存，不打断当前渲染
+          // 后台静默刷新菜单与按钮权限
           store.dispatch('GetPermissionList').then(res => {
             if (res) {
-              // 后台返回的是原始菜单，先注入内置页面再写缓存，避免覆盖掉注入结果
+              // 后台返回的是原始菜单，先注入内置页面再写缓存和 store。
+              // 必须写回 store：首页「常用页面」用 permissionList 过滤，
+              // 不写回会让地址识别等前端内置页面被当成无效页面过滤掉
               injectAddressRecognizeMenu(res)
               injectAiConfigMenu(res)
               injectRemotePrintMenu(res)
               saveMenuCache(userId, res)
+              store.commit('SET_PERMISSIONLIST', res)
               refreshUserBtnList()
             }
           }).catch(() => {})

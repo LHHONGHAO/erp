@@ -86,18 +86,19 @@ const user = {
       })
     },
     // 获取用户信息
-    GetPermissionList({ commit }) {
+    GetPermissionList() {
       return new Promise((resolve, reject) => {
         //let v_token = Vue.ls.get(ACCESS_TOKEN);
         let params = {pNumber:0,userId: Vue.ls.get(USER_ID)};
         queryPermissionsByUser(params).then(response => {
           const menuData = response;
+          // 不在这里写 permissionList：后台返回的是原始菜单，缺少前端内置页面，
+          // 由 permission.js 注入内置页面后统一写入，避免两份菜单互相覆盖
           if (menuData && menuData.length > 0) {
-            commit('SET_PERMISSIONLIST', menuData)
+            resolve(response)
           } else {
             reject('getPermissionList: permissions must be a non-null array !')
           }
-          resolve(response)
         }).catch(error => {
           reject(error)
         })

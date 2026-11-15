@@ -45,10 +45,25 @@ public class SpaForwardFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
         String accept = req.getHeader("Accept");
+        String requestUri = req.getRequestURI();
+        String contextPath = req.getContextPath();
+        String path = requestUri.startsWith(contextPath)
+                ? requestUri.substring(contextPath.length()) : requestUri;
+
+        // Safari（尤其是添加到主屏幕的页面）可能继续使用旧入口 HTML，
+        // 即使 JS/CSS 文件名带 hash，入口也必须重新向服务器确认版本。
+        boolean htmlNavigation = "GET".equalsIgnoreCase(req.getMethod())
+                && accept != null && accept.contains("text/html");
+        if (htmlNavigation || "/sw.js".equals(path)) {
+            setNoCacheHeaders(res);
+        } else if ("/platformConfig/getUiConfig".equals(path)) {
+            // 地址、会员等打印模板是服务器共享配置，不能被浏览器或代理复用旧响应。
+            setNoCacheHeaders(res);
+        }
         if ("GET".equalsIgnoreCase(req.getMethod())
-                && req.getRequestURI().indexOf('.') < 0
+                && requestUri.indexOf('.') < 0
                 && accept != null && accept.contains("text/html")) {
-            if (isMobileEntry(req.getRequestURI())) {
+            if (isMobileEntry(requestUri)) {
                 req.getRequestDispatcher("/mobile/index.html").forward(req, res);
                 return;
             }
@@ -59,6 +74,12 @@ public class SpaForwardFilter implements Filter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private void setNoCacheHeaders(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        response.setHeader("Pragma", "no-cache");
+        response.setDateHeader("Expires", 0L);
     }
 
     /**

@@ -69,6 +69,8 @@
           </a-col>
         </a-row>
       </div>
+      <!-- 当前运行的前端包版本：用于确认浏览器拿到的是服务器最新的包 -->
+      <div class="login-version" v-if="appVersion">前端版本 {{ appVersion }}</div>
     </a-form>
   </div>
 </template>
@@ -131,12 +133,14 @@
         mainStyle: '',
         btnStyle: 'margin-top:16px',
         requestCodeSuccess:false,
-        checked: false
+        checked: false,
+        appVersion: ''
       }
     },
     created () {
       this.loadInfo()
       this.checkScreen()
+      this.appVersion = this.readAppVersion()
       this.currdatetime = new Date().getTime();
       Vue.ls.remove(ACCESS_TOKEN)
       this.getRouterData()
@@ -146,6 +150,18 @@
     },
     methods: {
       ...mapActions([ "Login", "Logout" ]),
+      // 当前运行的前端包名：index.html 里引用的 app.<hash>.js，用来确认拿到的是服务器最新包
+      readAppVersion() {
+        var script = document.querySelector('script[src*="/js/app."]')
+        var matched = script ? /js\/app\.([a-z0-9]+)\.js/i.exec(script.src) : null
+        var build = matched ? matched[1] : ''
+        var param = /(?:^|[?&])v=([^&]*)/.exec(window.location.search.replace(/^\?/, ''))
+        if (!param) return build
+        var urlVersion = ''
+        try { urlVersion = decodeURIComponent(param[1]) } catch (e) { urlVersion = param[1] }
+        if (!build) return urlVersion
+        return urlVersion === build ? build : (build + ' / v=' + urlVersion)
+      },
       // handler
       loadInfo() {
         //从缓存中获取登录名和密码
@@ -521,6 +537,13 @@
   .login-copyright {
     text-align: center;
     margin-top: 20px
+  }
+  /* 当前运行的前端包版本 */
+  .login-version {
+    margin-top: 8px;
+    text-align: center;
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.45);
   }
   .login-copyright, .login-copyright a {
     color: #666

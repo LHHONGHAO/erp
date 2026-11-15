@@ -10,6 +10,29 @@ const TARGET_KEY = 'jsh.appVersion.target'
 const LAST_CHECK_KEY = 'jsh.appVersion.lastCheck'
 const CHECK_INTERVAL = 60 * 1000
 
+function readSessionValue(key) {
+  try { return window.sessionStorage.getItem(key) } catch (e) { return null }
+}
+
+function writeSessionValue(key, value) {
+  try { window.sessionStorage.setItem(key, value) } catch (e) { /* Safari private/restricted contexts */ }
+}
+
+function currentVersionParam() {
+  const match = /(?:^|&)v=([^&]*)/.exec(window.location.search.replace(/^\?/, ''))
+  if (!match) return ''
+  try { return decodeURIComponent(match[1]) } catch (e) { return match[1] }
+}
+
+function versionedCurrentUrl(version) {
+  const search = window.location.search
+  const encoded = encodeURIComponent(version)
+  const nextSearch = /(?:^|[?&])v=/.test(search)
+    ? search.replace(/([?&])v=[^&]*/, '$1v=' + encoded)
+    : search + (search ? '&' : '?') + 'v=' + encoded
+  return window.location.pathname + nextSearch + window.location.hash
+}
+
 /** 当前正在运行的入口脚本，如 js/app.537da6bb.js */
 function currentBundle() {
   const script = document.querySelector('script[src*="/js/app."]')
@@ -29,9 +52,9 @@ export default function checkAppVersion() {
   if (!running) return Promise.resolve(false)
 
   const now = Date.now()
-  const last = Number(sessionStorage.getItem(LAST_CHECK_KEY) || 0)
+  const last = Number(readSessionValue(LAST_CHECK_KEY) || 0)
   if (now - last < CHECK_INTERVAL) return Promise.resolve(false)
-  sessionStorage.setItem(LAST_CHECK_KEY, String(now))
+  writeSessionValue(LAST_CHECK_KEY, String(now))
 
   const base = process.env.BASE_URL || '/'
   return fetch(base + 'index.html?__v=' + now, { cache: 'no-store' })
@@ -40,10 +63,10 @@ export default function checkAppVersion() {
       const latest = latestBundle(html)
       if (!latest || latest === running) return false
       // 已因该版本重载过却仍是旧包，说明拿到的还是缓存页面，停止重载避免死循环
-      if (sessionStorage.getItem(TARGET_KEY) === latest) return false
-      sessionStorage.setItem(TARGET_KEY, latest)
       const version = latest.replace(/^.*app\./, '').replace(/\.js$/, '')
-      location.replace(location.pathname + '?v=' + version)
+      if (readSessionValue(TARGET_KEY) === latest || currentVersionParam() === version) return false
+      writeSessionValue(TARGET_KEY, latest)
+      location.replace(versionedCurrentUrl(version))
       return true
     })
     .catch(() => false)

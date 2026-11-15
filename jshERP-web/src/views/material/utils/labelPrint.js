@@ -55,19 +55,30 @@ export function printLabel(options) {
 
   var win = iframe.contentWindow
   var removed = false
+  var printReturned = false
+  var cleanupOnReturn = function() {
+    // Safari may omit afterprint when its native print sheet is dismissed.
+    if (!printReturned || document.hidden) return
+    setTimeout(cleanup, 300)
+  }
   var cleanup = function() {
     if (removed) return
     removed = true
+    window.removeEventListener('focus', cleanupOnReturn)
+    document.removeEventListener('visibilitychange', cleanupOnReturn)
     if (iframe.parentNode) iframe.parentNode.removeChild(iframe)
   }
   // 打印对话框关闭后清理 iframe
   win.onafterprint = function() { setTimeout(cleanup, 300) }
+  window.addEventListener('focus', cleanupOnReturn)
+  document.addEventListener('visibilitychange', cleanupOnReturn)
 
   // 等文档渲染完成再调起打印，否则部分浏览器打印对话框里打印机列表不完整或内容空白
   setTimeout(function() {
     try {
       win.focus()
       win.print()
+      printReturned = true
     } catch (e) {
       cleanup()
       return

@@ -11,9 +11,13 @@
       <div v-if="$slots.actions" class="mmp-tools">
         <slot name="actions"></slot>
       </div>
-      <div class="mmp-close" @click.stop="$emit('close')">
+      <button
+        class="mmp-close"
+        type="button"
+        aria-label="关闭"
+        @click.stop="$emit('close')">
         <a-icon type="close" title="关闭" />
-      </div>
+      </button>
     </div>
 
     <!-- 内容区 -->
@@ -42,12 +46,14 @@ var swipeLockCount = 0
 /**
  * iOS Safari 的左右滑动回退由浏览器手势接管，touchmove 的 preventDefault 拦不住。
  * 弹层打开时压入一条同 URL 的历史记录作为哨兵：右滑只会回退到这条哨兵
- * （URL 与路由都不变，弹层原地不动），popstate 后再补回哨兵。
+ * （URL 与路由都不变）；浏览器返回键则关闭最上层弹层页，不再被哨兵无限吞掉。
  */
 var historyGuardActive = false
 // 本次守卫是否由我们真正 pushState 压入（接管遗留哨兵时为 false，关闭时不能再 back）
 var historyGuardPushed = false
 var popStateBound = false
+// 打开中的弹层页按打开顺序登记：浏览器返回时关闭最上层那一页
+var guardClosers = []
 
 function pushHistoryGuard() {
   if (historyGuardActive || typeof window === 'undefined' || !window.history) return
@@ -93,6 +99,12 @@ function onSwipeGuardPopState() {
   if (swipeLockCount <= 0) return
   historyGuardActive = false
   historyGuardPushed = false
+  // 浏览器返回 = 关闭最上层弹层页；没有可关闭的页面时才补回哨兵
+  var closer = guardClosers[guardClosers.length - 1]
+  if (closer) {
+    closer()
+    return
+  }
   pushHistoryGuard()
 }
 
@@ -128,6 +140,8 @@ export default {
   },
   mounted() {
     var self = this
+    // 浏览器返回时关闭本页（由 onSwipeGuardPopState 调用）
+    this._guardCloser = function() { self.$emit('close') }
     // 锁定左右滑动：防止浏览器手势翻页/回退把弹层页带走
     this._onSwipeStart = function(e) {
       if (!self.visible || !self.$el || !self.$el.contains(e.target)) {
@@ -186,6 +200,14 @@ export default {
       if (!this._bswipeLocked && !on) return
       if (this._bswipeLocked === !!on) return
       this._bswipeLocked = !!on
+      // 按打开顺序登记/注销：浏览器返回时关闭最上层那一页
+      var closer = this._guardCloser
+      var idx = closer ? guardClosers.indexOf(closer) : -1
+      if (on) {
+        if (closer && idx < 0) guardClosers.push(closer)
+      } else if (idx >= 0) {
+        guardClosers.splice(idx, 1)
+      }
       applyBodySwipeLock(!!on)
     }
   }
@@ -265,13 +287,20 @@ body.mmp-swipe-locked {
   right: 0;
   width: 44px;
   height: 49px;
+  padding: 0;
+  border: 0;
+  -webkit-appearance: none;
+  appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
   color: #fff;
+  background: transparent;
   cursor: pointer;
   user-select: none;
+  touch-action: manipulation;
+  z-index: 1;
 }
 .mmp-close:active {
   background: rgba(255, 255, 255, 0.2);

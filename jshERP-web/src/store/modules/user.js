@@ -41,7 +41,6 @@ const user = {
     ValidateLogin({ commit }, userInfo) {
       return new Promise((resolve, reject) => {
         getAction("/cas/client/validateLogin",userInfo).then(response => {
-          console.log("----cas 登录--------",response);
           if(response.success){
             const result = response.result
             const userInfo = result.userInfo

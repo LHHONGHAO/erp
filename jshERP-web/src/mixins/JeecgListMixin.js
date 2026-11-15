@@ -91,7 +91,7 @@ export const JeecgListMixin = {
   },
   methods:{
     loadData(arg) {
-      if(!this.url.list){
+      if(!this.url || !this.url.list){
         this.$message.error("请设置url.list属性!")
         return
       }
@@ -102,15 +102,19 @@ export const JeecgListMixin = {
       let params = this.getQueryParams() //查询条件
       this.loading = true
       return getAction(this.url.list, params).then((res) => {
-        if (res.code===200) {
-          this.dataSource = res.data.rows
-          this.ipagination.total = res.data.total
+        if (res && res.code === 200) {
+          const data = res.data || {}
+          this.dataSource = Array.isArray(data.rows) ? data.rows : []
+          this.ipagination.total = Number(data.total) || 0
           this.tableAddTotalRow(this.columns, this.dataSource)
-        } else if(res.code===510){
+        } else if(res && res.code===510){
           this.$message.warning(res.data)
         } else {
-          this.$message.warning(res.data.message)
+          this.$message.warning((res && res.data && res.data.message) || '列表加载失败')
         }
+      }).catch((error) => {
+        this.$message.error((error && error.message) || '列表加载失败，请检查网络后重试')
+      }).finally(() => {
         this.loading = false
         this.onClearSelected()
       })
@@ -146,11 +150,13 @@ export const JeecgListMixin = {
       return filterObj(param);
     },
     getQueryField() {
-      var str = "id,";
-      this.columns.forEach(function (value) {
-        str += "," + value.dataIndex;
-      });
-      return str;
+      const fields = ['id']
+      const columns = this.columns || []
+      columns.forEach(function (column) {
+        const field = column && column.dataIndex
+        if (field && fields.indexOf(field) < 0) fields.push(field)
+      })
+      return fields.join(',')
     },
     onSelectChange(selectedRowKeys, selectionRows) {
       this.selectedRowKeys = selectedRowKeys;

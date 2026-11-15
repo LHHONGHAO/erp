@@ -2377,7 +2377,6 @@
       },
       handleChangeUpload(info, id, row, column) {
         let { file } = info
-        console.log('[JEditableTable] handleChangeUpload: status=' + file.status + ', id=' + id + ', hasResponse=' + !!file.response + ', response=' + JSON.stringify(file.response))
         let value = {
           name: file.name,
           type: file.type,
@@ -2391,15 +2390,12 @@
         if (file.status === 'done') {
           let resp = file.response
           let code = (resp && resp.code) || 0
-          console.log('[JEditableTable] upload done, code:', code, 'resp:', resp)
           if (code === 200) {
             let respName = column.responseName || 'message'
             value['path'] = (resp && resp[respName]) || (resp && resp.message)
-            console.log('[JEditableTable] set path:', value['path'])
           } else {
             value['message'] = (resp && resp.data) || (resp && resp.message) || '上传失败'
             value['status'] = 'error'
-            console.log('[JEditableTable] upload error:', value['message'])
           }
         } else if (file.status === 'error') {
           value['message'] = (file.response && file.response.message) || '未知错误'
@@ -2659,7 +2655,6 @@
         if (column.token !== false) {
           headers['X-Access-Token'] = this.accessToken
         }
-        console.log('[JEditableTable] uploadGetHeaders: token=' + this.accessToken + ', column.token=' + column.token)
         return headers
       },
       /** 上传请求地址 */

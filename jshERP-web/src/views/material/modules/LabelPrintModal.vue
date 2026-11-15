@@ -22,6 +22,11 @@
       <!-- 主内容 -->
       <div class="lmp-content" :class="{ 'lmp-empty': !template }">
         <template v-if="!template">
+          <div v-if="templateLoading" class="lmp-loading">
+            <a-spin size="small" />
+            <span class="lmp-loading-text">正在读取模板…</span>
+          </div>
+          <template v-else>
           <a-alert type="info" show-icon :message="emptyMessage">
             <template #description>
               <span v-if="templateLoadError">{{ templateLoadError }}</span>
@@ -43,7 +48,7 @@
             class="lmp-empty-create"
             icon="plus"
             @click="handleCreateTemplate">{{ type === 'address' ? '创建地址打印模板' : '创建会员标签模板' }}</a-button>
-          <div v-if="debugText" class="lmp-debug">{{ debugText }}</div>
+          </template>
         </template>
         <template v-else>
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
@@ -173,7 +178,7 @@
       <!-- 底部打印按钮 -->
       <template #footer>
         <div class="lmp-footer">
-          <div v-if="printHint" class="lmp-print-hint">{{ printHint }}</div>
+          <div v-if="printHint && template" class="lmp-print-hint">{{ printHint }}</div>
           <a-button
             type="primary"
             block
@@ -731,8 +736,6 @@
   </a-modal>
     <!-- 标签编辑：统一走标准复用弹层页面 -->
     <label-edit-modal-page ref="labelEditor" />
-    <!-- 临时诊断：顶栏点击轨迹（定位关闭无效原因，定位完成后移除） -->
-    <div v-if="isMobile && dbgTap" class="lmp-dbg-tap">{{ dbgTap }}</div>
   </div>
 </template>
 
@@ -784,13 +787,8 @@
         outdatedTemplate: false,
         // 路由模板加载失败原因：区分「加载失败」与「确实没有模板」
         templateLoadError: '',
-        // 临时诊断信息：定位模板为何未加载（定位完成后移除）
-        tmplDebug: null,
-        // 临时诊断：顶栏点击事件轨迹（定位关闭无效原因，定位完成后移除）
-        dbgTap: '',
-        // 临时诊断：模板加载/渲染结论与运行时报错（定位空模板原因，定位完成后移除）
-        dbgNote: '',
-        dbgErr: '',
+        // 模板读取中：读取完成前不渲染空状态，避免把「还没回来」显示成「没有模板」
+        templateLoading: false,
         allAttrs: [],
         selectedAttrs: [],
         attrStyles: {},
@@ -943,12 +941,6 @@
         if (this.template) return this.template.name || '标签打印'
         var titles = { delivery: '发货单打印', receipt: '小票打印', member: '会员打印', address: '地址打印' }
         return titles[this.type] || '标签打印'
-      },
-      // 临时诊断文案：定位模板未加载的真实原因，定位完成后移除
-      debugText() {
-        var script = document.querySelector('script[src*="/js/app."]')
-        var bundle = script ? script.src.split('/').pop() : '-'
-        return 'bundle=' + bundle + ' | note=' + (this.dbgNote || '-') + ' | ' + (this.dbgErr || '-') + ' | ' + JSON.stringify(this.tmplDebug || {})
       },
       // 空状态提示：按模板类型区分文案
       emptyMessage() {
@@ -1336,37 +1328,8 @@
         if (self.isMobile && self.visible) self.updatePreviewScale()
       }
       window.addEventListener('resize', this._onResize)
-      // 临时诊断：记录顶栏区域的触摸/点击事件，定位关闭按钮无效的原因（定位完成后移除）
-      this._dbgLog = []
-      this._onDbgEvt = function(e) {
-        if (!self.visible) return
-        var point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
-        var y = point ? Math.round(point.clientY) : Math.round(e.clientY || -1)
-        if (y < 0 || y > 60) return
-        var node = e.target
-        var cls = node ? String(node.className || node.tagName || '').split(' ')[0] : ''
-        var x = point ? Math.round(point.clientX) : Math.round(e.clientX || -1)
-        self._dbgLog.push(e.type + ':' + cls + '@' + x + ',' + y)
-        if (self._dbgLog.length > 3) self._dbgLog.shift()
-        self.dbgTap = self._dbgLog.join(' | ')
-      }
-      document.addEventListener('touchstart', this._onDbgEvt, true)
-      document.addEventListener('touchend', this._onDbgEvt, true)
-      document.addEventListener('click', this._onDbgEvt, true)
-      // 临时诊断：捕获运行时报错与未处理 Promise 拒绝，显示在页面上（定位完成后移除）
-      this._onDbgError = function(e) {
-        self.dbgErr = 'err:' + ((e && e.message) || '') + '@' + ((e && e.lineno) || '') + ':' + ((e && e.colno) || '')
-      }
-      this._onDbgReject = function(e) {
-        var r = e && e.reason
-        self.dbgErr = 'reject:' + ((r && (r.message || r.msg)) || String(r))
-      }
-      window.addEventListener('error', this._onDbgError)
-      window.addEventListener('unhandledrejection', this._onDbgReject)
     },
     beforeDestroy() {
-      window.removeEventListener('error', this._onDbgError)
-      window.removeEventListener('unhandledrejection', this._onDbgReject)
       if (!this._mql) return
       if (this._mql.removeEventListener) {
         this._mql.removeEventListener('change', this._onMqChange)
@@ -1374,9 +1337,6 @@
         this._mql.removeListener(this._onMqChange)
       }
       window.removeEventListener('resize', this._onResize)
-      document.removeEventListener('touchstart', this._onDbgEvt, true)
-      document.removeEventListener('touchend', this._onDbgEvt, true)
-      document.removeEventListener('click', this._onDbgEvt, true)
     },
     methods: {
       // 手机端：按容器尺寸等比缩放小票/标签
@@ -1479,19 +1439,23 @@
         this.wifiAddStep = ''
         this.printHint = ''
         this.visible = true
+        // 临时诊断：记录模板加载失败的具体环节（定位完成后移除）
+        this._diag = ''
+        this.templateLoading = true
         this.loadRouteTemplate({ type: this.type, templateId: opts.templateId, name: opts.name }).then(function(raw) {
+          self.templateLoading = false
           var tpl = null
-          // 临时诊断：区分「归一化抛异常」与「归一化返回空」，定位完成后移除
           try {
             tpl = self.normalizeTemplate(raw)
-            self.dbgNote = 'normalize=' + (tpl ? 'ok' : 'null') + ',raw=' + (raw == null ? 'null' : typeof raw)
           } catch (e) {
-            self.dbgNote = 'normalize-throw:' + ((e && (e.message || e.name)) || String(e))
+            self.templateLoadError = 'diag:throw:' + ((e && (e.message || e.name)) || String(e))
             return
+          }
+          if (!tpl && !self.templateLoadError && !self.outdatedTemplate) {
+            self.templateLoadError = 'diag:' + (self._diag || 'normalize-null') + '|raw=' + (raw == null ? 'null' : typeof raw)
           }
           if (tpl) {
             self.applyTemplate(tpl, true)
-            self.dbgNote += ',template=' + (self.template ? 'set' : 'empty')
             self.restoreMissingAttrs(self.selectedAttrs)
             self.applySnapshotValues()
           } else if (!self.outdatedTemplate) {
@@ -1499,7 +1463,7 @@
           }
           self.$nextTick(function() { self.updatePreviewScale() })
         }).catch(function() {
-          self.dbgNote = 'chain-catch'
+          self.templateLoading = false
           if (!self.outdatedTemplate) self.applySnapshot()
           self.$nextTick(function() { self.updatePreviewScale() })
         })
@@ -2112,7 +2076,6 @@
       },
       handleCancel() {
         // 关闭前复位所有子页面状态，避免「关掉又出现」
-        this.dbgTap = 'handleCancel 已执行'
         this.showPrinterSheet = false
         this.wifiAddStep = ''
         this.printerSettingsVisible = false
@@ -2140,7 +2103,9 @@
       // 模板优先级：当前商品的普通模板 > 品类的默认模板（云端读取，本地缓存兜底）
       loadTemplate() {
         var self = this
+        this.templateLoading = true
         fetchLabelTemplates().then(function(templates) {
+          self.templateLoading = false
           var record = self.record
           var normal = templates.find(function(t) {
             return t.type === 'normal' && String(t.materialId) === String(record.id)
@@ -2149,6 +2114,9 @@
             return t.type === 'default' && String(t.categoryId) === String(record.categoryId)
           })
           self.applyTemplate(normal || defaultTpl || null)
+        }).catch(function(err) {
+          self.templateLoading = false
+          self.templateLoadError = (err && (err.message || err.msg)) || '模板读取失败'
         })
       },
       // 路由页：按类型从统一模板存储读取模板（label 支持按 templateId/name 定位）
@@ -2169,23 +2137,15 @@
         if (cfgInfo) {
           var cfgKey = cfgInfo.key
           return getAction('/platformConfig/getUiConfig', { key: cfgKey, _t: Date.now() }).then(function(res) {
-            self.tmplDebug = {
-              key: cfgKey,
-              code: res && res.code,
-              dataType: res && typeof res.data,
-              dataLen: res && typeof res.data === 'string' ? res.data.length : -1
-            }
             if (!res || res.code !== 200) {
-              self.templateLoadError = '接口返回异常（code=' + (res && res.code) + '）'
-              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
+              self.templateLoadError = '接口返回异常'
+              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, res && res.code)
               return null
             }
             var rawData = res.data
             // 服务器尚未保存过模板：走正常空状态，提供创建入口
-            if (rawData == null || rawData === '') { self.tmplDebug.empty = true; return null }
+            if (rawData == null || rawData === '') { self._diag = 'data-empty'; return null }
             var cfg = parseTemplateRaw(rawData)
-            self.tmplDebug.parsed = !!cfg
-            self.tmplDebug.v2 = cfg ? isLabelTemplateV2(cfg) : null
             if (!cfg) {
               self.templateLoadError = '模板数据为空或格式无法解析'
               console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
@@ -2193,6 +2153,7 @@
             }
             // 旧模板不再兼容：标记后由空状态提示删除重建
             if (!isLabelTemplateV2(cfg)) {
+              self._diag = 'not-v2:sv=' + cfg.schemaVersion + ',els=' + (cfg.layout && cfg.layout.elements ? cfg.layout.elements.length : 'none')
               self.outdatedTemplate = true
               return null
             }
@@ -2203,7 +2164,6 @@
             return cfg
           }).catch(function(err) {
             self.templateLoadError = (err && (err.message || err.msg)) || '网络异常'
-            if (self.tmplDebug) { self.tmplDebug.error = self.templateLoadError; self.tmplDebug.errStatus = err && err.response && err.response.status }
             console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
             // 请求失败时回退本地缓存（编辑保存时写入），保证离线仍可打印
             try {
@@ -2254,7 +2214,6 @@
           .filter(function(key) { return key != null && key !== '' })
           .map(function(key) { return String(key) })
         // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
-        if (this.tmplDebug) this.tmplDebug.attrs = selectedAttrs.length
         if (!selectedAttrs.length) return null
         var size = (schema && schema.size) || {}
         var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600], member: [320, 240], address: [320, 240] }
@@ -3613,32 +3572,14 @@
   .lmp-empty-create {
     margin-top: 16px;
   }
-  /* 临时诊断信息 */
-  .lmp-dbg-tap {
-    position: fixed;
-    left: 8px;
-    right: 8px;
-    bottom: 96px;
-    z-index: 9999;
-    padding: 6px 8px;
-    font-size: 11px;
-    line-height: 1.4;
-    color: #fff;
-    font-family: Menlo, Consolas, monospace;
-    word-break: break-all;
-    background: rgba(0, 0, 0, 0.75);
-    border-radius: 4px;
-  }
-  .lmp-debug {
-    margin-top: 12px;
-    padding: 8px;
-    font-size: 11px;
-    line-height: 1.5;
-    color: #666;
-    font-family: Menlo, Consolas, monospace;
-    word-break: break-all;
-    background: #f5f5f5;
-    border-radius: 4px;
+  /* 模板读取中：读取完成前替代空状态显示 */
+  .lmp-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 0;
+    color: rgba(0, 0, 0, 0.45);
   }
   /* 预览区：flex 撑满剩余空间，Math.min 完整显示 */
   .lmp-preview-area {

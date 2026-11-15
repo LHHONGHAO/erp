@@ -1,17 +1,31 @@
 /**
- * 移动端键盘输入弹层
+ * 移动端键盘输入弹层（按需启用）
  *
- * 手机浏览器弹出软键盘时会遮挡页面输入框。这里不再滚动页面，而是：
- * 1. 输入框获得焦点时让页面保持原状（记录并恢复滚动位置）；
- * 2. 在键盘上方弹出独立输入弹层（按屏宽铺满），标题取原输入框的标签，
- *    预填该输入框的当前值并自动聚焦、全选；
- * 3. 只有点击弹层内的「确认」按钮才把内容回填到原输入框；
- * 4. 键盘收起、回车、点击弹层外等其它动作只关闭弹层，不回填数据。
+ * 默认不接管任何输入框：输入框获得焦点时保持原生体验。
+ * 只有显式指定的页面或输入框才在键盘上方弹出标准输入框：
+ *   1. 页面级：在页面 mounted 中调用 enableKeyboardInputOverlay('.selector')；
+ *   2. 输入框级：给 input/textarea 加 data-kb-overlay="on"。
+ * data-kb-overlay="off" 始终优先，表示该输入框永不接管。
  *
- * 由 main.js 全局安装，页面无需接入。
+ * 弹层底边贴合软键盘顶边，并随可视视口（键盘动画、页面缩放、横竖屏）移动，
+ * 不依赖页面内容滚动或 DOM 变化。
+ *
+ * 交互：只有点击圆形发送按钮才把内容回填到原输入框；
+ * 键盘收起、回车、点击弹层外等其它动作只关闭弹层，不回填数据。
+ *
+ * 弹层 DOM 由 main.js 全局安装，页面按需启用即可。
  */
+import '@/components/mobile/keyboardInputBox.less'
 
 const OVERLAY_ID = 'kb-input-overlay'
+
+// 页面级启用的选择器集合
+const optInSelectors = new Set()
+
+// 圆形发送按钮内的箭头图标
+const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path></svg>'
 
 // 不需要弹层接管的输入类型（由系统原生选择器或特殊交互处理）
 const SKIP_INPUT_TYPES = [
@@ -22,36 +36,6 @@ const SKIP_INPUT_TYPES = [
 
 // 带搜索能力的组合组件，其输入框需要保留原始焦点
 const SKIP_SELECTOR = '.ant-select, .ant-cascader, .ant-tree-select, .ant-picker, [role="combobox"], [aria-autocomplete]'
-
-// 弹层输入控件样式（与框内布局配合）
-const INPUT_STYLE = [
-  'flex:1',
-  'min-width:0',
-  'height:44px',
-  'padding:0 12px',
-  'box-sizing:border-box',
-  'border:none',
-  'background:transparent',
-  'font-size:16px',
-  'color:#262626',
-  'outline:none'
-].join(';')
-
-const TEXTAREA_STYLE = [
-  'flex:1',
-  'min-width:0',
-  'min-height:44px',
-  'max-height:96px',
-  'padding:11px 12px',
-  'box-sizing:border-box',
-  'border:none',
-  'background:transparent',
-  'font-size:16px',
-  'line-height:22px',
-  'color:#262626',
-  'outline:none',
-  'resize:none'
-].join(';')
 
 let installed = false
 let activeEl = null
@@ -77,7 +61,21 @@ function isMobileEnv () {
   return (coarse || touchUa) && window.innerWidth <= 1024
 }
 
-/** 判断元素是否需要接管 */
+/** 判断输入框是否被显式启用（页面选择器或 data-kb-overlay="on"） */
+function isOptedIn (el) {
+  if (el.closest('[data-kb-overlay="on"]')) return true
+  if (!optInSelectors.size) return false
+  const matched = []
+  optInSelectors.forEach(selector => matched.push(selector))
+  for (let i = 0; i < matched.length; i++) {
+    try {
+      if (el.matches(matched[i]) || el.closest(matched[i])) return true
+    } catch (e) {}
+  }
+  return false
+}
+
+/** 判断元素是否需要接管：必须显式启用，默认不接管 */
 function isEditableTarget (el) {
   if (!el || el.nodeType !== 1) return false
   const tag = el.tagName
@@ -85,6 +83,7 @@ function isEditableTarget (el) {
   if (el.closest('#' + OVERLAY_ID)) return false
   if (el.disabled || el.readOnly) return false
   if (el.getAttribute('data-kb-overlay') === 'off') return false
+  if (!isOptedIn(el)) return false
   if (el.closest(SKIP_SELECTOR)) return false
   if (tag === 'INPUT') {
     const type = (el.getAttribute('type') || 'text').toLowerCase()
@@ -185,7 +184,7 @@ function ensureOverlay () {
   if (rootEl) return rootEl
   const root = document.createElement('div')
   root.id = OVERLAY_ID
-  // 弹层按屏宽铺满，不再使用浮动卡片布局
+  // 弹层按可视视口铺满，底边由 positionOverlay 贴合键盘顶边
   root.style.cssText = [
     'position:fixed',
     'left:0',
@@ -196,63 +195,31 @@ function ensureOverlay () {
     'z-index:100000',
     'display:none',
     'margin:0',
-    'padding:10px 12px',
-    'padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))',
-    'box-sizing:border-box',
-    'background:#fff',
-    'border-top:1px solid #e8e8e8',
-    'font-size:15px'
+    'padding:6px 12px',
+    'padding-bottom:calc(6px + env(safe-area-inset-bottom, 0px))',
+    'box-sizing:border-box'
   ].join(';')
 
   const title = document.createElement('div')
   title.setAttribute('data-kb-title-role', '1')
-  title.style.cssText = [
-    'display:none',
-    'margin:0 0 8px',
-    'font-size:14px',
-    'font-weight:600',
-    'line-height:20px',
-    'color:#262626',
-    'white-space:nowrap',
-    'overflow:hidden',
-    'text-overflow:ellipsis'
-  ].join(';')
+  title.className = 'kib__title'
+  title.style.display = 'none'
 
   const box = document.createElement('div')
-  box.style.cssText = [
-    'display:flex',
-    'align-items:stretch',
-    'width:100%',
-    'box-sizing:border-box',
-    'border:1px solid #d9d9d9',
-    'border-radius:8px',
-    'background:#fff',
-    'overflow:hidden'
-  ].join(';')
+  box.className = 'kib__card'
 
   const field = document.createElement('input')
   field.type = 'text'
+  field.className = 'kib__field'
   field.setAttribute('data-kb-field', '1')
-  field.style.cssText = INPUT_STYLE
 
-  // 框内右侧的确认按钮：只有它会把内容回填到原输入框
+  // 卡片右侧的圆形发送按钮：只有它会把内容回填到原输入框
   const okBtn = document.createElement('button')
   okBtn.type = 'button'
-  okBtn.textContent = '确认'
-  okBtn.style.cssText = [
-    'flex:0 0 auto',
-    'align-self:flex-start',
-    'height:44px',
-    'padding:0 18px',
-    'border:none',
-    'border-left:1px solid #e8e8e8',
-    'border-radius:0',
-    'background:#1890ff',
-    'color:#fff',
-    'font-size:15px',
-    'font-weight:500',
-    'outline:none'
-  ].join(';')
+  okBtn.className = 'kib__send'
+  okBtn.setAttribute('aria-label', '确认')
+  okBtn.setAttribute('title', '确认')
+  okBtn.innerHTML = SEND_ICON
 
   // 按下按钮时阻止输入框失焦，避免弹层先被关闭
   const keepFocus = e => e.preventDefault()
@@ -305,7 +272,9 @@ function bindOverlayEvents (field) {
   field.addEventListener('input', () => {
     if (field.tagName !== 'TEXTAREA') return
     field.style.height = 'auto'
-    field.style.height = Math.min(field.scrollHeight, 96) + 'px'
+    field.style.height = Math.min(field.scrollHeight, 120) + 'px'
+    // 多行增高后重新贴合键盘顶边
+    positionOverlay()
   })
 }
 
@@ -316,12 +285,12 @@ function buildField (el) {
   let next
   if (isTextarea) {
     next = document.createElement('textarea')
-    next.rows = 2
-    next.style.cssText = TEXTAREA_STYLE
+    next.rows = 1
+    next.className = 'kib__field kib__field--multiline'
   } else {
     next = document.createElement('input')
     next.type = 'text'
-    next.style.cssText = INPUT_STYLE
+    next.className = 'kib__field'
   }
   next.setAttribute('data-kb-field', '1')
   const type = (el.getAttribute('type') || 'text').toLowerCase()
@@ -340,32 +309,56 @@ function buildField (el) {
   return next
 }
 
+/**
+ * 贴合软键盘顶边：以可视视口底边为基准设置 top，
+ * 键盘弹起动画、页面缩放、横竖屏时都随可视视口移动。
+ */
 function positionOverlay () {
   if (!rootEl || !activeEl) return
-  rootEl.style.bottom = getKeyboardHeight() + 'px'
   const vv = window.visualViewport
-  if (vv && vv.width) {
-    // 按可视区屏宽铺满，兼容横屏与页面缩放
+  if (vv && vv.height) {
+    const height = rootEl.offsetHeight
     rootEl.style.left = Math.round(vv.offsetLeft) + 'px'
-    rootEl.style.right = 'auto'
     rootEl.style.width = Math.round(vv.width) + 'px'
-  } else {
-    rootEl.style.left = '0'
-    rootEl.style.right = '0'
-    rootEl.style.width = '100%'
+    rootEl.style.right = 'auto'
+    rootEl.style.bottom = 'auto'
+    rootEl.style.top = Math.round(vv.offsetTop + vv.height - height) + 'px'
+    return
   }
+  // 不支持 visualViewport 的旧内核：按窗口高度变化估算键盘高度
+  rootEl.style.top = 'auto'
+  rootEl.style.left = '0'
+  rootEl.style.right = '0'
+  rootEl.style.width = '100%'
+  rootEl.style.bottom = getKeyboardHeight() + 'px'
 }
 
+// 键盘动画期间 resize/scroll 会连续触发，按帧合并
+let positionRaf = 0
+// 是否已确认键盘弹起过：用于键盘被系统收起（输入框仍保持焦点）时自动关闭弹层
+let keyboardOpened = false
 function onViewportChange () {
-  positionOverlay()
+  if (positionRaf) return
+  positionRaf = requestAnimationFrame(() => {
+    positionRaf = 0
+    if (!activeEl) return
+    // 系统收起键盘时输入框焦点不变，不会触发 blur，需要按键盘高度判断并关闭弹层
+    if (getKeyboardHeight() > 0) {
+      keyboardOpened = true
+    } else if (keyboardOpened) {
+      closeOverlay()
+      return
+    }
+    positionOverlay()
+  })
 }
 
 function bindViewport () {
   if (viewportBound) return
   viewportBound = true
+  // 只跟随可视视口与窗口尺寸变化，不监听页面滚动，避免页面滚动/内容变化影响弹层位置
   window.addEventListener('resize', onViewportChange)
   window.addEventListener('orientationchange', onViewportChange)
-  window.addEventListener('scroll', onViewportChange, true)
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', onViewportChange)
     window.visualViewport.addEventListener('scroll', onViewportChange)
@@ -377,10 +370,13 @@ function unbindViewport () {
   viewportBound = false
   window.removeEventListener('resize', onViewportChange)
   window.removeEventListener('orientationchange', onViewportChange)
-  window.removeEventListener('scroll', onViewportChange, true)
   if (window.visualViewport) {
     window.visualViewport.removeEventListener('resize', onViewportChange)
     window.visualViewport.removeEventListener('scroll', onViewportChange)
+  }
+  if (positionRaf) {
+    cancelAnimationFrame(positionRaf)
+    positionRaf = 0
   }
 }
 
@@ -396,8 +392,13 @@ function openOverlay (el) {
     titleEl.style.display = title ? 'block' : 'none'
   }
   rootEl.style.display = 'block'
+  // 打开时记录键盘状态：切换输入框时键盘通常已弹起
+  keyboardOpened = getKeyboardHeight() > 0
   positionOverlay()
   bindViewport()
+  // 键盘弹起动画期间保险再对齐两次
+  requestAnimationFrame(positionOverlay)
+  setTimeout(positionOverlay, 260)
   // 原输入框先失焦，避免系统再弹一次键盘
   try { el.blur() } catch (e) {}
   try {
@@ -435,6 +436,7 @@ function commit () {
   if (!el) return
   const value = fieldEl ? fieldEl.value : ''
   activeEl = null
+  keyboardOpened = false
   unbindViewport()
   if (rootEl) rootEl.style.display = 'none'
   if (document.body.contains(el)) {
@@ -450,6 +452,7 @@ function commit () {
 /** 关闭弹层：不回填数据 */
 function closeOverlay () {
   activeEl = null
+  keyboardOpened = false
   unbindViewport()
   if (rootEl) rootEl.style.display = 'none'
   restoreScroll()
@@ -483,6 +486,21 @@ export function installKeyboardInputOverlay () {
   })
   document.addEventListener('focusin', onFocusIn, true)
   document.addEventListener('click', onDocumentClick, true)
+}
+
+/**
+ * 启用指定页面/输入框的键盘输入弹层（可传多个 CSS 选择器）
+ * 例：mounted 中 enableKeyboardInputOverlay('.bill-form input')
+ */
+export function enableKeyboardInputOverlay (...selectors) {
+  selectors.forEach(selector => {
+    if (selector) optInSelectors.add(selector)
+  })
+}
+
+/** 关闭指定选择器的键盘输入弹层 */
+export function disableKeyboardInputOverlay (...selectors) {
+  selectors.forEach(selector => optInSelectors.delete(selector))
 }
 
 export default installKeyboardInputOverlay

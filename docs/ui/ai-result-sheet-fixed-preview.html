@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>识别结果弹层 · 固定高度 + 键盘输入弹层 原型</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    padding: 40px 24px 56px;
+    background: radial-gradient(1200px 600px at 50% -10%, #2b3648 0%, #1b2230 55%, #151a24 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    color: #cfd6e4;
+    display: flex; flex-direction: column; align-items: center; gap: 26px;
+  }
+  .page-title { text-align: center; }
+  .page-title h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; color: #fff; }
+  .page-title p { margin: 0; font-size: 13px; color: #8a94a8; }
+  .tips { font-size: 12px; color: #8a94a8; line-height: 1.9; text-align: left; max-width: 860px; }
+  .tips b { color: #5aa9ff; font-weight: 500; }
+
+  .stage { display: flex; flex-wrap: wrap; gap: 44px; justify-content: center; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .col-label { font-size: 13px; color: #9aa6bd; }
+  .col-label b { color: #5aa9ff; }
+  .toggle {
+    margin-top: 4px; padding: 7px 18px; border-radius: 18px; border: 1px solid #3c4a61;
+    background: #222c3c; color: #a9bad6; font-size: 12px; cursor: pointer;
+  }
+  .toggle:active { background: #2b384b; }
+
+  .phone {
+    position: relative; width: 375px; height: 780px; background: #f2f4f7;
+    border-radius: 34px; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 10px #0e121a, 0 0 0 11px #2a3342;
+  }
+  .statusbar { flex: none; height: 26px; padding: 0 18px; background: #1890ff; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #fff; }
+  .sheet-header { flex: none; height: 49px; background: #1890ff; display: flex; align-items: center; padding: 0 88px 0 14px; position: relative; color: #fff; }
+  .sheet-title { font-size: 16px; font-weight: 500; }
+  .sheet-gear, .sheet-close { position: absolute; top: 0; width: 44px; height: 49px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; }
+  .sheet-gear { right: 44px; color: #e8f3ff; }
+  .sheet-close { right: 0; }
+  .sheet-gear:active, .sheet-close:active { background: rgba(255,255,255,.18); }
+
+  /* 内容区：固定高度、内部滚动，不随键盘重排 */
+  .sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 12px 0; background: #f2f4f7; }
+
+  /* 识别内容卡片：上方圆角 */
+  .result-card { background: #fff; border-radius: 16px 16px 0 0; padding: 14px 14px 18px; box-shadow: 0 -1px 2px rgba(16,24,40,.04); }
+  .card-title { display: flex; align-items: center; font-size: 14px; font-weight: 600; color: #1f2733; margin: 2px 0 10px; }
+  .card-title::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: #1890ff; margin-right: 6px; }
+  .divider-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #1f2733; margin: 16px 0 8px; }
+  .divider-title::after { content: ""; flex: 1; height: 1px; background: #eef2f7; }
+
+  .attr-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f4f7fb; }
+  .attr-row:last-of-type { border-bottom: 0; }
+  .attr-row .k { flex: none; width: 84px; text-align: right; font-size: 13px; color: #6b7789; }
+  .attr-row .v { flex: 1; font-size: 14px; color: #1f2733; min-height: 20px; }
+  .attr-row .v.ph { color: #c3ccda; }
+  .attr-row .x { flex: none; width: 22px; text-align: center; color: #c3ccda; font-size: 14px; }
+
+  .chip-line { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .chip { padding: 6px 12px; border-radius: 999px; background: #f7f9fc; border: 1px solid #e8eef7; font-size: 12px; color: #3a4353; }
+
+  /* 底栏：价格填写 + 商品保存，固定不随键盘 */
+  .sheet-footer {
+    flex: none; position: relative; z-index: 20; background: #fff; display: flex; gap: 10px; align-items: center;
+    padding: 9px 12px calc(9px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -1px 0 rgba(16,24,40,.05);
+  }
+  .btn-primary {
+    flex: 1; height: 46px; border: 0; border-radius: 23px; background: #1890ff; color: #fff;
+    font-size: 16px; font-weight: 500; letter-spacing: 1px; cursor: pointer;
+  }
+  .btn-ghost {
+    flex: 1; height: 46px; border-radius: 23px; border: 1px solid #d6e2f2;
+    background: #fff; color: #4d596c; font-size: 15px; font-weight: 500; cursor: pointer;
+  }
+  .btn-ghost:active { background: #f4f8ff; }
+
+  /* 模拟键盘 */
+  .kb {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 258px; background: #d1d5db; z-index: 40;
+    display: none; flex-direction: column; padding: 8px 4px; gap: 8px;
+  }
+  .kb.show { display: flex; }
+  .kb-row { display: flex; flex: 1; gap: 6px; justify-content: center; }
+  .key { flex: 1; background: #fff; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #111; box-shadow: 0 1px 0 rgba(0,0,0,.25); }
+  .key.wide { flex: 1.6; background: #adb5bd; }
+  .key.space { flex: 5; }
+
+  /* 标准键盘输入弹层：距键盘顶边 6px，左右 12px */
+  .kb-input {
+    position: absolute; left: 12px; right: 12px; bottom: 264px; z-index: 50;
+    display: none;
+  }
+  .kb-input.show { display: block; }
+  .kb-input .label { font-size: 12px; color: #c6d2e6; margin: 0 0 6px 14px; }
+  .kb-card {
+    display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 16px;
+    background: #fff; border-radius: 26px;
+    box-shadow: 0 10px 30px rgba(9,16,29,.30), 0 0 0 1px rgba(16,24,40,.05);
+  }
+  .kb-card .field { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 15px; line-height: 22px; color: #1f2733; background: transparent; padding: 8px 0; font-family: inherit; }
+  .kb-card .send { flex: none; width: 38px; height: 38px; border: 0; border-radius: 50%; background: #1890ff; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .kb-card .send svg { width: 18px; height: 18px; }
+
+  .measure { font-size: 11px; color: #93a3bd; }
+</style>
+</head>
+<body>
+  <div class="page-title">
+    <h1>识别结果弹层 · 固定高度 + 键盘输入弹层</h1>
+    <p>左侧为常态；右侧为键盘弹起后的状态（内容卡片上沿圆角、页面不动、输入弹层贴键盘）</p>
+  </div>
+
+  <div class="stage">
+    <!-- 常态 -->
+    <div class="col">
+      <div class="phone" id="phone1">
+        <div class="statusbar"><span>9:41</span><span>●●●  ⚡</span></div>
+        <div class="sheet-header">
+          <span class="sheet-title">识别结果</span>
+          <span class="sheet-gear">⚙</span>
+          <span class="sheet-close">✕</span>
+        </div>
+
+        <div class="sheet-body">
+          <div class="result-card">
+            <div class="chip-line">
+              <span class="chip">1347022700078</span>
+              <span class="chip">新标签 100 二)倍所</span>
+            </div>
+
+            <div class="card-title">商品基础属性</div>
+            <div class="attr-row"><span class="k">名称：</span><span class="v">新标签 100 二)倍所</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">单位：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">品牌：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">填充物重量：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">制造商：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">面料：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">安全类别：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">执行标准：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">等级：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+
+            <div class="divider-title">规格值</div>
+            <div class="attr-row"><span class="k">规格名：</span><span class="v">花色</span><span class="x">🗑</span></div>
+            <div class="chip-line" style="padding-left:94px;margin-bottom:12px;">
+              <span class="chip">颜色：<span style="color:#c3ccda">颜色</span></span>
+            </div>
+            <div class="attr-row"><span class="k">规格名：</span><span class="v">规格</span><span class="x">🗑</span></div>
+          </div>
+        </div>
+
+        <div class="sheet-footer">
+          <button class="btn-ghost">价格填写</button>
+          <button class="btn-primary">商品保存</button>
+        </div>
+      </div>
+      <div class="col-label">常态：<b>卡片上沿圆角</b>，底栏固定</div>
+    </div>
+
+    <!-- 键盘弹起 -->
+    <div class="col">
+      <div class="phone" id="phone2">
+        <div class="statusbar"><span>9:41</span><span>●●●  ⚡</span></div>
+        <div class="sheet-header">
+          <span class="sheet-title">识别结果</span>
+          <span class="sheet-gear">⚙</span>
+          <span class="sheet-close">✕</span>
+        </div>
+
+        <div class="sheet-body">
+          <div class="result-card">
+            <div class="chip-line">
+              <span class="chip">1347022700078</span>
+              <span class="chip">新标签 100 二)倍所</span>
+            </div>
+
+            <div class="card-title">商品基础属性</div>
+            <div class="attr-row"><span class="k">名称：</span><span class="v">新标签 100 二)倍所</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">单位：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">品牌：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">填充物重量：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">制造商：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">面料：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+            <div class="attr-row"><span class="k">安全类别：</span><span class="v ph">未识别</span><span class="x">✕</span></div>
+          </div>
+        </div>
+
+        <div class="sheet-footer">
+          <button class="btn-ghost">价格填写</button>
+          <button class="btn-primary">商品保存</button>
+        </div>
+
+        <div class="kb show">
+          <div class="kb-row"><span class="key">q</span><span class="key">w</span><span class="key">e</span><span class="key">r</span><span class="key">t</span><span class="key">y</span><span class="key">u</span><span class="key">i</span><span class="key">o</span><span class="key">p</span></div>
+          <div class="kb-row"><span class="key">a</span><span class="key">s</span><span class="key">d</span><span class="key">f</span><span class="key">g</span><span class="key">h</span><span class="key">j</span><span class="key">k</span><span class="key">l</span></div>
+          <div class="kb-row"><span class="key wide">⇧</span><span class="key">z</span><span class="key">x</span><span class="key">c</span><span class="key">v</span><span class="key">b</span><span class="key">n</span><span class="key">m</span><span class="key wide">⌫</span></div>
+          <div class="kb-row"><span class="key wide">123</span><span class="key space">空格</span><span class="key wide">完成</span></div>
+        </div>
+
+        <div class="kb-input show">
+          <div class="label">零售价</div>
+          <div class="kb-card">
+            <input class="field" value="128.00" />
+            <button class="send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="col-label">键盘弹起：<b>页面高度不变</b>，输入弹层距键盘 <b>6px</b></div>
+      <div class="measure">底栏保持原位（被键盘覆盖），仅输入弹层随键盘移动</div>
+    </div>
+  </div>
+
+  <div class="tips">
+    <b>规则：</b>① 识别内容卡片上沿 16px 圆角，卡片外为页面底色；② 弹层固定为可视高度，内部区域滚动，页面本身不滚动；
+    ③ 键盘弹起时弹层高度、标题栏、底栏位置都不变；④ 键盘上方加载标准输入框弹层（圆角输入框 + 圆形发送按钮），底边留白 6px 紧贴键盘顶边，
+    内容回填、失焦关闭、点击外部关闭等逻辑与现有键盘输入弹层完全一致。
+  </div>
+</body>
+</html>

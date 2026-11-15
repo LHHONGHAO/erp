@@ -8,6 +8,7 @@
 <script>
   import zhCN from 'ant-design-vue/lib/locale-provider/zh_CN'
   import enquireScreen from '@/utils/device'
+  import checkAppVersion from '@/utils/appVersion'
 
   export default {
     data () {
@@ -33,6 +34,10 @@
           that.$store.dispatch('setSidebar', true)
         }
       })
+    },
+    mounted () {
+      // 每次打开应用先确认服务器端是否有新版本，有则加载新页面
+      checkAppVersion()
     }
   }
 </script>

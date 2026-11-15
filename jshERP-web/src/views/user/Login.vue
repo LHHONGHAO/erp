@@ -84,6 +84,7 @@
   import { getAction } from '@/api/manage'
   import { getEncryptedString } from '@/utils/encryption/aesEncrypt'
   import { mixinDevice } from '@/utils/mixin.js'
+  import checkAppVersion from '@/utils/appVersion'
 
   export default {
     components: {
@@ -229,6 +230,8 @@
       loginSuccess (res) {
         let that = this
         this.$router.push({ path: "/dashboard/analysis" })
+        // 登录成功后再确认一次版本：服务器已更新则重新加载新页面，不使用缓存里的旧入口页
+        checkAppVersion()
         // 手机端不弹欢迎与密码提醒，避免遮挡页面（电脑端保持不变）
         if (!this.isMobileTerminal()) {
           this.$notification.success({

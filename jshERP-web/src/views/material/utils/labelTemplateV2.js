@@ -128,6 +128,11 @@ export function editorStateToV2(state, meta) {
     if (custom) {
       element.custom = true
       element.text = attr && attr.value != null ? String(attr.value) : ''
+      // 分页标签：文案由运行时页码决定，绑定字段而不是固定文本
+      if (key === 'page_no') {
+        element.field = 'page_no'
+        element.prefixLabel = false
+      }
     }
     if (key === GOODS_KEY && Array.isArray(src.goodsFields)) {
       element.itemFields = src.goodsFields.slice()

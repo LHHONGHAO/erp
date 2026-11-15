@@ -105,7 +105,7 @@
           return el.type !== 'barcode' && el.type !== 'qrcode' && el.type !== 'table'
         }).map(function(el) {
           var value = el.field ? self.textOf(self.values[el.field]) : self.textOf(el.text)
-          var display = el.label ? el.label + ': ' + value : value
+          var display = (el.label && el.field !== 'page_no') ? el.label + ': ' + value : value
           var key = el.field || el.id
           if (self.texts && self.texts[key] != null) display = self.texts[key]
           var style = self.baseStyle(el)

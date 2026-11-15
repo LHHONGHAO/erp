@@ -1,0 +1,85 @@
+/* 手机端标准输入框：圆角白卡片 + 右侧圆形发送按钮
+   同时供组件 KeyboardInputBox.vue 与全局键盘弹层 keyboardInputOverlay.js 使用 */
+.kib {
+  width: 100%;
+  box-sizing: border-box;
+}
+.kib__title {
+  margin: 0 6px 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: #6b7078;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kib__card {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 8px 8px 16px;
+  background: #fff;
+  border-radius: 26px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .1), 0 0 0 1px rgba(0, 0, 0, .03);
+}
+.kib__field {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  color: #1a1a1c;
+  caret-color: #5b7cfa;
+  resize: none;
+  max-height: 120px;
+}
+.kib__field::placeholder {
+  color: #a0a4ab;
+}
+.kib__field--multiline {
+  min-height: 44px;
+}
+.kib__send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #8b6ff0;
+  color: #fff;
+  outline: none;
+  cursor: pointer;
+  transition: background-color .15s ease, transform .1s ease;
+}
+.kib__send svg {
+  display: block;
+}
+.kib__send:not(:disabled):active {
+  transform: scale(.94);
+}
+.kib__send:disabled {
+  background: #c9bef1;
+  opacity: .6;
+  cursor: not-allowed;
+}
+@media (max-width: 480px) {
+  .kib__card {
+    padding: 6px 6px 6px 14px;
+    border-radius: 24px;
+  }
+  .kib__send {
+    width: 40px;
+    height: 40px;
+  }
+}

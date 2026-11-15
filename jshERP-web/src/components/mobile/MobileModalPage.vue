@@ -11,7 +11,7 @@
       <div v-if="$slots.actions" class="mmp-tools">
         <slot name="actions"></slot>
       </div>
-      <div class="mmp-close" @click="$emit('close')">
+      <div class="mmp-close" @click.stop="$emit('close')">
         <a-icon type="close" title="关闭" />
       </div>
     </div>
@@ -45,6 +45,8 @@ var swipeLockCount = 0
  * （URL 与路由都不变，弹层原地不动），popstate 后再补回哨兵。
  */
 var historyGuardActive = false
+// 本次守卫是否由我们真正 pushState 压入（接管遗留哨兵时为 false，关闭时不能再 back）
+var historyGuardPushed = false
 var popStateBound = false
 
 function pushHistoryGuard() {
@@ -54,6 +56,7 @@ function pushHistoryGuard() {
   // 此时直接接管这条记录，不再压栈；否则每刷新一次就多压一条，返回要多点几次。
   if (state && state.__mmpSwipeGuard) {
     historyGuardActive = true
+    historyGuardPushed = false
     return
   }
   try {
@@ -61,6 +64,7 @@ function pushHistoryGuard() {
     next.__mmpSwipeGuard = true
     window.history.pushState(next, '', window.location.href)
     historyGuardActive = true
+    historyGuardPushed = true
   } catch (e) { /* 忽略 */ }
 }
 
@@ -74,15 +78,21 @@ function releaseHistoryGuard() {
       var next = Object.assign({}, state)
       delete next.__mmpSwipeGuard
       window.history.replaceState(next, '', window.location.href)
-      window.history.back()
     } catch (e) { /* 忽略 */ }
   }
+  // 只有我们自己压入过哨兵才回退；接管的历史记录不能退，否则会退到上一页
+  if (!historyGuardPushed) return
+  historyGuardPushed = false
+  try {
+    window.history.back()
+  } catch (e) { /* 忽略 */ }
 }
 
 function onSwipeGuardPopState() {
   // 弹层已全部关闭时不处理（例如上面 releaseHistoryGuard 触发的回退）
   if (swipeLockCount <= 0) return
   historyGuardActive = false
+  historyGuardPushed = false
   pushHistoryGuard()
 }
 

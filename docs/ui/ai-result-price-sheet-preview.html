@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>识别结果页 · 价格设置弹层 原型</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    padding: 40px 24px 56px;
+    background: radial-gradient(1200px 600px at 50% -10%, #2b3648 0%, #1b2230 55%, #151a24 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    color: #cfd6e4;
+    display: flex; flex-direction: column; align-items: center; gap: 28px;
+  }
+  .page-title { text-align: center; }
+  .page-title h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; color: #fff; }
+  .page-title p { margin: 0; font-size: 13px; color: #8a94a8; }
+
+  .stage { display: flex; flex-wrap: wrap; gap: 44px; justify-content: center; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .col-label { font-size: 13px; color: #9aa6bd; }
+  .col-label b { color: #5aa9ff; }
+
+  .phone {
+    position: relative; width: 375px; height: 780px; background: #f2f4f7;
+    border-radius: 34px; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 10px #0e121a, 0 0 0 11px #2a3342;
+  }
+  .statusbar { flex: none; height: 26px; padding: 0 18px; background: #1890ff; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #fff; }
+  .sheet-header { flex: none; height: 49px; background: #1890ff; display: flex; align-items: center; padding: 0 44px 0 14px; position: relative; color: #fff; }
+  .sheet-title { font-size: 16px; font-weight: 500; }
+  .sheet-sub { margin-left: 8px; font-size: 12px; color: rgba(255,255,255,.78); }
+  .sheet-close { position: absolute; top: 0; right: 0; width: 44px; height: 49px; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; }
+  .sheet-close:active { background: rgba(255,255,255,.18); }
+
+  .body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 12px 16px; }
+  .card { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  .card-title { display: flex; align-items: center; font-size: 14px; font-weight: 600; color: #1f2733; margin-bottom: 10px; }
+  .card-title::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: #1890ff; margin-right: 6px; }
+  .card-title .tip { font-size: 12px; font-weight: 400; color: #98a2b3; margin-left: auto; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 7px 12px; border-radius: 999px; background: #fff; border: 1px solid #e3e9f2; font-size: 12px; color: #3a4353; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+  .attr-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f2f5f9; }
+  .attr-row:last-child { border-bottom: 0; }
+  .attr-row .k { flex: none; width: 84px; text-align: right; font-size: 13px; color: #6b7789; }
+  .attr-row .v { flex: 1; font-size: 14px; color: #1f2733; min-height: 20px; }
+  .attr-row .v.ph { color: #b3bccb; }
+  .attr-row .x { flex: none; width: 22px; text-align: center; color: #c3ccda; font-size: 14px; }
+  .section-hint { font-size: 12px; color: #98a2b3; margin: 12px 2px 8px; }
+
+  /* 底栏：价格填写 + 商品保存 */
+  .sheet-footer {
+    flex: none; background: #fff; display: flex; gap: 10px; align-items: center;
+    padding: 9px 12px calc(9px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -1px 0 rgba(16,24,40,.05);
+  }
+  .btn-primary {
+    flex: 1; height: 46px; border: 0; border-radius: 23px; background: #1890ff; color: #fff;
+    font-size: 16px; font-weight: 500; letter-spacing: 1px; cursor: pointer;
+  }
+  .btn-primary:active { background: #0f7ae5; }
+  .btn-ghost {
+    flex: none; min-width: 116px; height: 46px; border-radius: 23px; border: 1px solid #1890ff;
+    background: #fff; color: #1890ff; font-size: 15px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 16px;
+  }
+  .btn-ghost:active { background: #eaf4ff; }
+  .btn-ghost .dot { width: 6px; height: 6px; border-radius: 50%; background: #faad14; }
+  .btn-ghost.filled .dot { background: #16a34a; }
+  .btn-ghost .txt-sub { font-size: 11px; font-weight: 400; color: #8fa0b8; margin-left: 2px; }
+
+  /* 价格设置弹层 */
+  .price-sheet {
+    position: absolute; inset: 0; background: #f2f4f7; display: flex; flex-direction: column;
+    transform: translateY(100%); transition: transform .28s cubic-bezier(.22,.8,.3,1); z-index: 30;
+  }
+  .price-sheet.show { transform: translateY(0); }
+
+  .price-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f2f5f9; }
+  .price-row:last-child { border-bottom: 0; }
+  .price-row .k { flex: none; width: 92px; font-size: 13px; color: #4d596c; }
+  .price-row .k .req { color: #ff4d4f; margin-right: 2px; }
+  .price-row .input {
+    flex: 1; min-width: 0; height: 38px; border-radius: 10px; background: #f7f9fc;
+    border: 1px solid #e8eef7; display: flex; align-items: center; padding: 0 12px;
+    font-size: 14px; color: #1f2733; cursor: text;
+  }
+  .price-row .input.ph { color: #a9b3c4; }
+  .price-row .input.focus { border-color: #1890ff; background: #fff; box-shadow: 0 0 0 2px rgba(24,144,255,.12); }
+  .price-row .unit { flex: none; font-size: 13px; color: #98a2b3; }
+  .price-row .select { flex: 1; height: 38px; border-radius: 10px; background: #f7f9fc; border: 1px solid #e8eef7; display: flex; align-items: center; padding: 0 12px; font-size: 14px; color: #a9b3c4; }
+  .price-row .select .arrow { margin-left: auto; color: #b6c0d0; }
+  .progress-line { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .progress-line .bar { flex: 1; height: 6px; border-radius: 3px; background: #eef2f7; overflow: hidden; }
+  .progress-line .bar i { display: block; height: 100%; width: 37%; border-radius: 3px; background: #16a34a; }
+  .progress-line .pct { font-size: 12px; color: #16a34a; }
+
+  /* 假键盘 + 键盘输入弹层 */
+  .kb { position: absolute; left: 0; right: 0; bottom: 0; height: 250px; background: #d1d5db; z-index: 40; display: none; flex-direction: column; padding: 8px 4px; gap: 8px; }
+  .kb.show { display: flex; }
+  .kb-row { display: flex; flex: 1; gap: 6px; justify-content: center; }
+  .key { flex: 1; background: #fff; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #111; box-shadow: 0 1px 0 rgba(0,0,0,.25); }
+  .key.wide { flex: 1.6; background: #adb5bd; }
+  .key.space { flex: 5; }
+  .kb-input {
+    position: absolute; left: 10px; right: 10px; bottom: 258px; z-index: 50;
+    background: #fff; border-radius: 26px; padding: 14px 16px 12px; display: none;
+    box-shadow: 0 10px 30px rgba(9,16,29,.28), 0 0 0 1px rgba(16,24,40,.04);
+  }
+  .kb-input.show { display: flex; align-items: flex-end; gap: 10px; }
+  .kb-input .label { position: absolute; top: -22px; left: 14px; font-size: 12px; color: #c6d2e6; }
+  .kb-input textarea {
+    flex: 1; border: 0; outline: 0; resize: none; font-size: 15px; line-height: 22px;
+    color: #1f2733; max-height: 88px; padding: 6px 0; background: transparent; font-family: inherit;
+  }
+  .kb-send {
+    flex: none; width: 42px; height: 42px; border-radius: 50%; border: 0; background: #1890ff;
+    color: #fff; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* 保存后提示 */
+  .toast {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.94);
+    background: rgba(17,24,39,.82); color: #fff; font-size: 13px; padding: 10px 18px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 60;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+  .demo-bar { display: flex; gap: 10px; }
+  .demo-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid #33415a; background: #202839; color: #b9c6dd; font-size: 12px; cursor: pointer; }
+  .demo-btn:hover { border-color: #4b6288; color: #e6eefc; }
+
+  .note { max-width: 860px; font-size: 12px; line-height: 1.9; color: #8f9bb0; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 14px 18px; }
+  .note b { color: #c8d4e8; }
+  .note code { color: #7fc0ff; font-family: Consolas, monospace; }
+</style>
+</head>
+<body>
+
+  <div class="page-title">
+    <h1>识别结果页 · 价格设置弹层</h1>
+    <p>左：识别结果弹层（底栏改为「价格填写」+「商品保存」）　·　右：价格设置弹层（输入框走键盘输入弹层）</p>
+  </div>
+
+  <div class="stage">
+    <!-- 识别结果页 -->
+    <div class="col">
+      <div class="col-label"><b>①</b> 识别结果页（价格卡片已移出）</div>
+      <div class="phone">
+        <div class="statusbar"><span>12:08</span><span>▮▮▮ &nbsp; ⌁ &nbsp; ▰</span></div>
+        <div class="sheet-header">
+          <span class="sheet-title">识别结果</span>
+          <span class="sheet-sub">四件套</span>
+          <div class="sheet-close">✕</div>
+        </div>
+        <div class="body">
+          <div class="card">
+            <div class="card-title">识别结果卡片<span class="tip">可编辑</span></div>
+            <div class="chips">
+              <span class="chip">蒂芙绒绣花四件套</span>
+              <span class="chip">名称：岸芷汀兰-云雾蓝</span>
+              <span class="chip">被套：200x230*1</span>
+              <span class="chip">枕套：48x74cm*2</span>
+              <span class="chip">检验：A0086</span>
+              <span class="chip">面料：100%聚酯纤维</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">商品基础属性</div>
+            <div class="attr-row"><div class="k">名称：</div><div class="v">岸芷汀兰-云雾蓝</div><div class="x">×</div></div>
+            <div class="attr-row"><div class="k">单位：</div><div class="v ph">未识别</div><div class="x">×</div></div>
+            <div class="attr-row"><div class="k">制造商：</div><div class="v">南通芙帕纺织科技有限公司</div><div class="x">×</div></div>
+            <div class="attr-row"><div class="k">安全类别：</div><div class="v">GB31701-2015类</div><div class="x">×</div></div>
+            <div class="attr-row"><div class="k">执行标准：</div><div class="v">GB/T22796-2021</div><div class="x">×</div></div>
+          </div>
+          <div class="section-hint">识别结果卡片（可编辑；点 × 表示该识别项完全错误）</div>
+          <div class="card">
+            <div class="attr-row" style="border-bottom:0">
+              <div class="k" style="width:auto;text-align:left;font-weight:600;color:#1f2733">面料成分：</div>
+              <div class="v">100%聚酯纤维</div><div class="x">×</div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-footer">
+          <button class="btn-ghost" id="btnPrice"><span class="dot"></span>价格填写</button>
+          <button class="btn-primary" id="btnSave">商品保存</button>
+        </div>
+
+        <!-- 价格设置弹层 -->
+        <div class="price-sheet" id="priceSheet">
+          <div class="sheet-header">
+            <span class="sheet-title">价格设置</span>
+            <span class="sheet-sub">保存时同步到全部 SKU</span>
+            <div class="sheet-close" id="priceClose">✕</div>
+          </div>
+          <div class="body">
+            <div class="progress-line">
+              <span style="font-size:12px;color:#6b7789">价格填写进度</span>
+              <div class="bar"><i id="progressBar"></i></div>
+              <span class="pct" id="progressPct">0%</span>
+            </div>
+            <div class="card">
+              <div class="card-title">价格信息</div>
+              <div class="price-row">
+                <div class="k">进货价</div>
+                <div class="input" data-field="进货价">请输入</div><span class="unit">元</span>
+              </div>
+              <div class="price-row">
+                <div class="k"><span class="req">*</span>零售价</div>
+                <div class="input" data-field="零售价">请输入</div><span class="unit">元</span>
+              </div>
+              <div class="price-row">
+                <div class="k">划线价</div>
+                <div class="input" data-field="划线价">请输入</div><span class="unit">元</span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">库存信息</div>
+              <div class="price-row"><div class="k">期初库存</div><div class="input" data-field="期初库存">请输入</div></div>
+              <div class="price-row"><div class="k">最低库存预警</div><div class="input" data-field="最低库存预警">请输入</div></div>
+              <div class="price-row"><div class="k">最高库存预警</div><div class="input" data-field="最高库存预警">请输入</div></div>
+            </div>
+            <div class="card">
+              <div class="card-title">仓库与门店</div>
+              <div class="price-row"><div class="k">仓库</div><div class="select">请选择仓库<span class="arrow">›</span></div></div>
+              <div class="price-row"><div class="k">门店</div><div class="select">请选择门店<span class="arrow">›</span></div></div>
+            </div>
+          </div>
+          <div class="sheet-footer">
+            <button class="btn-primary" id="priceConfirm">确 定</button>
+          </div>
+        </div>
+      </div>
+      <div class="demo-bar"><button class="demo-btn" id="demoPrice">模拟点击「价格填写」</button></div>
+    </div>
+
+    <!-- 价格设置 + 键盘输入弹层 -->
+    <div class="col">
+      <div class="col-label"><b>②</b> 价格设置弹层 · 点击输入框弹键盘输入弹层</div>
+      <div class="phone">
+        <div class="statusbar"><span>12:08</span><span>▮▮▮ &nbsp; ⌁ &nbsp; ▰</span></div>
+        <div class="sheet-header">
+          <span class="sheet-title">价格设置</span>
+          <span class="sheet-sub">保存时同步到全部 SKU</span>
+          <div class="sheet-close">✕</div>
+        </div>
+        <div class="body">
+          <div class="card">
+            <div class="card-title">价格信息</div>
+            <div class="price-row"><div class="k">进货价</div><div class="input" data-demo="进货价">59</div><span class="unit">元</span></div>
+            <div class="price-row"><div class="k"><span class="req">*</span>零售价</div><div class="input" data-demo="零售价" id="demoField">请输入</div><span class="unit">元</span></div>
+            <div class="price-row"><div class="k">划线价</div><div class="input" data-demo="划线价">请输入</div><span class="unit">元</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">库存信息</div>
+            <div class="price-row"><div class="k">期初库存</div><div class="input" data-demo="期初库存">请输入</div></div>
+            <div class="price-row"><div class="k">最低库存预警</div><div class="input" data-demo="最低库存预警">请输入</div></div>
+            <div class="price-row"><div class="k">最高库存预警</div><div class="input" data-demo="最高库存预警">请输入</div></div>
+          </div>
+        </div>
+        <div class="sheet-footer"><button class="btn-primary">确 定</button></div>
+
+        <div class="kb-input" id="kbInput">
+          <span class="label" id="kbLabel">零售价</span>
+          <textarea id="kbText" rows="1" placeholder="请输入零售价"></textarea>
+          <button class="kb-send" id="kbSend">✓</button>
+        </div>
+        <div class="kb" id="kb">
+          <div class="kb-row"><span class="key">1</span><span class="key">2</span><span class="key">3</span><span class="key">4</span><span class="key">5</span><span class="key">6</span><span class="key">7</span><span class="key">8</span><span class="key">9</span><span class="key">0</span></div>
+          <div class="kb-row"><span class="key">q</span><span class="key">w</span><span class="key">e</span><span class="key">r</span><span class="key">t</span><span class="key">y</span><span class="key">u</span><span class="key">i</span><span class="key">o</span><span class="key">p</span></div>
+          <div class="kb-row"><span class="key wide">⇧</span><span class="key">a</span><span class="key">s</span><span class="key">d</span><span class="key">f</span><span class="key">g</span><span class="key">h</span><span class="key">j</span><span class="key">k</span><span class="key">l</span><span class="key wide">⌫</span></div>
+          <div class="kb-row"><span class="key wide">123</span><span class="key space">空格</span><span class="key wide">完成</span></div>
+        </div>
+      </div>
+      <div class="demo-bar"><button class="demo-btn" id="demoKb">模拟点击「零售价」</button></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>改动要点：</b><br>
+    1. 识别结果弹层内删除底部「价格设置」卡片（进货价/零售价/划线价/库存/仓库/门店全部移出）。<br>
+    2. 底栏由单个「保存」改为两个按钮：左侧次要按钮「价格填写」，右侧主按钮「商品保存」（原保存按钮改名）。<br>
+    3. 「价格填写」按钮带状态点：未填为橙色、已填为绿色；已填后点击可继续修改。<br>
+    4. 价格设置弹层为标准弹层页（蓝底 49px 顶栏 + 卡片内容 + 白底底栏「确定」），在识别结果页之上再弹一层，关闭/确定后回到识别结果页，价格数据保留。<br>
+    5. 价格弹层内所有输入框点击后弹标准键盘输入弹层（圆角白卡 + 圆形确认按钮），只有点圆形按钮才回填。<br>
+    6. 「商品保存」时校验零售价必填：未填则自动打开价格填写弹层并定位到零售价。
+  </div>
+
+<script>
+  (function () {
+    var priceSheet = document.getElementById('priceSheet');
+    var btnPrice = document.getElementById('btnPrice');
+    var priceFilled = false;
+    var progress = 0;
+
+    function syncPriceBtn() {
+      btnPrice.classList.toggle('filled', priceFilled);
+    }
+    function openPrice() { priceSheet.classList.add('show'); }
+    btnPrice.addEventListener('click', openPrice);
+    document.getElementById('demoPrice').addEventListener('click', openPrice);
+    document.getElementById('priceClose').addEventListener('click', function () {
+      priceSheet.classList.remove('show');
+    });
+    document.getElementById('priceConfirm').addEventListener('click', function () {
+      priceSheet.classList.remove('show');
+      if (progress > 0) {
+        priceFilled = true;
+        syncPriceBtn();
+      }
+    });
+
+    // 左页价格输入演示：点击后按顺序填写并更新进度
+    Array.prototype.forEach.call(priceSheet.querySelectorAll('.input'), function (el) {
+      el.addEventListener('click', function () {
+        el.classList.add('focus');
+        setTimeout(function () { el.classList.remove('focus'); }, 600);
+        if (el.textContent === '请输入') {
+          el.textContent = el.dataset.field === '进货价' ? '59' : (el.dataset.field === '零售价' ? '1080' : '1280');
+          el.classList.remove('ph');
+          progress = Math.min(100, progress + 37);
+          document.getElementById('progressBar').style.width = progress + '%';
+          document.getElementById('progressPct').textContent = progress + '%';
+        }
+      });
+    });
+
+    // 右页键盘输入弹层演示
+    var kb = document.getElementById('kb');
+    var kbInput = document.getElementById('kbInput');
+    var kbLabel = document.getElementById('kbLabel');
+    var kbText = document.getElementById('kbText');
+    var demoField = document.getElementById('demoField');
+
+    function openKb(label, placeholder) {
+      kbLabel.textContent = label;
+      kbText.placeholder = placeholder;
+      kb.classList.add('show');
+      kbInput.classList.add('show');
+      kbText.value = '';
+      setTimeout(function () { kbText.focus(); }, 60);
+    }
+    demoField.addEventListener('click', function () { openKb('零售价', '请输入零售价'); });
+    document.getElementById('demoKb').addEventListener('click', function () { openKb('零售价', '请输入零售价'); });
+    document.getElementById('kbSend').addEventListener('click', function () {
+      if (!kbText.value) return;
+      demoField.textContent = kbText.value;
+      kb.classList.remove('show');
+      kbInput.classList.remove('show');
+    });
+    kbText.addEventListener('input', function () {
+      kbText.style.height = 'auto';
+      kbText.style.height = Math.min(88, kbText.scrollHeight) + 'px';
+    });
+  })();
+</script>
+</body>
+</html>

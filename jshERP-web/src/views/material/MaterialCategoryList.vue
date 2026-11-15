@@ -509,7 +509,10 @@ export default {
             record.remark = res.data.remark;
             record.categoryLevel = res.data.categoryLevel;
             record.specConfig = res.data.specConfig
-            record.unit = res.data.unit
+            // findById 接口不返回单位；避免用 undefined 覆盖树节点上已带出的单位
+            if (res.data.unit !== undefined) {
+              record.unit = res.data.unit
+            }
             this.specModules = this.parseSpecConfig(record.specConfig)
             console.log('onSelect-record', record)
             this.currSelected = Object.assign({}, record)

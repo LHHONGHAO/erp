@@ -48,3 +48,14 @@ deploy/backup/
 
 ## ide
 **/.trae
+
+## 临时工作目录与 IDE 生成的分享包
+tmp/
+.trae-html-share-packages/
+**/__pycache__/
+tools/local-print-agent/build/
+
+## 本地运行日志与打包产物
+*.out
+*.err
+jshERP-web/dist-deploy.zip

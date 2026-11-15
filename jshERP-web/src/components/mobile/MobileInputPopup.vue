@@ -1,36 +1,28 @@
 <template>
-  <div v-if="visible" class="mip-root" :style="rootStyle">
-    <div class="mip-box">
-      <input
-        ref="input"
-        v-model="draft"
-        class="mip-input"
-        type="text"
-        data-kb-overlay="off"
-        enterkeyhint="search"
-        :placeholder="placeholder"
-        @blur="onBlur"
-        @keydown.enter.prevent />
-      <button
-        type="button"
-        class="mip-ok"
-        @mousedown.prevent
-        @touchstart.prevent="markTouch"
-        @touchend.prevent="onConfirm"
-        @click="onClick">{{ confirmText }}</button>
-    </div>
+  <div v-if="visible" class="mip-root" :style="rootStyle" @focusout="onBlur">
+    <keyboard-input-box
+      ref="box"
+      :value="draft"
+      :placeholder="placeholder"
+      :confirm-label="confirmText"
+      :disabled="!draft.trim()"
+      enterkeyhint="search"
+      @input="draft = $event"
+      @confirm="onConfirm" />
   </div>
 </template>
 
 <script>
+import KeyboardInputBox from './KeyboardInputBox'
+
 /**
  * 手机端标准输入弹层
- * 交互与全局键盘输入弹层保持一致：按屏宽铺满、框内右侧确认按钮；
- * 只有点击确认按钮才会提交，失焦/点击弹层外只关闭不回填，回车不触发提交。
- * 输入框标记 data-kb-overlay="off"，避免被全局键盘弹层二次接管。
+ * 基于 KeyboardInputBox 组件：定位在软键盘上方、按屏宽铺满；
+ * 只有点击发送按钮才会提交，失焦/点击弹层外只关闭不回填，回车不触发提交。
  */
 export default {
   name: 'MobileInputPopup',
+  components: { KeyboardInputBox },
   props: {
     visible: {
       type: Boolean,
@@ -58,8 +50,7 @@ export default {
       popupWidth: '100%',
       viewportBound: false,
       outsideBound: false,
-      baselineHeight: 0,
-      lastTouch: 0
+      baselineHeight: 0
     }
   },
   computed: {
@@ -77,7 +68,7 @@ export default {
         this.draft = this.value || ''
         this.baselineHeight = window.innerHeight || 0
         this.$nextTick(() => {
-          this.focusInput()
+          if (this.$refs.box) this.$refs.box.focus()
           this.bindViewport()
           this.bindOutside()
           this.positionPopup()
@@ -93,18 +84,6 @@ export default {
     this.unbindOutside()
   },
   methods: {
-    focusInput() {
-      const input = this.$refs.input
-      if (!input) return
-      try {
-        input.focus({ preventScroll: true })
-      } catch (e) {
-        try { input.focus() } catch (e2) {}
-      }
-      try {
-        if (input.setSelectionRange) input.setSelectionRange(0, input.value.length)
-      } catch (e) {}
-    },
     /** 估算软键盘高度，让弹层始终贴在键盘上方 */
     getKeyboardHeight() {
       const innerHeight = window.innerHeight || 0
@@ -175,17 +154,9 @@ export default {
         this.close()
       }, 0)
     },
-    markTouch() {
-      this.lastTouch = Date.now()
-    },
-    onClick() {
-      // touchend 已处理过的场景，忽略后续 click，避免重复提交
-      if (Date.now() - this.lastTouch < 600) return
-      this.onConfirm()
-    },
     onConfirm() {
       const text = (this.draft || '').trim()
-      // 无内容时点击确认不做任何反应
+      // 无内容时不做任何反应
       if (!text) return
       this.unbindViewport()
       this.unbindOutside()
@@ -201,7 +172,7 @@ export default {
 </script>
 
 <style lang="less" scoped>
-/* 与全局键盘输入弹层一致的铺满式底部条：输入框 + 框内确认按钮 */
+/* 悬停在软键盘上方的输入弹层：卡片样式由 KeyboardInputBox 提供 */
 .mip-root {
   position: fixed;
   left: 0;
@@ -211,50 +182,8 @@ export default {
   width: 100%;
   max-width: 100vw;
   margin: 0;
-  padding: 10px 12px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 12px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
-  background: #fff;
-  border-top: 1px solid #e8e8e8;
-  font-size: 15px;
-}
-.mip-box {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d9d9d9;
-  border-radius: 8px;
-  background: #fff;
-  overflow: hidden;
-}
-.mip-input {
-  flex: 1;
-  min-width: 0;
-  height: 44px;
-  padding: 0 12px;
-  box-sizing: border-box;
-  border: none;
-  background: transparent;
-  font-size: 16px;
-  color: #262626;
-  outline: none;
-  &::placeholder {
-    color: #b7b7b7;
-  }
-}
-.mip-ok {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  height: 44px;
-  padding: 0 18px;
-  border: none;
-  border-left: 1px solid #e8e8e8;
-  border-radius: 0;
-  background: #1890ff;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 500;
-  outline: none;
 }
 </style>

@@ -124,5 +124,17 @@ export const constantRouterMap = [
       }
     ]
   },
+  {
+    path: '/material/material_add',
+    component: TabLayout,
+    children: [
+      {
+        path: '',
+        name: 'MaterialManualAdd',
+        component: () => import(/* webpackChunkName: "material" */ '@/views/material/MaterialAdd'),
+        meta: { title: '人工添加商品' }
+      }
+    ]
+  },
 
 ]

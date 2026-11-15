@@ -268,7 +268,7 @@
   import LabelPrintModal from './modules/LabelPrintModal'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
-  import { postAction } from '@/api/manage'
+  import { postAction, deleteAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
@@ -485,11 +485,11 @@
         this.$refs.modalForm.title = "新增";
         this.$refs.modalForm.disableSubmit = false;
       },
-      // 手机端新增：统一跳转商品编辑页（页内自动进入新增模式）
+      // 手机端新增：进入「人工添加商品」子页面（不再经过新增入口页）
       handleMobileAdd: function () {
         sessionStorage.removeItem('materialEditRecord')
         sessionStorage.removeItem('materialEditFrom')
-        this.$router.push('/material/edit')
+        this.$router.push('/material/material_add')
       },
       handleEdit: function (record) {
         // 手机端：跳转到商品编辑页，加载当前商品及其所有SKU
@@ -549,6 +549,13 @@
         }
         this.mobileSelectedMaterialIds = ids
       },
+      /** 手机端错误提示：后端 data 可能是对象 message，也可能是字符串 */
+      getMobileErrMsg(res, fallback) {
+        var data = res && res.data
+        if (data && data.message) return data.message
+        if (typeof data === 'string' && data) return data
+        return fallback
+      },
       /** 手机端批量删除 */
       mobileBatchDel() {
         if (this.mobileSelectedMaterialIds.length <= 0) {
@@ -562,13 +569,14 @@
           content: `确定删除选中的 ${this.mobileSelectedMaterialIds.length} 个商品？`,
           onOk() {
             that.loading = true
-            postAction(that.url.deleteBatch, { ids }).then((res) => {
+            // 后端 /material/deleteBatch 为 DELETE + @RequestParam，需用 deleteAction
+            deleteAction(that.url.deleteBatch, { ids }).then((res) => {
               if (res.code === 200) {
                 that.$message.info('删除成功！')
                 that.loadData()
                 that.clearMobileSelection()
               } else {
-                that.$message.warning(res.data && res.data.message ? res.data.message : '删除失败')
+                that.$message.warning(that.getMobileErrMsg(res, '删除失败'))
               }
             }).finally(() => { that.loading = false })
           }

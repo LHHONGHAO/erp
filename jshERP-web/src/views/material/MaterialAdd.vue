@@ -4,70 +4,28 @@
     <!-- 桌面端页头：操作按钮一行并列，滚动时固定在顶部；手机端由全局蓝底顶栏承载（返回+标题+顶部按钮） -->
     <div class="ma-header" v-if="device !== 'mobile'">
       <a-button icon="left" class="ma-back-btn" @click="handleBack">返回</a-button>
-      <div class="ma-actions" v-if="!showCategoryGate">
+      <div class="ma-actions">
         <a-button icon="setting" @click="handlePropertyConfig">属性设置</a-button>
         <a-button @click="handleReset">重置</a-button>
         <a-button type="primary" @click="handleOk">保存</a-button>
       </div>
     </div>
-    <!-- 表单直接铺在页面中，非弹窗 -->
+    <!-- 人工添加 / 编辑商品表单直接铺在页面中 -->
     <div class="ma-body">
-      <!-- 新增商品入口：AI 添加 / 人工添加 -->
-      <div v-if="showCategoryGate" class="ma-gate">
-        <a-button type="primary" size="large" block icon="camera" class="ma-gate__btn" @click="startAiAdd">AI添加</a-button>
-        <a-button size="large" block icon="edit" class="ma-gate__btn" @click="startManualAdd">人工添加</a-button>
-      </div>
-      <template v-else>
-        <!-- AI添加：先添加商品图片、选择商品类别，再进入识别结果页 -->
-        <div v-if="mode === 'ai' && !aiCategoryChosen" class="ma-ai-setup">
-          <div class="ma-ai-setup__label">商品图片</div>
-          <div class="ma-ai-images">
-            <div v-for="(img, index) in aiImages" :key="img.id" class="ma-ai-image">
-              <img :src="img.preview" />
-              <span v-if="img.loading" class="ma-ai-image__mask">识别中</span>
-              <a-icon type="close-circle" class="ma-ai-image__remove" @click="removeAiImage(index)" />
-            </div>
-            <div v-if="!aiImages.length" class="ma-ai-images__empty">请拍摄或选择一张商品图片</div>
-          </div>
-          <div class="ma-ai-image-actions">
-            <a-button icon="camera" @click="triggerAiCamera">拍照</a-button>
-            <a-button icon="picture" @click="triggerAiGallery">图片加载</a-button>
-          </div>
-          <div class="ma-ai-setup__label ma-ai-setup__label-gap">商品类别</div>
-          <a-tree-select
-            v-model="gateCategoryId"
-            class="ma-gate__select"
-            :dropdownStyle="{ maxHeight: '320px', overflow: 'auto' }"
-            :treeData="gateTreeData"
-            :treeDefaultExpandAll="true"
-            allow-clear
-            placeholder="请选择商品类别（须选二级类目）" />
-          <a-button type="primary" size="large" block class="ma-ai-recognize" :disabled="!canAiRecognize" @click="startAiRecognize">识别</a-button>
-          <input ref="aiCameraInput" type="file" accept="image/*" capture="environment" class="ma-ai-file" @change="onAiFilesChange" />
-          <input ref="aiGalleryInput" type="file" accept="image/*" class="ma-ai-file" @change="onAiFilesChange" />
-        </div>
-        <material-modal v-else ref="form" inline :aiMode="mode === 'ai'" @close="onClose" @agg-close="returnToCategoryGate" @ok="onSaved" />
-      </template>
+      <material-modal ref="form" inline @close="onClose" />
     </div>
-    <!-- 类别新增弹层：手机端为全屏蓝底标准弹层，桌面端为居中弹窗 -->
-    <material-category-modal ref="categoryModal" @ok="handleCategoryAdded" />
   </div>
 </template>
 
 <script>
   import MaterialModal from './modules/MaterialModal'
-  import MaterialCategoryModal from './modules/MaterialCategoryModal'
-  import { queryMaterialCategoryTreeList } from '@/api/api'
   import { mixinDevice } from '@/utils/mixin.js'
   import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
-  import { axios as uploadHttp } from '@/utils/request'
-  import { recognizeTextFromImage } from '@/views/material/utils/productTextScan'
 
   export default {
     name: 'MaterialAdd',
     components: {
-      MaterialModal,
-      MaterialCategoryModal
+      MaterialModal
     },
     mixins: [mixinDevice],
     data () {
@@ -75,18 +33,7 @@
         // 容器高度，页面内容超出时出现纵向滚动条
         cardStyle: '',
         // 是否为编辑模式
-        isEdit: false,
-        // 新增商品时先选择 AI添加 / 人工添加
-        showCategoryGate: true,
-        // 新增入口：ai=AI添加，manual=人工添加
-        mode: '',
-        // AI添加：是否已选好商品类别
-        aiCategoryChosen: false,
-        // AI添加：已添加的商品图片（拍照/相册）
-        aiImages: [],
-        aiImageSeq: 0,
-        gateCategoryId: undefined,
-        gateTreeData: []
+        isEdit: false
       }
     },
     mounted () {
@@ -102,10 +49,6 @@
     activated () {
       document.body.classList.add('mm-no-pull-refresh')
       this.registerHeaderActions()
-      // 仍停留在类别选择页时不重置，保留用户的选择
-      if (this.showCategoryGate) {
-        return
-      }
       this.loadRecordFromStorage()
     },
     deactivated () {
@@ -119,163 +62,14 @@
       clearMobileHeaderTitle()
       document.body.classList.remove('mm-no-pull-refresh')
     },
-    computed: {
-      // 识别按钮：已选类别、至少一张图片且识别完成时可点击
-      canAiRecognize () {
-        return !!this.gateCategoryId && this.aiImages.length > 0 && !this.aiImages.some(item => item.loading)
-      }
-    },
     methods: {
-      // 页面初始化：编辑商品直接进表单；新增商品先显示类别选择
+      // 页面初始化：有编辑数据则加载，否则直接进入人工添加表单
       initPage () {
-        const recordStr = sessionStorage.getItem('materialEditRecord')
-        if (!recordStr) {
-          this.showCategoryGate = true
-          this.loadGateTree()
-          this.registerHeaderActions()
-          return
-        }
-        this.showCategoryGate = false
         this.registerHeaderActions()
         this.loadRecordFromStorage()
       },
-      // 加载类别树（一级类目不可选，与表单内的类别选择保持一致）
-      loadGateTree () {
-        queryMaterialCategoryTreeList({ id: '' }).then(res => {
-          this.gateTreeData = this.disableLevelOneNodes(res || [])
-        }).catch(() => {
-          this.gateTreeData = []
-        })
-      },
-      disableLevelOneNodes (nodes) {
-        return (nodes || []).map(node => {
-          const item = Object.assign({}, node)
-          if (item.categoryLevel === 1) {
-            item.disabled = true
-          }
-          if (item.children && item.children.length > 0) {
-            item.children = this.disableLevelOneNodes(item.children)
-          }
-          return item
-        })
-      },
-      // 打开类别新增弹层（手机端为标准全屏弹层，桌面端为居中弹窗）
-      handleAddCategory () {
-        const modal = this.$refs.categoryModal
-        if (!modal) return
-        modal.title = '新增品类'
-        modal.add()
-      },
-      // AI添加：进入 AI添加商品 页面，先选择商品类别
-      startAiAdd () {
-        this.mode = 'ai'
-        this.aiCategoryChosen = false
-        this.gateCategoryId = undefined
-        this.isEdit = false
-        this.showCategoryGate = false
-        this.registerHeaderActions()
-      },
-      // 人工添加：直接进入人工添加商品页面
-      startManualAdd () {
-        this.mode = 'manual'
-        this.aiCategoryChosen = false
-        this.isEdit = false
-        this.showCategoryGate = false
-        this.registerHeaderActions()
-        this.$nextTick(() => this.openForm())
-      },
-      // 类别新增成功后刷新类别选择树
-      handleCategoryAdded () {
-        this.loadGateTree()
-      },
-      // 拍照 / 图片加载
-      triggerAiCamera () {
-        this.$refs.aiCameraInput && this.$refs.aiCameraInput.click()
-      },
-      triggerAiGallery () {
-        this.$refs.aiGalleryInput && this.$refs.aiGalleryInput.click()
-      },
-      onAiFilesChange (e) {
-        const files = Array.from((e.target && e.target.files) || [])
-        e.target.value = ''
-        // 单图单商品：每次只保留一张图片，重新拍照/选图会替换旧图
-        if (!files.length) return
-        this.aiImages = []
-        this.addAiImage(files[0])
-      },
-      addAiImage (file) {
-        const item = { id: ++this.aiImageSeq, preview: '', imagePath: '', rawText: '', loading: true }
-        this.aiImages.push(item)
-        const that = this
-        this.fileToBase64(file).then(base64 => {
-          item.preview = base64
-          const formData = new FormData()
-          formData.append('file', file)
-          formData.append('biz', 'material')
-          uploadHttp.post('/systemConfig/upload', formData).then(res => {
-            if (res && res.code === 200 && res.data) item.imagePath = res.data
-          }).catch(() => {})
-          return recognizeTextFromImage(base64)
-        }).then(res => {
-          item.loading = false
-          const rawText = res && res.code === 200 && res.data && typeof res.data.rawText === 'string' ? res.data.rawText : ''
-          if (rawText) item.rawText = rawText
-          else that.$message.warning('有图片未识别到文字，可换一张或直接识别')
-          that.aiImages = that.aiImages.slice()
-        }).catch(() => {
-          item.loading = false
-          that.$message.error('图片识别失败，请重试')
-          that.aiImages = that.aiImages.slice()
-        })
-      },
-      removeAiImage (index) {
-        this.aiImages.splice(index, 1)
-      },
-      fileToBase64 (file) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = e => resolve(e.target.result)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        })
-      },
-      // 识别：类别已选且图片识别完成后可用，点击进入识别结果页
-      startAiRecognize () {
-        if (!this.canAiRecognize) return
-        const item = this.aiImages[0] || {}
-        const image = { rawText: item.rawText || '', imagePath: item.imagePath || '' }
-        this.aiCategoryChosen = true
-        this.registerHeaderActions()
-        this.$nextTick(() => {
-          this.openForm()
-          const form = this.$refs.form
-          if (form && form.applyPresetCategory) {
-            form.applyPresetCategory(this.gateCategoryId)
-          }
-          this.$nextTick(() => this.waitSpecReadyAndRecognize(image, 0))
-        })
-      },
-      // 等待类别规格加载完成后打开识别结果页
-      waitSpecReadyAndRecognize (image, tries) {
-        const form = this.$refs.form
-        if (!form) return
-        if ((form.specModules || []).length > 0) {
-          form.openSpecRecognize(image)
-          return
-        }
-        if (tries >= 20) {
-          this.$message.warning('该类别未配置规格，无法使用AI识别')
-          return
-        }
-        setTimeout(() => this.waitSpecReadyAndRecognize(image, tries + 1), 150)
-      },
-      // 注册手机端顶部按钮：设置（属性设置）、重置、保存（类别选择阶段不显示）
+      // 注册手机端顶部按钮：设置（属性设置）、重置、保存
       registerHeaderActions () {
-        if (this.showCategoryGate || (this.mode === 'ai' && !this.aiCategoryChosen)) {
-          setMobileHeaderActions([])
-          this.updateHeaderTitle()
-          return
-        }
         setMobileHeaderActions([
           { key: 'setting', icon: 'setting', handler: this.handlePropertyConfig },
           { key: 'reset', icon: 'reload', handler: this.handleReset },
@@ -283,19 +77,9 @@
         ])
         this.updateHeaderTitle()
       },
-      // 顶栏标题按当前模式显示
+      // 顶栏标题：新增为人工添加商品，带数据时为编辑商品
       updateHeaderTitle () {
-        let title = '新增商品'
-        if (this.showCategoryGate) {
-          title = '新增商品'
-        } else if (this.mode === 'ai') {
-          title = 'AI添加商品'
-        } else if (this.mode === 'manual' || !this.isEdit) {
-          title = '人工添加商品'
-        } else if (this.isEdit) {
-          title = '编辑商品'
-        }
-        setMobileHeaderTitle(title)
+        setMobileHeaderTitle(this.isEdit ? '编辑商品' : '人工添加商品')
       },
       // 从 sessionStorage 读取商品数据并加载到表单（编辑模式），否则打开新增表单
       loadRecordFromStorage () {
@@ -355,38 +139,9 @@
         if (!form) return
         form.handleOk()
       },
-      // 保存成功后给出提示并重置为空白表单，便于连续录入
-      onSaved () {
-        if (this.mode === 'ai') {
-          // AI 商品页保存成功：不入商品添加页，清空已识别图片与类别，停留在 AI 添加页继续录入
-          this.aiImages = []
-          this.gateCategoryId = undefined
-          this.aiCategoryChosen = false
-          this.registerHeaderActions()
-        }
-      },
-      // 表单关闭（取消或重置）：AI 添加页关闭后仍停留在当前 AI 添加页，不再回到新增入口
+      // 表单关闭（取消或重置）：回到空白的人工添加表单
       onClose () {
-        if (this.mode === 'ai') {
-          this.aiImages = []
-          this.gateCategoryId = undefined
-          this.registerHeaderActions()
-          this.$nextTick(() => {
-            const form = this.$refs.form
-            if (form && typeof form.add === 'function') form.add()
-          })
-          return
-        }
-        this.returnToCategoryGate()
-      },
-      // 回到新增入口（AI添加 / 人工添加）
-      returnToCategoryGate () {
-        this.gateCategoryId = undefined
-        this.isEdit = false
-        this.mode = ''
-        this.aiCategoryChosen = false
-        this.showCategoryGate = true
-        this.registerHeaderActions()
+        this.$nextTick(() => this.openForm())
       },
       // 打开基础属性设置弹窗
       handlePropertyConfig () {
@@ -446,123 +201,12 @@
   .ma-body {
     padding-bottom: 24px;
   }
-  /* 类别选择步骤：页面只展示一个类别选择框 */
-  .ma-gate {
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 48px 8px 0;
-    text-align: center;
-  }
-  .ma-gate__title {
-    color: #1f2329;
-    font-size: 20px;
-    font-weight: 600;
-  }
-  .ma-gate__desc {
-    margin: 10px 0 24px;
-    color: #8b949e;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .ma-gate__select {
-    width: 100%;
-    text-align: left;
-  }
-  .ma-ai-images {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ma-ai-image {
-    position: relative;
-    width: 84px;
-    height: 84px;
-    overflow: hidden;
-    border-radius: 6px;
-    background: #f5f5f5;
-  }
-  .ma-ai-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .ma-ai-image__mask {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    padding: 2px 0;
-    font-size: 11px;
-    color: #fff;
-    text-align: center;
-    background: rgba(0, 0, 0, 0.45);
-  }
-  .ma-ai-image__remove {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    padding: 1px;
-    font-size: 14px;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 50%;
-  }
-  .ma-ai-images__empty {
-    width: 100%;
-    padding: 20px 12px;
-    color: #8c8c8c;
-    text-align: center;
-    background: #fafafa;
-    border: 1px dashed #d9d9d9;
-    border-radius: 6px;
-  }
-  .ma-ai-image-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 10px;
-  }
-  .ma-ai-setup__label-gap {
-    margin-top: 20px;
-  }
-  .ma-ai-recognize {
-    height: 46px;
-    margin-top: 20px;
-    font-size: 16px;
-  }
-  .ma-ai-file {
-    display: none;
-  }
-  .ma-gate__btn {
-    height: 48px;
-    font-size: 16px;
-  }
-  .ma-gate__btn + .ma-gate__btn {
-    margin-top: 16px;
-  }
-  .ma-ai-setup {
-    max-width: 480px;
-    margin: 0 auto;
-    padding: 24px 8px 0;
-  }
-  .ma-ai-setup__label {
-    margin-bottom: 8px;
-    color: #1f2329;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .ma-gate__add {
-    margin-top: 12px;
-    height: 40px;
-  }
   /* 手机端：不限制容器高度，内容随页面整体滚动到底部 */
   @media (max-width: 768px) {
     .material-add-page {
       height: auto !important;
       overflow: visible;
       padding-bottom: calc(96px + env(safe-area-inset-bottom));
-    }
-    .ma-gate {
-      padding-top: 32px;
     }
   }
 </style>

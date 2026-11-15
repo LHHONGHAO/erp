@@ -24,26 +24,51 @@
         <template v-if="!template">
           <a-alert type="info" show-icon :message="emptyMessage">
             <template #description>
-              <span>可点击右上角编辑图标创建模板</span>
+              <span v-if="templateLoadError">{{ templateLoadError }}</span>
+              <span v-else>可点击右上角编辑图标创建模板</span>
               <a
-                v-if="type !== 'member' && type !== 'address'"
+                v-if="templateLoadError"
+                class="lmp-empty-link"
+                @click="reloadRouteTemplate">重新加载</a>
+              <a
+                v-else-if="type !== 'member' && type !== 'address'"
                 class="lmp-empty-link"
                 @click="handleEdit">去添加模版</a>
             </template>
           </a-alert>
           <a-button
-            v-if="type === 'member' || type === 'address'"
+            v-if="(type === 'member' || type === 'address') && !templateLoadError"
             type="primary"
             size="large"
             class="lmp-empty-create"
             icon="plus"
             @click="handleCreateTemplate">{{ type === 'address' ? '创建地址打印模板' : '创建会员标签模板' }}</a-button>
+          <div v-if="debugText" class="lmp-debug">{{ debugText }}</div>
         </template>
         <template v-else>
           <!-- 预览区（取消卡片，标签缩放填满空白） -->
-          <div class="lmp-preview-area" ref="previewArea">
-            <span v-if="pageCount > 1" class="lmp-page-badge">{{ previewPage + 1 }} / {{ pageCount }}</span>
-            <div class="lmp-preview" :style="previewStyle">
+          <div class="lmp-preview-area" ref="previewArea" :class="{ 'is-stack': stackPages }">
+            <span v-if="pageCount > 1 && !stackPages" class="lmp-page-badge">{{ previewPage + 1 }} / {{ pageCount }}</span>
+            <!-- 地址标签多页：同页纵向堆叠，上下滑动预览 -->
+            <div class="lmp-stack" v-if="stackPages">
+              <div v-for="p in pageIndexes" :key="p" class="lmp-stack-slot" :style="stackSlotStyle">
+                <div class="lmp-preview lmp-preview-page" :style="stackPageStyle">
+                  <div
+                    v-for="item in renderItems"
+                    :key="item.key"
+                    class="lp-item"
+                    :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                    :style="itemStyle(item.key)"
+                  >
+                    <template v-if="item.isCode">
+                      <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                    </template>
+                    <template v-else>{{ displayText(item, p) }}</template>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="lmp-preview" v-else :style="previewStyle">
               <!-- 新版模板：按 elements 直接渲染（mm 坐标、条码/二维码、明细循环） -->
               <label-paper
                 v-if="templateSchema"
@@ -89,8 +114,8 @@
             内容超出标签底部 {{ overflowPixels }}px，已按标签边界裁切<template v-if="goodsPageMode === 'none'">；可在设置中开启分页</template>
           </div>
 
-          <!-- 多商品分页：翻页 -->
-          <div class="lmp-pager" v-if="pageCount > 1">
+          <!-- 多商品分页：翻页（同页堆叠模式下改为上下滑动） -->
+          <div class="lmp-pager" v-if="pageCount > 1 && !stackPages">
             <a-button size="small" icon="left" :disabled="previewPage <= 0" @click="previewPage--">上一页</a-button>
             <span class="lmp-pager-text">第 {{ previewPage + 1 }} / {{ pageCount }} 张</span>
             <a-button size="small" :disabled="previewPage >= pageCount - 1" @click="previewPage++">下一页<a-icon type="right" /></a-button>
@@ -643,6 +668,8 @@
   </a-modal>
     <!-- 标签编辑：统一走标准复用弹层页面 -->
     <label-edit-modal-page ref="labelEditor" />
+    <!-- 临时诊断：顶栏点击轨迹（定位关闭无效原因，定位完成后移除） -->
+    <div v-if="isMobile && dbgTap" class="lmp-dbg-tap">{{ dbgTap }}</div>
   </div>
 </template>
 
@@ -692,6 +719,15 @@
         template: null,
         // 加载到旧结构模板：不再兼容，空状态提示删除后重建
         outdatedTemplate: false,
+        // 路由模板加载失败原因：区分「加载失败」与「确实没有模板」
+        templateLoadError: '',
+        // 临时诊断信息：定位模板为何未加载（定位完成后移除）
+        tmplDebug: null,
+        // 临时诊断：顶栏点击事件轨迹（定位关闭无效原因，定位完成后移除）
+        dbgTap: '',
+        // 临时诊断：模板加载/渲染结论与运行时报错（定位空模板原因，定位完成后移除）
+        dbgNote: '',
+        dbgErr: '',
         allAttrs: [],
         selectedAttrs: [],
         attrStyles: {},
@@ -825,8 +861,15 @@
         var titles = { delivery: '发货单打印', receipt: '小票打印', member: '会员打印', address: '地址打印' }
         return titles[this.type] || '标签打印'
       },
+      // 临时诊断文案：定位模板未加载的真实原因，定位完成后移除
+      debugText() {
+        var script = document.querySelector('script[src*="/js/app."]')
+        var bundle = script ? script.src.split('/').pop() : '-'
+        return 'bundle=' + bundle + ' | note=' + (this.dbgNote || '-') + ' | ' + (this.dbgErr || '-') + ' | ' + JSON.stringify(this.tmplDebug || {})
+      },
       // 空状态提示：按模板类型区分文案
       emptyMessage() {
+        if (this.templateLoadError) return '模板加载失败'
         if (this.outdatedTemplate) return '旧模板已不支持，请删除后重新创建'
         var msgs = { delivery: '暂无可用发货单模板', receipt: '暂无可用小票模板', member: '暂无可用会员标签模板', address: '暂无可用地址打印模板' }
         return msgs[this.type] || '该商品暂无可用标签模板'
@@ -875,6 +918,36 @@
           height: this.labelHeight + 'px',
           transform: 'scale(' + this.previewScale + ') rotate(' + this.printRotation + 'deg)',
           // center top：缩放从顶部向下展开，超出高度时从底部溢出可滚动
+          transformOrigin: 'center top'
+        }
+      },
+      // 地址标签多页（对页/多商品分页）：标签改为一页内纵向堆叠，上下滑动查看
+      stackPages() {
+        return this.isMobile && this.type === 'address' && this.pageCount > 1 &&
+          !this.templateSchema && this.selectedAttrs.indexOf(GOODS_TABLE_KEY) < 0
+      },
+      pageIndexes() {
+        var arr = []
+        for (var i = 0; i < this.pageCount; i++) arr.push(i)
+        return arr
+      },
+      // 堆叠占位：按缩放后的实际高度撑开，滚动条长度才准确
+      stackSlotStyle() {
+        return {
+          position: 'relative',
+          width: '100%',
+          height: (this.labelHeight * this.previewScale + 12) + 'px'
+        }
+      },
+      stackPageStyle() {
+        return {
+          position: 'absolute',
+          top: '0',
+          left: '50%',
+          width: this.labelWidth + 'px',
+          height: this.labelHeight + 'px',
+          marginLeft: (-this.labelWidth / 2) + 'px',
+          transform: 'scale(' + this.previewScale + ')',
           transformOrigin: 'center top'
         }
       },
@@ -984,7 +1057,13 @@
         this.allAttrs.forEach(function(attr) {
           map[attr.key] = attr.value == null ? '' : attr.value
         })
+        // 注意：分页标签文案依赖 pageCount，不能放在这里，否则会和分页计划互相递归
         return map
+      },
+      // 指定页的页码文案（如 1/2）
+      pageNoTextFor(page) {
+        var idx = Math.max(0, page || 0)
+        return (idx + 1) + '/' + this.pageCount
       },
       // 明细行：优先取快照 rows，其次按模板约定的集合路径从记录中取值
       // 条数由实际数组长度决定，模板不保存条数
@@ -1061,9 +1140,12 @@
       },
       // 当前预览页的业务值：商品组合只取本页
       previewValues() {
-        if (this.goodsPageMode === 'none') return this.attrValues
-        var values = Object.assign({}, this.attrValues)
-        values[GOODS_KEY] = this.labelLayout.goodsText || ''
+        var base = this.goodsPageMode === 'none' ? this.attrValues : Object.assign({}, this.attrValues, {
+          [GOODS_KEY]: this.labelLayout.goodsText || ''
+        })
+        var values = Object.assign({}, base)
+        // 分页标签文案随当前预览页变化
+        values['page_no'] = this.pageNoTextFor(this.previewPage)
         return values
       },
       /**
@@ -1171,8 +1253,37 @@
         if (self.isMobile && self.visible) self.updatePreviewScale()
       }
       window.addEventListener('resize', this._onResize)
+      // 临时诊断：记录顶栏区域的触摸/点击事件，定位关闭按钮无效的原因（定位完成后移除）
+      this._dbgLog = []
+      this._onDbgEvt = function(e) {
+        if (!self.visible) return
+        var point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+        var y = point ? Math.round(point.clientY) : Math.round(e.clientY || -1)
+        if (y < 0 || y > 60) return
+        var node = e.target
+        var cls = node ? String(node.className || node.tagName || '').split(' ')[0] : ''
+        var x = point ? Math.round(point.clientX) : Math.round(e.clientX || -1)
+        self._dbgLog.push(e.type + ':' + cls + '@' + x + ',' + y)
+        if (self._dbgLog.length > 3) self._dbgLog.shift()
+        self.dbgTap = self._dbgLog.join(' | ')
+      }
+      document.addEventListener('touchstart', this._onDbgEvt, true)
+      document.addEventListener('touchend', this._onDbgEvt, true)
+      document.addEventListener('click', this._onDbgEvt, true)
+      // 临时诊断：捕获运行时报错与未处理 Promise 拒绝，显示在页面上（定位完成后移除）
+      this._onDbgError = function(e) {
+        self.dbgErr = 'err:' + ((e && e.message) || '') + '@' + ((e && e.lineno) || '') + ':' + ((e && e.colno) || '')
+      }
+      this._onDbgReject = function(e) {
+        var r = e && e.reason
+        self.dbgErr = 'reject:' + ((r && (r.message || r.msg)) || String(r))
+      }
+      window.addEventListener('error', this._onDbgError)
+      window.addEventListener('unhandledrejection', this._onDbgReject)
     },
     beforeDestroy() {
+      window.removeEventListener('error', this._onDbgError)
+      window.removeEventListener('unhandledrejection', this._onDbgReject)
       if (!this._mql) return
       if (this._mql.removeEventListener) {
         this._mql.removeEventListener('change', this._onMqChange)
@@ -1180,6 +1291,9 @@
         this._mql.removeListener(this._onMqChange)
       }
       window.removeEventListener('resize', this._onResize)
+      document.removeEventListener('touchstart', this._onDbgEvt, true)
+      document.removeEventListener('touchend', this._onDbgEvt, true)
+      document.removeEventListener('click', this._onDbgEvt, true)
     },
     methods: {
       // 手机端：按容器尺寸等比缩放小票/标签
@@ -1260,6 +1374,7 @@
         // 切换业务类型时先清空上一套模板，避免模板加载失败或为空时残留上次的标签内容
         this.template = null
         this.outdatedTemplate = false
+        this.templateLoadError = ''
         this.selectedAttrs = []
         this.attrStyles = {}
         this.attrLabels = {}
@@ -1276,9 +1391,18 @@
         this.wifiAddStep = ''
         this.visible = true
         this.loadRouteTemplate({ type: this.type, templateId: opts.templateId, name: opts.name }).then(function(raw) {
-          var tpl = self.normalizeTemplate(raw)
+          var tpl = null
+          // 临时诊断：区分「归一化抛异常」与「归一化返回空」，定位完成后移除
+          try {
+            tpl = self.normalizeTemplate(raw)
+            self.dbgNote = 'normalize=' + (tpl ? 'ok' : 'null') + ',raw=' + (raw == null ? 'null' : typeof raw)
+          } catch (e) {
+            self.dbgNote = 'normalize-throw:' + ((e && (e.message || e.name)) || String(e))
+            return
+          }
           if (tpl) {
             self.applyTemplate(tpl, true)
+            self.dbgNote += ',template=' + (self.template ? 'set' : 'empty')
             self.restoreMissingAttrs(self.selectedAttrs)
             self.applySnapshotValues()
           } else if (!self.outdatedTemplate) {
@@ -1286,6 +1410,7 @@
           }
           self.$nextTick(function() { self.updatePreviewScale() })
         }).catch(function() {
+          self.dbgNote = 'chain-catch'
           if (!self.outdatedTemplate) self.applySnapshot()
           self.$nextTick(function() { self.updatePreviewScale() })
         })
@@ -1790,8 +1915,31 @@
         this.selectedPrinter = printer.id
       },
       handleCancel() {
+        // 关闭前复位所有子页面状态，避免「关掉又出现」
+        this.dbgTap = 'handleCancel 已执行'
+        this.showPrinterSheet = false
+        this.wifiAddStep = ''
+        this.printerSettingsVisible = false
         this.printerEditVisible = false
+        this.templateLoadError = ''
         this.visible = false
+      },
+      // 空状态「重新加载」：重新读取模板并应用
+      reloadRouteTemplate() {
+        var self = this
+        this.templateLoadError = ''
+        this.outdatedTemplate = false
+        this.loadRouteTemplate({ type: this.type }).then(function(raw) {
+          var tpl = self.normalizeTemplate(raw)
+          if (!tpl) {
+            if (!self.templateLoadError) self.templateLoadError = '未读取到模板，请稍后重试'
+            return
+          }
+          self.applyTemplate(tpl, true)
+          self.restoreMissingAttrs(self.selectedAttrs)
+          self.applySnapshotValues()
+          self.$message.success('模板已加载')
+        })
       },
       // 模板优先级：当前商品的普通模板 > 品类的默认模板（云端读取，本地缓存兜底）
       loadTemplate() {
@@ -1825,15 +1973,49 @@
         if (cfgInfo) {
           var cfgKey = cfgInfo.key
           return getAction('/platformConfig/getUiConfig', { key: cfgKey, _t: Date.now() }).then(function(res) {
-            var cfg = parseTemplateRaw(res && res.code === 200 ? res.data : null)
-            if (!cfg) return null
+            self.tmplDebug = {
+              key: cfgKey,
+              code: res && res.code,
+              dataType: res && typeof res.data,
+              dataLen: res && typeof res.data === 'string' ? res.data.length : -1
+            }
+            if (!res || res.code !== 200) {
+              self.templateLoadError = '接口返回异常（code=' + (res && res.code) + '）'
+              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
+              return null
+            }
+            var rawData = res.data
+            // 服务器尚未保存过模板：走正常空状态，提供创建入口
+            if (rawData == null || rawData === '') { self.tmplDebug.empty = true; return null }
+            var cfg = parseTemplateRaw(rawData)
+            self.tmplDebug.parsed = !!cfg
+            self.tmplDebug.v2 = cfg ? isLabelTemplateV2(cfg) : null
+            if (!cfg) {
+              self.templateLoadError = '模板数据为空或格式无法解析'
+              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
+              return null
+            }
             // 旧模板不再兼容：标记后由空状态提示删除重建
             if (!isLabelTemplateV2(cfg)) {
               self.outdatedTemplate = true
               return null
             }
+            // 成功读取后写本地缓存，供弱网/离线时兜底
+            try {
+              localStorage.setItem('jsh.uiConfig.' + cfgKey, typeof rawData === 'string' ? rawData : JSON.stringify(cfg))
+            } catch (e) { /* 忽略 */ }
             return cfg
-          }).catch(function() { return null })
+          }).catch(function(err) {
+            self.templateLoadError = (err && (err.message || err.msg)) || '网络异常'
+            if (self.tmplDebug) { self.tmplDebug.error = self.templateLoadError; self.tmplDebug.errStatus = err && err.response && err.response.status }
+            console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
+            // 请求失败时回退本地缓存（编辑保存时写入），保证离线仍可打印
+            try {
+              var cached = parseTemplateRaw(localStorage.getItem('jsh.uiConfig.' + cfgKey))
+              if (cached && isLabelTemplateV2(cached)) return cached
+            } catch (e2) { /* 忽略 */ }
+            return null
+          })
         }
         return fetchLabelTemplates().then(function(list) {
           var id = q && q.templateId
@@ -1876,6 +2058,7 @@
           .filter(function(key) { return key != null && key !== '' })
           .map(function(key) { return String(key) })
         // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
+        if (this.tmplDebug) this.tmplDebug.attrs = selectedAttrs.length
         if (!selectedAttrs.length) return null
         var size = (schema && schema.size) || {}
         var defaults = { label: [320, 240], delivery: [560, 800], receipt: [380, 600], member: [320, 240], address: [320, 240] }
@@ -1992,6 +2175,10 @@
             self.$set(self.attrLabels, key, attr ? attr.label : '')
           }
         })
+        // 分页标签只显示页码本身，不加“属性名:”前缀
+        if (this.selectedAttrs.indexOf('page_no') >= 0) {
+          this.$set(this.attrLabels, 'page_no', '')
+        }
         this.labelWidth = tpl.labelWidth || 320
         this.labelHeight = tpl.labelHeight || 240
         // 旧模板（文字与条码合在一个元素里）自动拆分为独立编码元素
@@ -2030,11 +2217,11 @@
         })
       },
       // 用指定商品行计算布局（不依赖当前预览页，供分页与打印复用）
-      layoutWithRows(rows) {
+      layoutWithRows(rows, values) {
         return resolveLabelLayout({
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
-          values: this.attrValues,
+          values: values || this.attrValues,
           labels: this.attrLabels,
           goodsRows: rows,
           paperWidth: this.labelWidth,
@@ -2045,10 +2232,14 @@
       },
       // 指定页的标签布局：页码越界时回落到第一页
       layoutForPage(page) {
-        if (this.goodsPageMode === 'none') return this.layoutWithRows(this.goodsRowsForLayout)
+        var idx = Math.max(0, page || 0)
+        // 每页的分页标签文案不同，布局时按该页的值计算
+        var values = Object.assign({}, this.attrValues)
+        values['page_no'] = this.pageNoTextFor(idx)
+        if (this.goodsPageMode === 'none') return this.layoutWithRows(this.goodsRowsForLayout, values)
         var plan = this.goodsPagePlan
-        var idx = Math.min(Math.max(page || 0, 0), plan.pages.length - 1)
-        return this.layoutWithRows(plan.pages[idx] ? plan.pages[idx].rows : [])
+        idx = Math.min(idx, plan.pages.length - 1)
+        return this.layoutWithRows(plan.pages[idx] ? plan.pages[idx].rows : [], values)
       },
       itemStyle(key) {
         // 商品明细表/商品组合按商品行数动态变高，使用重排后的坐标
@@ -2113,15 +2304,26 @@
         return item.attr.value
       },
       // 预览文字：优先用布局结果（商品多行已逐行带前缀；省略模式已截断）
-      displayText(item) {
+      displayText(item, page) {
+        // 同页堆叠预览：按各自页的布局取文案（分页标签/商品组合随页变化）
+        if (page != null) {
+          var lay = this.layoutForPage(page)
+          var pageText = lay.texts && lay.texts[item.attr.key]
+          if (pageText != null) return pageText
+          if (item.attr.key === GOODS_KEY) return lay.goodsText
+        }
         var text = this.overflowLayout.texts && this.overflowLayout.texts[item.attr.key]
         return text != null ? text : this.getItemText(item)
       },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
         // 地址打印：字段只取地址识别页面的输入框数据
-        if (this.type === 'address') return this.buildAddressAttrs()
-        return buildLabelAttrs(this.record, this.sku)
+        var list = this.type === 'address' ? this.buildAddressAttrs() : buildLabelAttrs(this.record, this.sku)
+        // 分页标签：模板元素，文案由当前预览/打印页决定
+        if (!list.some(function(a) { return a.key === 'page_no' })) {
+          list.push({ key: 'page_no', label: '分页标签', value: '', isCustom: true, isPage: true, group: '模板元素' })
+        }
+        return list
       },
       /** 地址打印字段（key 与地址识别页面 form 字段一致） */
       buildAddressAttrs() {
@@ -2889,14 +3091,17 @@
   .lp-preview {
     position: relative;
     background: #fff;
-    border: 1px dashed #d9d9d9;
+    border: 0.5px solid rgba(0, 0, 0, 0.16);
+    border-radius: 8px;
     overflow: hidden;
     box-sizing: border-box;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
   }
   /* 新版模板自带纸张边框，外层不再重复描边，避免 1~2px 内缩 */
   .lp-preview.lp-preview-schema {
-    border: none;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    border: 0.5px solid rgba(0, 0, 0, 0.16);
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
   }
   .lp-item {
     position: absolute;
@@ -3167,6 +3372,33 @@
   .lmp-empty-create {
     margin-top: 16px;
   }
+  /* 临时诊断信息 */
+  .lmp-dbg-tap {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 96px;
+    z-index: 9999;
+    padding: 6px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #fff;
+    font-family: Menlo, Consolas, monospace;
+    word-break: break-all;
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 4px;
+  }
+  .lmp-debug {
+    margin-top: 12px;
+    padding: 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #666;
+    font-family: Menlo, Consolas, monospace;
+    word-break: break-all;
+    background: #f5f5f5;
+    border-radius: 4px;
+  }
   /* 预览区：flex 撑满剩余空间，Math.min 完整显示 */
   .lmp-preview-area {
     position: relative;
@@ -3177,6 +3409,22 @@
     justify-content: center;
     padding: 16px 8px 8px 8px;
     overflow: hidden;
+  }
+  /* 多标签同页：纵向堆叠，上下滑动查看 */
+  .lmp-preview-area.is-stack {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    align-items: flex-start;
+    padding-bottom: 16px;
+  }
+  .lmp-stack {
+    width: 100%;
+  }
+  .lmp-stack-slot {
+    width: 100%;
+  }
+  .lmp-preview-page {
+    position: absolute;
   }
   .lmp-page-badge {
     position: absolute;
@@ -3217,7 +3465,11 @@
     position: relative;
     background: #fff;
     overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+    /* 圆角 + 细边线 */
+    border: 0.5px solid rgba(0, 0, 0, 0.16);
+    border-radius: 8px;
+    box-sizing: border-box;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
     transform-origin: center center;
     transition: transform 0.2s ease;
   }

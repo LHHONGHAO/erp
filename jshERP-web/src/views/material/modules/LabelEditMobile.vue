@@ -57,7 +57,7 @@
           :key="key"
           class="lem-elem"
           :data-key="key"
-          :class="{ 'lem-elem-selected': isSelected(key), 'lem-elem-code': isCode(key) }"
+          :class="{ 'lem-elem-code': isCode(key), 'lem-elem--active': currentAttrKey === key }"
           :style="getElementStyle(key)"
           @pointerdown.stop.prevent="startPointerDrag(key, $event, 'move')"
         >
@@ -100,7 +100,7 @@
             </div>
           </template>
           <template v-else>
-            <span class="lem-elem-label" v-if="displayParts[key] && displayParts[key].label">{{ displayParts[key].label }}</span>
+            <span class="lem-elem-label" v-if="displayParts[key] && displayParts[key].label && key !== 'page_no'">{{ displayParts[key].label }}</span>
             <span class="lem-elem-value">{{ displayParts[key] ? displayParts[key].value : '' }}</span>
           </template>
           </div>
@@ -120,6 +120,9 @@
         </div>
         <!-- 框选矩形 -->
         <div v-if="marquee.visible" class="lem-marquee" :style="marqueeStyle"></div>
+        <!-- 拖动吸附时的对齐线 -->
+        <div v-if="guides.v !== null" class="lem-guide lem-guide-v" :style="{ left: guides.v + 'px', width: hairlineWidth }"></div>
+        <div v-if="guides.h !== null" class="lem-guide lem-guide-h" :style="{ top: guides.h + 'px', height: hairlineWidth }"></div>
       </div>
       <div class="lem-scroll-spacer" :style="{ width: (scrollSpacer + sidePanelReserve) + 'px' }"></div>
     </div>
@@ -133,7 +136,7 @@
       <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
           <!-- 属性名 / 文本内容（单选时显示） -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields">
+          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
             <span class="lem-style-label">属性名</span>
             <a-input
               :value="currentLabel"
@@ -141,6 +144,11 @@
               class="lem-text-input"
               @input="updateCurrentLabel"
             />
+          </div>
+          <!-- 分页标签：文案自动随页码变化，不可手改 -->
+          <div class="lem-field" v-if="selectedKeys.length === 1 && selectedKeys[0] === 'page_no'">
+            <span class="lem-style-label">文本内容</span>
+            <a-input :value="pageLabelText()" disabled class="lem-text-input" />
           </div>
           <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
             <span class="lem-style-label">文本内容</span>
@@ -312,11 +320,19 @@
       </div>
       <div class="lem-save-field">
         <div class="lem-save-label">多个商品打印方式</div>
-        <a-radio-group v-model="pageMode" class="lem-settings-radio">
+        <a-radio-group :value="pageMode" class="lem-settings-radio" @change="onPageModeChange">
           <a-radio value="none">多行连续（全部画在一张）</a-radio>
           <a-radio value="fit">分页（按标签高度自动续页）</a-radio>
           <a-radio value="each">每件一张标签（按商品数量拆页）</a-radio>
         </a-radio-group>
+        <div class="lem-save-field lem-save-field--inline">
+          <a-checkbox
+            :checked="pageLabelEnabled"
+            :disabled="pageMode === 'none'"
+            @change="onPageLabelToggle"
+          >分页标签</a-checkbox>
+        </div>
+        <div class="lem-save-hint">{{ pageMode === 'none' ? '选择“分页”或“每件一张标签”后可添加页码标签' : '画布显示如 1/2 的页码，可拖动位置；在画布删除页码会自动取消勾选' }}</div>
         <div v-if="pageMode === 'fit'" class="lem-save-field lem-save-field--inline">
           <span class="lem-save-label">每页商品行数</span>
           <a-input-number v-model="maxRowsPerPage" :min="0" :max="5" size="small" style="width: 90px" />
@@ -556,6 +572,8 @@
         sidePanel: '',
         multiSelectMode: false,
         marquee: { active: false, visible: false, startX: 0, startY: 0, x: 0, y: 0, w: 0, h: 0 },
+        // 拖动吸附时的对齐线位置（标签坐标系），null 表示不显示
+        guides: { v: null, h: null },
         editWidthMm: 148,
         editHeightMm: 212,
         // wrap 是否溢出需要滚动：true → flex-start + scrollLeft 居中；false → center 直接居中
@@ -616,6 +634,14 @@
           transformOrigin: 'center top'
         }
       },
+      // 1px 在缩放后仍保持 1px：虚线框与对齐线都用这个宽度
+      hairlineWidth() {
+        return (1 / this.zoom) + 'px'
+      },
+      // 打印设置里「分页标签」的勾选状态，直接以画布是否含该元素为准
+      pageLabelEnabled() {
+        return this.selectedAttrs.indexOf('page_no') > -1
+      },
       // 标签居中 + 对称滑动：从 label-scroll 模块计算单侧 spacer 宽度
       scrollSpacer() {
         return computeSpacer(this.labelWidth, this.zoom)
@@ -639,6 +665,8 @@
         this.allAttrs.forEach(function(attr) {
           values[attr.key] = attr.value == null ? '' : attr.value
         })
+        // 分页标签：文案由当前页/总页数决定，不参与普通文本编辑
+        values['page_no'] = this.pageLabelText()
         return resolveLabelLayout({
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
@@ -727,6 +755,8 @@
         var groups = []
         var map = {}
         this.allAttrs.forEach(function(a) {
+          // 分页标签用面板底部的专用按钮添加，不在字段列表里重复出现
+          if (a.key === 'page_no') return
           var name = a.group || '可用字段'
           if (!map[name]) {
             map[name] = { name: name, attrs: [] }
@@ -908,14 +938,66 @@
       },
       /** 根据 attrsBuilder 名称构建字段列表，新增类型只需在此加分支 */
       buildAttrs(builder) {
+        var list
         switch (builder) {
-          case 'delivery': return this.buildDeliveryAttrs()
-          case 'receipt': return this.buildReceiptAttrs()
-          case 'member': return this.buildMemberAttrs()
-          case 'address': return this.buildAddressAttrs()
+          case 'delivery': list = this.buildDeliveryAttrs(); break
+          case 'receipt': list = this.buildReceiptAttrs(); break
+          case 'member': list = this.buildMemberAttrs(); break
+          case 'address': list = this.buildAddressAttrs(); break
           case 'label':
-          default: return buildLabelAttrs(this.record, this.sku)
+          default: list = buildLabelAttrs(this.record, this.sku)
         }
+        return this.appendPageAttr(list)
+      },
+      // 分页标签：作为模板元素常驻字段清单（未勾选时不在画布上显示）
+      appendPageAttr(list) {
+        var arr = list || []
+        var exists = arr.some(function(a) { return a.key === 'page_no' })
+        if (!exists) {
+          arr.push({ key: 'page_no', label: '分页标签', value: '', isCustom: true, isPage: true, group: '模板元素' })
+        }
+        return arr
+      },
+      // 分页标签的示例文案：每件一张时按商品行数估算页数，其余场景按 1 页
+      pageLabelText() {
+        var rows = (this.record && this.record.goodsRows) || []
+        var total = this.pageMode === 'each'
+          ? Math.max(1, rows.filter(function(r) { return hasGoodsValue(r) }).length)
+          : 1
+        return '1/' + total
+      },
+      // 打印设置：分页 / 每件一张默认带页码，多行连续则移除页码标签
+      onPageModeChange(e) {
+        var val = e && e.target ? e.target.value : e
+        this.pageMode = val === 'fit' || val === 'each' ? val : 'none'
+        this.setPageLabel(this.pageMode !== 'none')
+      },
+      onPageLabelToggle(e) {
+        var checked = e && e.target ? e.target.checked : !!e
+        this.setPageLabel(checked)
+      },
+      // 添加/移除分页标签元素；silent 用于模板初始化，不额外产生撤销记录
+      setPageLabel(on, silent) {
+        var key = 'page_no'
+        var exists = this.selectedAttrs.indexOf(key) > -1
+        if (on) {
+          if (exists) return
+          this.addAttr(key)
+          // 只显示页码本身，不带“属性名:”前缀
+          this.$set(this.attrLabels, key, '')
+          var style = this.attrStyles[key]
+          if (style) {
+            this.$set(style, 'x', Math.max(2, this.labelWidth - 78))
+            this.$set(style, 'y', Math.max(2, this.labelHeight - 18))
+            this.$set(style, 'width', 70)
+            this.$set(style, 'fontSize', 10)
+          }
+          if (!silent) this.pushSnapshot()
+          return
+        }
+        if (!exists) return
+        this.removeAttr(key)
+        if (!silent) this.pushSnapshot()
       },
       /** 会员标签默认字段（key 与会员信息表 jsh_supplier 列名保持一致） */
       buildMemberAttrs() {
@@ -1108,6 +1190,10 @@
           : this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || key === GOODS_TABLE_KEY })
         this.restoreMissingAttrs(snap.selectedAttrs)
         this.fitLabelAfterLoad()
+        // 打印方式为分页/每件一张时，分页标签默认选中（旧模板缺该元素则自动补上）
+        if (this.pageMode !== 'none' && this.selectedAttrs.indexOf('page_no') === -1) {
+          this.setPageLabel(true, true)
+        }
       },
       /** getUiConfig 返回值可能是字符串或已解析对象，统一处理 */
       parseConfigData(data) {
@@ -1118,11 +1204,32 @@
         if (cfg && typeof cfg === 'object' && cfg.config != null) cfg = cfg.config
         return cfg
       },
+      /** 请求异常转成可读原因：有响应给状态码+响应体，无响应给底层错误信息 */
+      formatRequestError(err) {
+        if (err && err.response) {
+          var data = err.response.data
+          var text = ''
+          if (typeof data === 'string') {
+            text = data
+          } else if (data && typeof data === 'object') {
+            text = data.message || data.msg || ''
+          }
+          return 'HTTP ' + err.response.status + (text ? ' ' + text : '')
+        }
+        return (err && err.message) ? err.message : '请求未发出'
+      },
       /** 通用 platformConfig 写入 */
       postSnapshot(key, snap) {
+        var value = JSON.stringify(snap)
         return postAction('/platformConfig/saveUiConfig', {
           key: key,
-          value: JSON.stringify(snap)
+          value: value
+        }).then(function(res) {
+          // 保存成功写本地缓存，供打印页弱网/离线兜底
+          if (res && res.code === 200) {
+            try { localStorage.setItem('jsh.uiConfig.' + key, value) } catch (e) { /* 忽略 */ }
+          }
+          return res
         })
       },
       // 零售出库单据全部可显示字段，group 仅用于「元素」弹窗分组展示
@@ -1233,6 +1340,8 @@
         })
       },
       getAttrValue(key) {
+        // 分页标签文案随页数变化，单独计算
+        if (key === 'page_no') return this.pageLabelText()
         // 商品信息按勾选的组合字段拼接显示（与打印一致）
         if (key === GOODS_KEY && this.goodsRowsData.goodsText) return this.goodsRowsData.goodsText
         var attr = this.allAttrs.find(function(a) { return a.key === key })
@@ -1248,7 +1357,11 @@
           fontSize: (style.fontSize || 12) + 'px',
           fontWeight: style.fontWeight || 'normal',
           letterSpacing: (style.letterSpacing || 0) + 'px',
-          lineHeight: String(style.lineHeight || 1.3)
+          lineHeight: String(style.lineHeight || 1.3),
+          // 虚线外框线宽按缩放反算，放大页面时不会变粗
+          outlineWidth: this.hairlineWidth,
+          // 负偏移把边框画在元素内侧，避免贴边元素左右边线被画布裁掉
+          outlineOffset: -this.hairlineWidth
         }
         if (key === GOODS_TABLE_KEY) {
           var table = this.goodsTableData
@@ -1306,9 +1419,6 @@
         if (table && table.rows[index]) return table.rows[index].height
         var style = this.attrStyles[GOODS_TABLE_KEY] || {}
         return Math.round((style.fontSize || 12) * (style.lineHeight || 1.2)) + 4
-      },
-      isSelected(key) {
-        return this.selectedKeys.indexOf(key) > -1
       },
       clearSelection() {
         this.selectedKeys = []
@@ -1700,7 +1810,11 @@
           minH: minH,
           moved: false,
           multiDrag: multiDrag,
-          dragOrigins: dragOrigins
+          dragOrigins: dragOrigins,
+          // 吸附基准：未参与本次拖动的元素外接矩形
+          snapTargets: this.collectSnapTargets(allKeys),
+          keyW: this.getItemSize(key).w,
+          keyH: this.getItemSize(key).h
         }
         try {
           if (e.currentTarget.setPointerCapture) {
@@ -1716,6 +1830,56 @@
         document.removeEventListener('pointerup', this.onPointerUp)
         document.removeEventListener('pointercancel', this.onPointerUp)
       },
+      // 收集吸附基准：除本次拖动元素外的所有已加载元素外接矩形
+      collectSnapTargets(movingKeys) {
+        var self = this
+        return this.selectedAttrs.filter(function(key) {
+          return movingKeys.indexOf(key) === -1
+        }).map(function(key) {
+          var s = self.attrStyles[key] || {}
+          var size = self.getItemSize(key)
+          return {
+            key: key,
+            x: s.x || 0,
+            y: s.y || 0,
+            w: s.width > 0 ? s.width : size.w,
+            h: s.height > 0 ? s.height : size.h
+          }
+        })
+      },
+      // 位置吸附：与最近元素的左/中/右、上/中/下对齐，返回吸附后的坐标与对齐线
+      snapPosition(x, y, targets, size) {
+        var TH = 6 / this.zoom
+        var ownV = [0, size.w / 2, size.w]
+        var ownH = [0, size.h / 2, size.h]
+        var bestV = null
+        var bestH = null
+        ;(targets || []).forEach(function(t) {
+          var tv = [t.x, t.x + t.w / 2, t.x + t.w]
+          var th = [t.y, t.y + t.h / 2, t.y + t.h]
+          tv.forEach(function(line) {
+            ownV.forEach(function(off) {
+              var diff = line - (x + off)
+              if (Math.abs(diff) <= TH && (!bestV || Math.abs(diff) < Math.abs(bestV.diff))) {
+                bestV = { diff: diff, line: line }
+              }
+            })
+          })
+          th.forEach(function(line) {
+            ownH.forEach(function(off) {
+              var diff = line - (y + off)
+              if (Math.abs(diff) <= TH && (!bestH || Math.abs(diff) < Math.abs(bestH.diff))) {
+                bestH = { diff: diff, line: line }
+              }
+            })
+          })
+        })
+        return {
+          x: bestV ? x + bestV.diff : x,
+          y: bestH ? y + bestH.diff : y,
+          guides: { v: bestV ? bestV.line : null, h: bestH ? bestH.line : null }
+        }
+      },
       onPointerMove(e) {
         // 有长按定时器 → 手指一动立即取消长按，视为普通拖动
         if (this._longPressTimer) {
@@ -1730,22 +1894,25 @@
           d.moved = true
         }
         if (d.mode === 'move') {
+          // 先按指针位移算出目标位置，再吸附到最近元素的对齐线
+          var rawX = d.origX + dx / this.zoom
+          var rawY = d.origY + dy / this.zoom
+          var snapped = this.snapPosition(rawX, rawY, d.snapTargets, { w: d.keyW, h: d.keyH })
+          this.guides = snapped.guides
           if (d.multiDrag && d.dragOrigins) {
             // 多选整体移动（不限制边界，可拖到屏幕任意可视位置）
+            var offX = snapped.x - d.origX
+            var offY = snapped.y - d.origY
             var self2 = this
             Object.keys(d.dragOrigins).forEach(function(k) {
               var origin = d.dragOrigins[k]
-              var newX = Math.round((origin.x || 0) + dx / self2.zoom)
-              var newY = Math.round((origin.y || 0) + dy / self2.zoom)
-              self2.$set(self2.attrStyles[k], 'x', newX)
-              self2.$set(self2.attrStyles[k], 'y', newY)
+              self2.$set(self2.attrStyles[k], 'x', Math.round((origin.x || 0) + offX))
+              self2.$set(self2.attrStyles[k], 'y', Math.round((origin.y || 0) + offY))
             })
           } else {
             // 单个元素移动（不限制边界，文字标签超出屏幕时可拖到任意可视位置）
-            var newX = d.origX + dx / this.zoom
-            var newY = d.origY + dy / this.zoom
-            this.$set(this.attrStyles[d.key], 'x', Math.round(newX))
-            this.$set(this.attrStyles[d.key], 'y', Math.round(newY))
+            this.$set(this.attrStyles[d.key], 'x', Math.round(snapped.x))
+            this.$set(this.attrStyles[d.key], 'y', Math.round(snapped.y))
           }
         } else if (d.mode === 'resize') {
           var minW = d.minW || 12
@@ -1776,6 +1943,7 @@
         if (this.dragging.active) {
           this.dragging.active = false
           this.dragging.moved = false
+          this.guides = { v: null, h: null }
           this.pushSnapshot()
         }
         // 没移动 + 不是 resize 手柄操作 → 点击意图，执行 toggle
@@ -1986,8 +2154,8 @@
             }
             self.showSaveResult(res, cfg)
             return res && res.code === 200
-          }).catch(function() {
-            self.$message.error(cfg.title + '保存失败，请检查网络')
+          }).catch(function(err) {
+            self.$message.error(cfg.title + '保存失败：' + self.formatRequestError(err))
             return false
           })
         }
@@ -1995,8 +2163,8 @@
         return this.postSnapshot(cfg.platformConfigKey, v2).then(function(res) {
           self.showSaveResult(res, cfg)
           return res && res.code === 200
-        }).catch(function() {
-          self.$message.error(cfg.title + '保存失败，请检查网络')
+        }).catch(function(err) {
+          self.$message.error(cfg.title + '保存失败：' + self.formatRequestError(err))
           return false
         })
       },
@@ -2274,10 +2442,35 @@
   z-index: 1;
 }
 
-.lem-elem-selected {
-  /* 画在框内，避免贴到标签边缘时被裁掉 */
-  box-shadow: inset 0 0 0 1px #1890ff;
-  background: rgba(24, 144, 255, 0.05);
+/* 所有已加载元素统一虚线外框（线宽由元素内联 outlineWidth 反算，缩放时不变粗）；点击后只显示手柄 */
+.lem-elem {
+  outline-style: dashed;
+  /* 未选中/未点击：灰色边框 */
+  outline-color: #bfbfbf;
+  outline-offset: 0;
+}
+
+/* 被点击选中的元素：沿用原来的蓝色边框 */
+.lem-elem--active {
+  outline-color: rgba(24, 144, 255, 0.85);
+}
+
+/* 拖动吸附时的对齐线 */
+.lem-guide {
+  position: absolute;
+  background: #ff4d4f;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.lem-guide-v {
+  top: 0;
+  bottom: 0;
+}
+
+.lem-guide-h {
+  left: 0;
+  right: 0;
 }
 
 /* 内容层：只裁切内容，不裁选手柄 */

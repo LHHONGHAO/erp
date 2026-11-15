@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>标准输入框 · 圆角卡片 + 圆形发送按钮</title>
+<style>
+  :root {
+    --page-bg: #ececee;
+    --card-bg: #ffffff;
+    --text: #1a1a1c;
+    --placeholder: #a0a4ab;
+    --icon-bg: #f2f3f5;
+    --icon-bg-hover: #e8e9eb;
+    --pill-bg: #f2f3f5;
+    --send-bg: #c9bef1;
+    --send-bg-hover: #b9aaf0;
+    --send-bg-active: #8b6ff0;
+    --radius-card: 28px;
+    --radius-pill: 999px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 48px 20px;
+    background: var(--page-bg);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+
+  .demo-title {
+    width: 100%;
+    max-width: 720px;
+    font-size: 13px;
+    letter-spacing: .04em;
+    color: #7a7e85;
+    text-transform: uppercase;
+  }
+
+  /* ---------- 标准输入框：唯一需要复制的部分 ---------- */
+  .composer {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px 16px;
+    background: var(--card-bg);
+    border-radius: var(--radius-card);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .06);
+  }
+
+  .composer__input {
+    width: 100%;
+    min-height: 28px;
+    max-height: 160px;
+    padding: 2px 6px;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    font: inherit;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--text);
+    caret-color: #5b7cfa;
+  }
+
+  .composer__input::placeholder { color: var(--placeholder); }
+
+  .composer__bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .composer__spacer { flex: 1; }
+
+  .composer__icon-btn,
+  .composer__send {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color .15s ease, transform .1s ease;
+  }
+
+  .composer__icon-btn {
+    background: var(--icon-bg);
+    color: #3a3d42;
+  }
+
+  .composer__icon-btn:hover { background: var(--icon-bg-hover); }
+
+  .composer__icon-btn:active,
+  .composer__send:not(:disabled):active { transform: scale(.94); }
+
+  .composer__tag {
+    flex: none;
+    height: 44px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--pill-bg);
+    color: #2b2d31;
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  .composer__send {
+    background: var(--send-bg);
+    color: #fff;
+  }
+
+  .composer__send:not(:disabled):hover { background: var(--send-bg-hover); }
+
+  .composer__send:not(:disabled) { background: var(--send-bg-active); }
+
+  .composer__send:disabled {
+    background: var(--send-bg);
+    opacity: .55;
+    cursor: not-allowed;
+  }
+
+  .composer__send svg,
+  .composer__icon-btn svg { display: block; }
+
+  /* 移动端：缩小内边距与圆角，贴合手指触控 */
+  @media (max-width: 480px) {
+    body { padding: 24px 12px; }
+    .composer { padding: 14px 14px 12px; border-radius: 24px; gap: 10px; }
+    .composer__input { font-size: 16px; }
+    .composer__icon-btn, .composer__send { width: 40px; height: 40px; }
+    .composer__tag { height: 40px; padding: 0 14px; font-size: 13px; }
+  }
+  /* ---------- 标准输入框结束 ---------- */
+
+  .demo-hint {
+    width: 100%;
+    max-width: 720px;
+    font-size: 13px;
+    color: #8a8e95;
+    line-height: 1.7;
+  }
+
+  code {
+    background: #e3e5e8;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div class="demo-title">标准输入框 · 默认（仅输入 + 发送）</div>
+
+  <div class="composer">
+    <textarea
+      id="composerInput"
+      class="composer__input"
+      rows="1"
+      placeholder="输入内容，Enter 发送，Shift + Enter 换行…"
+    ></textarea>
+    <div class="composer__bar">
+      <div class="composer__spacer"></div>
+      <button id="sendBtn" class="composer__send" type="button" title="发送" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5" />
+          <path d="M5 12l7-7 7 7" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="demo-title">扩展（左侧附件、模式标签、语音）</div>
+
+  <div class="composer">
+    <textarea
+      class="composer__input"
+      rows="1"
+      placeholder="发消息或按住说话，让电脑继续写代码…"
+    ></textarea>
+    <div class="composer__bar">
+      <button class="composer__icon-btn" type="button" title="添加附件">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+      <button class="composer__tag" type="button">DeepSeek-V4.1-Flash</button>
+      <div class="composer__spacer"></div>
+      <button class="composer__icon-btn" type="button" title="语音输入">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+        </svg>
+      </button>
+      <button class="composer__send" type="button" title="发送">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5" />
+          <path d="M5 12l7-7 7 7" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="demo-hint">
+    标准版只保留「圆角白卡片 + 自适应输入区 + 右侧圆形发送按钮」。发送按钮在输入为空时禁用，
+    高度由 <code>rows=1</code> 自动增长到 <code>max-height</code>；扩展版按需在底部栏左侧追加附件按钮、
+    模式标签、语音按钮即可，卡片与按钮样式保持不变。
+  </div>
+
+  <script>
+    // 输入为空时禁用发送；Enter 发送，Shift + Enter 换行；输入区自动增高
+    document.querySelectorAll('.composer').forEach(function (composer) {
+      var input = composer.querySelector('.composer__input');
+      var send = composer.querySelector('.composer__send');
+      if (!input || !send) return;
+
+      function sync() {
+        var hasText = input.value.trim().length > 0;
+        send.disabled = !hasText;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+      }
+
+      function submit() {
+        if (!input.value.trim()) return;
+        console.log('send:', input.value);
+        input.value = '';
+        sync();
+        input.focus();
+      }
+
+      input.addEventListener('input', sync);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          submit();
+        }
+      });
+      send.addEventListener('click', submit);
+      sync();
+    });
+  </script>
+</body>
+</html>

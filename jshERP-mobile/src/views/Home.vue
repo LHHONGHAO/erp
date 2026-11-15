@@ -58,7 +58,9 @@ export default {
     return {
       groups: [],
       loading: true,
-      errorText: ''
+      errorText: '',
+      refreshIdle: null,
+      refreshTimer: null
     }
   },
   computed: {
@@ -83,9 +85,16 @@ export default {
     }
   },
   created () {
+    // 首屏只读取本地缓存的首页配置（功能菜单），不发起任何网络请求
     this.restoreCache()
-    // 有缓存时先渲染，再后台静默刷新
-    this.loadMenu(this.groups.length > 0)
+    this.loading = this.groups.length === 0
+  },
+  mounted () {
+    // 首页渲染完成后再刷新菜单数据，避免请求阻塞首屏
+    this.scheduleRefresh()
+  },
+  beforeDestroy () {
+    this.cancelRefresh()
   },
   methods: {
     menuCacheKey () {
@@ -104,6 +113,29 @@ export default {
       try {
         sessionStorage.setItem(this.menuCacheKey(), JSON.stringify(this.groups))
       } catch (e) {}
+    },
+    // 首屏渲染完成后再刷新菜单：有缓存时静默更新，无缓存时才显示加载态
+    scheduleRefresh () {
+      const run = () => {
+        this.refreshIdle = null
+        this.refreshTimer = null
+        this.loadMenu(this.groups.length > 0)
+      }
+      if (window.requestIdleCallback) {
+        this.refreshIdle = window.requestIdleCallback(run, { timeout: 1000 })
+      } else {
+        this.refreshTimer = setTimeout(run, 200)
+      }
+    },
+    cancelRefresh () {
+      if (this.refreshIdle && window.cancelIdleCallback) {
+        window.cancelIdleCallback(this.refreshIdle)
+      }
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer)
+      }
+      this.refreshIdle = null
+      this.refreshTimer = null
     },
     loadMenu (silent) {
       if (!silent) {
@@ -137,11 +169,6 @@ export default {
         const items = flatten(node.children, [])
         if (!items.length && node.url && node.url !== '#' && node.route !== '0') {
           items.push({ text: node.text, url: node.url })
-        }
-        // 地址识别由前端内置在「基础资料」下（与电脑端 permission.js 保持一致，不依赖后台菜单表）
-        const isBaseData = node.text === '基础资料' || String(node.url || '').replace(/\/$/, '') === '/systemA'
-        if (isBaseData && !items.some(item => item.url === '/system/address-recognize')) {
-          items.push({ text: '地址识别', url: '/system/address-recognize' })
         }
         if (items.length) {
           groups.push({ id: node.id, text: node.text, items })

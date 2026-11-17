@@ -30,15 +30,90 @@ const GOODS_FIELD_KEYS = GOODS_FIELD_OPTIONS.map(function(f) { return f.key })
 const COL_WEIGHTS = [3, 2, 2, 2]
 const CELL_PAD = 2
 
-/** 小票商品明细：每件商品拆成独立元素，字段顺序即显示顺序 */
+/** 小票商品明细：面板每种属性只列一次，画布/打印时再按商品行展开 */
 export const RECEIPT_ITEM_FIELDS = [
-  { key: 'name', label: '商品名称', weight: 0.32 },
-  { key: 'spec', label: '规格', weight: 0.26 },
-  { key: 'qty', label: '数量', weight: 0.10 },
-  { key: 'price', label: '单价', weight: 0.16 },
-  { key: 'amount', label: '金额', weight: 0.16 }
+  { key: 'name', label: '商品名称', weight: 0.26 },
+  { key: 'spec', label: '规格组合', weight: 0.24 },
+  { key: 'qty', label: '数量', weight: 0.08 },
+  { key: 'price', label: '单价', weight: 0.14 },
+  { key: 'discount', label: '折扣', weight: 0.10 },
+  { key: 'amount', label: '金额', weight: 0.18 }
 ]
-const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|qty|price|amount)$/
+export const RECEIPT_RECORD_FIELDS = [
+  { key: 'rc_title', label: '小票标题', group: '单据信息' },
+  { key: 'rc_no', label: '单号', group: '单据信息' },
+  { key: 'rc_date', label: '日期', group: '单据信息' },
+  { key: 'rc_shop', label: '店铺', group: '单据信息' },
+  { key: 'rc_operator', label: '开单员', group: '单据信息' },
+  { key: 'rc_pay_type', label: '收银方式', group: '单据信息' },
+  { key: 'rc_member', label: '会员信息', group: '单据信息' },
+  { key: 'rc_member_name', label: '会员姓名', group: '单据信息' },
+  { key: 'rc_member_phone', label: '会员电话', group: '单据信息' },
+  { key: 'rc_member_no', label: '会员卡号', group: '单据信息' },
+  { key: 'rc_qty_total', label: '合计数量', group: '金额信息' },
+  { key: 'rc_amount_total', label: '合计金额', group: '金额信息' },
+  { key: 'rc_discount', label: '折扣', group: '金额信息' },
+  { key: 'rc_settle_amount', label: '结算金额', group: '金额信息' },
+  { key: 'rc_discount_amount', label: '优惠金额', group: '金额信息' },
+  { key: 'rc_get_amount', label: '实收金额', group: '金额信息' },
+  { key: 'rc_back_amount', label: '找零', group: '金额信息' },
+  { key: 'rc_debt', label: '欠款', group: '金额信息' },
+  { key: 'rc_remark', label: '备注', group: '其他信息' },
+  { key: 'rc_footer', label: '落款', group: '其他信息' }
+]
+export const RECEIPT_ITEM_PANEL_PREFIX = 'rc_item_'
+const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|qty|price|discount|amount)$/
+const RECEIPT_ITEM_PANEL_KEY_RE = /^rc_item_(name|spec|qty|price|discount|amount)$/
+
+/** 元素面板中的固定商品属性 key（不包含商品行号） */
+export function receiptItemPanelKey(fieldKey) {
+  return RECEIPT_ITEM_PANEL_PREFIX + fieldKey
+}
+
+export function isReceiptItemPanelKey(key) {
+  return RECEIPT_ITEM_PANEL_KEY_RE.test(String(key == null ? '' : key))
+}
+
+export function receiptItemFieldFromPanel(key) {
+  const matched = String(key == null ? '' : key).match(RECEIPT_ITEM_PANEL_KEY_RE)
+  return matched ? matched[1] : ''
+}
+
+/** 规格组合的可增减属性项 */
+export const RECEIPT_SPEC_PART_OPTIONS = [
+  { key: 'specName1', label: '规格名1' },
+  { key: 'specValue1', label: '规格值1' },
+  { key: 'specName2', label: '规格名2' },
+  { key: 'specValue2', label: '规格值2' },
+  { key: 'specName3', label: '规格名3' },
+  { key: 'specValue3', label: '规格值3' }
+]
+
+export function defaultReceiptSpecParts() {
+  return RECEIPT_SPEC_PART_OPTIONS.slice(0, 4).map(function(part) {
+    return { key: part.key, showLabel: false, displayName: part.label }
+  })
+}
+
+/** 只保存组合规则；空数组是合法的“规格组合为空”，缺省才使用默认四项 */
+export function normalizeReceiptSpecParts(parts) {
+  if (!Array.isArray(parts)) return defaultReceiptSpecParts()
+  const used = {}
+  const normalized = []
+  parts.forEach(function(part) {
+    const option = RECEIPT_SPEC_PART_OPTIONS.filter(function(item) {
+      return part && item.key === part.key
+    })[0]
+    if (!option || used[option.key]) return
+    used[option.key] = true
+    normalized.push({
+      key: option.key,
+      showLabel: part.showLabel === true || part.showName === true,
+      displayName: part.displayName != null ? String(part.displayName) : option.label
+    })
+  })
+  return normalized
+}
 /** 小票里属于商品标签、不参与小票排版的遗留字段 */
 const RECEIPT_STRAY_KEYS = ['name', 'spec1', 'spec2', 'spec3', GOODS_KEY, GOODS_TABLE_KEY, RECEIPT_TABLE_KEY]
 
@@ -47,10 +122,44 @@ export function isReceiptItemKey(key) {
   return RECEIPT_ITEM_KEY_RE.test(String(key == null ? '' : key))
 }
 
-/** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3 */
-export function receiptItemValue(row, key) {
+function parseLegacySpec(text) {
+  const value = text == null ? '' : String(text).trim()
+  const index = value.search(/[：:]/)
+  if (index < 0) return { name: '', value: value }
+  return {
+    name: value.slice(0, index).trim(),
+    value: value.slice(index + 1).trim()
+  }
+}
+
+function receiptSpecPartValue(row, key) {
+  if (row && row[key] != null) return String(row[key]).trim()
+  const matched = key.match(/^spec(Name|Value)(\d)$/)
+  if (!matched || !row) return ''
+  const index = Number(matched[2])
+  let text = row['spec' + index]
+  if ((text == null || text === '') && index === 1 && row.spec != null) text = row.spec
+  const segments = String(text == null ? '' : text).split('　').filter(function(part) { return part.trim() })
+  const parsed = segments.map(parseLegacySpec)
+  return parsed.map(function(part) {
+    return matched[1] === 'Name' ? part.name : part.value
+  }).filter(function(value) { return value !== '' }).join(' ')
+}
+
+/** 按模板规则输出规格名/规格值；showLabel 控制是否额外显示可编辑的属性名 */
+export function receiptSpecText(row, parts) {
+  return normalizeReceiptSpecParts(parts).map(function(part) {
+    const value = receiptSpecPartValue(row, part.key)
+    if (!value) return ''
+    return part.showLabel && part.displayName ? part.displayName + '：' + value : value
+  }).filter(function(value) { return value !== '' }).join(' ')
+}
+
+/** 单个商品字段值；显式传入组合规则时使用规则，否则兼容旧快照 */
+export function receiptItemValue(row, key, specParts) {
   if (!row) return ''
   if (key === 'spec') {
+    if (Array.isArray(specParts)) return receiptSpecText(row, specParts)
     const spec = row.spec != null ? String(row.spec) : ''
     if (spec) return spec
     return ['spec1', 'spec2', 'spec3']
@@ -100,7 +209,7 @@ export function buildReceiptItemElements(options) {
   rows.forEach(function(row, rowIndex) {
     // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推
     const fields = enabledFields.map(function(field, colIndex) {
-      const value = receiptItemValue(row, field.key)
+      const value = receiptItemValue(row, field.key, opts.specParts)
       return {
         key: 'item' + (rowIndex + 1) + '_' + field.key,
         field: field,
@@ -154,7 +263,7 @@ export function replaceReceiptGoodsWithItems(options) {
   const styles = Object.assign({}, opts.attrStyles || {})
   const labels = Object.assign({}, opts.attrLabels || {})
   const rows = (opts.rows || []).filter(hasGoodsValue)
-  let anchorStyle = null
+  let anchorStyle = opts.anchorStyle ? Object.assign({}, opts.anchorStyle) : null
   const kept = []
   ;(opts.selectedAttrs || []).forEach(function(key) {
     if (!key || isReceiptItemKey(key)) return
@@ -168,13 +277,21 @@ export function replaceReceiptGoodsWithItems(options) {
   })
   Object.keys(styles).forEach(function(key) { if (isReceiptItemKey(key)) delete styles[key] })
   Object.keys(labels).forEach(function(key) { if (isReceiptItemKey(key)) delete labels[key] })
-  if (!rows.length || (Array.isArray(opts.receiptItemFields) && !opts.receiptItemFields.length)) {
-    return { selectedAttrs: kept, attrStyles: styles, attrLabels: labels, attrs: [], itemKeys: [] }
-  }
   const startY = anchorStyle ? (anchorStyle.y || 0) : (opts.fallbackY || 0)
+  if (!rows.length || (Array.isArray(opts.receiptItemFields) && !opts.receiptItemFields.length)) {
+    return {
+      selectedAttrs: kept,
+      attrStyles: styles,
+      attrLabels: labels,
+      attrs: [],
+      itemKeys: [],
+      layout: { startY: startY, delta: 0, anchorStyle: anchorStyle, movedKeys: [] }
+    }
+  }
   const built = buildReceiptItemElements({
     rows: rows,
     fields: opts.receiptItemFields,
+    specParts: opts.receiptSpecParts,
     paperWidth: opts.paperWidth,
     x: anchorStyle ? (anchorStyle.x || 0) : 8,
     y: startY,
@@ -183,11 +300,13 @@ export function replaceReceiptGoodsWithItems(options) {
   })
   // 原明细表占位高度与逐件元素总高度差，下方元素整体顺移
   const delta = built.height - (anchorStyle ? (anchorStyle.height || 0) : 0)
+  const movedKeys = []
   if (delta !== 0) {
     kept.forEach(function(key) {
       const style = styles[key]
       if (style && (style.y || 0) >= startY - 0.5) {
         styles[key] = Object.assign({}, style, { y: (style.y || 0) + delta })
+        movedKeys.push(key)
       }
     })
   }
@@ -201,7 +320,8 @@ export function replaceReceiptGoodsWithItems(options) {
     attrStyles: styles,
     attrLabels: labels,
     attrs: built.attrs,
-    itemKeys: built.keys
+    itemKeys: built.keys,
+    layout: { startY: startY, delta: delta, anchorStyle: anchorStyle, movedKeys: movedKeys }
   }
 }
 

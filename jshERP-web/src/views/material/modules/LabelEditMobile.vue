@@ -158,7 +158,7 @@
             <span class="lem-style-label">文本内容</span>
             <a-input :value="pageLabelText()" disabled class="lem-text-input" />
           </div>
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
+          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0]) && !isReceiptItemKey(selectedKeys[0])">
             <span class="lem-style-label">文本内容</span>
             <a-input
               :value="currentValue"
@@ -174,6 +174,34 @@
             <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
               <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
             </a-checkbox-group>
+          </div>
+          <!-- 小票规格组合：只编辑属性规则，不把当前单据值写入模板 -->
+          <div class="lem-receipt-spec" v-if="selectedKeys.length === 1 && isReceiptSpecKey(selectedKeys[0])">
+            <div class="lem-receipt-spec-title">组合规则</div>
+            <div class="lem-receipt-spec-formula">{{ receiptSpecFormula || '未选择属性项' }}</div>
+            <div v-for="(part, index) in receiptSpecParts" :key="part.key" class="lem-receipt-spec-part">
+              <div class="lem-receipt-spec-part-head">
+                <span>{{ receiptSpecPartLabel(part.key) }}</span>
+                <a-button type="link" size="small" icon="minus" title="移除属性项" @click="removeReceiptSpecPart(index)" />
+              </div>
+              <a-checkbox :checked="part.showLabel" @change="onReceiptSpecPartChange(index, 'showLabel', $event)">显示属性名</a-checkbox>
+              <a-input
+                :value="part.displayName"
+                size="small"
+                placeholder="显示名称"
+                @input="onReceiptSpecPartChange(index, 'displayName', $event)"
+              />
+            </div>
+            <a-select
+              v-if="availableReceiptSpecPartOptions.length"
+              :value="null"
+              size="small"
+              placeholder="添加属性项"
+              class="lem-receipt-spec-add"
+              @change="addReceiptSpecPart"
+            >
+              <a-select-option v-for="opt in availableReceiptSpecPartOptions" :key="opt.key" :value="opt.key">{{ opt.label }}</a-select-option>
+            </a-select>
           </div>
           <!-- 样式编辑：多选时不一致的项显示为空，修改后应用到全部 -->
           <div class="lem-style-grid">
@@ -241,17 +269,17 @@
             v-for="attr in group.attrs"
             :key="attr.key"
             class="lem-elem-item"
-            :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
+            :class="{ 'lem-elem-item-active': isAttrSelected(attr.key) }"
             @click="toggleAttr(attr.key)"
           >
             <div class="lem-elem-text">
               <span class="lem-elem-cn">{{ attr.comment || attr.label }}</span>
-              <span class="lem-elem-key">{{ attr.key }}</span>
+              <span v-if="templateType !== 'receipt'" class="lem-elem-key">{{ attr.key }}</span>
             </div>
             <a-icon
-              :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
-              :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
-              :class="{ 'lem-elem-icon--on': selectedAttrs.indexOf(attr.key) > -1 }"
+              :type="isAttrSelected(attr.key) ? 'check-circle' : 'plus-circle'"
+              :theme="isAttrSelected(attr.key) ? 'filled' : 'outlined'"
+              :class="{ 'lem-elem-icon--on': isAttrSelected(attr.key) }"
             />
           </div>
         </div>
@@ -509,7 +537,7 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, RECEIPT_ITEM_FIELDS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, RECEIPT_ITEM_FIELDS, RECEIPT_RECORD_FIELDS, RECEIPT_SPEC_PART_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, isReceiptItemPanelKey, receiptItemPanelKey, receiptItemFieldFromPanel, normalizeReceiptSpecParts, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -618,6 +646,9 @@
         dynamicItemKeys: [],
         // 小票明细字段勾选状态：null=旧模板默认全部，[]=不生成明细
         receiptItemFields: null,
+        // 规格组合只保存属性规则；动态布局信息用于规则变化时恢复原坐标
+        receiptSpecParts: normalizeReceiptSpecParts(),
+        receiptItemLayout: null,
         zoom: 1,
         customCounter: 0,
         templates: [],
@@ -811,6 +842,16 @@
       goodsFieldOptions() {
         return GOODS_FIELD_OPTIONS
       },
+      receiptSpecFormula() {
+        return this.receiptSpecParts.map(function(part) {
+          var option = RECEIPT_SPEC_PART_OPTIONS.filter(function(item) { return item.key === part.key })[0]
+          return option ? option.label : part.key
+        }).join(' + ')
+      },
+      availableReceiptSpecPartOptions() {
+        var selected = this.receiptSpecParts.map(function(part) { return part.key })
+        return RECEIPT_SPEC_PART_OPTIONS.filter(function(option) { return selected.indexOf(option.key) < 0 })
+      },
       // 商品明细表样式的实际元素 key（小票为 rc_table，其余为 goods_table）
       goodsTableKey() {
         return this.selectedAttrs.filter(isGoodsTableKey)[0] || GOODS_TABLE_KEY
@@ -862,8 +903,8 @@
         var groups = []
         var map = {}
         this.allAttrs.forEach(function(a) {
-          // 分页标签用面板底部的专用按钮添加，不在字段列表里重复出现
-          if (a.key === 'page_no') return
+          // 分页标签用专用按钮添加；小票动态行值只在画布展示，面板仅保留固定属性
+          if (a.key === 'page_no' || isReceiptItemKey(a.key)) return
           var name = a.group || '可用字段'
           if (!map[name]) {
             map[name] = { name: name, attrs: [] }
@@ -984,21 +1025,55 @@
           var style = self.attrStyles[key]
           if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
         })
+        var previous = this.receiptItemLayout
+        var previousStyles = this.attrStyles
+        var previousLabels = this.attrLabels
+        var sourceStyles = JSON.parse(JSON.stringify(previousStyles || {}))
+        // 重建前先撤销上一次商品行高造成的位移，避免加减属性时下方元素反复下移
+        if (previous && previous.delta) {
+          var movedKeys = Array.isArray(previous.movedKeys) ? previous.movedKeys : Object.keys(sourceStyles).filter(function(key) {
+            var style = sourceStyles[key]
+            return !isReceiptItemKey(key) && style && (style.y || 0) >= previous.startY - 0.5
+          })
+          movedKeys.forEach(function(key) {
+            var style = sourceStyles[key]
+            if (style && !isReceiptItemKey(key)) style.y = (style.y || 0) - previous.delta
+          })
+        }
         var next = replaceReceiptGoodsWithItems({
           rows: rows,
           selectedAttrs: this.selectedAttrs,
-          attrStyles: this.attrStyles,
-          attrLabels: this.attrLabels,
+          attrStyles: sourceStyles,
+          attrLabels: previousLabels,
+          anchorStyle: previous && previous.anchorStyle,
           paperWidth: this.labelWidth,
-          fallbackY: fallbackY ? fallbackY + 8 : 100,
-          receiptItemFields: this.receiptItemFields
+          fallbackY: previous ? previous.startY : (fallbackY ? fallbackY + 8 : 100),
+          receiptItemFields: this.receiptItemFields,
+          receiptSpecParts: this.receiptSpecParts
         })
         this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
-        next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
+        next.attrs.forEach(function(attr) {
+          self.allAttrs.push(attr)
+          // 字段增删/公式变化时保留该元素已有的字体与属性名配置
+          var oldStyle = previousStyles[attr.key]
+          if (oldStyle) {
+            ;['fontSize', 'fontWeight', 'letterSpacing', 'lineHeight'].forEach(function(styleKey) {
+              if (oldStyle[styleKey] !== undefined) next.attrStyles[attr.key][styleKey] = oldStyle[styleKey]
+            })
+          }
+          if (Object.prototype.hasOwnProperty.call(previousLabels, attr.key)) {
+            next.attrLabels[attr.key] = previousLabels[attr.key]
+          }
+        })
         this.selectedAttrs = next.selectedAttrs
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
         this.dynamicItemKeys = next.itemKeys
+        this.receiptItemLayout = next.layout ? JSON.parse(JSON.stringify(next.layout)) : null
+        this.selectedKeys = this.selectedKeys.filter(function(key) { return self.selectedAttrs.indexOf(key) > -1 })
+        if (this.currentAttrKey && this.selectedAttrs.indexOf(this.currentAttrKey) < 0) {
+          this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[0] : null
+        }
       },
       /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
       initProvider(context) {
@@ -1322,6 +1397,8 @@
         // 旧模板没有 goodsFields：保留当前默认（全部字段）
         if (Array.isArray(snap.goodsFields)) this.goodsFields = snap.goodsFields.slice()
         this.receiptItemFields = Array.isArray(snap.receiptItemFields) ? snap.receiptItemFields.slice() : null
+        this.receiptSpecParts = normalizeReceiptSpecParts(snap.receiptSpecParts)
+        this.receiptItemLayout = null
         var width = snap.width || snap.labelWidth
         var height = snap.height || snap.labelHeight
         if (width) this.labelWidth = width
@@ -1419,24 +1496,32 @@
           { key: 'dn_footer', label: '落款', value: '华夏家纺', group: '其它' }
         ]
       },
-      /** 小票字段：优先使用当前单据数据，缺失时才用占位示例 */
+      /** 小票固定业务属性目录：面板只列属性名，实际值仅在画布/预览/打印中使用 */
       buildReceiptAttrs() {
         var record = this.record || {}
-        var pick = function (key, fallback) {
-          var v = record[key]
-          return (v === null || v === undefined || v === '') ? fallback : String(v)
+        var mk = function(key, label, group) {
+          return {
+            key: key,
+            label: label,
+            value: record[key] == null ? '' : String(record[key]),
+            isCustom: false,
+            group: group
+          }
         }
-        return [
-          { key: 'rc_title', label: '小票标题', value: pick('rc_title', '零售小票'), group: '单据头' },
-          { key: 'rc_no', label: '单号', value: pick('rc_no', 'LS261105001'), group: '单据头' },
-          { key: 'rc_date', label: '日期', value: pick('rc_date', '2026-11-05 10:30'), group: '单据头' },
-          { key: 'rc_member', label: '会员', value: pick('rc_member', '张三'), group: '单据头' },
-          { key: 'rc_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
-          { key: 'rc_qty_total', label: '数量合计', value: pick('rc_qty_total', '1'), group: '金额合计' },
-          { key: 'rc_amount_total', label: '金额合计', value: pick('rc_amount_total', '¥280.00'), group: '金额合计' },
-          { key: 'rc_remark', label: '备注', value: pick('rc_remark', '谢谢惠顾'), group: '其它' },
-          { key: 'rc_footer', label: '落款', value: pick('rc_footer', '华夏家纺'), group: '其它' }
-        ]
+        var list = RECEIPT_RECORD_FIELDS.map(function(field) {
+          return mk(field.key, field.label, field.group)
+        })
+        RECEIPT_ITEM_FIELDS.forEach(function(field) {
+          list.push({
+            key: receiptItemPanelKey(field.key),
+            label: field.label,
+            value: '',
+            isCustom: false,
+            isReceiptItemField: true,
+            group: '商品明细'
+          })
+        })
+        return list
       },
       /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
       applyDefaultLayout(cfg) {
@@ -1478,6 +1563,8 @@
         this.attrStyles = styles
         this.attrLabels = labels
         this.receiptItemFields = null
+        this.receiptSpecParts = normalizeReceiptSpecParts()
+        this.receiptItemLayout = null
         // 默认不勾选分页打印对象；勾选任意对象即进入商品分页
         this.flowElementKeys = []
         // 默认布局没有已保存模板，顶栏使用默认模板名称
@@ -1552,6 +1639,36 @@
       isGoodsKey(key) {
         return key === GOODS_KEY
       },
+      isReceiptSpecKey(key) {
+        return key === receiptItemPanelKey('spec') || (isReceiptItemKey(key) && /_spec$/.test(key))
+      },
+      receiptSpecPartLabel(key) {
+        var option = RECEIPT_SPEC_PART_OPTIONS.filter(function(item) { return item.key === key })[0]
+        return option ? option.label : key
+      },
+      onReceiptSpecPartChange(index, field, event) {
+        var part = this.receiptSpecParts[index]
+        if (!part) return
+        var value = field === 'showLabel'
+          ? !!(event && event.target ? event.target.checked : event)
+          : (typeof event === 'string' ? event : (event && event.target ? event.target.value : ''))
+        this.$set(part, field, value)
+        this.applyReceiptItemElements()
+        this.pushSnapshot()
+      },
+      addReceiptSpecPart(key) {
+        var option = RECEIPT_SPEC_PART_OPTIONS.filter(function(item) { return item.key === key })[0]
+        if (!option) return
+        this.receiptSpecParts.push({ key: key, showLabel: false, displayName: option.label })
+        this.applyReceiptItemElements()
+        this.pushSnapshot()
+      },
+      removeReceiptSpecPart(index) {
+        if (index < 0 || index >= this.receiptSpecParts.length) return
+        this.receiptSpecParts.splice(index, 1)
+        this.applyReceiptItemElements()
+        this.pushSnapshot()
+      },
       /** 打印设置里展示的元素名称 */
       flowElementLabel(key) {
         if (this.attrLabels && this.attrLabels[key]) return this.attrLabels[key]
@@ -1591,9 +1708,37 @@
         this.currentAttrKey = key
         this.pushSnapshot()
       },
-      // 勾选式切换：已选中则移除，未选中则添加（弹窗保持打开，可连续操作）
+      isAttrSelected(key) {
+        if (isReceiptItemPanelKey(key)) {
+          var fieldKey = receiptItemFieldFromPanel(key)
+          return Array.isArray(this.receiptItemFields)
+            ? this.receiptItemFields.indexOf(fieldKey) > -1
+            : true
+        }
+        return this.selectedAttrs.indexOf(key) > -1
+      },
+      toggleReceiptItemField(panelKey) {
+        var fieldKey = receiptItemFieldFromPanel(panelKey)
+        if (!fieldKey) return
+        var fields = Array.isArray(this.receiptItemFields)
+          ? this.receiptItemFields.slice()
+          : RECEIPT_ITEM_FIELDS.map(function(field) { return field.key })
+        var index = fields.indexOf(fieldKey)
+        if (index > -1) fields.splice(index, 1)
+        else fields.push(fieldKey)
+        this.receiptItemFields = RECEIPT_ITEM_FIELDS.map(function(field) { return field.key })
+          .filter(function(key) { return fields.indexOf(key) > -1 })
+        this.applyReceiptItemElements()
+        var selected = this.dynamicItemKeys.filter(function(key) { return new RegExp('_' + fieldKey + '$').test(key) })
+        this.selectedKeys = selected.length ? [selected[0]] : []
+        this.currentAttrKey = selected.length ? selected[0] : null
+        this.pushSnapshot()
+      },
+      // 勾选式切换：固定商品属性按“一种属性一项”控制全部商品行
       toggleAttr(key) {
-        if (this.selectedAttrs.indexOf(key) > -1) {
+        if (isReceiptItemPanelKey(key)) {
+          this.toggleReceiptItemField(key)
+        } else if (this.selectedAttrs.indexOf(key) > -1) {
           this.removeAttr(key)
         } else {
           this.addAttr(key)
@@ -1634,6 +1779,17 @@
         if (sIdx !== -1) this.selectedKeys.splice(sIdx, 1)
         if (this.currentAttrKey === key) {
           this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+        }
+        if (isReceiptItemKey(key)) {
+          this.dynamicItemKeys = this.dynamicItemKeys.filter(function(itemKey) { return itemKey !== key })
+          var selectedFields = []
+          this.selectedAttrs.forEach(function(itemKey) {
+            if (!isReceiptItemKey(itemKey)) return
+            var fieldKey = itemKey.replace(/^item\d+_/, '')
+            if (selectedFields.indexOf(fieldKey) < 0) selectedFields.push(fieldKey)
+          })
+          this.receiptItemFields = RECEIPT_ITEM_FIELDS.map(function(field) { return field.key })
+            .filter(function(fieldKey) { return selectedFields.indexOf(fieldKey) > -1 })
         }
         this.pushSnapshot()
       },
@@ -1834,7 +1990,11 @@
           selectedAttrs: this.selectedAttrs,
           selectedKeys: this.selectedKeys,
           currentAttrKey: this.currentAttrKey,
-          multiSelectMode: this.multiSelectMode
+          multiSelectMode: this.multiSelectMode,
+          receiptItemFields: this.receiptItemFields,
+          receiptSpecParts: this.receiptSpecParts,
+          receiptItemLayout: this.receiptItemLayout,
+          dynamicItemKeys: this.dynamicItemKeys
         })
         if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) return
         // 丢弃 redo 分支
@@ -1853,6 +2013,14 @@
         this.selectedKeys = (snap.selectedKeys || []).slice()
         this.currentAttrKey = snap.currentAttrKey || null
         this.multiSelectMode = !!snap.multiSelectMode
+        if (this.templateType === 'receipt') {
+          this.receiptItemFields = Array.isArray(snap.receiptItemFields) ? snap.receiptItemFields.slice() : null
+          this.receiptSpecParts = normalizeReceiptSpecParts(snap.receiptSpecParts)
+          this.receiptItemLayout = snap.receiptItemLayout ? JSON.parse(JSON.stringify(snap.receiptItemLayout)) : null
+          this.applyReceiptItemElements()
+          this.selectedKeys = (snap.selectedKeys || []).filter(key => this.selectedAttrs.indexOf(key) > -1)
+          this.currentAttrKey = snap.currentAttrKey && this.selectedAttrs.indexOf(snap.currentAttrKey) > -1 ? snap.currentAttrKey : null
+        }
       },
       undo() {
         if (this.historyIndex <= 0) { this.$message.info('没有可撤销的操作'); return }
@@ -2423,7 +2591,8 @@
           maxRowsPerPage: 0,
           repeatHeader: this.repeatHeader,
           flowElementKeys: this.flowElementKeys,
-          receiptItemFields: receiptItemFields
+          receiptItemFields: receiptItemFields,
+          receiptSpecParts: normalizeReceiptSpecParts(this.receiptSpecParts)
         }, {
           type: this.templateType,
           kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null
@@ -2662,8 +2831,10 @@
         // 把当前编辑中的模板快照写入 sessionStorage，跳转打印页后恢复
         var snapshotValues = {}
         this.allAttrs.forEach(function(attr) {
-          if (attr.key) snapshotValues[attr.key] = attr.value == null ? '' : attr.value
-        })
+          if (!attr.key) return
+          if (this.templateType === 'receipt' && (isReceiptItemKey(attr.key) || isReceiptItemPanelKey(attr.key))) return
+          snapshotValues[attr.key] = attr.value == null ? '' : attr.value
+        }, this)
         try {
           var cfgInfo = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
           var currentId = this.selectedTemplateId
@@ -3407,6 +3578,56 @@
 .lem-goods-field-group ::v-deep .ant-checkbox-wrapper {
   margin-left: 0;
   font-size: 12px;
+}
+
+.lem-receipt-spec {
+  margin-bottom: 10px;
+  padding: 6px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+}
+
+.lem-receipt-spec-title {
+  margin-bottom: 4px;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lem-receipt-spec-formula {
+  margin-bottom: 6px;
+  color: #1890ff;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.lem-receipt-spec-part {
+  padding: 4px 0;
+  border-top: 1px solid #f0f0f0;
+}
+
+.lem-receipt-spec-part-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #666;
+  font-size: 11px;
+}
+
+.lem-receipt-spec-part-head .ant-btn {
+  height: 20px;
+  padding: 0 4px;
+}
+
+.lem-receipt-spec-part ::v-deep .ant-checkbox-wrapper {
+  margin: 0 0 4px;
+  font-size: 11px;
+}
+
+.lem-receipt-spec-add {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .lem-ocr-btn {

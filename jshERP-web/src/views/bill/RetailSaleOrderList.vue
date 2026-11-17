@@ -1112,13 +1112,28 @@
         const specText = item => (this.cartSpecLines(item) || []).map(line => {
           return (line.label ? line.label + '：' : '') + line.value
         }).join('　')
+        const total = this.cartTotal - 0
+        const getAmount = this.settleDisplay - 0
+        const member = this.selectedMember || {}
         const values = {
           rc_title: '零售小票',
           rc_no: number || '',
-          rc_date: moment().format('YYYY-MM-DD HH:mm'),
-          rc_member: this.selectedMember ? (this.selectedMember.supplier || this.selectedMember.contacts || '') : '',
+          rc_date: this.billTimeText || moment().format('YYYY-MM-DD HH:mm'),
+          rc_shop: this.shopName,
+          rc_operator: this.operatorName,
+          rc_pay_type: this.billForm.payType || '',
+          rc_member: this.memberDisplay,
+          rc_member_name: member.contacts || '',
+          rc_member_phone: member.telephone || '',
+          rc_member_no: member.supplier || '',
           rc_qty_total: String(this.cartCount),
-          rc_amount_total: '¥' + this.settleDisplay,
+          rc_amount_total: '¥' + this.cartTotal,
+          rc_discount: this.discountDisplay,
+          rc_settle_amount: '¥' + this.settleDisplay,
+          rc_discount_amount: (total - getAmount).toFixed(2),
+          rc_get_amount: getAmount.toFixed(2),
+          rc_back_amount: Math.max(0, getAmount - total).toFixed(2),
+          rc_debt: Math.max(0, total - getAmount).toFixed(2),
           rc_remark: '',
           rc_footer: '谢谢惠顾，欢迎再次光临'
         }
@@ -1130,12 +1145,19 @@
           return {
             name: item.name || '',
             spec: specText(item),
-            // 规格逐项拆到 spec1/2/3，供小票明细表按列显示；超过 3 项的合并到第 3 列
+            // 同时保留规格名和规格值，模板按组合规则取值；spec1/2/3 兼容旧快照
             spec1: specLines[0] ? specCell(specLines[0]) : '',
             spec2: specLines[1] ? specCell(specLines[1]) : '',
             spec3: specLines.slice(2).map(specCell).join('　'),
+            specName1: specLines[0] ? (specLines[0].label || '') : '',
+            specValue1: specLines[0] ? (specLines[0].value || '') : '',
+            specName2: specLines[1] ? (specLines[1].label || '') : '',
+            specValue2: specLines[1] ? (specLines[1].value || '') : '',
+            specName3: specLines.slice(2).map(line => line.label || '').filter(Boolean).join(' '),
+            specValue3: specLines.slice(2).map(line => line.value || '').filter(Boolean).join(' '),
             qty: String(qty),
             price: price.toFixed(2),
+            discount: this.lineDiscountText(item),
             // 小票明细金额取本行结算金额（未改写时即零售价×数量）
             amount: this.lineSettle(item).toFixed(2)
           }

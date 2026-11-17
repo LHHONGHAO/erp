@@ -809,7 +809,7 @@
   import { fetchLabelTemplates, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, RECEIPT_RECORD_FIELDS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, normalizeReceiptSpecParts, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
@@ -874,6 +874,7 @@
         receiptItemsApplied: false,
         // 小票明细字段勾选状态：null=旧模板默认全部，[]=不生成明细
         receiptItemFields: null,
+        receiptSpecParts: normalizeReceiptSpecParts(),
         // 打印机（由后端枚举本机打印机）
         printers: [],
         // 本机打印机（由本地打印助手提供，仅电脑端可用）
@@ -2464,6 +2465,7 @@
           maxRowsPerPage: Math.max(0, parseInt(base.maxRowsPerPage, 10) || 0),
           repeatHeader: base.repeatHeader !== false,
           receiptItemFields: Array.isArray(base.receiptItemFields) ? base.receiptItemFields.slice() : null,
+          receiptSpecParts: Array.isArray(base.receiptSpecParts) ? base.receiptSpecParts : null,
           schema: schema
         }
       },
@@ -2520,7 +2522,8 @@
           attrLabels: this.attrLabels,
           paperWidth: this.labelWidth,
           fallbackY: fallbackY ? fallbackY + 8 : 100,
-          receiptItemFields: this.receiptItemFields
+          receiptItemFields: this.receiptItemFields,
+          receiptSpecParts: this.receiptSpecParts
         })
         this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
         next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
@@ -2542,7 +2545,8 @@
             labelHeight: this.labelHeight,
             overflowMode: this.overflowMode,
             flowElementKeys: this.template.flowElementKeys,
-            receiptItemFields: this.receiptItemFields
+            receiptItemFields: this.receiptItemFields,
+            receiptSpecParts: this.receiptSpecParts
           })
           this.template = Object.assign({}, this.template, { schema: v2ToSchemaView(v2) })
         }
@@ -2561,6 +2565,7 @@
         // 商品组合字段：模板未配置（旧模板）时为空 = 显示全部
         this.goodsFields = tpl && Array.isArray(tpl.goodsFields) ? tpl.goodsFields.slice() : null
         this.receiptItemFields = tpl && Array.isArray(tpl.receiptItemFields) ? tpl.receiptItemFields.slice() : null
+        this.receiptSpecParts = normalizeReceiptSpecParts(tpl && tpl.receiptSpecParts)
         if (!tpl) return
         // 自定义标签的值保存在模板里，需要合并回属性列表
         if (tpl.customLabels && tpl.customLabels.length > 0) {
@@ -2793,8 +2798,22 @@
       },
       // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
       buildAttrList() {
-        // 地址打印：字段只取地址识别页面的输入框数据
-        var list = this.type === 'address' ? this.buildAddressAttrs() : buildLabelAttrs(this.record, this.sku)
+        // 小票使用与销售开单一致的业务属性目录；运行时值随后由快照回填
+        var list
+        if (this.type === 'receipt') {
+          var receiptRecord = this.buildReceiptRecord()
+          list = RECEIPT_RECORD_FIELDS.map(function(field) {
+            return {
+              key: field.key,
+              label: field.label,
+              value: receiptRecord[field.key] == null ? '' : String(receiptRecord[field.key]),
+              isCustom: false,
+              group: field.group
+            }
+          })
+        } else {
+          list = this.type === 'address' ? this.buildAddressAttrs() : buildLabelAttrs(this.record, this.sku)
+        }
         // 分页标签：模板元素，文案由当前预览/打印页决定
         if (!list.some(function(a) { return a.key === 'page_no' })) {
           list.push({ key: 'page_no', label: '分页标签', value: '', isCustom: true, isPage: true, group: '模板元素' })

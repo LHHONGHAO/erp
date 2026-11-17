@@ -224,8 +224,13 @@ export function editorStateToV2(state, meta) {
         maxRowsPerPage: Math.max(0, parseInt(src.maxRowsPerPage, 10) || 0),
         repeatHeader: src.repeatHeader !== false
       },
-      // 小票明细字段的勾选状态；空数组表示不生成明细，缺省兼容旧模板（全部字段）
-      receiptItemFields: Array.isArray(src.receiptItemFields) ? src.receiptItemFields.slice() : undefined
+      // 小票明细字段与规格组合规则；只保存属性配置，不保存当前单据值
+      receiptItemFields: Array.isArray(src.receiptItemFields) ? src.receiptItemFields.slice() : undefined,
+      receiptSpecParts: Array.isArray(src.receiptSpecParts)
+        ? src.receiptSpecParts.map(function(part) {
+          return { key: part.key, showLabel: part.showLabel === true, displayName: part.displayName == null ? '' : String(part.displayName) }
+        })
+        : undefined
     },
     meta: {
       type: info.type || null,
@@ -327,6 +332,11 @@ export function v2ToEditorState(raw) {
     maxRowsPerPage: Math.max(0, parseInt(list.maxRowsPerPage, 10) || 0),
     repeatHeader: list.repeatHeader !== false,
     receiptItemFields: Array.isArray(print.receiptItemFields) ? print.receiptItemFields.slice() : null,
+    receiptSpecParts: Array.isArray(print.receiptSpecParts)
+      ? print.receiptSpecParts.map(function(part) {
+        return { key: part.key, showLabel: part.showLabel === true, displayName: part.displayName == null ? '' : String(part.displayName) }
+      })
+      : null,
     meta: v2.meta || {}
   }
 }

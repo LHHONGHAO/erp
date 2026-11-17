@@ -1125,9 +1125,15 @@
         const rows = this.cartList.map(item => {
           const qty = item.operNumber - 0 || 0
           const price = (item.unitPrice - 0) || (item.commodityDecimal - 0) || 0
+          const specLines = this.cartSpecLines(item) || []
+          const specCell = line => (line.label ? line.label + '：' : '') + line.value
           return {
             name: item.name || '',
             spec: specText(item),
+            // 规格逐项拆到 spec1/2/3，供小票明细表按列显示；超过 3 项的合并到第 3 列
+            spec1: specLines[0] ? specCell(specLines[0]) : '',
+            spec2: specLines[1] ? specCell(specLines[1]) : '',
+            spec3: specLines.slice(2).map(specCell).join('　'),
             qty: String(qty),
             price: price.toFixed(2),
             // 小票明细金额取本行结算金额（未改写时即零售价×数量）

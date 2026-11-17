@@ -9,6 +9,13 @@
  */
 export const GOODS_TABLE_KEY = 'goods_table'
 export const GOODS_KEY = 'goods'
+/** 小票模板里的商品明细表字段（与 goods_table 同义） */
+export const RECEIPT_TABLE_KEY = 'rc_table'
+
+/** 是否为商品明细表元素（地址/商品标签用 goods_table，小票用 rc_table） */
+export function isGoodsTableKey(key) {
+  return key === GOODS_TABLE_KEY || key === RECEIPT_TABLE_KEY
+}
 
 /** 表格列名与列宽权重（商品名称更宽） */
 export const GOODS_TABLE_COLUMNS = ['商品名称', '规格值1', '规格值2', '规格值3']
@@ -22,6 +29,174 @@ export const GOODS_FIELD_OPTIONS = [
 const GOODS_FIELD_KEYS = GOODS_FIELD_OPTIONS.map(function(f) { return f.key })
 const COL_WEIGHTS = [3, 2, 2, 2]
 const CELL_PAD = 2
+
+/** 小票商品明细：每件商品拆成独立元素，字段顺序即显示顺序 */
+export const RECEIPT_ITEM_FIELDS = [
+  { key: 'name', label: '商品名称', weight: 0.32 },
+  { key: 'spec', label: '规格', weight: 0.26 },
+  { key: 'qty', label: '数量', weight: 0.10 },
+  { key: 'price', label: '单价', weight: 0.16 },
+  { key: 'amount', label: '金额', weight: 0.16 }
+]
+const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|qty|price|amount)$/
+/** 小票里属于商品标签、不参与小票排版的遗留字段 */
+const RECEIPT_STRAY_KEYS = ['name', 'spec1', 'spec2', 'spec3', GOODS_KEY, GOODS_TABLE_KEY, RECEIPT_TABLE_KEY]
+
+/** 是否为小票「按单品拆分」生成的动态元素（只参与本次编辑/打印，不写入模板） */
+export function isReceiptItemKey(key) {
+  return RECEIPT_ITEM_KEY_RE.test(String(key == null ? '' : key))
+}
+
+/** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3 */
+export function receiptItemValue(row, key) {
+  if (!row) return ''
+  if (key === 'spec') {
+    const spec = row.spec != null ? String(row.spec) : ''
+    if (spec) return spec
+    return ['spec1', 'spec2', 'spec3']
+      .map(function(k) { return row[k] == null ? '' : String(row[k]).trim() })
+      .filter(function(v) { return v !== '' })
+      .join(' ')
+  }
+  return row[key] == null ? '' : String(row[key])
+}
+
+/**
+ * 小票商品明细 → 逐件、逐字段的独立元素
+ * 每件商品占一行，5 个字段按列坐标摆放，均可在编辑页单独选中修改
+ *
+ * @param {Object} options rows / paperWidth / x / y / fontSize / lineHeight / gap
+ * @returns {{attrs:Array, styles:Object, keys:Array, height:number}}
+ */
+export function buildReceiptItemElements(options) {
+  const opts = options || {}
+  const rows = (opts.rows || []).filter(hasGoodsValue)
+  const paperWidth = opts.paperWidth > 0 ? opts.paperWidth : 320
+  const fontSize = opts.fontSize || 12
+  const lineHeight = opts.lineHeight || 1.3
+  const x = opts.x != null ? opts.x : 8
+  const startY = opts.y != null ? opts.y : 0
+  const gap = opts.gap != null ? opts.gap : 4
+  const width = Math.max(120, paperWidth - x * 2)
+  const linePx = fontSize * lineHeight
+  // 列坐标：按权重分配宽度，最后一列补齐余量
+  const cols = []
+  let offset = 0
+  RECEIPT_ITEM_FIELDS.forEach(function(field, index) {
+    const last = index === RECEIPT_ITEM_FIELDS.length - 1
+    const colWidth = last ? width - offset : Math.floor(width * field.weight)
+    cols.push({ x: offset, width: colWidth })
+    offset += colWidth
+  })
+  const attrs = []
+  const styles = {}
+  let cursor = startY
+  rows.forEach(function(row, rowIndex) {
+    // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推
+    const fields = RECEIPT_ITEM_FIELDS.map(function(field, colIndex) {
+      const value = receiptItemValue(row, field.key)
+      return {
+        key: 'item' + (rowIndex + 1) + '_' + field.key,
+        field: field,
+        value: value,
+        colIndex: colIndex,
+        lines: measureTextLines(value, cols[colIndex].width, fontSize, false, 0)
+      }
+    })
+    let maxLines = 1
+    fields.forEach(function(item) { if (item.lines > maxLines) maxLines = item.lines })
+    const rowHeight = Math.round(Math.max(linePx, maxLines * linePx))
+    fields.forEach(function(item) {
+      attrs.push({
+        key: item.key,
+        label: item.field.label,
+        value: item.value,
+        isCustom: false,
+        isReceiptItem: true,
+        group: '商品明细'
+      })
+      styles[item.key] = {
+        x: x + cols[item.colIndex].x,
+        y: cursor,
+        width: cols[item.colIndex].width,
+        height: rowHeight,
+        fontSize: fontSize,
+        fontWeight: 'normal',
+        letterSpacing: 0,
+        lineHeight: lineHeight
+      }
+    })
+    cursor += rowHeight + gap
+  })
+  return {
+    attrs: attrs,
+    styles: styles,
+    keys: attrs.map(function(a) { return a.key }),
+    height: rows.length ? cursor - startY - gap : 0
+  }
+}
+
+/**
+ * 小票：把模板里的明细表/商品组合替换成「逐件 + 逐字段」的独立元素
+ * 明细表原位作为起点，下方元素按商品行数整体顺移
+ *
+ * @param {Object} options rows / selectedAttrs / attrStyles / attrLabels / paperWidth / fallbackY
+ * @returns {{selectedAttrs:Array, attrStyles:Object, attrLabels:Object, attrs:Array, itemKeys:Array}}
+ */
+export function replaceReceiptGoodsWithItems(options) {
+  const opts = options || {}
+  const styles = Object.assign({}, opts.attrStyles || {})
+  const labels = Object.assign({}, opts.attrLabels || {})
+  const rows = (opts.rows || []).filter(hasGoodsValue)
+  let anchorStyle = null
+  const kept = []
+  ;(opts.selectedAttrs || []).forEach(function(key) {
+    if (!key || isReceiptItemKey(key)) return
+    if (RECEIPT_STRAY_KEYS.indexOf(key) > -1) {
+      if (isGoodsTableKey(key) && styles[key]) anchorStyle = styles[key]
+      delete styles[key]
+      delete labels[key]
+      return
+    }
+    kept.push(key)
+  })
+  Object.keys(styles).forEach(function(key) { if (isReceiptItemKey(key)) delete styles[key] })
+  Object.keys(labels).forEach(function(key) { if (isReceiptItemKey(key)) delete labels[key] })
+  if (!rows.length) {
+    return { selectedAttrs: kept, attrStyles: styles, attrLabels: labels, attrs: [], itemKeys: [] }
+  }
+  const startY = anchorStyle ? (anchorStyle.y || 0) : (opts.fallbackY || 0)
+  const built = buildReceiptItemElements({
+    rows: rows,
+    paperWidth: opts.paperWidth,
+    x: anchorStyle ? (anchorStyle.x || 0) : 8,
+    y: startY,
+    fontSize: anchorStyle ? (anchorStyle.fontSize || 12) : 12,
+    lineHeight: anchorStyle ? (anchorStyle.lineHeight || 1.3) : 1.3
+  })
+  // 原明细表占位高度与逐件元素总高度差，下方元素整体顺移
+  const delta = built.height - (anchorStyle ? (anchorStyle.height || 0) : 0)
+  if (delta !== 0) {
+    kept.forEach(function(key) {
+      const style = styles[key]
+      if (style && (style.y || 0) >= startY - 0.5) {
+        styles[key] = Object.assign({}, style, { y: (style.y || 0) + delta })
+      }
+    })
+  }
+  built.attrs.forEach(function(attr) {
+    styles[attr.key] = built.styles[attr.key]
+    // 明细只显示字段值，不加「商品名称: 」前缀
+    labels[attr.key] = ''
+  })
+  return {
+    selectedAttrs: kept.concat(built.keys),
+    attrStyles: styles,
+    attrLabels: labels,
+    attrs: built.attrs,
+    itemKeys: built.keys
+  }
+}
 
 /**
  * 归一化组合字段：未配置（旧模板）时默认显示全部四项；
@@ -94,9 +269,12 @@ export function goodsLine(row, fields) {
 export function normalizeGoodsRows(values) {
   const list = values && Array.isArray(values.goodsRows) ? values.goodsRows : []
   const rows = list.map(function(g) {
+    const spec1 = g && g.spec1 != null ? String(g.spec1) : ''
+    // 明细行只有合并后的 spec（如小票快照）时，退到第一列规格显示
+    const spec = g && g.spec != null ? String(g.spec) : ''
     return {
       name: g && g.name != null ? String(g.name) : '',
-      spec1: g && g.spec1 != null ? String(g.spec1) : '',
+      spec1: spec1 || spec,
       spec2: g && g.spec2 != null ? String(g.spec2) : '',
       spec3: g && g.spec3 != null ? String(g.spec3) : ''
     }
@@ -135,7 +313,8 @@ export function buildGoodsTable(rows, style, paperWidth) {
   const bold = s.fontWeight === 'bold'
   const headHeight = Math.round(lineHeight) + CELL_PAD * 2
   const body = rows.map(function(row) {
-    const cells = [row.name, row.spec1, row.spec2, row.spec3]
+    // 仅提供合并 spec 的明细行（小票快照）也保证规格列有内容
+    const cells = [row.name, row.spec1 || row.spec || '', row.spec2, row.spec3]
     let maxLines = 1
     cells.forEach(function(cell, i) {
       maxLines = Math.max(maxLines, measureTextLines(cell, widths[i] - CELL_PAD * 2, fontSize, bold, s.letterSpacing || 0))
@@ -290,7 +469,8 @@ export function resolveGoodsLayout(options) {
   })
 
   const specialKeys = []
-  if (selected.indexOf(GOODS_TABLE_KEY) > -1 && attrStyles[GOODS_TABLE_KEY]) specialKeys.push(GOODS_TABLE_KEY)
+  const tableKey = selected.filter(isGoodsTableKey)[0]
+  if (tableKey && attrStyles[tableKey]) specialKeys.push(tableKey)
   if (selected.indexOf(GOODS_KEY) > -1 && attrStyles[GOODS_KEY]) specialKeys.push(GOODS_KEY)
   specialKeys.sort(function(a, b) { return (attrStyles[a].y || 0) - (attrStyles[b].y || 0) })
 
@@ -303,7 +483,7 @@ export function resolveGoodsLayout(options) {
     const lineHeight = fontSize * (style.lineHeight || 1.2)
     const originalHeight = style.height > 0 ? style.height : lineHeight
     let actualHeight = originalHeight
-    if (key === GOODS_TABLE_KEY) {
+    if (isGoodsTableKey(key)) {
       table = buildGoodsTable(goodsRows, style, paperWidth)
       actualHeight = table.height
     } else {
@@ -412,6 +592,11 @@ export function applyTextOverflow(options) {
       ? measureTextLines(raw, width, fontSize, bold, style.letterSpacing || 0)
       : raw.split('\n').length
     const actualHeight = Math.max(lineHeight, lines * lineHeight)
+    // 小票明细单元格的高度已按整行最大行数统一分配，不再单列参与上下位移
+    if (isReceiptItemKey(key)) {
+      style.height = Math.round(Math.max(originalHeight, actualHeight))
+      return
+    }
     const delta = Math.round(actualHeight - originalHeight)
     if (delta !== 0) {
       const bottom = (style.y || 0) + originalHeight
@@ -450,7 +635,7 @@ export function resolveLabelLayout(options) {
   const allKeys = opts.selectedAttrs || Object.keys(opts.attrStyles || {})
   // 明细表由表格自身排版，不参与文字折行
   const textKeys = allKeys.filter(function(key) {
-    return key !== GOODS_TABLE_KEY && key !== 'dn_table' && key !== 'dn_table_total' && key.indexOf('code__') !== 0
+    return !isGoodsTableKey(key) && key !== 'dn_table' && key !== 'dn_table_total' && key.indexOf('code__') !== 0
   })
   const goods = resolveGoodsLayout({
     selectedAttrs: allKeys,

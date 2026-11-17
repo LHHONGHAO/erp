@@ -805,11 +805,11 @@
   import { printLabel } from '@/views/material/utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { mmToPx } from '@/views/material/utils/labelSchema'
-  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH } from '@/views/material/utils/labelTemplateV2'
+  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH, editorStateToV2 } from '@/views/material/utils/labelTemplateV2'
   import { fetchLabelTemplates, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
@@ -870,6 +870,8 @@
         codeImages: {},
         labelWidth: 320,
         labelHeight: 240,
+        // 小票单品元素是否已按明细行生成（每次套用模板后重置）
+        receiptItemsApplied: false,
         // 打印机（由后端枚举本机打印机）
         printers: [],
         // 本机打印机（由本地打印助手提供，仅电脑端可用）
@@ -1227,6 +1229,10 @@
         }
         return Array.isArray(rows) ? rows : []
       },
+      // 商品明细表样式的实际元素 key（小票为 rc_table，其余为 goods_table）
+      goodsTableKey() {
+        return this.selectedAttrs.filter(isGoodsTableKey)[0] || GOODS_TABLE_KEY
+      },
       // 多商品分页模式：随模板保存（none / fit / each）
       goodsPageMode() {
         var tpl = this.template
@@ -1244,10 +1250,10 @@
         }
         var table = null
         // fit 表格模式：用全量行算出表头与行高，再交给分页函数
-        if (this.goodsPageMode === 'fit' && this.selectedAttrs.indexOf(GOODS_TABLE_KEY) >= 0) {
+        if (this.goodsPageMode === 'fit' && this.selectedAttrs.some(isGoodsTableKey)) {
           table = this.layoutWithRows(this.validGoodsRows).table
         }
-        var style = this.attrStyles[GOODS_TABLE_KEY] || this.attrStyles[GOODS_KEY] || {}
+        var style = this.attrStyles[this.goodsTableKey] || this.attrStyles[GOODS_KEY] || {}
         return paginateGoodsRows({
           rows: this.validGoodsRows,
           style: style,
@@ -2488,6 +2494,55 @@
           exists[key] = true
         })
         if (Array.isArray(s.rows)) this.detailRows = s.rows
+        // 小票：商品明细按单品拆成独立元素（预览与打印同一套布局）
+        this.applyReceiptItemElements()
+      },
+      /**
+       * 小票预览/打印：把明细行拆成「每件商品 × 每个字段」的独立元素
+       * 与编辑页共用 replaceReceiptGoodsWithItems，保证预览、编辑、打印一致
+       */
+      applyReceiptItemElements() {
+        if (this.type !== 'receipt' || this.receiptItemsApplied) return
+        if (!Array.isArray(this.detailRows) || !this.detailRows.length) return
+        var fallbackY = 0
+        var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
+        var self = this
+        headerKeys.forEach(function(key) {
+          var style = self.attrStyles[key]
+          if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
+        })
+        var next = replaceReceiptGoodsWithItems({
+          rows: this.detailRows,
+          selectedAttrs: this.selectedAttrs,
+          attrStyles: this.attrStyles,
+          attrLabels: this.attrLabels,
+          paperWidth: this.labelWidth,
+          fallbackY: fallbackY ? fallbackY + 8 : 100
+        })
+        this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
+        next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
+        this.selectedAttrs = next.selectedAttrs
+        this.attrStyles = next.attrStyles
+        this.attrLabels = next.attrLabels
+        // 模板带 schema 时预览按 schema 渲染，这里同步重建，单品元素才会显示
+        if (this.templateSchema) {
+          var v2 = editorStateToV2({
+            name: this.template.name,
+            provider: this.template.provider,
+            businessType: this.template.businessType,
+            selectedAttrs: this.selectedAttrs,
+            attrStyles: this.attrStyles,
+            attrLabels: this.attrLabels,
+            allAttrs: this.allAttrs,
+            goodsFields: this.template.goodsFields,
+            labelWidth: this.labelWidth,
+            labelHeight: this.labelHeight,
+            overflowMode: this.overflowMode,
+            flowElementKeys: this.template.flowElementKeys
+          })
+          this.template = Object.assign({}, this.template, { schema: v2ToSchemaView(v2) })
+        }
+        this.receiptItemsApplied = true
       },
       applyTemplate(tpl, skipProvider) {
         var self = this
@@ -2496,6 +2551,7 @@
         this.attrStyles = {}
         this.attrLabels = {}
         this.detailRows = []
+        this.receiptItemsApplied = false
         this.previewPage = 0
         this.printPage = 0
         // 商品组合字段：模板未配置（旧模板）时为空 = 显示全部
@@ -2670,7 +2726,7 @@
             height: codeSize.imgHeight + 'px'
           }
         }
-        if (key === GOODS_TABLE_KEY) {
+        if (isGoodsTableKey(key)) {
           var table = layoutOpt ? layout.table : this.goodsTableData
           return {
             left: (s.x || 0) + 'px',
@@ -2701,7 +2757,7 @@
         return style
       },
       isGoodsTable(key) {
-        return key === GOODS_TABLE_KEY
+        return isGoodsTableKey(key)
       },
       getGoodsColumnWidth(index, layoutOpt) {
         var table = layoutOpt ? layoutOpt.table : this.goodsTableData
@@ -2710,7 +2766,7 @@
       getGoodsRowHeight(index, layoutOpt) {
         var table = layoutOpt ? layoutOpt.table : this.goodsTableData
         if (table && table.rows[index]) return table.rows[index].height
-        var s = this.attrStyles[GOODS_TABLE_KEY] || {}
+        var s = this.attrStyles[this.goodsTableKey] || {}
         return Math.round((s.fontSize || 12) * (s.lineHeight || 1.3)) + 4
       },
       // 商品组合元素按商品行逐行显示（名称 + 规格值1/2/3）
@@ -3130,7 +3186,7 @@
           // 多行顺移后超出标签底边的内容直接裁掉
           if ((style.y || 0) >= self.labelHeight) return
           // 商品明细表：按行展开为“表头 + 每行各列”文字项，行高按实际折行行数
-          if (item.key === GOODS_TABLE_KEY) {
+          if (isGoodsTableKey(item.key)) {
             var table = layout.table
             if (!table) return
             var left = style.x || 0

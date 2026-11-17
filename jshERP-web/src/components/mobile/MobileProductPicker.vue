@@ -2,19 +2,53 @@
   <!-- 复用手机端标准弹层页面：蓝底顶栏 + 标题左对齐 + 副标题同行 + 右侧关闭 -->
   <mobile-modal-page :visible="visible" :title="title" @close="$emit('close')">
     <div class="mpp-picker">
-      <!-- 全部商品：标准商品流模块（卡片布局 + 虚拟滚动 + 分页刷新），已选商品排在最前并随列表一起滚动 -->
+      <!-- 全部商品：标准商品流模块（卡片布局 + 虚拟滚动 + 分页刷新） -->
       <div class="mpp-picker__feed">
         <mobile-goods-feed
           ref="feed"
           feed-key="goods_picker"
           :loader="loadPickerFeed"
           :reset-key="pickerResetKey"
-          :prepend-items="prependItems"
           selectable
           :selected-keys="selectedKeys"
           @item-click="onFeedItemClick"
           @select="onFeedItemClick">
         </mobile-goods-feed>
+      </div>
+
+      <!-- 已选数量浮层：有选中才显示，点击展开已选清单 -->
+      <div v-if="selectedGoods.length > 0" class="mpp-picker__entry" @click="selectedSheetVisible = true">
+        <span>已选</span>
+        <span class="mpp-picker__entry-badge">{{ selectedGoods.length }}</span>
+        <span>件</span>
+      </div>
+
+      <!-- 已选商品清单 -->
+      <div v-if="selectedSheetVisible" class="mpp-sheet">
+        <div class="mpp-sheet__mask" @click="selectedSheetVisible = false"></div>
+        <div class="mpp-sheet__panel">
+          <div class="mpp-sheet__head">
+            <span class="mpp-sheet__title">已选商品</span>
+            <span class="mpp-sheet__count">共 {{ selectedGoods.length }} 件</span>
+            <span class="mpp-sheet__close" @click="selectedSheetVisible = false">×</span>
+          </div>
+          <div class="mpp-sheet__list">
+            <div v-for="goods in selectedGoods" :key="goods.key" class="mpp-sheet__row">
+              <img v-if="goods.imgUrl" :src="goods.imgUrl" class="mpp-sheet__thumb" />
+              <div v-else class="mpp-sheet__thumb mpp-sheet__thumb--empty"></div>
+              <div class="mpp-sheet__info">
+                <div class="mpp-sheet__name">{{ goods.name }}</div>
+                <div class="mpp-sheet__spec">{{ goodsSpecText(goods) }}</div>
+                <div class="mpp-sheet__price">¥{{ goods.price }}</div>
+              </div>
+              <a-button type="link" size="small" @click="removeSelected(goods.key)">移除</a-button>
+            </div>
+          </div>
+          <div class="mpp-sheet__foot">
+            <a-button @click="clearSelected">清空</a-button>
+            <a-button type="primary" @click="confirmSelect">确定 ({{ selectedGoods.length }})</a-button>
+          </div>
+        </div>
       </div>
 
       <!-- 筛选抽屉：复用商品信息页的类别与状态筛选 -->
@@ -51,13 +85,9 @@
         @cancel="ocrVisible = false" />
     </div>
 
-    <!-- 底部：已选确认 + 标准搜索底栏（拍照/搜索框/扫码/筛选） -->
+    <!-- 底部：标准搜索底栏（拍照/搜索框/扫码/筛选） -->
     <template #footer>
       <div class="mpp-picker__footer-area">
-        <div v-if="selectedGoods.length > 0" class="mpp-picker__selected-bar">
-          <span class="mpp-picker__selected">已选 {{ selectedGoods.length }} 个</span>
-          <a-button type="primary" @click="confirmSelect">确定</a-button>
-        </div>
         <mobile-bottom-bar :fixed="false" left-auto>
           <mobile-search-bar
             v-model="keyword"
@@ -88,10 +118,10 @@ import { recordGoodsUsage, getRecentGoods } from './goodsUsage'
 /**
  * 手机端标准商品选择/添加弹层
  * 1. 与打印弹层同一套标准页面样式（蓝底顶栏、标题左对齐、副标题同行、右侧关闭）
- * 2. 已选商品按点击顺序排到商品卡片列表最前面，与列表一起滚动，不做固定置顶区
+ * 2. 已选商品不再插入商品流置顶，选中的卡片位置保持不变
  * 3. 全部商品由标准商品流模块渲染（卡片布局 + 虚拟滚动 + 分页刷新）
  * 4. 近 N 天选择次数前 N 名的商品并入第 1 页，与全部商品逐行展示且不重复
- * 5. 点击商品多选：选中即排到最前，再次点击取消并回到原位置，点「确定」批量回填
+ * 5. 点击商品多选：选中后右下角浮层显示「已选 N 件」，点击浮层展开已选清单，可移除/清空后确定批量回填
  * 6. 底部复用标准搜索底栏：拍照识别 / 搜索框 / 扫码 / 搜索 / 筛选
  */
 export default {
@@ -116,6 +146,8 @@ export default {
       recentList: [],
       // 已选商品（按点击顺序）
       selectedGoods: [],
+      // 已选清单弹层
+      selectedSheetVisible: false,
       // 商品流条件重置信号
       pickerResetKey: 0,
       // 本次加载已出现过的商品键（最近使用与分页去重）
@@ -135,29 +167,17 @@ export default {
     /** 已选商品的唯一键：用于商品流右上角勾选状态 */
     selectedKeys() {
       return this.selectedGoods.map(function(goods) { return goods.key })
-    },
-    /** 已选商品按点击顺序排到商品流最前面（与列表同一套卡片，随列表一起滚动） */
-    prependItems() {
-      return this.selectedGoods.map(function(goods) {
-        return {
-          skuRowKey: goods.key,
-          name: goods.name,
-          imgUrl: goods.imgUrl,
-          specs: goods.specLines,
-          items: this.cardItems(goods),
-          goods: goods
-        }
-      }, this)
     }
   },
   watch: {
     visible(val) {
       if (val) {
         this.keyword = this.initialKeyword || ''
-        // 带入业务页面已选商品，打开即置顶展示
+        // 带入业务页面已选商品
         this.selectedGoods = (this.initialSelected || []).map(function(goods) {
           return this.normalizeGoods(goods)
         }, this)
+        this.selectedSheetVisible = false
         this.recentList = getRecentGoods({
           days: this.recentDays,
           limit: this.recentLimit,
@@ -264,21 +284,41 @@ export default {
         raw: goods.raw || null
       }
     },
-    /** 点击商品：选中则加入已选（置顶），再次点击取消 */
+    /** 点击商品：选中加入已选，再次点击取消 */
     toggleSelect(goods) {
       if (!goods || !goods.name) return
       var key = goods.key
-      var idx = -1
       for (var i = 0; i < this.selectedGoods.length; i++) {
-        if (this.selectedGoods[i].key === key) { idx = i; break }
+        if (this.selectedGoods[i].key === key) {
+          this.selectedGoods.splice(i, 1)
+          return
+        }
       }
-      if (idx > -1) {
-        this.selectedGoods.splice(idx, 1)
-      } else {
-        this.selectedGoods.push(this.normalizeGoods(goods))
-      }
+      this.selectedGoods.push(this.normalizeGoods(goods))
     },
-    /** 商品流卡片点击：全部商品与已选置顶共用同一套切换逻辑 */
+    /** 已选清单中的规格展示文本 */
+    goodsSpecText(goods) {
+      var lines = (goods.specLines || []).map(function(line) {
+        return line.label ? line.label + '：' + line.value : line.value
+      })
+      return lines.join('  ') || goods.spec || ''
+    },
+    /** 已选清单中移除单个商品 */
+    removeSelected(key) {
+      for (var i = 0; i < this.selectedGoods.length; i++) {
+        if (this.selectedGoods[i].key === key) {
+          this.selectedGoods.splice(i, 1)
+          break
+        }
+      }
+      if (this.selectedGoods.length === 0) this.selectedSheetVisible = false
+    },
+    /** 清空已选 */
+    clearSelected() {
+      this.selectedGoods = []
+      this.selectedSheetVisible = false
+    },
+    /** 商品流卡片点击 */
     onFeedItemClick(item) {
       if (!item) return
       this.toggleSelect(item.goods ? item.goods : this.formatGoods(item.raw))
@@ -403,6 +443,7 @@ export default {
 
 <style scoped>
 .mpp-picker {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -411,22 +452,137 @@ export default {
   padding: 8px 12px 0;
   background: #f5f7fa;
 }
-/* 全部商品区：标准商品流模块自带滚动（已选商品排在最前，随列表滚动） */
+/* 全部商品区：标准商品流模块自带滚动 */
 .mpp-picker__feed {
   flex: 1;
   min-height: 0;
 }
-/* 底部已选确认条 */
-.mpp-picker__selected-bar {
+/* 已选数量浮层：右下角悬浮，点击展开已选清单 */
+.mpp-picker__entry {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #1890ff;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+.mpp-picker__entry-badge {
+  min-width: 20px;
+  height: 20px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #1890ff;
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+/* 已选商品清单弹层 */
+.mpp-sheet__mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2999;
+  background: rgba(0, 0, 0, 0.45);
+}
+.mpp-sheet__panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+}
+.mpp-sheet__head {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.mpp-sheet__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+}
+.mpp-sheet__count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+.mpp-sheet__close {
+  margin-left: auto;
+  font-size: 20px;
+  line-height: 20px;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+.mpp-sheet__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px;
+}
+.mpp-sheet__row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.mpp-sheet__thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-right: 8px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f5f7fa;
+}
+.mpp-sheet__info {
+  flex: 1;
+  min-width: 0;
+}
+.mpp-sheet__name {
+  font-size: 14px;
+  color: #262626;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mpp-sheet__spec {
+  font-size: 12px;
+  color: #8c8c8c;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mpp-sheet__price {
+  font-size: 13px;
+  color: #f5222d;
+}
+.mpp-sheet__foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid #f0f0f0;
-}
-.mpp-picker__selected {
-  font-size: 14px;
-  color: #595959;
 }
 .mpp-picker__footer-area {
   flex: none;

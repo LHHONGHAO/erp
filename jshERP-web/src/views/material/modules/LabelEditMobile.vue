@@ -509,7 +509,7 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -614,6 +614,8 @@
         repeatHeader: true,
         // 参与多行/分页打印的元素（打印设置里勾选）
         flowElementKeys: [],
+        // 小票按单品生成的动态元素（只用于当前单据，不写入模板）
+        dynamicItemKeys: [],
         zoom: 1,
         customCounter: 0,
         templates: [],
@@ -807,6 +809,10 @@
       goodsFieldOptions() {
         return GOODS_FIELD_OPTIONS
       },
+      // 商品明细表样式的实际元素 key（小票为 rc_table，其余为 goods_table）
+      goodsTableKey() {
+        return this.selectedAttrs.filter(isGoodsTableKey)[0] || GOODS_TABLE_KEY
+      },
       // 商品明细表：列宽/行高/总高度（按商品行数动态计算）
       goodsTableData() {
         return this.goodsRowsData.table
@@ -821,7 +827,7 @@
         return [['商品名称', '规格值1', '规格值2', '规格值3']]
       },
       goodsTableStyle() {
-        var style = this.attrStyles[GOODS_TABLE_KEY] || {}
+        var style = this.attrStyles[this.goodsTableKey] || {}
         return {
           width: (this.goodsTableData ? this.goodsTableData.width : 0) + 'px',
           fontSize: (style.fontSize || 12) + 'px',
@@ -958,7 +964,38 @@
         var self = this
         Promise.resolve(loaded).then(function() {
           self.initProvider(context)
+          // 小票按单品拆分商品元素：逐件、逐字段独立可编辑
+          self.applyReceiptItemElements()
         })
+      },
+      /**
+       * 小票：把商品数据拆成「每件商品 × 每个字段」的独立元素
+       * 明细表/商品组合/遗留商品字段由 replaceReceiptGoodsWithItems 统一移除
+       */
+      applyReceiptItemElements() {
+        if (this.templateType !== 'receipt') return
+        var rows = (this.record && this.record.goodsRows) || []
+        var fallbackY = 0
+        var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
+        var self = this
+        headerKeys.forEach(function(key) {
+          var style = self.attrStyles[key]
+          if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
+        })
+        var next = replaceReceiptGoodsWithItems({
+          rows: rows,
+          selectedAttrs: this.selectedAttrs,
+          attrStyles: this.attrStyles,
+          attrLabels: this.attrLabels,
+          paperWidth: this.labelWidth,
+          fallbackY: fallbackY ? fallbackY + 8 : 100
+        })
+        this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
+        next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
+        this.selectedAttrs = next.selectedAttrs
+        this.attrStyles = next.attrStyles
+        this.attrLabels = next.attrLabels
+        this.dynamicItemKeys = next.itemKeys
       },
       /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
       initProvider(context) {
@@ -1300,7 +1337,7 @@
           ? snap.flowElementKeys.filter(function(key) { return self.selectedAttrs.indexOf(key) >= 0 })
           : []
         if (snap.pageMode === 'each' && !flow.length) {
-          flow = this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || key === GOODS_TABLE_KEY })
+          flow = this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || isGoodsTableKey(key) })
         }
         this.flowElementKeys = snap.pageMode === 'each' ? flow : []
         this.restoreMissingAttrs(snap.selectedAttrs)
@@ -1479,7 +1516,7 @@
           // 虚线外框由子元素 .lem-elem-frame 绘制，这里只传当前缩放值供其反缩放使用
           '--lem-zoom': String(this.zoom)
         }
-        if (key === GOODS_TABLE_KEY) {
+        if (isGoodsTableKey(key)) {
           var table = this.goodsTableData
           result.width = ((table && table.width) || style.width || 0) + 'px'
           result.padding = '0'
@@ -1504,7 +1541,7 @@
         return isCodeKey(key)
       },
       isGoodsTable(key) {
-        return key === GOODS_TABLE_KEY
+        return isGoodsTableKey(key)
       },
       // 文字类元素：宽度可拖到文字自然宽度以下触发折行，高度由内容自动撑开
       isTextElem(key) {
@@ -1533,7 +1570,7 @@
       getGoodsRowHeight(index) {
         var table = this.goodsTableData
         if (table && table.rows[index]) return table.rows[index].height
-        var style = this.attrStyles[GOODS_TABLE_KEY] || {}
+        var style = this.attrStyles[this.goodsTableKey] || {}
         return Math.round((style.fontSize || 12) * (style.lineHeight || 1.2)) + 4
       },
       clearSelection() {
@@ -2339,14 +2376,25 @@
       },
       /** 模板只保存布局与打印设置；方向/份数/设备不写入模板 */
       buildV2(name, cfg) {
+        // 小票单品元素按单据逐次生成，不写入模板，避免元素数量越积越多
+        var self = this
+        var selectedAttrs = this.selectedAttrs.filter(function(key) { return !isReceiptItemKey(key) })
+        var attrStyles = {}
+        Object.keys(this.attrStyles).forEach(function(key) {
+          if (!isReceiptItemKey(key)) attrStyles[key] = self.attrStyles[key]
+        })
+        var attrLabels = {}
+        Object.keys(this.attrLabels).forEach(function(key) {
+          if (!isReceiptItemKey(key)) attrLabels[key] = self.attrLabels[key]
+        })
         return editorStateToV2({
           name: name,
           provider: this.provider || this.businessType || '',
           businessType: this.provider || this.businessType || '',
-          selectedAttrs: this.selectedAttrs,
-          attrStyles: this.attrStyles,
-          attrLabels: this.attrLabels,
-          allAttrs: this.allAttrs,
+          selectedAttrs: selectedAttrs,
+          attrStyles: attrStyles,
+          attrLabels: attrLabels,
+          allAttrs: this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) }),
           goodsFields: this.goodsFields,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
@@ -2604,6 +2652,10 @@
           // 快照与保存模板使用同一 v2 结构，预览按同一套规则还原，样式保持一致
           var snapshot = this.buildV2((current && current.name) || cfgInfo.title.replace('编辑', '') + '模板', cfgInfo)
           snapshot.values = snapshotValues
+          // 小票：明细行跟着快照走，预览/打印时按同一规则重新拆成单品元素
+          if (this.templateType === 'receipt' && this.record && Array.isArray(this.record.goodsRows)) {
+            snapshot.rows = this.record.goodsRows
+          }
           sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify(snapshot))
         } catch (e) { /* 忽略 */ }
         // 标签模板可能有多个：带上当前模板标识，打印弹层从统一模板存储读取对应模板

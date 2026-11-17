@@ -872,6 +872,8 @@
         labelHeight: 240,
         // 小票单品元素是否已按明细行生成（每次套用模板后重置）
         receiptItemsApplied: false,
+        // 小票明细字段勾选状态：null=旧模板默认全部，[]=不生成明细
+        receiptItemFields: null,
         // 打印机（由后端枚举本机打印机）
         printers: [],
         // 本机打印机（由本地打印助手提供，仅电脑端可用）
@@ -2427,8 +2429,7 @@
         selectedAttrs = selectedAttrs
           .filter(function(key) { return key != null && key !== '' })
           .map(function(key) { return String(key) })
-        // 没有任何可渲染字段 → 视为无模板（走空状态/快照兜底）
-        if (!selectedAttrs.length) return null
+        // 合法的空模板表示用户取消了全部元素，不能按“无模板”处理
         var size = (schema && schema.size) || {}
         var defaults = { label: [320, 240], delivery: [560, 800], receipt: [302, 600], member: [320, 240], address: [320, 240] }
         var fallback = defaults[this.type] || defaults.label
@@ -2462,6 +2463,7 @@
           recordsPerPage: Math.max(1, parseInt(base.recordsPerPage, 10) || 1),
           maxRowsPerPage: Math.max(0, parseInt(base.maxRowsPerPage, 10) || 0),
           repeatHeader: base.repeatHeader !== false,
+          receiptItemFields: Array.isArray(base.receiptItemFields) ? base.receiptItemFields.slice() : null,
           schema: schema
         }
       },
@@ -2517,7 +2519,8 @@
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
           paperWidth: this.labelWidth,
-          fallbackY: fallbackY ? fallbackY + 8 : 100
+          fallbackY: fallbackY ? fallbackY + 8 : 100,
+          receiptItemFields: this.receiptItemFields
         })
         this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
         next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
@@ -2538,7 +2541,8 @@
             labelWidth: this.labelWidth,
             labelHeight: this.labelHeight,
             overflowMode: this.overflowMode,
-            flowElementKeys: this.template.flowElementKeys
+            flowElementKeys: this.template.flowElementKeys,
+            receiptItemFields: this.receiptItemFields
           })
           this.template = Object.assign({}, this.template, { schema: v2ToSchemaView(v2) })
         }
@@ -2556,6 +2560,7 @@
         this.printPage = 0
         // 商品组合字段：模板未配置（旧模板）时为空 = 显示全部
         this.goodsFields = tpl && Array.isArray(tpl.goodsFields) ? tpl.goodsFields.slice() : null
+        this.receiptItemFields = tpl && Array.isArray(tpl.receiptItemFields) ? tpl.receiptItemFields.slice() : null
         if (!tpl) return
         // 自定义标签的值保存在模板里，需要合并回属性列表
         if (tpl.customLabels && tpl.customLabels.length > 0) {

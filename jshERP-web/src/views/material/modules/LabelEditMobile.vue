@@ -509,7 +509,7 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, RECEIPT_ITEM_FIELDS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -616,6 +616,8 @@
         flowElementKeys: [],
         // 小票按单品生成的动态元素（只用于当前单据，不写入模板）
         dynamicItemKeys: [],
+        // 小票明细字段勾选状态：null=旧模板默认全部，[]=不生成明细
+        receiptItemFields: null,
         zoom: 1,
         customCounter: 0,
         templates: [],
@@ -988,7 +990,8 @@
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
           paperWidth: this.labelWidth,
-          fallbackY: fallbackY ? fallbackY + 8 : 100
+          fallbackY: fallbackY ? fallbackY + 8 : 100,
+          receiptItemFields: this.receiptItemFields
         })
         this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
         next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
@@ -1264,10 +1267,7 @@
               return
             }
             var state = v2ToEditorState(raw)
-            if (!state.selectedAttrs.length) {
-              self.applyDefaultLayout(cfg)
-              return
-            }
+            // 合法的空模板表示用户取消了全部元素，不再回退到默认布局
             self.applyTemplateSnapshot(state, cfg)
           }).catch(function() {
             if (skipApply) return
@@ -1321,6 +1321,7 @@
         }
         // 旧模板没有 goodsFields：保留当前默认（全部字段）
         if (Array.isArray(snap.goodsFields)) this.goodsFields = snap.goodsFields.slice()
+        this.receiptItemFields = Array.isArray(snap.receiptItemFields) ? snap.receiptItemFields.slice() : null
         var width = snap.width || snap.labelWidth
         var height = snap.height || snap.labelHeight
         if (width) this.labelWidth = width
@@ -1476,6 +1477,7 @@
         this.selectedAttrs = selected
         this.attrStyles = styles
         this.attrLabels = labels
+        this.receiptItemFields = null
         // 默认不勾选分页打印对象；勾选任意对象即进入商品分页
         this.flowElementKeys = []
         // 默认布局没有已保存模板，顶栏使用默认模板名称
@@ -2376,8 +2378,26 @@
       },
       /** 模板只保存布局与打印设置；方向/份数/设备不写入模板 */
       buildV2(name, cfg) {
-        // 小票单品元素按单据逐次生成，不写入模板，避免元素数量越积越多
+        // 小票单品元素按单据逐次生成，不写入模板，避免元素数量越积越多；
+        // 只持久化字段勾选状态，确保取消的字段在下次加载时不会重新生成
         var self = this
+        var receiptItemFields = Array.isArray(this.receiptItemFields) ? this.receiptItemFields.slice() : null
+        if (this.templateType === 'receipt') {
+          if (this.dynamicItemKeys.length) {
+            var selectedFields = []
+            this.selectedAttrs.forEach(function(key) {
+              if (!isReceiptItemKey(key)) return
+              var fieldKey = key.replace(/^item\d+_/, '')
+              if (selectedFields.indexOf(fieldKey) === -1) selectedFields.push(fieldKey)
+            })
+            receiptItemFields = RECEIPT_ITEM_FIELDS.filter(function(field) {
+              return selectedFields.indexOf(field.key) > -1
+            }).map(function(field) { return field.key })
+          } else if (!receiptItemFields) {
+            receiptItemFields = RECEIPT_ITEM_FIELDS.map(function(field) { return field.key })
+          }
+          this.receiptItemFields = receiptItemFields.slice()
+        }
         var selectedAttrs = this.selectedAttrs.filter(function(key) { return !isReceiptItemKey(key) })
         var attrStyles = {}
         Object.keys(this.attrStyles).forEach(function(key) {
@@ -2402,7 +2422,8 @@
           pageMode: this.effectivePageMode,
           maxRowsPerPage: 0,
           repeatHeader: this.repeatHeader,
-          flowElementKeys: this.flowElementKeys
+          flowElementKeys: this.flowElementKeys,
+          receiptItemFields: receiptItemFields
         }, {
           type: this.templateType,
           kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null

@@ -223,7 +223,9 @@ export function editorStateToV2(state, meta) {
         mode: PAGE_MODE_TO_LIST[src.pageMode] || 'multiline',
         maxRowsPerPage: Math.max(0, parseInt(src.maxRowsPerPage, 10) || 0),
         repeatHeader: src.repeatHeader !== false
-      }
+      },
+      // 小票明细字段的勾选状态；空数组表示不生成明细，缺省兼容旧模板（全部字段）
+      receiptItemFields: Array.isArray(src.receiptItemFields) ? src.receiptItemFields.slice() : undefined
     },
     meta: {
       type: info.type || null,
@@ -324,6 +326,7 @@ export function v2ToEditorState(raw) {
     recordsPerPage: Math.max(1, parseInt(print.recordsPerPage, 10) || 1),
     maxRowsPerPage: Math.max(0, parseInt(list.maxRowsPerPage, 10) || 0),
     repeatHeader: list.repeatHeader !== false,
+    receiptItemFields: Array.isArray(print.receiptItemFields) ? print.receiptItemFields.slice() : null,
     meta: v2.meta || {}
   }
 }

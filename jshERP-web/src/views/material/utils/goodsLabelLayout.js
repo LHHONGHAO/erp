@@ -71,6 +71,12 @@ export function receiptItemValue(row, key) {
 export function buildReceiptItemElements(options) {
   const opts = options || {}
   const rows = (opts.rows || []).filter(hasGoodsValue)
+  const enabledFields = Array.isArray(opts.fields)
+    ? RECEIPT_ITEM_FIELDS.filter(function(field) { return opts.fields.indexOf(field.key) > -1 })
+    : RECEIPT_ITEM_FIELDS
+  if (!rows.length || !enabledFields.length) {
+    return { attrs: [], styles: {}, keys: [], height: 0 }
+  }
   const paperWidth = opts.paperWidth > 0 ? opts.paperWidth : 320
   const fontSize = opts.fontSize || 12
   const lineHeight = opts.lineHeight || 1.3
@@ -82,8 +88,8 @@ export function buildReceiptItemElements(options) {
   // 列坐标：按权重分配宽度，最后一列补齐余量
   const cols = []
   let offset = 0
-  RECEIPT_ITEM_FIELDS.forEach(function(field, index) {
-    const last = index === RECEIPT_ITEM_FIELDS.length - 1
+  enabledFields.forEach(function(field, index) {
+    const last = index === enabledFields.length - 1
     const colWidth = last ? width - offset : Math.floor(width * field.weight)
     cols.push({ x: offset, width: colWidth })
     offset += colWidth
@@ -93,7 +99,7 @@ export function buildReceiptItemElements(options) {
   let cursor = startY
   rows.forEach(function(row, rowIndex) {
     // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推
-    const fields = RECEIPT_ITEM_FIELDS.map(function(field, colIndex) {
+    const fields = enabledFields.map(function(field, colIndex) {
       const value = receiptItemValue(row, field.key)
       return {
         key: 'item' + (rowIndex + 1) + '_' + field.key,
@@ -162,12 +168,13 @@ export function replaceReceiptGoodsWithItems(options) {
   })
   Object.keys(styles).forEach(function(key) { if (isReceiptItemKey(key)) delete styles[key] })
   Object.keys(labels).forEach(function(key) { if (isReceiptItemKey(key)) delete labels[key] })
-  if (!rows.length) {
+  if (!rows.length || (Array.isArray(opts.receiptItemFields) && !opts.receiptItemFields.length)) {
     return { selectedAttrs: kept, attrStyles: styles, attrLabels: labels, attrs: [], itemKeys: [] }
   }
   const startY = anchorStyle ? (anchorStyle.y || 0) : (opts.fallbackY || 0)
   const built = buildReceiptItemElements({
     rows: rows,
+    fields: opts.receiptItemFields,
     paperWidth: opts.paperWidth,
     x: anchorStyle ? (anchorStyle.x || 0) : 8,
     y: startY,

@@ -1,22 +1,28 @@
 <template>
   <mobile-modal-page
     :visible="true"
-    :title="headerTemplateName"
-    :subtitle="headerSubtitle"
+    :title="currentTitle"
     @close="handleBack">
-    <!-- 顶栏只保留一个编辑按钮：统一编辑标题、副标题与标签尺寸 -->
+    <!-- 顶栏左右两列：左列页面标题单独一行；右列上为标签名称、下为标签尺寸 -->
+    <template #title-extra>
+      <div class="lem-header-sub">
+        <div class="lem-header-name">{{ headerTemplateName }}</div>
+        <div class="lem-header-size">{{ sizeLabel }}</div>
+      </div>
+    </template>
     <template #actions>
-      <a-icon type="edit" class="mmp-icon" title="编辑标签信息" @click="openEditInfo" />
+      <a-icon type="edit" class="mmp-icon lem-icon-sm" title="编辑标签信息" @click="openEditInfo" />
       <a-icon type="setting" class="mmp-icon" title="设置" @click="openSettings" />
     </template>
     <div class="lem-page">
 
-    <!-- 对齐排列工具条（固定在顶栏下方，全部图标按钮） -->
+    <!-- 对齐排列工具条（固定在顶栏下方，左侧提示标签状态） -->
     <div class="lem-align-bar">
+      <div class="lem-align-hint">
+        <span class="lem-align-hint__state" :class="{ 'is-multi': multiSelectMode }">{{ labelStateText }}</span>
+        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白多选' }}</span>
+      </div>
       <div class="lem-align-btns">
-        <a-button size="small" icon="undo" title="撤销" :disabled="historyIndex <= 0" @click="undo" />
-        <a-button size="small" icon="redo" title="恢复" :disabled="historyIndex >= history.length - 1" @click="redo" />
-        <span class="lem-align-divider"></span>
         <a-button size="small" icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
         <a-button size="small" icon="align-center" title="水平居中" :disabled="selectedKeys.length < 2" @click="alignSelected('center')" />
         <a-button size="small" icon="align-right" title="右对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('right')" />
@@ -44,20 +50,21 @@
     <!-- 画布 + 右侧属性栏 -->
     <div class="lem-content">
     <!-- 预览区 -->
-    <div class="lem-preview-wrap" ref="previewWrap" :class="wrapScrolling ? 'lem-preview-wrap--scrolling' : 'lem-preview-wrap--fitting'">
+    <div class="lem-preview-wrap" ref="previewWrap" :class="wrapScrolling ? 'lem-preview-wrap--scrolling' : 'lem-preview-wrap--fitting'"
+         @pointerdown="startAreaPress">
       <div class="lem-scroll-spacer" :style="{ width: (scrollSpacer + sidePanelReserve) + 'px' }"></div>
       <div
         class="lem-label"
         ref="labelCanvas"
         :style="[labelStyle, { touchAction: multiSelectMode ? 'none' : 'auto' }]"
-        @pointerdown.self.prevent="startMarquee"
+        @pointerdown.stop.prevent="startMarquee"
       >
         <div
           v-for="(key, idx) in selectedAttrs"
           :key="key"
           class="lem-elem"
           :data-key="key"
-          :class="{ 'lem-elem-code': isCode(key), 'lem-elem--active': currentAttrKey === key }"
+          :class="{ 'lem-elem-code': isCode(key), 'lem-elem--active': selectedKeys.indexOf(key) !== -1 }"
           :style="getElementStyle(key)"
           @pointerdown.stop.prevent="startPointerDrag(key, $event, 'move')"
         >
@@ -104,6 +111,7 @@
             <span class="lem-elem-value">{{ displayParts[key] ? displayParts[key].value : '' }}</span>
           </template>
           </div>
+          <span class="lem-elem-frame" aria-hidden="true"></span>
           <span
             v-if="currentAttrKey === key"
             class="lem-resize-handle"
@@ -281,6 +289,14 @@
           <a-icon type="zoom-out" />
           <span>缩小</span>
         </div>
+        <div class="lem-tool-btn" :class="{ 'is-disabled': historyIndex <= 0 }" @click="undo">
+          <a-icon type="undo" />
+          <span>撤销</span>
+        </div>
+        <div class="lem-tool-btn" :class="{ 'is-disabled': historyIndex >= history.length - 1 }" @click="redo">
+          <a-icon type="redo" />
+          <span>恢复</span>
+        </div>
         <div class="lem-tool-btn" @click="handlePrint">
           <a-icon type="printer" />
           <span>打印</span>
@@ -311,53 +327,108 @@
         <a-input v-model="newTemplateName" placeholder="请输入模板名称" allowClear @pressEnter="confirmSaveTemplate" />
       </div>
       <div class="lem-save-field">
-        <div class="lem-save-label-row">
-          <span class="lem-save-label">超长文本</span>
-          <span class="lem-save-switch-value">{{ overflowWrapEnabled ? '自动折行' : '省略号裁切' }}</span>
-          <a-switch v-model="overflowWrapEnabled" />
+        <div class="lem-save-label">模板对象</div>
+        <div class="lem-save-object-row">
+          <a-select
+            v-model="templateObject"
+            style="flex:1"
+            :disabled="templateType !== 'label'"
+            @change="onTemplateObjectChange"
+          >
+            <a-select-option v-for="opt in templateObjectOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+          </a-select>
+          <a-select
+            v-if="templateObject === 'product'"
+            v-model="templateCategoryId"
+            style="flex:1"
+            placeholder="全部类型"
+            allowClear
+          >
+            <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
+          </a-select>
         </div>
-        <div class="lem-save-hint">{{ overflowWrapEnabled ? '文字超出标签宽度自动折行，下方内容依次下移' : '文字超出标签宽度保持单行，末尾补省略号后裁切' }}</div>
       </div>
       <div class="lem-save-field">
-        <div class="lem-save-label">多个商品打印方式</div>
-        <a-radio-group :value="pageMode" class="lem-settings-radio" @change="onPageModeChange">
-          <a-radio value="none">多行连续（全部画在一张）</a-radio>
-          <a-radio value="fit">分页（按标签高度自动续页）</a-radio>
-          <a-radio value="each">每件一张标签（按商品数量拆页）</a-radio>
-        </a-radio-group>
-        <div class="lem-save-field lem-save-field--inline">
-          <a-checkbox
-            :checked="pageLabelEnabled"
-            :disabled="pageMode === 'none'"
-            @change="onPageLabelToggle"
-          >分页标签</a-checkbox>
+        <div class="lem-save-label-row">
+          <span class="lem-save-label">单行标签超出宽度自动折行</span>
+          <a-switch v-model="overflowWrapEnabled" />
         </div>
-        <div class="lem-save-hint">{{ pageMode === 'none' ? '选择“分页”或“每件一张标签”后可添加页码标签' : '画布显示如 1/2 的页码，可拖动位置；在画布删除页码会自动取消勾选' }}</div>
-        <div v-if="pageMode === 'fit'" class="lem-save-field lem-save-field--inline">
-          <span class="lem-save-label">每页商品行数</span>
-          <a-input-number v-model="maxRowsPerPage" :min="0" :max="5" size="small" style="width: 90px" />
-          <span class="lem-save-hint">0 表示只按标签高度续页</span>
+      </div>
+      <div class="lem-save-field">
+        <div class="lem-save-label-row">
+          <span class="lem-save-option">单页打印（打印在一张页面）</span>
+          <a-switch
+            :checked="pageMode === 'none' && flowElementKeys.length === 0"
+            :disabled="flowElementKeys.length > 0"
+            @change="val => val && onPageModeChange('none')"
+          />
         </div>
-        <div class="lem-save-hint">设置随模板保存，预览与打印共用；商品数量为 2 时打印 2 张，每张记 1 件</div>
+      </div>
+      <div class="lem-save-field">
+        <div class="lem-save-label-row">
+          <span class="lem-save-option">自动分页（按标签高度自动分页打印）</span>
+          <a-switch
+            :checked="pageMode === 'fit' && flowElementKeys.length === 0"
+            :disabled="flowElementKeys.length > 0"
+            @change="val => val && onPageModeChange('fit')"
+          />
+        </div>
       </div>
       <div class="lem-save-field" v-if="selectedAttrs.length">
-        <div class="lem-save-label">参与多行/分页的标签</div>
-        <a-checkbox-group v-model="flowElementKeys" class="lem-flow-group">
-          <a-checkbox v-for="key in selectedAttrs" :key="key" :value="key" class="lem-flow-check">
-            {{ flowElementLabel(key) }}
-          </a-checkbox>
-        </a-checkbox-group>
-        <div class="lem-save-hint">勾选的标签参与多行打印/分页打印，未勾选的标签每张重复显示</div>
+        <div class="lem-save-label-row">
+          <span class="lem-save-label">分页打印</span>
+          <span class="lem-save-switch-value">{{ flowElementKeys.length ? '商品分页 · 分页数量 ' + flowElementKeys.length : '未启用' }}</span>
+        </div>
+        <div class="lem-flow-cards">
+          <div
+            v-for="key in selectedAttrs"
+            :key="key"
+            class="lem-flow-row"
+            :class="{ 'is-on': flowElementKeys.indexOf(key) > -1 }"
+          >
+            <span class="lem-flow-name">{{ flowElementLabel(key) }}</span>
+            <a-switch
+              :checked="flowElementKeys.indexOf(key) > -1"
+              @change="toggleFlowElement(key)"
+            />
+          </div>
+        </div>
       </div>
-      <div v-if="templateType === 'label'" class="lem-save-field">
-        <div class="lem-save-label">商品类型</div>
-        <a-select v-model="templateCategoryId" style="width:100%" placeholder="不选择则保存为普通模板" allowClear>
-          <a-select-option v-for="cat in categoryList" :key="cat.value" :value="cat.value">{{ cat.label }}</a-select-option>
-        </a-select>
-        <div class="lem-save-hint">仅二级类目可作为模板类型（一级类目不可保存模板）；一个类目只保留一个模板</div>
-        <div v-if="conflictTemplate" class="lem-save-conflict">该类型已有模板「{{ conflictTemplate.name }}」，保存后将覆盖</div>
-        <div class="lem-save-hint">不选类型保存为普通模板（仅当前商品可用）；选择类型保存为该类型的通用模板</div>
-      </div>
+      <template slot="footer">
+        <div class="lem-save-bottom">
+          <div class="lem-save-bottom-label">
+            <span>显示分页标签</span>
+            <a-switch
+              :checked="pageLabelEnabled"
+              :disabled="effectivePageMode === 'none'"
+              @change="onPageLabelToggle"
+            />
+          </div>
+          <div class="lem-save-footer-btns">
+            <a-button v-if="saveAsEnabled" @click="openSaveAs">另存为</a-button>
+            <a-button @click="closeSaveSheet">取消</a-button>
+            <a-button type="primary" @click="confirmSaveTemplate">保存</a-button>
+          </div>
+        </div>
+      </template>
+    </a-modal>
+    <!-- 另存为：输入新模板名称后保存为新模板 -->
+    <a-modal
+      title="另存为"
+      :visible="saveAsVisible"
+      :width="'80%'"
+      :zIndex="3020"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmSaveAs"
+      @cancel="saveAsVisible = false"
+    >
+      <a-input
+        v-model="saveAsName"
+        placeholder="请输入新模板名称"
+        allowClear
+        @pressEnter="confirmSaveAs"
+      />
     </a-modal>
     <!-- 顶栏唯一编辑按钮：弹层编辑标题、副标题与标签尺寸 -->
     <a-modal
@@ -475,7 +546,8 @@
     },
     receipt: {
       title: '小票编辑',
-      defaultWidth: 380,
+      // 80mm 热敏小票纸（96dpi → 302px）
+      defaultWidth: 302,
       defaultHeight: 600,
       attrsBuilder: 'receipt',
       storage: 'platformConfig',
@@ -551,6 +623,11 @@
         // 入口：'save' 顶栏保存按钮（保存后关闭编辑页）；'settings' 设置按钮（保存后返回编辑页）
         saveSheetEntry: 'save',
         newTemplateName: '',
+        // 另存为弹层与名称
+        saveAsVisible: false,
+        saveAsName: '',
+        // 模板对象：商品模板 / 地址模板
+        templateObject: 'product',
         // 顶栏模板名称（与页面标题并列显示）
         currentTemplateName: '',
         // 顶栏副标题自定义文案；为空时回退为业务名称
@@ -580,6 +657,12 @@
         wrapScrolling: false      }
     },
     computed: {
+      // 顶栏左侧提示：当前标签选中状态
+      labelStateText() {
+        if (!this.selectedKeys.length) return '未选中标签'
+        if (this.multiSelectMode) return '已选 ' + this.selectedKeys.length + ' 项 · 多选'
+        return '已选 1 项'
+      },
       currentTitle() {
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         return cfg.title
@@ -589,9 +672,29 @@
         get: function() { return this.overflowMode !== 'ellipsis' },
         set: function(val) { this.overflowMode = val ? 'wrap' : 'ellipsis' }
       },
-      // 仅二级类目可作为模板类型（一级类目不可保存模板）
+      // 分页打印对象有勾选时即为商品分页
+      effectivePageMode() {
+        return this.flowElementKeys.length > 0 ? 'each' : this.pageMode
+      },
+      // 仅本地模板仓库支持另存为（发货单/小票/会员/地址走各自保存入口）
+      saveAsEnabled() {
+        var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        return cfg.storage === 'localTemplates'
+      },
+      // 模板对象选项：商品标签可切换商品/地址，其他模板类型固定为自身对象
+      templateObjectOptions() {
+        var map = {
+          label: [{ value: 'product', label: '商品模板' }, { value: 'address', label: '地址模板' }],
+          delivery: [{ value: 'delivery', label: '发货单模板' }],
+          receipt: [{ value: 'receipt', label: '小票模板' }],
+          member: [{ value: 'member', label: '会员标签模板' }],
+          address: [{ value: 'address', label: '地址打印模板' }]
+        }
+        return map[this.templateType] || map.label
+      },
+      // 商品模板按一级类目绑定：下拉可选的就是商品一级类目
       categoryList() {
-        return this.flattenCategoryTree(this.categoryTree, 2)
+        return this.flattenCategoryTree(this.categoryTree, 1)
       },
       // 全部类目（仅用于类目名称回显，包含一级类目）
       allCategoryList() {
@@ -622,10 +725,6 @@
         var cfg = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         return cfg.title.replace('编辑', '') + '模板'
       },
-      // 顶栏副标题：自定义副标题（缺省用业务名称）+ 标签尺寸
-      headerSubtitle() {
-        return (this.subtitleText || this.currentTitle) + ' · ' + this.sizeLabel
-      },
       labelStyle() {
         return {
           width: this.labelWidth + 'px',
@@ -655,7 +754,7 @@
       // 编辑区与打印分页保持一致：每件一张时只展示第一条商品行（每张标签内容相同）
       editorGoodsRows() {
         var rows = (this.record && this.record.goodsRows) || []
-        if (this.pageMode !== 'each') return rows
+        if (this.effectivePageMode !== 'each') return rows
         var first = rows.filter(function(r) { return hasGoodsValue(r) })[0]
         return first ? [first] : []
       },
@@ -961,16 +1060,27 @@
       // 分页标签的示例文案：每件一张时按商品行数估算页数，其余场景按 1 页
       pageLabelText() {
         var rows = (this.record && this.record.goodsRows) || []
-        var total = this.pageMode === 'each'
+        var total = this.effectivePageMode === 'each'
           ? Math.max(1, rows.filter(function(r) { return hasGoodsValue(r) }).length)
           : 1
         return '1/' + total
       },
       // 打印设置：分页 / 每件一张默认带页码，多行连续则移除页码标签
       onPageModeChange(e) {
+        // 已勾选分页打印对象时固定为商品分页
+        if (this.flowElementKeys.length > 0) return
         var val = e && e.target ? e.target.value : e
-        this.pageMode = val === 'fit' || val === 'each' ? val : 'none'
+        this.pageMode = val === 'fit' ? 'fit' : 'none'
         this.setPageLabel(this.pageMode !== 'none')
+      },
+      // 分页打印对象：点击卡片切换是否参与商品分页
+      toggleFlowElement(key) {
+        var wasEmpty = this.flowElementKeys.length === 0
+        var idx = this.flowElementKeys.indexOf(key)
+        if (idx > -1) this.flowElementKeys.splice(idx, 1)
+        else this.flowElementKeys.push(key)
+        // 首次勾选进入商品分页时，默认带上分页标签
+        if (wasEmpty && this.flowElementKeys.length) this.setPageLabel(true)
       },
       onPageLabelToggle(e) {
         var checked = e && e.target ? e.target.checked : !!e
@@ -1140,10 +1250,10 @@
           self.applyDefaultLayout(cfg || TYPE_CONFIG[self.templateType] || TYPE_CONFIG.label)
         }
         this.$confirm({
-          title: '旧模板已不支持',
-          content: '模板「' + name + '」为旧结构，无法继续使用。请删除后重新创建。',
-          okText: '删除旧模板',
-          cancelText: '稍后处理',
+          title: '有旧模板',
+          content: '模板「' + name + '」为旧结构，已不支持，是否删除？',
+          okText: '删除',
+          cancelText: '取消',
           onOk: function() {
             var task = (tpl && tpl.platformKey)
               ? postAction('/platformConfig/saveUiConfig', { key: tpl.platformKey, value: '' })
@@ -1181,17 +1291,22 @@
         // 顶栏展示当前模板名称
         if (snap.name) this.currentTemplateName = snap.name
         this.overflowMode = snap.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap'
-        this.pageMode = snap.pageMode === 'fit' || snap.pageMode === 'each' ? snap.pageMode : 'none'
+        // 商品分页由「分页打印」勾选对象数量决定，这里只还原单页/自动分页
+        this.pageMode = snap.pageMode === 'fit' ? 'fit' : 'none'
         this.maxRowsPerPage = Math.max(0, parseInt(snap.maxRowsPerPage, 10) || 0)
         this.repeatHeader = snap.repeatHeader !== false
-        // 旧模板没有 flowElementKeys：默认商品元素参与多行/分页
-        this.flowElementKeys = Array.isArray(snap.flowElementKeys)
+        // 「分页打印」勾选对象只服务于商品分页：旧模板按原打印方式还原，其余方式清空
+        var flow = Array.isArray(snap.flowElementKeys)
           ? snap.flowElementKeys.filter(function(key) { return self.selectedAttrs.indexOf(key) >= 0 })
-          : this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || key === GOODS_TABLE_KEY })
+          : []
+        if (snap.pageMode === 'each' && !flow.length) {
+          flow = this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || key === GOODS_TABLE_KEY })
+        }
+        this.flowElementKeys = snap.pageMode === 'each' ? flow : []
         this.restoreMissingAttrs(snap.selectedAttrs)
         this.fitLabelAfterLoad()
-        // 打印方式为分页/每件一张时，分页标签默认选中（旧模板缺该元素则自动补上）
-        if (this.pageMode !== 'none' && this.selectedAttrs.indexOf('page_no') === -1) {
+        // 打印方式为分页时，分页标签默认选中（旧模板缺该元素则自动补上）
+        if (this.effectivePageMode !== 'none' && this.selectedAttrs.indexOf('page_no') === -1) {
           this.setPageLabel(true, true)
         }
       },
@@ -1266,18 +1381,23 @@
           { key: 'dn_footer', label: '落款', value: '华夏家纺', group: '其它' }
         ]
       },
-      /** 小票字段占位（后续按业务需求补充） */
+      /** 小票字段：优先使用当前单据数据，缺失时才用占位示例 */
       buildReceiptAttrs() {
+        var record = this.record || {}
+        var pick = function (key, fallback) {
+          var v = record[key]
+          return (v === null || v === undefined || v === '') ? fallback : String(v)
+        }
         return [
-          { key: 'rc_title', label: '小票标题', value: '零售小票', group: '单据头' },
-          { key: 'rc_no', label: '单号', value: 'LS261105001', group: '单据头' },
-          { key: 'rc_date', label: '日期', value: '2026-11-05 10:30', group: '单据头' },
-          { key: 'rc_member', label: '会员', value: '张三', group: '单据头' },
+          { key: 'rc_title', label: '小票标题', value: pick('rc_title', '零售小票'), group: '单据头' },
+          { key: 'rc_no', label: '单号', value: pick('rc_no', 'LS261105001'), group: '单据头' },
+          { key: 'rc_date', label: '日期', value: pick('rc_date', '2026-11-05 10:30'), group: '单据头' },
+          { key: 'rc_member', label: '会员', value: pick('rc_member', '张三'), group: '单据头' },
           { key: 'rc_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
-          { key: 'rc_qty_total', label: '数量合计', value: '1', group: '金额合计' },
-          { key: 'rc_amount_total', label: '金额合计', value: '¥280.00', group: '金额合计' },
-          { key: 'rc_remark', label: '备注', value: '谢谢惠顾', group: '其它' },
-          { key: 'rc_footer', label: '落款', value: '华夏家纺', group: '其它' }
+          { key: 'rc_qty_total', label: '数量合计', value: pick('rc_qty_total', '1'), group: '金额合计' },
+          { key: 'rc_amount_total', label: '金额合计', value: pick('rc_amount_total', '¥280.00'), group: '金额合计' },
+          { key: 'rc_remark', label: '备注', value: pick('rc_remark', '谢谢惠顾'), group: '其它' },
+          { key: 'rc_footer', label: '落款', value: pick('rc_footer', '华夏家纺'), group: '其它' }
         ]
       },
       /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
@@ -1319,10 +1439,8 @@
         this.selectedAttrs = selected
         this.attrStyles = styles
         this.attrLabels = labels
-        // 默认勾选商品类元素参与多行/分页打印
-        this.flowElementKeys = selected.filter(function(key) {
-          return key === GOODS_KEY || key === GOODS_TABLE_KEY
-        })
+        // 默认不勾选分页打印对象；勾选任意对象即进入商品分页
+        this.flowElementKeys = []
         // 默认布局没有已保存模板，顶栏使用默认模板名称
         this.currentTemplateName = cfg.title.replace('编辑', '') + '模板'
         this.fitLabelAfterLoad()
@@ -1358,10 +1476,8 @@
           fontWeight: style.fontWeight || 'normal',
           letterSpacing: (style.letterSpacing || 0) + 'px',
           lineHeight: String(style.lineHeight || 1.3),
-          // 虚线外框线宽按缩放反算，放大页面时不会变粗
-          outlineWidth: this.hairlineWidth,
-          // 负偏移把边框画在元素内侧，避免贴边元素左右边线被画布裁掉
-          outlineOffset: -this.hairlineWidth
+          // 虚线外框由子元素 .lem-elem-frame 绘制，这里只传当前缩放值供其反缩放使用
+          '--lem-zoom': String(this.zoom)
         }
         if (key === GOODS_TABLE_KEY) {
           var table = this.goodsTableData
@@ -1423,6 +1539,7 @@
       clearSelection() {
         this.selectedKeys = []
         this.currentAttrKey = null
+        this.multiSelectMode = false
       },
       addAttr(key) {
         if (this.selectedAttrs.indexOf(key) !== -1) return
@@ -1433,6 +1550,7 @@
         if (attr) this.$set(this.attrLabels, key, attr.label)
         this.selectedKeys = [key]
         this.currentAttrKey = key
+        this.pushSnapshot()
       },
       // 勾选式切换：已选中则移除，未选中则添加（弹窗保持打开，可连续操作）
       toggleAttr(key) {
@@ -1478,6 +1596,7 @@
         if (this.currentAttrKey === key) {
           this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
         }
+        this.pushSnapshot()
       },
       updateCurrentLabel(e) {
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
@@ -1517,15 +1636,33 @@
         var el = document.querySelector('.lem-elem[data-key="' + key + '"]')
         return { w: el ? el.offsetWidth : 0, h: el ? el.offsetHeight : 0 }
       },
+      // 元素边框矩形（标签坐标系，直接取渲染后的虚线外框，不含手柄、与字号推算无关）
+      getItemRect(key) {
+        var canvas = this.$refs.labelCanvas
+        var el = document.querySelector('.lem-elem[data-key="' + key + '"]')
+        if (!canvas || !el) {
+          var s = this.attrStyles[key] || {}
+          var size = this.getItemSize(key)
+          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+        }
+        var cr = canvas.getBoundingClientRect()
+        var er = el.getBoundingClientRect()
+        var z = this.zoom || 1
+        return {
+          key: key,
+          x: (er.left - cr.left) / z,
+          y: (er.top - cr.top) / z,
+          w: er.width / z,
+          h: er.height / z
+        }
+      },
       // 对齐：以选中对象外接矩形为基准 left/center/right/top/middle/bottom
       alignSelected(mode) {
         var self = this
         var keys = this.selectedKeys
         if (keys.length < 2) return
         var rects = keys.map(function(key) {
-          var s = self.attrStyles[key] || {}
-          var size = self.getItemSize(key)
-          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+          return self.getItemRect(key)
         })
         var minX = Math.min.apply(null, rects.map(function(r) { return r.x }))
         var maxX = Math.max.apply(null, rects.map(function(r) { return r.x + r.w }))
@@ -1549,9 +1686,7 @@
         var keys = this.selectedKeys
         if (keys.length < 3) return
         var rects = keys.map(function(key) {
-          var s = self.attrStyles[key] || {}
-          var size = self.getItemSize(key)
-          return { key: key, x: s.x || 0, y: s.y || 0, w: size.w, h: size.h }
+          return self.getItemRect(key)
         })
         if (dir === 'h') {
           rects.sort(function(a, b) { return a.x - b.x })
@@ -1655,7 +1790,12 @@
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
           labelWidth: this.labelWidth,
-          labelHeight: this.labelHeight
+          labelHeight: this.labelHeight,
+          // 选择状态也纳入历史，撤销/恢复可还原选择与取消
+          selectedAttrs: this.selectedAttrs,
+          selectedKeys: this.selectedKeys,
+          currentAttrKey: this.currentAttrKey,
+          multiSelectMode: this.multiSelectMode
         })
         if (this.historyIndex >= 0 && this.history[this.historyIndex] === snap) return
         // 丢弃 redo 分支
@@ -1665,23 +1805,25 @@
         if (this.history.length > 50) this.history.shift()
         this.historyIndex = this.history.push(snap) - 1
       },
-      undo() {
-        if (this.historyIndex <= 0) { this.$message.info('没有可撤销的操作'); return }
-        this.historyIndex--
-        var snap = JSON.parse(this.history[this.historyIndex])
+      applySnapshot(snap) {
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
         this.labelWidth = snap.labelWidth != null ? snap.labelWidth : this.labelWidth
         this.labelHeight = snap.labelHeight != null ? snap.labelHeight : this.labelHeight
+        if (snap.selectedAttrs) this.selectedAttrs = snap.selectedAttrs.slice()
+        this.selectedKeys = (snap.selectedKeys || []).slice()
+        this.currentAttrKey = snap.currentAttrKey || null
+        this.multiSelectMode = !!snap.multiSelectMode
+      },
+      undo() {
+        if (this.historyIndex <= 0) { this.$message.info('没有可撤销的操作'); return }
+        this.historyIndex--
+        this.applySnapshot(JSON.parse(this.history[this.historyIndex]))
       },
       redo() {
         if (this.historyIndex >= this.history.length - 1) { this.$message.info('没有可恢复的操作'); return }
         this.historyIndex++
-        var snap = JSON.parse(this.history[this.historyIndex])
-        this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
-        this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
-        this.labelWidth = snap.labelWidth != null ? snap.labelWidth : this.labelWidth
-        this.labelHeight = snap.labelHeight != null ? snap.labelHeight : this.labelHeight
+        this.applySnapshot(JSON.parse(this.history[this.historyIndex]))
       },
       zoomIn() {
         this.zoom = Math.min(LABEL_MAX_ZOOM, this.zoom + 0.1)
@@ -1713,23 +1855,12 @@
       // 手指移出元素后事件仍持续派发到捕获元素，不依赖 touch passive 机制
       // 选中逻辑也在这里完成（彻底移除 click 事件避免时序冲突）
       startPointerDrag(key, e, mode) {
-        var self = this
         // 记录 pointerdown 瞬间的快照，留到 pointerup 做 toggle 判断
         this._pointerDownKey = key
         this._selectedBeforeDown = this.selectedKeys.slice()
         this._prevFocus = this.currentAttrKey  // ← 记录 pointerdown 前的焦点
         // ⚠️ 不在这里改 currentAttrKey！焦点只能在 pointerup toggle 后决定
         var willMultiDrag = mode === 'move' && this.selectedKeys.length > 1
-        // 长按 600ms：全选所有元素并整体拖动
-        if (mode === 'move') {
-          this._longPressTimer = setTimeout(function() {
-            self._longPressTimer = null
-            var allKeys = self.selectedAttrs.slice()
-            self.selectedKeys = allKeys
-            self.currentAttrKey = allKeys[0] || null
-            self.startActualDrag(key, e, 'move', true)
-          }, 600)
-        }
         this.startActualDrag(key, e, mode, willMultiDrag)
       },
       // 测量元素文字本身的自然尺寸（不换行、不裁剪），用于限制缩放边框的最小值
@@ -1745,7 +1876,6 @@
         clone.style.height = 'auto'
         clone.style.whiteSpace = 'nowrap'
         clone.style.overflow = 'visible'
-        clone.style.outline = 'none'
         var inner = clone.querySelector('.lem-elem-inner')
         if (inner) {
           inner.style.width = 'auto'
@@ -1932,10 +2062,6 @@
         }
       },
       onPointerUp() {
-        if (this._longPressTimer) {
-          clearTimeout(this._longPressTimer)
-          this._longPressTimer = null
-        }
         var prevKeys = this._selectedBeforeDown || []
         var prevFocus = this._prevFocus
         var pKey = this._pointerDownKey
@@ -1962,11 +2088,15 @@
             } else {
               this.currentAttrKey = prevFocus
             }
+            // 全部取消后退出多选状态
+            if (!next.length) this.multiSelectMode = false
           } else {
-            // 之前未选中 → 单选，不再累加到已有选中项
-            this.selectedKeys = [pKey]
+            // 之前未选中：多选状态下追加，普通单击则单选
+            this.selectedKeys = this.multiSelectMode ? prevKeys.concat([pKey]) : [pKey]
             this.currentAttrKey = pKey
           }
+          // 选择/取消选择也计入撤销历史
+          this.pushSnapshot()
         }
         // 移动过 → 拖拽意图，恢复 pointerdown 前的焦点（如果有的话）
         // 注意 pointerdown 没改 currentAttrKey，所以这里不需要恢复
@@ -1975,8 +2105,57 @@
         this._prevFocus = null
         this.unbindPointerEvents()
       },
+      // 编辑区空白（含画布外的灰色区域）：长按任意空白全选进入多选，单击空白退出多选
+      startAreaPress(e) {
+        var self = this
+        if (this.$refs.labelCanvas && this.$refs.labelCanvas.contains(e.target)) return
+        var startX = e.clientX
+        var startY = e.clientY
+        var timer = null
+        var cleanup = function() {
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
+          }
+          document.removeEventListener('pointermove', onMove)
+          document.removeEventListener('pointerup', onUp)
+          document.removeEventListener('pointercancel', onCancel)
+        }
+        var onMove = function(ev) {
+          // 移动超过阈值视为滚动，取消本次长按/单击判定
+          if (Math.abs(ev.clientX - startX) > 8 || Math.abs(ev.clientY - startY) > 8) cleanup()
+        }
+        var onUp = function() {
+          if (timer) {
+            // 未达长按时长：按单击空白处理，清空选择并退出多选
+            cleanup()
+            self.selectedKeys = []
+            self.currentAttrKey = null
+            self.multiSelectMode = false
+            self.pushSnapshot()
+            return
+          }
+          cleanup()
+        }
+        var onCancel = function() {
+          cleanup()
+        }
+        timer = setTimeout(function() {
+          timer = null
+          self.selectedKeys = self.selectedAttrs.slice()
+          self.currentAttrKey = self.selectedKeys[0] || null
+          self.multiSelectMode = true
+          self.pushSnapshot()
+          if (navigator.vibrate) navigator.vibrate(10)
+        }, 600)
+        document.addEventListener('pointermove', onMove)
+        document.addEventListener('pointerup', onUp)
+        document.addEventListener('pointercancel', onCancel)
+      },
       // 空白处按住滑动框选：Pointer Events + setPointerCapture，与元素拖动同一套机制
       startMarquee(e) {
+        if (e.target !== e.currentTarget) return
+        var self = this
         var rect = this.$refs.labelCanvas.getBoundingClientRect()
         this.marquee = {
           active: true,
@@ -1985,6 +2164,21 @@
           startY: (e.clientY - rect.top) / this.zoom,
           x: 0, y: 0, w: 0, h: 0
         }
+        // 长按空白处任意位置：全选标签并进入多选（不再要求先选中元素）
+        this._marqueeLongPressed = false
+        this._marqueeTimer = setTimeout(function() {
+          self._marqueeTimer = null
+          self._marqueeLongPressed = true
+          // 放弃框选，改为全选
+          self.marquee.active = false
+          self.marquee.visible = false
+          self.selectedKeys = self.selectedAttrs.slice()
+          self.currentAttrKey = self.selectedKeys[0] || null
+          self.multiSelectMode = true
+          self.unbindMarqueeEvents()
+          self.pushSnapshot()
+          if (navigator.vibrate) navigator.vibrate(10)
+        }, 600)
         try {
           if (e.currentTarget.setPointerCapture) {
             e.currentTarget.setPointerCapture(e.pointerId)
@@ -2002,7 +2196,14 @@
         var cy = (e.clientY - rect.top) / this.zoom
         var w = Math.abs(cx - m.startX)
         var h = Math.abs(cy - m.startY)
-        if (!m.visible && (w > 6 || h > 6)) m.visible = true
+        if (!m.visible && (w > 6 || h > 6)) {
+          m.visible = true
+          // 已经开始框选，取消长按全选
+          if (this._marqueeTimer) {
+            clearTimeout(this._marqueeTimer)
+            this._marqueeTimer = null
+          }
+        }
         if (m.visible) {
           m.x = Math.round(Math.min(cx, m.startX))
           m.y = Math.round(Math.min(cy, m.startY))
@@ -2011,7 +2212,19 @@
         }
       },
       onMarqueeUp() {
+        if (this._marqueeTimer) {
+          clearTimeout(this._marqueeTimer)
+          this._marqueeTimer = null
+        }
+        var longPressed = this._marqueeLongPressed
+        this._marqueeLongPressed = false
         var m = this.marquee
+        if (longPressed) {
+          // 长按已全选，抬手不再按“点击空白”清空
+          m.visible = false
+          this.unbindMarqueeEvents()
+          return
+        }
         if (m.active) {
           m.active = false
           if (m.visible) {
@@ -2032,11 +2245,13 @@
             this.selectedKeys = hit
             this.currentAttrKey = hit.length ? hit[hit.length - 1] : null
           } else {
-            // 未形成框选 = 点击空白，清空选择
+            // 未形成框选 = 点击空白，清空选择并退出多选
             this.selectedKeys = []
             this.currentAttrKey = null
+            this.multiSelectMode = false
           }
           m.visible = false
+          this.pushSnapshot()
         }
         this.unbindMarqueeEvents()
       },
@@ -2070,15 +2285,19 @@
               ? self.templates.find(function(t) { return t.id === self.selectedTemplateId })
               : null
             self.newTemplateName = self.currentTemplateName || (exist ? (exist.name || '') : '')
+            self.templateObject = (exist && exist.objectType) || 'product'
+            if (self.templateObject !== 'product') self.templateCategoryId = null
             var catId = exist && exist.type === 'default' ? exist.categoryId : null
             var valid = catId && self.categoryList.some(function(c) { return String(c.value) === String(catId) })
             self.templateCategoryId = valid ? catId : null
           } else if (cfg.storage === 'deliveryTemplate') {
             self.newTemplateName = self.currentTemplateName ||
               ((self.deliveryTemplate && self.deliveryTemplate.name) || '发货单模板')
+            self.templateObject = 'delivery'
             self.templateCategoryId = null
           } else {
             self.newTemplateName = self.headerTemplateName
+            self.templateObject = self.templateObjectOptions[0].value
             self.templateCategoryId = null
           }
           self.saveSheetVisible = true
@@ -2088,6 +2307,10 @@
       },
       closeSaveSheet() {
         this.saveSheetVisible = false
+      },
+      /** 切换模板对象：地址模板不绑定商品类型 */
+      onTemplateObjectChange(val) {
+        if (val !== 'product') this.templateCategoryId = null
       },
       /** 顶栏唯一编辑按钮：统一编辑标题、副标题与标签尺寸 */
       openEditInfo() {
@@ -2128,8 +2351,8 @@
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
           overflowMode: this.overflowMode,
-          pageMode: this.pageMode,
-          maxRowsPerPage: this.maxRowsPerPage,
+          pageMode: this.effectivePageMode,
+          maxRowsPerPage: 0,
           repeatHeader: this.repeatHeader,
           flowElementKeys: this.flowElementKeys
         }, {
@@ -2168,7 +2391,7 @@
           return false
         })
       },
-      /** 加载商品类目树（保存模板弹窗的「商品类型」选项，仅二级类目可选） */
+      /** 加载商品类目树（保存模板弹窗的「商品类型」下拉，取一级类目） */
       loadCategoryTree() {
         var self = this
         if (this.categoryTree.length) return Promise.resolve(this.categoryTree)
@@ -2233,8 +2456,8 @@
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
           overflowMode: this.overflowMode,
-          pageMode: this.pageMode,
-          maxRowsPerPage: this.maxRowsPerPage,
+          pageMode: this.effectivePageMode,
+          maxRowsPerPage: 0,
           repeatHeader: this.repeatHeader,
           flowElementKeys: this.flowElementKeys.slice()
         })
@@ -2260,32 +2483,72 @@
           this.persistUnifiedTemplate(cfg, name).then(finish)
           return
         }
-        var isCategoryTpl = !!this.templateCategoryId
+        var isCategoryTpl = this.templateObject === 'product' && !!this.templateCategoryId
         var exist = this.selectedTemplateId
           ? this.templates.find(function(t) { return t.id === self.selectedTemplateId })
           : null
+        // 商品模板：选了类目=该类目通用模板；没选类目=绑定当前商品；两者都不成立时才是「全部类型」
+        var materialId = null
+        if (this.templateObject === 'product' && !isCategoryTpl) {
+          materialId = (this.record && this.record.id) || (exist && exist.materialId) || null
+        }
+        var tplType = isCategoryTpl ? 'default'
+          : (this.templateObject === 'product' && !materialId ? 'default' : 'normal')
         var tpl = this.buildTplPayload({
           id: exist ? exist.id : 'tpl_' + Date.now(),
           serverId: exist ? exist.serverId : null,
           name: name,
-          type: isCategoryTpl ? 'default' : 'normal',
-          materialId: isCategoryTpl ? null : (exist ? exist.materialId : null),
+          objectType: this.templateObject,
+          type: tplType,
+          materialId: materialId,
           categoryId: isCategoryTpl ? this.templateCategoryId : null,
           categoryName: isCategoryTpl ? this.getCategoryName(this.templateCategoryId) : null
         })
-        // 类型通用模板：同类型只保留一个，其余移除
-        if (isCategoryTpl) {
-          this.templates = this.templates.filter(function(t) {
-            if (t.id === tpl.id) return true
-            return !(t.type === 'default' && String(t.categoryId) === String(self.templateCategoryId))
-          })
-        }
-        // 覆盖当前模板，或新增一条
+        // 覆盖当前模板，或新增一条（同类型允许保存多个模板）
         var idx = this.templates.findIndex(function(t) { return t.id === tpl.id })
         if (idx > -1) this.templates.splice(idx, 1, tpl)
         else this.templates.push(tpl)
         this.selectedTemplateId = tpl.id
         this.persistTemplate(tpl, '模板已保存').then(function() { finish(true) })
+      },
+      /** 另存为：以新名称保存为独立模板，不覆盖当前模板 */
+      openSaveAs() {
+        var base = (this.newTemplateName || this.currentTemplateName || '标签模板').trim()
+        this.saveAsName = base ? base + ' 副本' : ''
+        this.saveAsVisible = true
+      },
+      confirmSaveAs() {
+        var name = (this.saveAsName || '').trim()
+        if (!name) {
+          this.$message.warning('请输入模板名称')
+          return
+        }
+        var exist = this.templates.some(function(t) { return t.name === name })
+        if (exist) {
+          this.$message.warning('模板名称已存在，请修改')
+          return
+        }
+        var isCategoryTpl = this.templateObject === 'product' && !!this.templateCategoryId
+        var materialId = (this.templateObject === 'product' && !isCategoryTpl && this.record && this.record.id) || null
+        var tpl = this.buildTplPayload({
+          id: 'tpl_' + Date.now(),
+          serverId: null,
+          name: name,
+          objectType: this.templateObject,
+          type: isCategoryTpl ? 'default' : (this.templateObject === 'product' && !materialId ? 'default' : 'normal'),
+          materialId: materialId,
+          categoryId: isCategoryTpl ? this.templateCategoryId : null,
+          categoryName: isCategoryTpl ? this.getCategoryName(this.templateCategoryId) : null
+        })
+        this.templates.push(tpl)
+        this.selectedTemplateId = tpl.id
+        this.saveAsVisible = false
+        var self = this
+        this.persistTemplate(tpl, '模板已另存为').then(function() {
+          self.newTemplateName = name
+          self.currentTemplateName = name
+          self.saveSheetVisible = false
+        })
       },
       /** 保存单个模板到统一模板表，成功后从服务端刷新列表，拿到权威 id/version */
       persistTemplate(tpl, successMsg) {
@@ -2373,6 +2636,43 @@
 </script>
 
 <style lang="scss" scoped>
+/* 顶栏右列：标签名称在上、标签尺寸在下，与左侧页面标题并排 */
+.lem-header-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* 顶栏右列：标签名称 / 标签尺寸 */
+.lem-header-name {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lem-header-size {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.68);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 顶栏编辑按钮缩小 */
+.mmp-tools .mmp-icon.lem-icon-sm {
+  width: 34px;
+  font-size: 18px;
+}
+
 .lem-page {
   flex: 1;
   min-height: 0;
@@ -2442,17 +2742,27 @@
   z-index: 1;
 }
 
-/* 所有已加载元素统一虚线外框（线宽由元素内联 outlineWidth 反算，缩放时不变粗）；点击后只显示手柄 */
-.lem-elem {
-  outline-style: dashed;
+/* 所有已加载元素统一虚线外框（点击后只显示手柄）
+   注意：不能使用 outline/小于 1px 的边框线宽——WebKit（iOS Safari）会把小于 1px 的
+   边框和 outline 线宽按边丢弃，导致左右边线不显示。这里用 1px 边框的子元素按 1/zoom
+   反缩放，缩放后仍是 1px 视觉线宽，且四条边都能稳定绘制 */
+.lem-elem-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  width: calc(100% * var(--lem-zoom, 1));
+  height: calc(100% * var(--lem-zoom, 1));
   /* 未选中/未点击：灰色边框 */
-  outline-color: #bfbfbf;
-  outline-offset: 0;
+  border: 2px dashed #bfbfbf;
+  transform: scale(calc(1 / var(--lem-zoom, 1)));
+  transform-origin: top left;
+  pointer-events: none;
 }
 
 /* 被点击选中的元素：沿用原来的蓝色边框 */
-.lem-elem--active {
-  outline-color: rgba(24, 144, 255, 0.85);
+.lem-elem--active .lem-elem-frame {
+  border-color: rgba(24, 144, 255, 0.85);
 }
 
 /* 拖动吸附时的对齐线 */
@@ -2617,16 +2927,46 @@
 .lem-align-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 6px 12px;
   background: #fff;
   border-bottom: 1px solid #eee;
   flex-shrink: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  overflow: hidden;
   position: sticky;
   top: 0;
   z-index: 20;
+}
+
+/* 左侧提示：标签选中状态 + 空白处操作说明 */
+.lem-align-hint {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 2px;
+  max-width: 46%;
+}
+
+.lem-align-hint__state {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: #262626;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lem-align-hint__state.is-multi {
+  color: #1890ff;
+}
+
+.lem-align-hint__tip {
+  overflow: hidden;
+  font-size: 10px;
+  color: #999;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .lem-align-bar::-webkit-scrollbar {
@@ -2638,6 +2978,16 @@
   gap: 4px;
   align-items: center;
   flex-wrap: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.lem-align-btns::-webkit-scrollbar {
+  display: none;
 }
 
 .lem-align-divider {
@@ -2653,44 +3003,31 @@
 }
 
 /* 保存模板弹窗 */
-.lem-settings-radio {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.lem-settings-radio .ant-radio-wrapper {
-  font-size: 14px;
-  white-space: normal;
+.lem-save-option {
+  font-size: 13px;
+  color: #333;
 }
 .lem-save-field {
-  margin-bottom: 14px;
-}
-
-.lem-save-field--inline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0 6px;
-}
-
-.lem-save-field--inline .lem-save-label {
-  margin-bottom: 0;
-}
-
-.lem-save-field--inline .lem-save-hint {
-  margin-top: 0;
+  margin-bottom: 8px;
 }
 
 .lem-save-label {
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
   color: #333;
+}
+
+.lem-save-object-row {
+  display: flex;
+  gap: 8px;
 }
 
 .lem-save-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 30px;
   margin-bottom: 6px;
 }
 
@@ -2713,15 +3050,51 @@
   color: #999;
 }
 
-/* 参与多行/分页打印的元素勾选 */
-.lem-flow-group {
+/* 分页打印对象：单列开关行 */
+.lem-flow-cards {
   display: flex;
   flex-direction: column;
+}
+
+.lem-flow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #333;
+}
+
+.lem-flow-row.is-on .lem-flow-name {
+  color: #1677ff;
+  font-weight: 500;
+}
+
+/* 弹层底部：显示分页标签与取消/保存同一行 */
+.lem-save-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.lem-flow-check {
-  margin-left: 0;
+.lem-save-bottom-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.lem-save-footer-btns {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lem-save-footer-btns .ant-btn + .ant-btn {
+  margin-left: 8px;
 }
 
 .lem-save-conflict {
@@ -2780,6 +3153,11 @@
 
 .lem-tool-btn .anticon {
   font-size: 18px;
+}
+
+/* 撤销/恢复不可用态 */
+.lem-tool-btn.is-disabled {
+  color: #c9c9c9;
 }
 
 /* 面板：覆盖在画布右侧（不压缩画布），属性/元素互斥 */
@@ -3136,26 +3514,66 @@
 .lem-save-sheet-wrap .ant-modal-header {
   border-radius: 16px 16px 0 0;
   border-bottom: none;
-  padding: 16px 16px 8px;
+  padding: 10px 16px 2px;
 }
 
 .lem-save-sheet-wrap .ant-modal-title {
   text-align: center;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .lem-save-sheet-wrap .ant-modal-body {
-  padding: 4px 16px 8px;
-  max-height: 60vh;
+  padding: 0 20px 4px;
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
 }
 
 .lem-save-sheet-wrap .ant-modal-footer {
-  padding: 8px 16px 16px;
+  padding: 8px 20px 10px;
   border-top: 1px solid #f0f0f0;
 }
 
 .lem-save-sheet-wrap .ant-modal-footer .ant-btn {
-  height: 40px;
+  height: 28px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* 弹层控件尺寸与紧凑布局对齐 */
+.lem-save-sheet-wrap .ant-input,
+.lem-save-sheet-wrap .ant-select-selection {
+  height: 30px;
+  font-size: 13px;
+}
+
+.lem-save-sheet-wrap .ant-input {
+  padding: 0 9px;
+  line-height: 30px;
+}
+
+.lem-save-sheet-wrap .ant-select-selection__rendered {
+  line-height: 30px;
+  margin-left: 9px;
+  margin-right: 9px;
+}
+
+.lem-save-sheet-wrap .ant-switch {
+  min-width: 34px;
+  height: 19px;
+  line-height: 19px;
+}
+
+.lem-save-sheet-wrap .ant-switch::after {
+  width: 15px;
+  height: 15px;
+  top: 2px;
+  left: 2px;
+}
+
+.lem-save-sheet-wrap .ant-switch-checked::after {
+  left: 100%;
+  margin-left: 0;
+  transform: translateX(calc(-100% - 2px));
 }
 </style>

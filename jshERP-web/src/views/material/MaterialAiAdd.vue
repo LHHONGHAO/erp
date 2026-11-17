@@ -95,9 +95,19 @@
     },
     mounted() {
       document.body.classList.add('mm-no-pull-refresh')
-      clearMobileHeaderActions()
-      setMobileHeaderTitle('商品AI添加')
+      this.registerMobileHeader()
       this.loadCategoryTree()
+    },
+    // keep-alive 缓存页面返回时重新注册顶栏标题
+    activated() {
+      document.body.classList.add('mm-no-pull-refresh')
+      this.registerMobileHeader()
+    },
+    // 离开本页清空顶栏标题，避免残留在首页等其它页面
+    deactivated() {
+      clearMobileHeaderActions()
+      clearMobileHeaderTitle()
+      document.body.classList.remove('mm-no-pull-refresh')
     },
     beforeDestroy() {
       clearMobileHeaderActions()
@@ -105,6 +115,10 @@
       document.body.classList.remove('mm-no-pull-refresh')
     },
     methods: {
+      registerMobileHeader() {
+        clearMobileHeaderActions()
+        setMobileHeaderTitle('商品AI添加')
+      },
       handleBack() {
         this.$router.back()
       },

@@ -104,6 +104,51 @@ public class SpecSampleController {
         }
     }
 
+    @PostMapping(value = "/evaluate")
+    @ApiOperation(value = "属性一致性评估：判断该属性是否长期集中在少数标准值")
+    public String evaluate(@RequestBody JSONObject params, HttpServletRequest request) {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            JSONObject result = specValueSampleService.evaluate(
+                    params.getLong("categoryId"), params.getLong("attributeId"), params.getString("childName"));
+            objectMap.putAll(result);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("属性一致性评估失败", e);
+            return returnJson(objectMap, "评估失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
+    @PostMapping(value = "/judge")
+    @ApiOperation(value = "标准值判定：返回标准/近似归一/待确认/自定义状态")
+    public String judge(@RequestBody JSONObject params, HttpServletRequest request) {
+        Map<String, Object> objectMap = new HashMap<>();
+        try {
+            String text = params.getString("text");
+            if (text == null || text.trim().isEmpty()) {
+                return returnJson(objectMap, "请输入规格值", ErpInfo.ERROR.code);
+            }
+            java.util.List<String> standards = new java.util.ArrayList<>();
+            com.alibaba.fastjson.JSONArray array = params.getJSONArray("standards");
+            if (array != null) {
+                for (int i = 0; i < array.size(); i++) {
+                    String value = array.getString(i);
+                    if (value != null && !value.trim().isEmpty()) {
+                        standards.add(value.trim());
+                    }
+                }
+            }
+            JSONObject result = specValueSampleService.judge(text,
+                    params.getLong("categoryId"), params.getLong("attributeId"),
+                    params.getString("childName"), standards);
+            objectMap.putAll(result);
+            return returnJson(objectMap, ErpInfo.OK.name, ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("规格值判定失败", e);
+            return returnJson(objectMap, "判定失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
     @PostMapping(value = "/learnBatch")
     @ApiOperation(value = "批量学习规格值：商品保存时沉淀识别原文到采纳值的对应关系")
     public String learnBatch(@RequestBody JSONObject params, HttpServletRequest request) {

@@ -573,8 +573,8 @@
         set(val) { this.labelHeight = Math.round(val * PX_PER_MM) }
       },
       categoryList() {
-        // 仅二级类目可作为模板类型：一级类目不允许保存模板
-        return this.flattenCategoryTree(this.categoryTree, 2)
+        // 商品模板按一级类目绑定：下拉可选的就是商品一级类目
+        return this.flattenCategoryTree(this.categoryTree, 1)
       },
       // 全部类目（仅用于类目名称回显，包含一级类目）
       allCategoryList() {

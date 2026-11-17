@@ -40,7 +40,7 @@ function injectPrintAgentRoute(routes) {
   }
 }
 
-// 地址识别页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表。
+// 地址打印页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表。
 // 页面路由已在 router.config.js 的 constantRouterMap 中固定注册（与首页共用 TabLayout），
 // 这里只负责菜单展示与首页「常用页面」的入口，菜单结构变化不会导致页面打不开。
 function injectAddressRecognizeMenu(menuData) {
@@ -49,14 +49,40 @@ function injectAddressRecognizeMenu(menuData) {
     || item.text === '基础资料' || item.text === '基础信息')
   if (!target) return
   if (!Array.isArray(target.children)) target.children = []
-  const exists = target.children.some(item => item.url === '/system/address-recognize')
+  const exists = target.children.find(item => item.url === '/system/address-recognize')
+  if (exists) {
+    // 旧缓存里可能还是旧名称，这里统一更正为「地址打印」
+    exists.text = '地址打印'
+    exists.icon = 'environment'
+    return
+  }
+  target.children.push({
+    id: 'address-recognize',
+    text: '地址打印',
+    icon: 'environment',
+    url: '/system/address-recognize',
+    component: '/system/AddressRecognize',
+    route: '1',
+    fixedRoute: true,
+    children: []
+  })
+}
+
+// 标签打印页面由前端内置，注入到「基础资料」菜单分组下，不依赖后台菜单表
+function injectLabelPrintMenu(menuData) {
+  if (!Array.isArray(menuData)) return
+  const target = menuData.find(item => (item.url || '').replace(/\/$/, '') === '/systemA'
+    || item.text === '基础资料' || item.text === '基础信息')
+  if (!target) return
+  if (!Array.isArray(target.children)) target.children = []
+  const exists = target.children.some(item => item.url === '/print/label')
   if (!exists) {
     target.children.push({
-      id: 'address-recognize',
-      text: '地址识别',
-      icon: 'environment',
-      url: '/system/address-recognize',
-      component: '/system/AddressRecognize',
+      id: 'label-print',
+      text: '标签打印',
+      icon: 'tags',
+      url: '/print/label',
+      component: '/print/LabelPrint',
       route: '1',
       fixedRoute: true,
       children: []
@@ -106,6 +132,7 @@ function saveMenuCache(userId, menuData) {
 // 把后台菜单转成路由表并注册
 function applyMenuRoutes(menuData) {
   injectAddressRecognizeMenu(menuData);
+  injectLabelPrintMenu(menuData);
   injectAiConfigMenu(menuData);
   const constRoutes = generateIndexRouter(menuData);
   injectMobilePageRoutes(constRoutes)
@@ -157,6 +184,7 @@ router.beforeEach((to, from, next) => {
               // 后台返回的是原始菜单，先注入内置页面再写缓存，避免覆盖掉注入结果
               injectAddressRecognizeMenu(res)
               injectAiConfigMenu(res)
+              injectLabelPrintMenu(res)
               saveMenuCache(userId, res)
               refreshUserBtnList()
             }
@@ -179,6 +207,7 @@ router.beforeEach((to, from, next) => {
           let constRoutes = [];
           injectAddressRecognizeMenu(menuData);
           injectAiConfigMenu(menuData);
+          injectLabelPrintMenu(menuData);
           constRoutes = generateIndexRouter(menuData);
           injectMobilePageRoutes(constRoutes)
           injectPrintAgentRoute(constRoutes)

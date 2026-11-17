@@ -12,6 +12,39 @@
       </div>
     </div>
 
+    <!-- 固定入口：销售开单 / 零售出库，独立展示，不属于常用页面卡片 -->
+    <div v-if="fixedEntries.length > 0" class="m-quick">
+      <div
+        class="m-quick__tile"
+        v-for="item in fixedEntries"
+        :key="item.key"
+        :class="'m-quick__tile--' + item.key"
+        @click="openPage(item.page)"
+      >
+        <div class="m-quick__body">
+          <span class="m-quick__icon">
+            <svg v-if="item.key === 'retailSale'" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 7h22v34l-5.5-3.6-5.5 3.6-5.5-3.6L13 41V7z" />
+              <path d="M18 15h12M24 20v10M21 23h6M21 27.5h6" />
+            </svg>
+            <svg v-else-if="item.key === 'addressPrint'" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M24 5c-7.2 0-13 5.8-13 13 0 9.8 13 25 13 25s13-15.2 13-25c0-7.2-5.8-13-13-13z" />
+              <circle cx="24" cy="18" r="4.5" />
+            </svg>
+            <svg v-else-if="item.key === 'labelPrint'" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M25 5h14a4 4 0 0 1 4 4v14L24 42 6 24 25 5z" />
+              <circle cx="33.5" cy="14.5" r="3" />
+            </svg>
+            <svg v-else viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 19l16-7.5L40 19v16.5L24 43 8 35.5V19z" />
+              <path d="M8 19l16 7.5L40 19M24 26.5V43" />
+            </svg>
+          </span>
+          <span class="m-quick__text">{{ item.text }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 常用页面卡片 -->
     <div class="m-common">
       <div class="m-common__head">
@@ -123,6 +156,8 @@
   import { USER_ID } from '@/store/mutation-types'
 
   const STORAGE_PREFIX = 'mobile_common_pages_'
+  // 常用页面最多 8 个（4 列 × 2 行）
+  const MAX_COMMON_PAGES = 8
 
   export default {
     name: 'AnalysisMobile',
@@ -223,6 +258,20 @@
       storageKey() {
         let userId = Vue.ls.get(USER_ID) || 'anonymous'
         return STORAGE_PREFIX + userId
+      },
+      // 固定展示在常用页面上方的入口，按菜单名称匹配，菜单无此页面时自动隐藏
+      fixedEntries() {
+        let defs = [
+          { key: 'retailSale', text: '销售开单' },
+          { key: 'retailOut', text: '零售出库' },
+          { key: 'addressPrint', text: '地址打印' },
+          { key: 'labelPrint', text: '标签打印' }
+        ]
+        return defs.map(def => {
+          let page = this.allPages.find(item => item.text === def.text) ||
+            this.allPages.find(item => (item.text || '').indexOf(def.text) > -1)
+          return page ? { key: def.key, text: def.text, page: page } : null
+        }).filter(item => !!item)
       }
     },
     watch: {
@@ -314,7 +363,7 @@
             return
           }
         }
-        this.commonPages = this.savedPages.filter(item => validUrls.indexOf(item.url) > -1)
+        this.commonPages = this.savedPages.filter(item => validUrls.indexOf(item.url) > -1).slice(0, MAX_COMMON_PAGES)
       },
       // 保存常用页面到云端（同时更新本地缓存）
       persistCommonPages() {
@@ -406,6 +455,10 @@
         if (index > -1) {
           this.pickedUrls.splice(index, 1)
         } else {
+          if (this.pickedUrls.length >= MAX_COMMON_PAGES) {
+            this.$message.warning('常用页面最多 ' + MAX_COMMON_PAGES + ' 个')
+            return
+          }
           this.pickedUrls.push(item.url)
         }
       },
@@ -415,6 +468,7 @@
         let selected = this.pickedUrls
           .map(url => pool.find(item => item.url === url))
           .filter(item => !!item)
+          .slice(0, MAX_COMMON_PAGES)
         this.commonPages = selected
         this.persistCommonPages()
         this.pickerVisible = false
@@ -617,6 +671,81 @@
     color: #2f5fe0;
     border-color: #c7d6ff;
     background: #f2f6ff;
+  }
+
+  /* 固定入口：独立于常用卡片，两列大按钮 */
+  .m-quick {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 0 0 14px;
+  }
+
+  .m-quick__tile {
+    position: relative;
+    width: 100%;
+    padding-top: 70%;
+    border-radius: 20px;
+    color: #fff;
+    overflow: hidden;
+    box-shadow: 0 6px 16px rgba(31, 58, 147, 0.16);
+
+    &:active {
+      opacity: 0.88;
+    }
+
+    &--retailSale {
+      background: #2a8bf2;
+    }
+
+    &--retailOut {
+      background: #74c46b;
+    }
+
+    &--addressPrint {
+      background: #7c6cf5;
+    }
+
+    &--labelPrint {
+      background: #f2994a;
+    }
+  }
+
+  .m-quick__body {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  .m-quick__icon {
+    width: 37%;
+    max-width: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+  }
+
+  .m-quick__text {
+    margin-top: 7px;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    line-height: 20px;
+    color: #fff;
   }
 
   .m-common__grid {

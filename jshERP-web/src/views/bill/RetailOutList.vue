@@ -15,8 +15,8 @@
 
       <div v-if="mobileLoading" class="rol-mobile-tip">加载中...</div>
       <div v-else-if="mobileBillList.length === 0" class="rol-mobile-tip">今日暂无销售单</div>
-      <div v-for="bill in mobileBillList" :key="bill.id" class="rol-card">
-        <!-- 最上方：单号 + 日期左对齐，右侧多选 -->
+      <div v-for="bill in mobileBillList" :key="bill.id" class="rol-card" :class="{ 'is-expanded': isMobileCardExpanded(bill) }" @click="toggleMobileCard(bill)">
+        <!-- 上方：单号 + 日期，右侧多选 -->
         <div class="rol-card-head">
           <div class="rol-card-number-wrap">
             <span class="rol-card-label">单号</span>
@@ -26,49 +26,57 @@
           <a-checkbox
             class="rol-card-check"
             :checked="isMobileSelected(bill)"
+            @click.native.stop
             @change="e => toggleMobileSelect(bill, e.target.checked)"
           />
         </div>
-        <!-- 中间：商品名称与规格同行，下方显示数量、零售价、实付价格 -->
-        <div class="rol-card-items">
-          <div v-for="(item, index) in (bill.items || [])" :key="item.id || index" class="rol-item">
-            <div class="rol-item-title">
-              <span class="rol-item-name">{{ item.name }}</span>
-              <span v-if="itemSpec(item)" class="rol-item-spec">{{ itemSpec(item) }}</span>
+        <!-- 点击卡片展开时再加载商品明细：与销售开单页一致的商品卡片 -->
+        <div v-show="isMobileCardExpanded(bill)" class="rol-card-items" @click.stop>
+          <div v-if="bill.itemsLoading" class="rol-item-empty">加载中...</div>
+          <div v-for="(item, index) in (bill.items || [])" :key="item.id || index" class="rol-goods-card">
+            <div class="rol-goods-thumb">
+              <img v-if="itemImg(item)" :src="itemImg(item)" alt="" />
+              <a-icon v-else type="picture" class="rol-goods-thumb-icon" />
             </div>
-            <div class="rol-item-metrics">
-              <div class="rol-item-metric">
-                <span class="rol-item-label rol-label-qty">数量</span>
-                <span class="rol-item-value">{{ item.operNumber }}</span>
-              </div>
-              <div class="rol-item-metric">
-                <span class="rol-item-label rol-label-retail">零售价</span>
-                <span class="rol-item-value">¥{{ item.unitPrice }}</span>
-              </div>
-              <div class="rol-item-metric">
-                <span class="rol-item-label rol-label-paid">实付价</span>
-                <span class="rol-item-value">¥{{ itemSettleAmount(bill, item) }}</span>
+            <div class="rol-goods-main">
+              <div class="rol-goods-name">{{ item.name }}</div>
+              <div v-if="itemSpec(item)" class="rol-goods-spec">{{ itemSpec(item) }}</div>
+              <div class="rol-goods-foot">
+                <span class="rol-goods-kv">
+                  <span class="rol-goods-kv-label">零售价</span>
+                  <span class="rol-goods-kv-value">¥{{ item.unitPrice }}</span>
+                </span>
+                <span class="rol-goods-kv">
+                  <span class="rol-goods-kv-label">数量</span>
+                  <span class="rol-goods-kv-value">{{ item.operNumber }}</span>
+                </span>
+                <span class="rol-goods-amount">¥{{ itemSettleAmount(bill, item) }}</span>
               </div>
             </div>
           </div>
-          <div v-if="!bill.items || bill.items.length === 0" class="rol-item-empty">无商品明细</div>
+          <div v-if="!bill.itemsLoading && bill.items && bill.items.length === 0" class="rol-item-empty">无商品明细</div>
         </div>
-        <!-- 最下方：合计行（数量、零售价、实付价），会员信息与审核按钮同一行 -->
-        <div class="rol-card-foot">
-          <div class="rol-totals">
-            <div class="rol-item-metric">
-              <span class="rol-item-label rol-label-qty">合计数量</span>
-              <span class="rol-item-value">{{ billTotalQty(bill) }}</span>
-            </div>
-            <div class="rol-item-metric">
-              <span class="rol-item-label rol-label-retail">零售价</span>
-              <span class="rol-item-value">¥{{ billRetailAmount(bill) }}</span>
-            </div>
-            <div class="rol-item-metric">
-              <span class="rol-item-label rol-label-paid">实付价</span>
-              <span class="rol-item-value">¥{{ billPaidAmount(bill) }}</span>
-            </div>
+        <!-- 汇总：零售价、数量、折扣、结算金额（展开时位于商品卡片下方） -->
+        <div class="rol-card-summary">
+          <div class="rol-summary-item">
+            <span class="rol-item-label rol-label-retail">零售价</span>
+            <span class="rol-item-value">¥{{ billRetailAmount(bill) }}</span>
           </div>
+          <div class="rol-summary-item rol-summary-qty">
+            <span class="rol-item-label rol-label-qty">数量</span>
+            <span class="rol-item-value">{{ billTotalQty(bill) }}</span>
+          </div>
+          <div class="rol-summary-item rol-summary-discount">
+            <span class="rol-item-label rol-label-discount">折扣</span>
+            <span class="rol-item-value">{{ billDiscount(bill) }}</span>
+          </div>
+          <div class="rol-summary-item rol-summary-settle">
+            <span class="rol-item-label rol-label-settle">结算金额</span>
+            <span class="rol-item-value">¥{{ billPaidAmount(bill) }}</span>
+          </div>
+        </div>
+        <!-- 下面：会员信息与操作按钮 -->
+        <div class="rol-card-foot" @click.stop>
           <div class="rol-member-row">
             <span class="rol-member">{{ billMemberText(bill) }}</span>
             <div class="rol-actions">
@@ -298,6 +306,7 @@
   import { getAction, postAction } from '@/api/manage'
   import { findBillDetailByNumber } from '@/api/api'
   import { getMpListShort } from '@/utils/util'
+  import { getRowImgUrl } from '@/views/material/utils/materialDisplay'
   export default {
     name: "RetailOutList",
     mixins:[JeecgListMixin,BillListMixin],
@@ -345,6 +354,8 @@
         filterDrawerVisible: false,
         // 手机端卡片多选
         mobileSelectedIds: [],
+        // 手机端已展开商品明细的单据 id（默认全部收起）
+        mobileExpandedIds: [],
         labelCol: {
           span: 5
         },
@@ -429,6 +440,7 @@
           const text = [
             bill.number,
             bill.organName,
+            bill.materialsList,
             member.contacts,
             member.telephone,
             bill.remark
@@ -468,7 +480,7 @@
       tableAddTotalRow() {
       },
       // ===== 手机端：当日销售单卡片 =====
-      // 加载当日零售出库单，并逐单补全商品明细
+      // 加载当日零售出库单（只加载单据主表，商品明细在卡片展开时按需加载）
       loadTodayBills () {
         this.mobileLoading = true
         const day = moment().format('YYYY-MM-DD')
@@ -483,16 +495,14 @@
           })
         }).then(res => {
           const rows = (res && res.code === 200 && res.data && res.data.rows) ? res.data.rows : []
-          return Promise.all(rows.map(row => this.loadBillItems(row))).then(() => {
-            this.mobileBills = rows
-            this.mobileLoading = false
-          })
+          this.mobileBills = rows.map(row => Object.assign({}, row, { items: null, itemsLoading: false }))
+          this.mobileLoading = false
         }).catch(() => {
           this.mobileBills = []
           this.mobileLoading = false
         })
       },
-      // 单据商品明细
+      // 单据商品明细（展开时加载）
       loadBillItems (row) {
         return getAction('/depotItem/getDetailList', {
           headerId: row.id,
@@ -500,10 +510,14 @@
           linkType: 'basic',
           isReadOnly: '0'
         }).then(res => {
-          row.items = (res && res.code === 200 && res.data && res.data.rows) ? res.data.rows : []
+          this.$set(row, 'items', (res && res.code === 200 && res.data && res.data.rows) ? res.data.rows : [])
         }).catch(() => {
-          row.items = []
+          this.$set(row, 'items', [])
         })
+      },
+      // 商品图片（与销售开单页一致）
+      itemImg (item) {
+        return getRowImgUrl(item)
       },
       // 商品规格：仅显示规格值，多个值用 / 分隔（如 绿/220*240）
       itemSpec (item) {
@@ -541,19 +555,34 @@
         if (total <= 0) return amount.toFixed(2)
         return (amount * paid / total).toFixed(2)
       },
-      // 单据合计数量
+      // 单据合计数量（优先取主表数量，明细未展开时也能显示）
       billTotalQty (bill) {
+        if (bill && bill.materialCount != null && bill.materialCount !== '') {
+          return Number(bill.materialCount)
+        }
         return (bill.items || []).reduce((sum, item) => sum + (Number(item.operNumber) || 0), 0)
       },
-      // 单据零售价合计（零售价 × 数量的合计）
+      // 单据零售价合计（明细未加载时直接取主表金额合计）
       billRetailAmount (bill) {
-        const total = (bill.items || []).reduce((sum, item) => sum + (Number(item.allPrice) || 0), 0)
+        if (bill && bill.totalPrice != null && bill.totalPrice !== '') {
+          return (Number(bill.totalPrice) || 0).toFixed(2)
+        }
+        const items = (bill && bill.items) || []
+        const total = items.reduce((sum, item) => sum + (Number(item.allPrice) || 0), 0)
         return total.toFixed(2)
       },
       // 单据实付价合计
       billPaidAmount (bill) {
         const total = Number(this.billRetailAmount(bill)) || 0
         return (bill.changeAmount == null ? total : Number(bill.changeAmount)).toFixed(2)
+      },
+      // 单据折扣：结算金额 / 零售价合计，按 10 折制显示
+      billDiscount (bill) {
+        const retail = Number(this.billRetailAmount(bill)) || 0
+        if (retail <= 0) return '-'
+        const paid = Number(this.billPaidAmount(bill)) || 0
+        const discount = Math.round(paid / retail * 100) / 10
+        return discount + '折'
       },
       // 单据会员
       billMember (bill) {
@@ -576,6 +605,26 @@
         if (checked) ids.push(bill.id)
         this.mobileSelectedIds = ids
       },
+      // 是否已展开该单的商品明细
+      isMobileCardExpanded (bill) {
+        return !!bill && this.mobileExpandedIds.indexOf(bill.id) > -1
+      },
+      // 点击卡片标题栏切换商品明细展开/收起（首次展开时才请求商品明细）
+      toggleMobileCard (bill) {
+        if (!bill) return
+        const index = this.mobileExpandedIds.indexOf(bill.id)
+        if (index > -1) {
+          this.mobileExpandedIds.splice(index, 1)
+          return
+        }
+        this.mobileExpandedIds.push(bill.id)
+        if (!bill.itemsLoading && !bill.items) {
+          this.$set(bill, 'itemsLoading', true)
+          this.loadBillItems(bill).then(() => {
+            this.$set(bill, 'itemsLoading', false)
+          })
+        }
+      },
       // 发货：直接打开发货单打印弹层（不再跳转发货单页面）
       mobileDeliver (bill) {
         if (!bill || !bill.number) {
@@ -583,11 +632,19 @@
           return
         }
         const that = this
-        // 取单据详情补全主表字段（收货人/电话/地址等），失败时回退列表行数据
-        findBillDetailByNumber({ number: bill.number }).then(res => {
-          const detail = (res && res.code === 200 && res.data) ? Object.assign({}, bill, res.data) : bill
-          that.openDeliveryPrint(detail)
-        }).catch(() => that.openDeliveryPrint(bill))
+        const proceed = () => {
+          // 取单据详情补全主表字段（收货人/电话/地址等），失败时回退列表行数据
+          findBillDetailByNumber({ number: bill.number }).then(res => {
+            const detail = (res && res.code === 200 && res.data) ? Object.assign({}, bill, res.data) : bill
+            that.openDeliveryPrint(detail)
+          }).catch(() => that.openDeliveryPrint(bill))
+        }
+        // 商品明细尚未加载时先按需加载，保证发货单含商品行
+        if (bill.items) {
+          proceed()
+        } else {
+          this.loadBillItems(bill).then(proceed)
+        }
       },
       // 组装发货单打印数据（字段 key 与发货单模板一致），写入快照后打开打印弹层
       openDeliveryPrint (bill) {
@@ -754,6 +811,32 @@
     justify-content: space-between;
     padding-bottom: 8px;
     border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+  }
+  .rol-card-summary {
+    display: flex;
+    align-items: baseline;
+    padding-top: 8px;
+  }
+  .rol-summary-item {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+  .rol-summary-item:nth-child(1) {
+    flex: 0 0 auto;
+  }
+  .rol-summary-qty,
+  .rol-summary-discount {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .rol-summary-settle {
+    flex: 0 0 auto;
+  }
+  .rol-card-summary .rol-item-value {
+    flex: 0 0 auto;
+    text-align: left;
   }
   .rol-card-number-wrap {
     display: flex;
@@ -769,7 +852,7 @@
   .rol-card-number {
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: #40a9ff;
   }
   .rol-card-time {
     flex-shrink: 0;
@@ -781,59 +864,103 @@
     flex-shrink: 0;
     margin-left: 8px;
   }
-  .rol-item {
-    padding: 8px 0;
-    border-bottom: 1px dashed #f0f0f0;
+  /* 明细区：与销售开单页一致的商品卡片 */
+  .rol-card-items {
+    padding-top: 8px;
   }
-  .rol-item:last-child {
-    border-bottom: none;
-  }
-  .rol-item-title {
+  .rol-goods-card {
     display: flex;
-    align-items: baseline;
+    gap: 10px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #e3e7ee;
+    border-radius: 10px;
+  }
+  .rol-goods-card + .rol-goods-card {
+    margin-top: 8px;
+  }
+  .rol-goods-thumb {
+    flex: none;
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #edf3fb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rol-goods-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    display: block;
+  }
+  .rol-goods-thumb-icon {
+    font-size: 24px;
+    color: #c0c9d6;
+  }
+  .rol-goods-main {
+    flex: 1 1 auto;
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
   }
-  .rol-item-title::-webkit-scrollbar {
-    display: none;
-  }
-  .rol-item-name {
-    flex: 0 0 auto;
-    white-space: nowrap;
+  .rol-goods-name {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
+    line-height: 18px;
+    color: #1d2129;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rol-goods-spec {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 16px;
+    color: #40a9ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rol-goods-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+  .rol-goods-kv {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rol-goods-kv-label {
+    color: #40a9ff;
+  }
+  .rol-goods-kv-value {
+    display: inline-block;
+    min-width: 40px;
+    padding: 0 6px;
+    text-align: center;
+    border-radius: 4px;
+    background: rgba(24, 144, 255, 0.1);
+    color: #1d2129;
+  }
+  .rol-goods-amount {
+    margin-left: auto;
+    font-weight: 600;
     color: #333;
   }
-  .rol-item-spec {
-    flex: 0 0 auto;
-    margin-left: 6px;
-    white-space: nowrap;
-    font-size: 12px;
-    color: #999;
-  }
-  .rol-item-metrics {
-    display: flex;
-    align-items: baseline;
-    margin-top: 4px;
-    min-width: 0;
-  }
-  .rol-item-metric {
-    display: flex;
-    align-items: baseline;
-    min-width: 0;
-  }
-  .rol-item-metric:nth-child(1) {
-    flex: 0 0 66px;
-  }
-  .rol-item-metric:nth-child(2) {
-    flex: 0 0 104px;
-    margin-left: 12px;
-  }
-  .rol-item-metric:nth-child(3) {
-    flex: 1 1 auto;
-    margin-left: 12px;
+  /* 展开时汇总栏位于商品卡片下方，用虚线分隔 */
+  .rol-card.is-expanded .rol-card-summary {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #eef0f3;
   }
   .rol-item-label {
     display: inline-block;
@@ -851,6 +978,19 @@
   }
   .rol-label-paid {
     min-width: 4.2em;
+  }
+  .rol-label-discount {
+    min-width: 2.4em;
+  }
+  .rol-label-settle {
+    min-width: 4.4em;
+  }
+  .rol-card-summary .rol-label-qty,
+  .rol-card-summary .rol-label-discount {
+    min-width: 2.4em;
+  }
+  .rol-card-summary .rol-label-settle {
+    min-width: 4.4em;
   }
   .rol-item-value {
     flex: 1 1 auto;
@@ -873,15 +1013,12 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid #f0f0f0;
+    margin-top: 4px;
   }
   .rol-member-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 6px;
   }
   .rol-member {
     flex: 1;
@@ -890,11 +1027,6 @@
     word-break: break-all;
     font-size: 13px;
     color: #333;
-  }
-  .rol-totals {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
   }
   .rol-actions {
     flex-shrink: 0;

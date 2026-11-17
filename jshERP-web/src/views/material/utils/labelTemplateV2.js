@@ -227,6 +227,7 @@ export function editorStateToV2(state, meta) {
     },
     meta: {
       type: info.type || null,
+      objectType: info.objectType || null,
       materialId: info.materialId || null,
       categoryId: info.categoryId || null,
       categoryName: info.categoryName || null,

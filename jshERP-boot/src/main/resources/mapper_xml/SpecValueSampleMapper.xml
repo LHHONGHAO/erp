@@ -13,6 +13,7 @@
     <result column="source" jdbcType="VARCHAR" property="source" />
     <result column="confidence" jdbcType="DECIMAL" property="confidence" />
     <result column="hit_count" jdbcType="INTEGER" property="hitCount" />
+    <result column="save_count" jdbcType="INTEGER" property="saveCount" />
     <result column="status" jdbcType="VARCHAR" property="status" />
     <result column="create_time" jdbcType="TIMESTAMP" property="createTime" />
     <result column="update_time" jdbcType="TIMESTAMP" property="updateTime" />
@@ -21,7 +22,7 @@
 
   <sql id="Base_Column_List">
     id, tenant_id, category_id, attribute_id, child_name, canonical_value, norm_key, attr_value_id,
-    source, confidence, hit_count, status, create_time, update_time, delete_flag
+    source, confidence, hit_count, save_count, status, create_time, update_time, delete_flag
   </sql>
 
   <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.SpecValueSample"
@@ -37,6 +38,7 @@
       <if test="source != null">source,</if>
       <if test="confidence != null">confidence,</if>
       <if test="hitCount != null">hit_count,</if>
+      <if test="saveCount != null">save_count,</if>
       <if test="status != null">status,</if>
       <if test="deleteFlag != null">delete_flag,</if>
     </trim>
@@ -50,6 +52,7 @@
       <if test="source != null">#{source,jdbcType=VARCHAR},</if>
       <if test="confidence != null">#{confidence,jdbcType=DECIMAL},</if>
       <if test="hitCount != null">#{hitCount,jdbcType=INTEGER},</if>
+      <if test="saveCount != null">#{saveCount,jdbcType=INTEGER},</if>
       <if test="status != null">#{status,jdbcType=VARCHAR},</if>
       <if test="deleteFlag != null">#{deleteFlag,jdbcType=VARCHAR},</if>
     </trim>
@@ -67,6 +70,7 @@
       <if test="source != null">source = #{source,jdbcType=VARCHAR},</if>
       <if test="confidence != null">confidence = #{confidence,jdbcType=DECIMAL},</if>
       <if test="hitCount != null">hit_count = #{hitCount,jdbcType=INTEGER},</if>
+      <if test="saveCount != null">save_count = #{saveCount,jdbcType=INTEGER},</if>
       <if test="status != null">status = #{status,jdbcType=VARCHAR},</if>
       <if test="deleteFlag != null">delete_flag = #{deleteFlag,jdbcType=VARCHAR},</if>
     </set>
@@ -154,6 +158,12 @@
   <update id="increaseHitCount">
     update jsh_spec_value_sample
     set hit_count = hit_count + 1
+    where id = #{id,jdbcType=BIGINT}
+  </update>
+
+  <update id="increaseSaveCount">
+    update jsh_spec_value_sample
+    set save_count = IFNULL(save_count, 0) + 1
     where id = #{id,jdbcType=BIGINT}
   </update>
 </mapper>

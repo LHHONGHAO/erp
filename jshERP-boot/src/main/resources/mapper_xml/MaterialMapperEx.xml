@@ -204,7 +204,8 @@
         where 1=1
         <if test="materialParam != null and materialParam !=''">
             <bind name="bindKey" value="'%'+materialParam+'%'"/>
-            and (m.bar_code like #{bindKey} or m.name like #{bindKey} or m.mnemonic like #{bindKey} or m.brand like #{bindKey} or m.mfrs like #{bindKey})
+            and (m.bar_code like #{bindKey} or m.name like #{bindKey} or m.mnemonic like #{bindKey}
+            or m.brand like #{bindKey} or m.mfrs like #{bindKey} or me.spec_summary like #{bindKey})
         </if>
 
 
@@ -311,8 +312,9 @@
         where 1=1
         <if test="materialParam != null and materialParam !=''">
             <bind name="bindKey" value="'%'+materialParam+'%'"/>
-            and (jm.bar_code like #{bindKey} or jm.bar_code like #{bindKey} or jme.sku_code like #{bindKey} or jm.name like #{bindKey}
-            or jm.mnemonic like #{bindKey} or jm.brand like #{bindKey} or jm.mfrs like #{bindKey})
+            and (jm.bar_code like #{bindKey} or jme.sku_code like #{bindKey} or jm.name like #{bindKey}
+            or jm.mnemonic like #{bindKey} or jm.brand like #{bindKey} or jm.mfrs like #{bindKey}
+            or jme.spec_summary like #{bindKey})
         </if>
 
 

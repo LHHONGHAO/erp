@@ -18,6 +18,8 @@ public class SpecValueSample {
     private String source;
     private BigDecimal confidence;
     private Integer hitCount;
+    /** 该标准写法被保存采纳的次数，用于一致性判定 */
+    private Integer saveCount;
     private String status;
     private Date createTime;
     private Date updateTime;
@@ -57,6 +59,9 @@ public class SpecValueSample {
 
     public Integer getHitCount() { return hitCount; }
     public void setHitCount(Integer hitCount) { this.hitCount = hitCount; }
+
+    public Integer getSaveCount() { return saveCount; }
+    public void setSaveCount(Integer saveCount) { this.saveCount = saveCount; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

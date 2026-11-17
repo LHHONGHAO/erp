@@ -56,13 +56,20 @@ export const constantRouterMap = [
         component: () => import(/* webpackChunkName: "dashboard" */ '@/views/dashboard/Analysis')
       },
       {
-        // 地址识别页固定路由：与首页共用同一个 TabLayout，返回首页时不会销毁重建。
+        // 地址打印页固定路由：与首页共用同一个 TabLayout，返回首页时不会销毁重建。
         // 路由在打包时即存在，不依赖后台菜单注入；菜单仅负责展示入口。
         // 绝对路径子路由会保留最后的完整路径 /system/address-recognize。
         path: '/system/address-recognize',
         name: 'AddressRecognize',
-        meta: { title: '地址识别', componentName: 'AddressRecognize', keepAlive: true },
+        meta: { title: '地址打印', componentName: 'AddressRecognize', keepAlive: true },
         component: () => import(/* webpackChunkName: "address-recognize" */ '@/views/system/AddressRecognize')
+      },
+      {
+        // 标签打印页固定路由：搜索/扫码商品后直接打开标签打印弹层
+        path: '/print/label',
+        name: 'LabelPrint',
+        meta: { title: '标签打印', componentName: 'LabelPrint', keepAlive: true },
+        component: () => import(/* webpackChunkName: "label-print" */ '@/views/print/LabelPrint')
       }
     ]
   },

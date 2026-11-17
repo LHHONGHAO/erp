@@ -6,6 +6,7 @@ import dict from './modules/dict'
 import user from './modules/user'
 import permission from './modules/permission'
 import enhance from './modules/enhance'
+import goodsFeed from './modules/goodsFeed'
 import getters from './getters'
 
 Vue.use(Vuex)
@@ -16,7 +17,8 @@ export default new Vuex.Store({
     dict,
     user,
     permission,
-    enhance
+    enhance,
+    goodsFeed
   },
   state: {
 

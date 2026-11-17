@@ -555,6 +555,7 @@
                         :headers="uploadGetHeaders(row,col)"
                         :showUploadList="false"
                         v-bind="buildProps(row,col)"
+                        :beforeUpload="beforeImageUpload"
                         :disabled="uploadValues[inputId] != null && uploadValues[inputId]['status'] === 'uploading'"
                         @change="(v)=>handleChangeUpload(v,inputId,row,col)"
                       >
@@ -773,6 +774,7 @@
   import JInputPop from '@/components/jeecg/minipop/JInputPop'
   import JFilePop from '@/components/jeecg/minipop/JFilePop'
   import JSelectList from '@/components/jeecgbiz/JSelectList'
+  import { compressImageFile } from '@/utils/imageCompress'
 
   // 行高，需要在实例加载完成前用到
   let rowHeight = 54
@@ -2374,6 +2376,10 @@
         this.validateOneInput(value, row, column, this.notPassedIds, true, 'change')
         // 触发valueChange 事件
         this.elemValueChange(FormTypes.input_pop, row, column, value)
+      },
+      /** 图片上传前压缩：统一压到 500KB 以下再上传 */
+      beforeImageUpload(file) {
+        return compressImageFile(file)
       },
       handleChangeUpload(info, id, row, column) {
         let { file } = info

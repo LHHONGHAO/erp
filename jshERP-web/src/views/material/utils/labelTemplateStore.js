@@ -4,7 +4,8 @@
  * 一个模板一行，config 保存完整 v2 JSON；对外返回编辑器内部结构
  * （selectedAttrs/attrStyles/...），编辑器交互不变。
  *
- * 只支持 v2：加载到旧结构时返回 outdated=true，由调用方提示删除后重建。
+ * 只支持 v2：读取到旧结构时返回 outdated=true，不转换、不替换，
+ * 由调用方提示「有旧模板，是否删除」。
  */
 import { listPrintTemplates, savePrintTemplate, deletePrintTemplate } from './labelProviderApi'
 import {
@@ -35,10 +36,11 @@ function fromServer(row) {
   // 模板分类信息（商品类型通用模板）
   var meta = state.meta || {}
   base.type = meta.type || 'normal'
+  base.objectType = meta.objectType || (String(base.businessType || '').indexOf('address') === 0 ? 'address' : 'product')
   base.categoryId = meta.categoryId || null
   base.categoryName = meta.categoryName || null
   base.materialId = meta.materialId || null
-  // v2 原始结构 + 渲染视图，供预览模块按 elements 直接渲染
+  // 原始结构 + 渲染视图，供预览模块按 elements 直接渲染
   base.v2 = cfg
   base.schema = v2ToSchemaView(cfg)
   return base
@@ -80,6 +82,7 @@ export function toTemplateV2(tpl) {
     repeatHeader: tpl.repeatHeader
   }, {
     type: tpl.type,
+    objectType: tpl.objectType,
     materialId: tpl.materialId,
     categoryId: tpl.categoryId,
     categoryName: tpl.categoryName,

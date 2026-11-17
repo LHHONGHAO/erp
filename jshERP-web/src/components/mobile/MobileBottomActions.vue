@@ -1,5 +1,6 @@
 <template>
-  <div class="mobile-bottom-actions" :class="{ 'is-single': buttons.length === 1 }">
+  <div class="mobile-bottom-actions"
+       :class="{ 'is-single': buttons.length === 1, 'is-grouped': grouped }">
     <button v-for="btn in buttons" :key="btn.key" type="button" class="mba-btn" @click="$emit('click', btn.key)">
       {{ btn.text }}
     </button>
@@ -15,7 +16,9 @@ export default {
   name: 'MobileBottomActions',
   props: {
     // [{ key: 'select', text: '选择添加' }]，数组顺序即按钮从左到右顺序
-    buttons: { type: Array, default: () => [] }
+    buttons: { type: Array, default: () => [] },
+    // 分组模式：多按钮无缝相接、同色，仅左右外侧保留圆角
+    grouped: { type: Boolean, default: false }
   }
 }
 </script>
@@ -57,5 +60,22 @@ export default {
 }
 .mba-btn:active {
   background: #096dd9;
+}
+/* 分组模式：按钮无缝相接、同一颜色，左按钮左圆角、右按钮右圆角 */
+.mobile-bottom-actions.is-grouped {
+  gap: 0;
+}
+.is-grouped .mba-btn {
+  flex: 1 1 0;
+  border-radius: 0;
+}
+.is-grouped .mba-btn + .mba-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.45);
+}
+.is-grouped .mba-btn:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.is-grouped .mba-btn:last-child {
+  border-radius: 0 8px 8px 0;
 }
 </style>

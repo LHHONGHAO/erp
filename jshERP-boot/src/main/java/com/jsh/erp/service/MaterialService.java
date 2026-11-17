@@ -241,6 +241,10 @@ public class MaterialService {
         sanitizeNumbers(obj);
         Material m = JSONObject.parseObject(obj.toJSONString(), Material.class);
         m.setEnabled(true);
+        // 按商品名称自动生成助记码（简拼），PC/手机/AI添加保存后均可按简拼搜索
+        if (StringUtil.isNotEmpty(m.getName())) {
+            m.setMnemonic(PinYinUtil.getFirstLettersLo(m.getName()));
+        }
         // 自动生成新版 SPU 码：SP + 两位类型码 + 款号
         m.setCode(generateSpuCode(m.getCategoryId(),
                 StringUtil.isNotEmpty(m.getModel()) ? m.getModel() : m.getCode()));
@@ -310,6 +314,10 @@ public class MaterialService {
     public int updateMaterial(JSONObject obj, HttpServletRequest request) throws Exception{
         sanitizeNumbers(obj);
         Material material = JSONObject.parseObject(obj.toJSONString(), Material.class);
+        // 按商品名称重新生成助记码（简拼），保证改名后仍可按简拼搜索
+        if (StringUtil.isNotEmpty(material.getName())) {
+            material.setMnemonic(PinYinUtil.getFirstLettersLo(material.getName()));
+        }
         try{
             // 历史商品无商品码时补生成，商品码一经生成不再变更
             Material oldMaterial = materialMapper.selectByPrimaryKey(material.getId());

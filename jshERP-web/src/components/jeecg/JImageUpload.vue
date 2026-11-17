@@ -29,6 +29,7 @@
   import { ACCESS_TOKEN } from "@/store/mutation-types"
   import { getFileAccessHttpUrl } from '@/api/manage'
   import { fileSizeLimit } from '@/api/api'
+  import { compressImageFile } from '@/utils/imageCompress'
 
   const uidGenerator=()=>{
     return '-'+parseInt(Math.random()*10000+1,10);
@@ -131,20 +132,21 @@
       beforeUpload: function(file){
         this.uploadGoOn=true
         let fileType = file.type;
-        let fileSize = file.size;
         if(fileType.indexOf('image')<0){
           this.$message.warning('请上传图片');
           this.uploadGoOn=false
           return false;
         }
-        //验证文件大小
-        if(fileSize>this.sizeLimit/10) {
-          let parseSizeLimit = (this.sizeLimit/1024/1024/10).toFixed(2)
-          this.$message.warning('抱歉，图片大小不能超过' + parseSizeLimit + 'M');
-          this.uploadGoOn=false
-          return false;
-        }
-        return true
+        // 上传前统一压缩到 500KB 以下，再校验配置的大小上限
+        return compressImageFile(file).then(compressed => {
+          if(compressed.size>this.sizeLimit/10) {
+            let parseSizeLimit = (this.sizeLimit/1024/1024/10).toFixed(2)
+            this.$message.warning('抱歉，图片大小不能超过' + parseSizeLimit + 'M');
+            this.uploadGoOn=false
+            return false
+          }
+          return compressed
+        })
       },
       handleChange(info) {
         console.log("--文件列表改变--")

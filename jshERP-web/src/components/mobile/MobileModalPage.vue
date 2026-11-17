@@ -1,8 +1,8 @@
 <template>
   <div v-if="visible" class="mmp-page">
     <!-- 标准顶栏：蓝底 49px、标题左对齐、副标题同行、右侧关闭固定 -->
-    <div class="mmp-header">
-      <div class="mmp-title-block">
+    <div class="mmp-header" :class="{ 'mmp-header--stacked': stackedTitle }">
+      <div class="mmp-title-block" :class="{ 'is-stacked': stackedTitle }">
         <div class="mmp-title">{{ title }}</div>
         <!-- 标题附加区：例如模板名称 + 重命名按钮 -->
         <slot name="title-extra"></slot>
@@ -42,6 +42,11 @@
 
 // 多个弹层页同时存在时，按引用计数决定 body 是否锁定横向手势
 var swipeLockCount = 0
+// 关闭页面时延后释放历史哨兵：同一帧内常出现「先关旧页、再开新页」，
+// 立刻 back() 产生的 popstate 会把刚打开的新页当成浏览器返回而关掉
+var releaseTimer = null
+// 哨兵历史记录默认关闭：不压入历史记录，也不拦截浏览器返回
+var HISTORY_GUARD_ENABLED = false
 
 /**
  * iOS Safari 的左右滑动回退由浏览器手势接管，touchmove 的 preventDefault 拦不住。
@@ -56,7 +61,7 @@ var popStateBound = false
 var guardClosers = []
 
 function pushHistoryGuard() {
-  if (historyGuardActive || typeof window === 'undefined' || !window.history) return
+  if (!HISTORY_GUARD_ENABLED || historyGuardActive || typeof window === 'undefined' || !window.history) return
   var state = window.history.state
   // 刷新后历史里可能残留上一次的哨兵（state 带标记，但内存标记已随刷新丢失）。
   // 此时直接接管这条记录，不再压栈；否则每刷新一次就多压一条，返回要多点几次。
@@ -120,10 +125,20 @@ function applyBodySwipeLock(on) {
   var locked = swipeLockCount > 0
   document.body.classList.toggle('mmp-swipe-locked', locked)
   if (locked) {
-    ensurePopStateBound()
-    pushHistoryGuard()
-  } else {
-    releaseHistoryGuard()
+    if (releaseTimer) {
+      clearTimeout(releaseTimer)
+      releaseTimer = null
+    }
+    if (HISTORY_GUARD_ENABLED) {
+      ensurePopStateBound()
+      pushHistoryGuard()
+    }
+  } else if (!releaseTimer) {
+    // 延后一拍再释放：同一帧内若有新页面打开，会取消这次释放
+    releaseTimer = setTimeout(function() {
+      releaseTimer = null
+      if (swipeLockCount <= 0) releaseHistoryGuard()
+    }, 0)
   }
 }
 export default {
@@ -131,7 +146,9 @@ export default {
   props: {
     visible: { type: Boolean, default: false },
     title: { type: String, default: '' },
-    subtitle: { type: String, default: '' }
+    subtitle: { type: String, default: '' },
+    // 标题与副标题上下两行显示（默认同行）
+    stackedTitle: { type: Boolean, default: false }
   },
   watch: {
     visible(val) {
@@ -252,6 +269,25 @@ body.mmp-swipe-locked {
   gap: 8px;
   /* 标题左边固定 66px，与标准手机顶栏一致 */
   padding-left: 8px;
+}
+/* 标题、副标题上下两行 */
+.mmp-title-block.is-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+}
+.mmp-title-block.is-stacked .mmp-title,
+.mmp-title-block.is-stacked .mmp-subtitle {
+  max-width: 100%;
+}
+.mmp-header--stacked {
+  height: 60px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.mmp-header--stacked .mmp-close {
+  height: 60px;
 }
 .mmp-title {
   flex: 0 1 auto;

@@ -197,6 +197,202 @@ public class SpecValueSampleService {
     }
 
     /**
+     * 一致性评估：某属性（含子项）历史上是否长期集中在少数几个值。
+     * 通过保存次数加权计算总数、去重值与最高占比。
+     */
+    public JSONObject evaluate(Long categoryId, Long attributeId, String childName) {
+        Long rootCategoryId = materialCategoryService.resolveRootCategoryId(categoryId);
+        String scopeChild = cut(childName == null ? "" : childName.trim(), 64);
+        JSONObject result = new JSONObject();
+        result.put("consistent", false);
+        result.put("total", 0);
+        result.put("distinct", 0);
+        result.put("top1Share", 0D);
+        result.put("values", new JSONArray());
+        try {
+            List<SpecValueSample> samples = specValueSampleMapper.selectByScope(
+                    attributeId, rootCategoryId, scopeChild, currentTenantId(), 200);
+            int total = 0;
+            int distinct = 0;
+            int top = 0;
+            JSONArray values = new JSONArray();
+            for (SpecValueSample sample : samples) {
+                if (sample == null || !StringUtil.isNotEmpty(sample.getNormKey())) {
+                    continue;
+                }
+                int saveCount = sample.getSaveCount() == null ? 1 : Math.max(sample.getSaveCount(), 1);
+                total += saveCount;
+                distinct++;
+                if (saveCount > top) {
+                    top = saveCount;
+                }
+                JSONObject item = new JSONObject();
+                item.put("value", sample.getCanonicalValue());
+                item.put("normKey", sample.getNormKey());
+                item.put("sampleId", sample.getId());
+                item.put("saveCount", saveCount);
+                values.add(item);
+            }
+            double top1Share = total > 0 ? (double) top / total : 0D;
+            for (int i = 0; i < values.size(); i++) {
+                JSONObject item = values.getJSONObject(i);
+                item.put("share", total > 0 ? (double) item.getIntValue("saveCount") / total : 0D);
+            }
+            // 样本足够且集中于少数值：单一值型或两值型
+            boolean consistent = total >= 5
+                    && ((distinct <= 3 && top1Share >= 0.6D) || (distinct <= 2 && top1Share >= 0.5D));
+            result.put("consistent", consistent);
+            result.put("total", total);
+            result.put("distinct", distinct);
+            result.put("top1Share", top1Share);
+            result.put("values", values);
+        } catch (Exception e) {
+            logger.warn("规格值一致性评估失败：{}", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 标准值判定：配置值/精确样本/别名/数值结构命中直接判为标准值；
+     * 一致属性再做相似度归一，非一致属性不自动替换，避免多样性数据被误归一。
+     */
+    public JSONObject judge(String rawText, Long categoryId, Long attributeId, String childName,
+                            List<String> standards) {
+        Long rootCategoryId = materialCategoryService.resolveRootCategoryId(categoryId);
+        String scopeChild = cut(childName == null ? "" : childName.trim(), 64);
+        JSONObject judgeResult = new JSONObject();
+        judgeResult.put("matched", false);
+        judgeResult.put("value", StringUtil.isNotEmpty(rawText) ? rawText.trim() : "");
+        judgeResult.put("status", "CUSTOM");
+        judgeResult.put("matchType", "none");
+        judgeResult.put("score", 0D);
+        JSONObject evaluation = evaluate(categoryId, attributeId, scopeChild);
+        judgeResult.put("consistent", evaluation.getBooleanValue("consistent"));
+        judgeResult.put("total", evaluation.getIntValue("total"));
+        judgeResult.put("distinct", evaluation.getIntValue("distinct"));
+        judgeResult.put("top1Share", evaluation.getDoubleValue("top1Share"));
+        if (!StringUtil.isNotEmpty(rawText)) {
+            return judgeResult;
+        }
+        String raw = rawText.trim();
+        String normKey = SpecValueNormalizer.normKey(raw);
+        if (normKey.isEmpty()) {
+            return judgeResult;
+        }
+        // 1. 类别配置的标准值
+        String configured = SpecValueNormalizer.alignToStandard(raw, standards);
+        if (configured != null) {
+            judgeResult.put("matched", true);
+            judgeResult.put("value", configured);
+            judgeResult.put("status", "STANDARD");
+            judgeResult.put("matchType", "config");
+            judgeResult.put("score", 1D);
+            return judgeResult;
+        }
+        Long tenantId = currentTenantId();
+        try {
+            // 2. 已学样本精确命中
+            SpecValueSample sample = specValueSampleMapper.selectByNormKey(
+                    normKey, attributeId, rootCategoryId, scopeChild, tenantId);
+            String matchType = "exact";
+            if (sample == null) {
+                SpecValueAlias alias = specValueAliasMapper.selectByNormKey(
+                        normKey, attributeId, rootCategoryId, scopeChild, tenantId);
+                if (alias != null) {
+                    sample = specValueSampleMapper.selectByPrimaryKey(alias.getSampleId());
+                    matchType = "alias";
+                }
+            }
+            // 3. 数值+单位结构命中
+            if (sample == null) {
+                String numericKey = SpecValueNormalizer.numericKey(raw);
+                if (StringUtil.isNotEmpty(numericKey)) {
+                    sample = specValueSampleMapper.selectByNumericKey(
+                            numericKey, attributeId, rootCategoryId, scopeChild, tenantId);
+                    matchType = "numeric";
+                }
+            }
+            if (sample != null) {
+                judgeResult.put("matched", true);
+                judgeResult.put("value", sample.getCanonicalValue());
+                judgeResult.put("status", "STANDARD");
+                judgeResult.put("matchType", matchType);
+                judgeResult.put("score", 1D);
+                judgeResult.put("sampleId", sample.getId());
+                return judgeResult;
+            }
+            // 4. 一致性属性：相似度归一（阈值随值长度收紧，且要求与第二名拉开差距）
+            if (!evaluation.getBooleanValue("consistent") || !isTextValue(normKey)) {
+                judgeResult.put("status", evaluation.getIntValue("total") < 5 ? "INSUFFICIENT" : "DIVERSE");
+                return judgeResult;
+            }
+            List<SpecValueSample> samples = specValueSampleMapper.selectByScope(
+                    attributeId, rootCategoryId, scopeChild, tenantId, 200);
+            SpecValueSample best = null;
+            SpecValueSample second = null;
+            double bestScore = 0D;
+            double secondScore = 0D;
+            for (SpecValueSample item : samples) {
+                String key = item.getNormKey();
+                if (key == null || !isTextValue(key)) {
+                    continue;
+                }
+                int max = Math.max(key.length(), normKey.length());
+                int min = Math.min(key.length(), normKey.length());
+                if (max > min * 2) {
+                    continue;
+                }
+                double score = 1.0D - (double) distance(normKey, key) / max;
+                if (score > bestScore) {
+                    secondScore = bestScore;
+                    second = best;
+                    bestScore = score;
+                    best = item;
+                } else if (score > secondScore) {
+                    secondScore = score;
+                    second = item;
+                }
+            }
+            double threshold = autoThreshold(normKey);
+            if (best == null || bestScore < threshold) {
+                return judgeResult;
+            }
+            judgeResult.put("value", best.getCanonicalValue());
+            judgeResult.put("score", bestScore);
+            judgeResult.put("sampleId", best.getId());
+            if (bestScore - secondScore >= 0.05D) {
+                judgeResult.put("matched", true);
+                judgeResult.put("status", "NEAR");
+                judgeResult.put("matchType", "similar");
+            } else {
+                judgeResult.put("status", "SUGGEST");
+                judgeResult.put("matchType", "similar");
+                JSONArray candidates = new JSONArray();
+                candidates.add(best.getCanonicalValue());
+                if (second != null && secondScore >= threshold) {
+                    candidates.add(second.getCanonicalValue());
+                }
+                judgeResult.put("candidates", candidates);
+            }
+        } catch (Exception e) {
+            logger.warn("规格值判定失败：{}", e.getMessage());
+        }
+        return judgeResult;
+    }
+
+    /** OCR 误差容忍度：值越短越严格 */
+    private static double autoThreshold(String normKey) {
+        int length = normKey == null ? 0 : normKey.length();
+        if (length <= 4) {
+            return 0.95D;
+        }
+        if (length <= 8) {
+            return 0.90D;
+        }
+        return 0.85D;
+    }
+
+    /**
      * 批量学习：商品保存时把「识别原文 -> 最终采纳值」逐项沉淀
      * 每项独立事务：单条失败不影响其他项，并返回失败明细供前端提示
      */
@@ -301,6 +497,7 @@ public class SpecValueSampleService {
             sample.setSource("manual");
             sample.setConfidence(BigDecimal.ONE);
             sample.setHitCount(1);
+            sample.setSaveCount(1);
             sample.setStatus("0");
             sample.setDeleteFlag("0");
             try {
@@ -314,6 +511,7 @@ public class SpecValueSampleService {
             update.setCanonicalValue(canonical);
             update.setSource("manual");
             specValueSampleMapper.updateByPrimaryKeySelective(update);
+            specValueSampleMapper.increaseSaveCount(sample.getId());
         }
 
         // 原始写法与标准写法归一化后不同，才记别名

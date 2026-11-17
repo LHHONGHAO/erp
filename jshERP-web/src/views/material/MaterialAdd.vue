@@ -12,7 +12,7 @@
     </div>
     <!-- 人工添加 / 编辑商品表单直接铺在页面中 -->
     <div class="ma-body">
-      <material-modal ref="form" inline @close="onClose" />
+      <material-modal ref="form" inline @ok="onSaved" @close="onClose" />
     </div>
   </div>
 </template>
@@ -138,6 +138,10 @@
         const form = this.$refs.form
         if (!form) return
         form.handleOk()
+      },
+      // 保存成功：标记列表数据已变更，返回列表时重置瀑布流拉取最新数据
+      onSaved () {
+        sessionStorage.setItem('materialListDirty', '1')
       },
       // 表单关闭（取消或重置）：回到空白的人工添加表单
       onClose () {

@@ -42,4 +42,6 @@ public interface SpecValueSampleMapper {
                                      @Param("limit") Integer limit);
 
     int increaseHitCount(@Param("id") Long id);
+
+    int increaseSaveCount(@Param("id") Long id);
 }

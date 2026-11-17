@@ -43,6 +43,10 @@
                       :bordered="false" autosize :placeholder="getPlaceholder(prop.label)" />
           <a-input v-else v-model="form[prop.field]" class="addr-row__input" :bordered="false"
                    :placeholder="getPlaceholder(prop.label)" />
+          <!-- 联系人行：地址簿按钮，从已有会员中选联系人 -->
+          <span v-if="prop.field === 'contacts'" class="addr-book-btn" @click="openAddressBook">
+            <a-icon type="book" />
+          </span>
         </template>
       </div>
       <!-- 业务扩展行（如地址识别的商品行） -->
@@ -62,11 +66,48 @@
       @cancel="previewVisible = false">
       <img :src="imageUrl" class="addr-preview-full" @click="previewVisible = false" />
     </a-modal>
+
+    <!-- 地址簿：从已有会员中选择联系人并回填 -->
+    <a-modal
+      :visible="bookVisible"
+      :footer="null"
+      :width="'96%'"
+      :zIndex="zIndex + 10"
+      wrapClassName="addr-book-modal"
+      @cancel="bookVisible = false">
+      <div class="addr-book__head">
+        <span class="addr-book__title">地址簿</span>
+        <a-icon type="close" class="addr-book__close" @click="bookVisible = false" />
+      </div>
+      <div class="addr-book__search">
+        <a-icon type="search" class="addr-book__search-icon" />
+        <input v-model="bookKeyword" class="addr-book__search-input" placeholder="输入姓名、手机号进行搜索" @input="onBookKeyword" />
+        <a-icon v-if="bookKeyword" type="close-circle" class="addr-book__search-clear" @click="clearBookKeyword" />
+      </div>
+      <div class="addr-book__list">
+        <div v-for="item in bookList" :key="item.id" class="addr-book__item" @click="bookSelected = item.id">
+          <span class="addr-book__radio" :class="{ 'is-checked': bookSelected === item.id }"></span>
+          <div class="addr-book__info">
+            <div class="addr-book__name">
+              {{ item.contacts || item.supplier || '未命名' }}
+              <span v-if="item.telephone" class="addr-book__phone">{{ item.telephone }}</span>
+            </div>
+            <div class="addr-book__addr">{{ formatBookAddress(item.address) }}</div>
+          </div>
+        </div>
+        <div v-if="bookLoading" class="addr-book__empty">加载中...</div>
+        <div v-else-if="!bookList.length" class="addr-book__empty">暂无联系人</div>
+      </div>
+      <div class="addr-book__foot">
+        <a-button block class="addr-book__btn" @click="bookVisible = false">取消</a-button>
+        <a-button block type="primary" class="addr-book__btn" :disabled="!bookSelected" @click="confirmBook">确认</a-button>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script>
-import { postAction } from '@/api/manage'
+import { postAction, getAction } from '@/api/manage'
 import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
 
 /**
@@ -135,13 +176,21 @@ export default {
       ocrError: '',
       imageUrl: '',
       previewVisible: false,
-      pasteText: ''
+      pasteText: '',
+      // 地址簿
+      bookVisible: false,
+      bookKeyword: '',
+      bookLoading: false,
+      bookList: [],
+      bookSelected: null,
+      bookTimer: null
     }
   },
   beforeDestroy() {
     if (this.imageUrl) {
       URL.revokeObjectURL(this.imageUrl)
     }
+    clearTimeout(this.bookTimer)
   },
   methods: {
     getPlaceholder(label) {
@@ -219,6 +268,79 @@ export default {
       document.body.removeChild(textarea)
       if (copied) this.$message.success('地址信息已复制')
       else this.$message.error('复制失败，请长按输入框手动复制')
+    },
+    // ===== 地址簿 =====
+    openAddressBook() {
+      this.bookVisible = true
+      this.bookSelected = null
+      this.bookKeyword = ''
+      this.loadBook()
+    },
+    onBookKeyword() {
+      var self = this
+      clearTimeout(this.bookTimer)
+      this.bookTimer = setTimeout(function() {
+        self.loadBook()
+      }, 350)
+    },
+    clearBookKeyword() {
+      this.bookKeyword = ''
+      this.loadBook()
+    },
+    /** 读取会员列表作为地址簿；关键词同时按联系人和电话查询后合并 */
+    loadBook() {
+      var self = this
+      var keyword = String(this.bookKeyword || '').trim()
+      var build = function(extra) {
+        var search = Object.assign({ type: '会员' }, extra)
+        return { search: JSON.stringify(search), currentPage: 1, pageSize: 50 }
+      }
+      var requests
+      if (keyword) {
+        requests = [
+          getAction('/supplier/list', build({ contacts: keyword })),
+          getAction('/supplier/list', build({ telephone: keyword }))
+        ]
+      } else {
+        requests = [getAction('/supplier/list', build({}))]
+      }
+      this.bookLoading = true
+      Promise.all(requests).then(function(results) {
+        var rows = []
+        var seen = {}
+        results.forEach(function(res) {
+          var list = (res && res.code === 200 && res.data && res.data.rows) || []
+          list.forEach(function(row) {
+            if (!row || seen[row.id]) return
+            seen[row.id] = true
+            rows.push(row)
+          })
+        })
+        self.bookList = rows
+        self.bookLoading = false
+      }).catch(function() {
+        self.bookLoading = false
+        self.$message.error('地址簿加载失败')
+      })
+    },
+    formatBookAddress(value) {
+      return value ? String(value).replace(/\s*\n\s*/g, ' ') : '暂无地址'
+    },
+    /** 选中联系人回填：联系人、电话、地址 */
+    confirmBook() {
+      var self = this
+      var target = null
+      this.bookList.forEach(function(item) {
+        if (item.id === self.bookSelected) target = item
+      })
+      if (!target) return
+      if (target.contacts) this.form.contacts = target.contacts
+      if (target.telephone) this.form.telephone = String(target.telephone).replace(/\s*\n\s*/g, '')
+      if (target.address) this.form.address = this.formatBookAddress(target.address)
+      this.bookVisible = false
+      this.bookSelected = null
+      this.setHasResult(true)
+      this.$emit('filled', this.form)
     },
     // ===== 识别 =====
     triggerCamera() {
@@ -527,5 +649,123 @@ export default {
   max-height: 78vh;
   object-fit: contain;
   cursor: zoom-out;
+}
+/* 联系人行：地址簿按钮 */
+.addr-book-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin-left: 6px;
+  font-size: 15px;
+  color: #1890ff;
+  background: #f0f7ff;
+  border: 1px solid #cfe4ff;
+  border-radius: 15px;
+  cursor: pointer;
+}
+/* 地址簿弹层 */
+.addr-book__head {
+  position: relative;
+  padding: 4px 0 12px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #262626;
+  text-align: center;
+}
+.addr-book__close {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  font-size: 16px;
+  color: #8c8c8c;
+}
+.addr-book__search {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+.addr-book__search-icon {
+  margin-right: 8px;
+  color: #bfbfbf;
+}
+.addr-book__search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  color: #262626;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.addr-book__search-clear {
+  color: #bfbfbf;
+}
+.addr-book__list {
+  max-height: 52vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.addr-book__item {
+  display: flex;
+  align-items: center;
+  padding: 14px 4px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.addr-book__radio {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-right: 12px;
+  border: 1.5px solid #d9d9d9;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.addr-book__radio.is-checked {
+  border: 5px solid #1890ff;
+}
+.addr-book__info {
+  flex: 1;
+  min-width: 0;
+}
+.addr-book__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+}
+.addr-book__phone {
+  margin-left: 8px;
+  font-weight: 400;
+  color: #595959;
+}
+.addr-book__addr {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #8c8c8c;
+  word-break: break-all;
+}
+.addr-book__empty {
+  padding: 30px 0;
+  font-size: 14px;
+  color: #bfbfbf;
+  text-align: center;
+}
+.addr-book__foot {
+  display: flex;
+  margin-top: 14px;
+}
+.addr-book__btn {
+  flex: 1;
+  height: 44px;
+  font-size: 16px;
+  border-radius: 8px;
+}
+.addr-book__btn + .addr-book__btn {
+  margin-left: 12px;
 }
 </style>

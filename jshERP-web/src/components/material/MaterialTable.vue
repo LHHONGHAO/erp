@@ -51,39 +51,25 @@
     </template>
   </data-table>
 
-  <!-- 手机浏览器：图片 / 名称规格 / 操作按钮 纵向排列的卡片列表 -->
+  <!-- 手机浏览器：标准商品卡片（图片 / 名称规格 / 零售价库存 / 操作按钮） -->
   <div v-if="isMobileView" class="mt-mobile-list">
-    <div v-for="row in mobileList" :key="row.skuRowKey || row.id" class="mt-mobile-card">
-      <div class="mt-mobile-main">
-        <div class="mt-mobile-top">
-          <img v-if="resolveImg(row)" :src="resolveImg(row)" class="mt-mobile-img" />
-          <div v-else class="mt-mobile-img mt-mobile-img-empty">无图</div>
-          <div class="mt-mobile-body">
-            <div class="mt-mobile-title">
-              {{ row.name }}
-              <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
-              <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
-            </div>
-            <div class="mt-mobile-spec">{{ resolveSpec(row) }}</div>
-          </div>
-        </div>
-        <!-- SKU码 / 库存 / 零售价：一行排列，左对齐图片框左边 -->
-        <div class="mt-mobile-meta">
-          <span class="mt-mobile-sku">SKU码 {{ row.skuCode || '-' }}</span>
-          <span>库存 {{ row.stock == null ? '-' : row.stock }}</span>
-          <span>零售价 {{ row.retailPrice == null ? '-' : row.retailPrice }}</span>
-        </div>
-      </div>
-      <div class="mt-mobile-actions">
-        <!-- 多选：无外框，仅勾图标，未选灰色、选中变主题色 -->
-        <span
-          class="mt-mobile-check"
-          :class="{ 'is-checked': mobileSelectedKeys.indexOf(row.skuRowKey || row.id) > -1 }"
-          @click.stop="onPickMobileRow(row)">
-          <a-icon type="check" />
-        </span>
+    <!-- 标准商品卡片（商品选择 / 商品信息 / 销售开单共用） -->
+    <mobile-product-card
+      v-for="(row, rowIndex) in mobileList"
+      :key="row.skuRowKey || row.id"
+      :name="row.name"
+      :img-url="resolveImg(row)"
+      :specs="mobileSpecLines(row)"
+      :items="mobileInfoItems(row)"
+      :alt="rowIndex % 2 === 1">
+      <template #nameExtra>
+        <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
+        <a-tag v-if="row.enableBatchNumber == 1" color="orange">批</a-tag>
+      </template>
+      <template #side>
+        <div class="mt-mobile-actions">
         <a-button
-          v-for="(act, i) in visibleActions(row)"
+          v-for="(act, i) in mobileActions(row)"
           :key="'mact-' + i"
           class="mt-action-icon-btn"
           type="link"
@@ -91,8 +77,9 @@
           :icon="act.icon"
           :title="act.title"
           @click="onAction(act, row)"></a-button>
-      </div>
-    </div>
+        </div>
+      </template>
+    </mobile-product-card>
     <div v-if="mobileList.length === 0 && !mobileLoading" class="mt-mobile-empty">暂无数据</div>
     <!-- 下拉（滚动到底部）自动加载：不再显示分页 -->
     <div ref="mobileSentinel" class="mt-mobile-sentinel"></div>
@@ -108,6 +95,7 @@
 <script>
   import Vue from 'vue'
   import DataTable from '@/components/DataTable'
+  import MobileProductCard from '@/components/mobile/MobileProductCard'
   import { MATERIAL_COLUMNS, buildTableColumns, defaultColumnKeys, actionColumnWidth, CODE_MODES } from '@/views/material/config/materialColumns'
   import { getRowImgUrl, getSpecDisplay } from '@/views/material/utils/materialDisplay'
 
@@ -116,7 +104,7 @@
 
   export default {
     name: 'MaterialTable',
-    components: { DataTable },
+    components: { DataTable, MobileProductCard },
     props: {
       /** 列配置（默认使用商品/库存统一列配置） */
       columns: { type: Array, default: () => MATERIAL_COLUMNS },
@@ -139,10 +127,15 @@
         mobileList: [],
         /** 已加载到的页码 */
         mobileLoadedPage: 0,
+        /** 服务端返回的总条数（父级分页对象上的 total，单独留存避免被覆盖丢失） */
+        mobileTotal: 0,
         /** 是否正在触发下拉加载（防止重复请求） */
         mobileLoadingMore: false,
         /** 底部哨兵元素的可见性监听器 */
         mobileObserver: null,
+        /** 手机端滚动容器及滚动兜底监听 */
+        mobileScrollEl: null,
+        mobileScrollHandler: null,
         /** 手机端卡片右上角多选的已选行 key 数组 */
         mobileSelectedKeys: []
       }
@@ -208,17 +201,10 @@
         const p = this.$attrs.pagination
         return p && typeof p === 'object' ? p : null
       },
-      /** 手机端总页数 */
-      mobileTotalPages() {
-        const p = this.mobilePagination
-        if (!p) return 1
-        return Math.ceil((p.total || 0) / (p.pageSize || 10)) || 1
-      },
-      /** 是否还有下一页可下拉加载 */
+      /** 是否还有下一页可下拉加载：按「已加载条数 < 总条数」判断，不依赖父级当前页码 */
       mobileHasMore() {
-        const p = this.mobilePagination
-        if (!p) return false
-        return (p.current || 1) < this.mobileTotalPages
+        if (!this.mobilePagination) return false
+        return this.mobileTotal > this.mobileList.length
       },
       /** 表格加载状态（父组件通过 loading 传入） */
       mobileLoading() {
@@ -278,17 +264,15 @@
           this.isMobileView = mobile
         }
       },
-      /** 手机端数据同步：第 1 页整体替换，后续页追加；同页重载则更新已有行 */
+      /** 手机端数据同步：普通加载整体替换；触底加载追加到列表尾部 */
       syncMobileList(rows) {
-        const page = (this.mobilePagination && this.mobilePagination.current) || 1
         const keyOf = row => row.skuRowKey || row.id
-        if (page <= 1) {
-          this.mobileList = rows.slice()
-          this.mobileLoadedPage = 1
-          this.mobileLoadingMore = false
-          return
+        const p = this.mobilePagination
+        if (p && p.total != null) {
+          this.mobileTotal = Number(p.total) || this.mobileTotal
         }
-        if (page > this.mobileLoadedPage) {
+        if (this.mobileLoadingMore) {
+          // 触底加载：追加新行（按 key 去重）
           const exists = {}
           this.mobileList.forEach(row => { exists[keyOf(row)] = true })
           const appended = this.mobileList.slice()
@@ -299,46 +283,118 @@
               appended.push(row)
             }
           })
+          // 接口返回的全是已存在的行时说明已无法再加载，直接结束
+          if (appended.length === this.mobileList.length) {
+            this.mobileTotal = this.mobileList.length
+          } else {
+            this.mobileLoadedPage += 1
+          }
           this.mobileList = appended
-          this.mobileLoadedPage = page
         } else {
-          // 同一页重新加载（编辑/刷新）：用新数据覆盖对应行
-          const incoming = {}
-          rows.forEach(row => { incoming[keyOf(row)] = row })
-          this.mobileList = this.mobileList.map(row => incoming[keyOf(row)] || row)
+          this.mobileList = rows.slice()
+          this.mobileLoadedPage = 1
+          if (p && p.total != null) this.mobileTotal = Number(p.total) || 0
         }
         this.mobileLoadingMore = false
+        // 数据不足一屏时继续自动补载
+        this.$nextTick(this.checkMobileSentinel)
+      },
+      /** 手机端滚动容器：优先取可滚动祖先，取不到则用窗口 */
+      resolveMobileScrollEl(el) {
+        let node = el && el.parentElement
+        while (node && node !== document.body && node !== document.documentElement) {
+          const style = window.getComputedStyle(node)
+          if (/(auto|scroll)/.test(style.overflowY)) return node
+          node = node.parentElement
+        }
+        return window
       },
       /** 监听底部哨兵：滚动到列表末尾时自动加载下一页 */
       bindMobileObserver() {
         this.unbindMobileObserver()
-        if (!this.isMobileView || typeof IntersectionObserver === 'undefined') return
+        if (!this.isMobileView) return
         const el = this.$refs.mobileSentinel
         if (!el) return
-        this.mobileObserver = new IntersectionObserver(entries => {
-          if (entries.some(entry => entry.isIntersecting)) this.loadMoreMobile()
-        }, { rootMargin: '0px 0px 80px 0px' })
-        this.mobileObserver.observe(el)
+        this.mobileScrollEl = this.resolveMobileScrollEl(el)
+        // 1. 滚动兜底：任意滚动容器的触底都触发加载，避免 IntersectionObserver 不回调
+        this.mobileScrollHandler = () => this.checkMobileSentinel()
+        this.mobileScrollEl.addEventListener('scroll', this.mobileScrollHandler, { passive: true })
+        // 2. 哨兵可见性：进入可视区域即加载
+        if (typeof IntersectionObserver !== 'undefined') {
+          const root = this.mobileScrollEl === window ? null : this.mobileScrollEl
+          this.mobileObserver = new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) this.loadMoreMobile()
+          }, { root: root, rootMargin: '0px 0px 80px 0px' })
+          this.mobileObserver.observe(el)
+        }
       },
       unbindMobileObserver() {
         if (this.mobileObserver) {
           this.mobileObserver.disconnect()
           this.mobileObserver = null
         }
+        if (this.mobileScrollHandler && this.mobileScrollEl) {
+          this.mobileScrollEl.removeEventListener('scroll', this.mobileScrollHandler)
+        }
+        this.mobileScrollHandler = null
+        this.mobileScrollEl = null
+      },
+      /** 哨兵是否已进入可视区域（滚动兜底 + 数据到达后补载都用它） */
+      checkMobileSentinel() {
+        if (!this.isMobileView) return
+        const el = this.$refs.mobileSentinel
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const containerBottom = (this.mobileScrollEl && this.mobileScrollEl !== window)
+          ? this.mobileScrollEl.getBoundingClientRect().bottom
+          : (window.innerHeight || document.documentElement.clientHeight)
+        if (rect.top <= containerBottom + 80) this.loadMoreMobile()
       },
       /** 加载下一页：按 a-table 的 change 签名通知父组件 */
       loadMoreMobile() {
         if (this.mobileLoadingMore || this.mobileLoading) return
+        if (!this.mobileHasMore) return
         const p = this.mobilePagination
-        if (!p || !this.mobileHasMore) return
         this.mobileLoadingMore = true
-        this.$emit('change', { current: (p.current || 1) + 1, pageSize: p.pageSize || 10 }, {}, {})
+        this.$emit('change', {
+          current: (this.mobileLoadedPage || 1) + 1,
+          pageSize: (p && p.pageSize) || 10
+        }, {}, {})
       },
       resolveImg(record) {
         return getRowImgUrl(record)
       },
       resolveSpec(record) {
         return getSpecDisplay(record)
+      },
+      /**
+       * 手机端规格展示：每个规格属性一行，值只取第一个（多值以 / 分隔）
+       * 与「添加商品」弹层的展示保持一致
+       */
+      mobileSpecLines(record) {
+        const lines = []
+        String(this.resolveSpec(record) || '').split('\n').forEach(function(line) {
+          const text = line.trim()
+          if (!text) return
+          let label = ''
+          let value = text
+          const idx = text.search(/[：:]/)
+          if (idx > -1) {
+            label = text.slice(0, idx).trim()
+            value = text.slice(idx + 1).trim()
+          }
+          value = value.split('/')[0].trim()
+          if (!value) return
+          lines.push({ label: label, value: value })
+        })
+        return lines
+      },
+      /** 标准卡片信息行：零售价 在前、库存 在后 */
+      mobileInfoItems(record) {
+        return [
+          { label: '零售价', value: record.commodityDecimal == null ? '-' : record.commodityDecimal },
+          { label: '库存', value: record.stock == null ? '-' : record.stock }
+        ]
       },
       /** 码列取值：单类→SPU码 / 单品→SKU码 / 单件→SN码，缺失时回退商品条码 */
       resolveCode(record) {
@@ -363,6 +419,10 @@
       },
       visibleActions(record) {
         return (this.actions || []).filter(act => !act.show || act.show(record))
+      },
+      /** 手机端卡片操作：不显示编辑按钮（编辑入口在电脑端操作列） */
+      mobileActions(record) {
+        return this.visibleActions(record).filter(act => act.icon !== 'edit')
       },
       /** 手机端卡片多选：切换当前行勾选状态，通知父组件 */
       onPickMobileRow(row) {
@@ -403,21 +463,7 @@
 </script>
 
 <style scoped>
-  /* === 手机端卡片列表：图片 → 名称规格 → 库存价格 → 操作按钮 依次向下排列 === */
-  .mt-mobile-list {
-    padding: 0;
-  }
-  .mt-mobile-card {
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    align-items: stretch;
-    background: #fff;
-    border: 1px solid #F0F2F5;
-    border-radius: 8px;
-    padding: 8px;
-    margin-bottom: 8px;
-  }
+  /* === 手机端：标准商品卡片列表（图片 / 名称规格 / 零售价库存 / 操作按钮） === */
   /* 多选：无外框，仅保留勾图标；未选灰色，选中主题色 */
   .mt-mobile-check {
     display: flex;
@@ -434,74 +480,6 @@
   .mt-mobile-check.is-checked {
     color: #1890ff;
   }
-  .mt-mobile-main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  /* 上部：图片 + 名称规格 */
-  .mt-mobile-top {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-  }
-  .mt-mobile-img {
-    width: 88px;
-    height: 88px;
-    object-fit: cover;
-    border-radius: 8px;
-    flex-shrink: 0;
-    margin: 0 10px 0 0;
-  }
-  .mt-mobile-img-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #FAFBFD;
-    color: #bbb;
-    font-size: 12px;
-  }
-  .mt-mobile-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .mt-mobile-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #1D2129;
-    word-break: break-all;
-  }
-  .mt-mobile-spec {
-    margin-top: 6px;
-    font-size: 13px;
-    color: #4F535C;
-    white-space: pre-line;
-    line-height: 18px;
-    text-align: left;
-    word-break: break-all;
-  }
-  /* SKU码 / 库存 / 零售价：同一行，左对齐图片框左边 */
-  .mt-mobile-meta {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 8px;
-    font-size: 12px;
-    color: #86909C;
-    white-space: nowrap;
-    overflow: hidden;
-    .mt-mobile-sku {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    span {
-      flex-shrink: 0;
-    }
-  }
   /* 操作列：占满卡片高度，多选 / 编辑 / 打印 垂直等距、水平居中，上下留白与卡片内边距对称 */
   .mt-mobile-actions {
     display: flex;
@@ -510,9 +488,6 @@
     justify-content: space-between;
     align-self: stretch;
     width: 40px;
-    margin-left: 6px;
-    padding-left: 6px;
-    border-left: 1px dashed #F0F2F5;
     flex-shrink: 0;
   }
   .mt-action-icon-btn {

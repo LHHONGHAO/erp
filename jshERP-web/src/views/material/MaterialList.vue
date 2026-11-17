@@ -17,20 +17,19 @@
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
 
-    <!-- 信息列表 -->
-    <material-table
-      ref="mobileTable"
-      table-key="material_list_mobile"
-      storage-key="columns_material_mobile"
-      :dimension="displayMode"
-      :actions="rowActions"
-      :data-source="tableRows"
-      :pagination="ipagination"
-      :scroll="scroll"
-      :loading="loading"
-      @row-selection-change="onMobileSelectionChange"
-      @change="handleTableChange">
-    </material-table>
+    <!-- 信息列表：标准商品流模块（卡片布局 + 虚拟滚动 + 分页刷新），点击卡片进入商品详情 -->
+    <mobile-goods-feed
+      ref="mobileFeed"
+      feed-key="material_list"
+      :loader="loadMobileFeed"
+      :reset-key="mobileFeedResetKey"
+      selectable
+      show-print
+      :selected-keys="feedPickedKeys"
+      empty-text="暂无商品"
+      @print="handleFeedPrint"
+      @select="toggleFeedPick">
+    </mobile-goods-feed>
 
     <!-- 浮层：筛选抽屉、扫码、弹窗 -->
     <template #overlay>
@@ -268,10 +267,12 @@
   import LabelPrintModal from './modules/LabelPrintModal'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
-  import { postAction, deleteAction } from '@/api/manage'
+  import { postAction, deleteAction, getAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
+  import MobileGoodsFeed from '@/components/mobile/MobileGoodsFeed'
+  import { toGoodsFeedItem } from '@/components/mobile/goodsFeedItem'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import { getSpecValueMerged } from '@/views/material/utils/materialDisplay'
@@ -290,13 +291,14 @@
       LabelPrintModal,
       OcrRecognizeModal,
       MaterialTable,
+      MobileGoodsFeed,
       MobileSearchPage,
       MobileHeaderActions
     },
     data () {
       return {
         /** 是否是窄屏（<=768px），避免与 mixin 的 isMobile() 方法重名 */
-        isNarrowScreen: false,
+        isNarrowScreen: window.innerWidth <= 768,
         categoryTree:[],
         mPropertyListShort: '',
         selectedMaterialIds: [], // 选中行对应的商品ID（去重）
@@ -368,6 +370,10 @@
         mobileSearchKeyword: '',
         /** 手机端多选的商品ID数组（去重后） */
         mobileSelectedMaterialIds: [],
+        /** 手机端卡片勾选项 [{ key, id }]，key 为瀑布流卡片唯一键 */
+        mobileSelectedItems: [],
+        /** 瀑布流重置信号：搜索/筛选/显示方式/增删改后 +1 触发重新加载 */
+        mobileFeedResetKey: 0,
         /** OCR 文字提取弹层 */
         ocrVisible: false,
       }
@@ -382,6 +388,13 @@
         this.isNarrowScreen = window.innerWidth <= 768
       }
       window.addEventListener('resize', this._onResize)
+    },
+    // keep-alive 返回列表：若中途新增/修改过商品，重置瀑布流拉取最新数据；否则保持原位置秒开
+    activated() {
+      if (sessionStorage.getItem('materialListDirty') === '1') {
+        sessionStorage.removeItem('materialListDirty')
+        if (this.isNarrowScreen) this.bumpMobileFeed()
+      }
     },
     beforeDestroy() {
       window.removeEventListener('resize', this._onResize)
@@ -418,6 +431,10 @@
             skuRowKey: row.id + '_' + (row.meId != null ? row.meId : 0)
           })
         })
+      },
+      /** 手机端卡片已勾选的唯一键 */
+      feedPickedKeys() {
+        return this.mobileSelectedItems.map(sel => sel.key)
       }
     },
     methods: {
@@ -531,22 +548,54 @@
       // 显示方式切换：spu=单类显示（/material/list），sku=单品显示（/material/listSku）
       onDisplayModeChange() {
         this.url.list = this.displayMode === 'spu' ? '/material/list' : '/material/listSku'
-        this.loadData(1)
+        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
       searchReset() {
         this.queryParam = {
           mpList: getMpListShort(Vue.ls.get('materialPropertyList'))  //扩展属性
         }
-        this.loadData(1);
+        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
 
       // ============ 手机端专属方法 ============
-      /** 手机端多选变化回调：MaterialTable 发出 */
-      onMobileSelectionChange(keys, rows) {
-        var ids = []
-        for (var i = 0; i < rows.length; i++) {
-          if (ids.indexOf(rows[i].id) === -1) ids.push(rows[i].id)
+      /** 标准商品流加载器：复用列表查询条件，按页静默拉取 */
+      loadMobileFeed({ page, pageSize }) {
+        const params = this.getQueryParams()
+        params.currentPage = page
+        params.pageSize = pageSize
+        return getAction(this.url.list, params).then(res => {
+          if (res && res.code === 200 && res.data) {
+            const rows = Array.isArray(res.data.rows) ? res.data.rows : []
+            return {
+              list: rows.map(toGoodsFeedItem),
+              total: Number(res.data.total) || 0
+            }
+          }
+          if (res && res.code === 510) this.$message.warning(res.data)
+          return { list: [], total: 0 }
+        })
+      },
+      /** 卡片打印标签 */
+      handleFeedPrint(item) {
+        if (item && item.raw) this.handlePrintSkuLabel(item.raw)
+      },
+      /** 查询条件/数据变化后重置商品流（回到顶部重新加载第 1 页） */
+      bumpMobileFeed() {
+        this.clearMobileSelection()
+        this.mobileFeedResetKey += 1
+      },
+      /** 卡片勾选切换：同商品多 SKU 时按商品ID去重 */
+      toggleFeedPick(item) {
+        const idx = this.mobileSelectedItems.findIndex(sel => sel.key === item._key)
+        if (idx > -1) {
+          this.mobileSelectedItems.splice(idx, 1)
+        } else {
+          this.mobileSelectedItems.push({ key: item._key, id: item.raw ? item.raw.id : item.id })
         }
+        const ids = []
+        this.mobileSelectedItems.forEach(sel => {
+          if (ids.indexOf(sel.id) === -1) ids.push(sel.id)
+        })
         this.mobileSelectedMaterialIds = ids
       },
       /** 手机端错误提示：后端 data 可能是对象 message，也可能是字符串 */
@@ -573,7 +622,7 @@
             deleteAction(that.url.deleteBatch, { ids }).then((res) => {
               if (res.code === 200) {
                 that.$message.info('删除成功！')
-                that.loadData()
+                if (that.isNarrowScreen) { that.bumpMobileFeed() } else { that.loadData() }
                 that.clearMobileSelection()
               } else {
                 that.$message.warning(that.getMobileErrMsg(res, '删除失败'))
@@ -598,7 +647,7 @@
             postAction(that.url.batchSetStatusUrl, { ids, status }).then((res) => {
               if (res.code === 200) {
                 that.$message.info((status ? '启用' : '禁用') + '成功！')
-                that.loadData()
+                if (that.isNarrowScreen) { that.bumpMobileFeed() } else { that.loadData() }
                 that.clearMobileSelection()
               } else {
                 that.$message.warning(res.data && res.data.message ? res.data.message : '操作失败')
@@ -610,14 +659,12 @@
       /** 清空手机端选中 */
       clearMobileSelection() {
         this.mobileSelectedMaterialIds = []
-        if (this.$refs.mobileTable && this.$refs.mobileTable.clearMobileSelection) {
-          this.$refs.mobileTable.clearMobileSelection()
-        }
+        this.mobileSelectedItems = []
       },
       /** 底边栏搜索 */
       mobileSearch() {
         this.queryParam.materialParam = this.mobileSearchKeyword
-        this.loadData(1)
+        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
       /** 标准扫码页识别结果：条码精确查询；文字按「条码→品名→品类」级联查询，命中回列表展示 */
       onProductScanResult(payload) {
@@ -723,6 +770,8 @@
         this.loadData(1).then(function() {
           if (!that.dataSource || that.dataSource.length === 0) {
             that.showExactRows(result.rows)
+          } else if (that.isNarrowScreen) {
+            that.bumpMobileFeed()
           }
           that.closeScanPage()
         }).catch(function() {
@@ -739,6 +788,13 @@
             currentStock: row.currentStock != null ? row.currentStock : row.stock
           })
         })
+        if (this.isNarrowScreen) {
+          // 手机端直接替换商品流数据，接口查不到时也能展示精确结果
+          if (this.$refs.mobileFeed) {
+            this.$refs.mobileFeed.replaceItems(list.map(toGoodsFeedItem))
+          }
+          return
+        }
         this.dataSource = list
         this.ipagination.total = list.length
       },
@@ -748,7 +804,9 @@
         this.mobileSearchKeyword = keyword
         this.queryParam.materialParam = keyword
         return this.loadData(1).then(function() {
-          return (that.dataSource || []).length > 0
+          var hit = (that.dataSource || []).length > 0
+          if (hit && that.isNarrowScreen) that.bumpMobileFeed()
+          return hit
         }).catch(function() {
           return false
         })
@@ -760,7 +818,9 @@
         this.queryParam.materialParam = ''
         this.queryParam.categoryId = categoryId
         return this.loadData(1).then(function() {
-          return (that.dataSource || []).length > 0
+          var hit = (that.dataSource || []).length > 0
+          if (hit && that.isNarrowScreen) that.bumpMobileFeed()
+          return hit
         }).catch(function() {
           return false
         })
@@ -813,12 +873,12 @@
         }
         this.mobileSearchKeyword = text
         this.queryParam.materialParam = text
-        this.loadData(1)
+        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
       /** 筛选抽屉确定 */
       applyMobileFilter() {
         this.filterDrawerVisible = false
-        this.loadData(1)
+        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
     }
   }

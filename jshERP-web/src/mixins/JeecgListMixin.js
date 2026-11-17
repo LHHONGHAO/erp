@@ -276,7 +276,9 @@ export const JeecgListMixin = {
         }
       }
       if(pagination && pagination.current) {
-        this.ipagination = pagination;
+        // 合并而非整体替换：子组件（如手机端触底加载）只回传 current/pageSize，
+        // 直接替换会丢掉 total 等字段，导致总条数和「是否还有下一页」判断失效
+        this.ipagination = Object.assign({}, this.ipagination, pagination);
       }
       this.loadData();
     },

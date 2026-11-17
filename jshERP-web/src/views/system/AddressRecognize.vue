@@ -50,7 +50,6 @@
     <mobile-product-picker
       :visible="goodsPickerVisible"
       title="添加商品"
-      @pick="handlePickGoods"
       @confirm="handleConfirmGoods"
       @close="goodsPickerVisible = false" />
 
@@ -281,20 +280,6 @@ export default {
         spec3: goods.spec3 || '',
         qty: Math.min(99, Math.max(1, parseInt(goods.qty, 10) || 1))
       }
-    },
-    /** 单选：弹层已由组件关闭，这里回填当前行 */
-    handlePickGoods(goods) {
-      if (!goods || !goods.name) return
-      var prev = this.goodsRows[this.goodsTargetIndex]
-      var row = this.toGoodsRow(goods)
-      // 重新选择商品时保留该行已填数量
-      if (prev && prev.qty) row.qty = prev.qty
-      this.$set(this.goodsRows, this.goodsTargetIndex, row)
-      // 选中后自动补一行「点击添加商品」触发行
-      this.ensureGoodsTailRow()
-      this.goodsPickerVisible = false
-      // 商品名过长会折行加高，重新计算页面高度
-      this.syncPageHeight()
     },
     /** 多选：从当前行开始依次回填，超出已有行则追加 */
     handleConfirmGoods(list) {

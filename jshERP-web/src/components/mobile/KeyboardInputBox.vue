@@ -17,7 +17,8 @@
         v-else
         ref="field"
         class="kib__field"
-        type="text"
+        :type="inputType"
+        :inputmode="inputmode || null"
         data-kb-overlay="off"
         :value="value"
         :placeholder="placeholder"
@@ -88,6 +89,16 @@ export default {
       default: null
     },
     enterkeyhint: {
+      type: String,
+      default: ''
+    },
+    /** 输入框类型，金额等场景可传 number */
+    inputType: {
+      type: String,
+      default: 'text'
+    },
+    /** 键盘类型提示，金额场景传 decimal 拉起数字键盘 */
+    inputmode: {
       type: String,
       default: ''
     }

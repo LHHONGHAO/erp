@@ -191,7 +191,6 @@
                       </div>
                     </template>
                     <template v-else-if="!item.isCode">
-                      <template v-if="attrLabels[item.attr.key]">{{ attrLabels[item.attr.key] }}: </template>
                       <input
                         v-if="editingKey === item.key"
                         :value="item.attr.value"
@@ -201,7 +200,7 @@
                         @mousedown.stop
                         class="label-edit-input"
                       />
-                      <template v-else>{{ item.attr.value }}</template>
+                      <template v-else>{{ displayItemText(item) }}</template>
                     </template>
                     <!-- 条码/二维码：独立元素，可单独选中、拖动、调整宽高 -->
                     <template v-else>
@@ -373,6 +372,7 @@
 <script>
   // 商品列定义：标签可选属性直接取自商品信息表格的列，保证两处字段一致
   import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
+  import { editPlaceholderLabel } from '@/views/material/utils/goodsSpecBlocks'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
   import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate, toTemplateV2 } from '@/views/material/utils/labelTemplateStore'
   import { fetchProviders } from '@/views/material/utils/labelProviderApi'
@@ -519,15 +519,11 @@
           return [item.key, s.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
         }).join(';')
       },
-      // 标签中所有文字，按预览顺序逐行输出「属性名: 值」，属性名留空时只输出值
+      // 标签中所有文字：编辑页只显示属性名（自定义标签显示自身文案），业务值打印时填充
       labelTextContent() {
         var self = this
         return this.selectedAttrList.map(function(attr) {
-          var label = Object.prototype.hasOwnProperty.call(self.attrLabels, attr.key)
-            ? self.attrLabels[attr.key]
-            : (attr.label || '')
-          var value = attr.value == null ? '' : String(attr.value)
-          return label ? (label + ': ' + value) : value
+          return self.displayItemText({ key: attr.key, attr: attr })
         }).join('\n')
       },
       // 属性名编辑：显示当前属性名，可直接输入修改，留空表示不显示属性名
@@ -1372,6 +1368,14 @@
           }
         }
         return best
+      },
+      // 预览文字：编辑页数据属性只显示属性名，业务值在打印时填充；自定义标签显示自身文案
+      displayItemText(item) {
+        var attr = item && item.attr ? item.attr : {}
+        // 属性名留空时用字段默认名称占位，便于在编辑页识别元素
+        var label = this.attrLabels[attr.key] || attr.label || ''
+        if (attr.isCustom) return label || attr.value || ''
+        return editPlaceholderLabel(label, attr)
       },
       // 双击编辑（仅自定义标签）
       onItemDoubleClick(e, attr) {

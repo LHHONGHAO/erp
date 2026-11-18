@@ -102,6 +102,37 @@ export function splitSpecSegments(row) {
   return segments
 }
 
+/**
+ * 编辑页占位文本
+ *
+ * 编辑页只显示属性名（含表单标题），不展示表单里的业务值；
+ * 业务值在打印预览/打印时按打印规则填充。
+ * 自定义标签没有业务数据，直接显示其自身文案。
+ */
+export function editPlaceholderLabel(label, attr) {
+  const name = label == null ? '' : String(label)
+  if (!name && attr && attr.isCustom) {
+    return attr.value == null ? '' : String(attr.value)
+  }
+  return name
+}
+
+/**
+ * 编辑页重复属性折叠
+ *
+ * 会按单据条数重复出现的属性（如商品明细），编辑页只保留第一组用于排版；
+ * 打印时再按打印规则展开全部行。
+ *
+ * @param {Array} rows 明细行
+ * @param {Function} [hasValue] 判断行是否有内容
+ * @returns {Array} 最多一行的数组
+ */
+export function firstRowForEdit(rows, hasValue) {
+  const list = Array.isArray(rows) ? rows : []
+  const valid = typeof hasValue === 'function' ? list.filter(hasValue) : list
+  return valid.length ? [valid[0]] : []
+}
+
 /** 商品行 → 规格块列表 */
 export function parseGoodsSpecBlocks(row) {
   const blocks = []

@@ -81,7 +81,7 @@
                 <span class="lem-mini-col-qty">数量</span>
                 <span class="lem-mini-col-spec">规格</span>
               </div>
-              <div class="lem-mini-row" v-for="n in 3" :key="n">
+              <div class="lem-mini-row" v-for="n in 1" :key="n">
                 <span class="lem-mini-col-name">{{ '示例商品' + n }}</span>
                 <span class="lem-mini-col-qty">{{ n }}</span>
                 <span class="lem-mini-col-spec">白色 / XL</span>
@@ -103,7 +103,7 @@
           </template>
           <template v-else-if="isDetailColumn(key)">
             <div class="lem-col-stack">
-              <div class="lem-col-line" v-for="n in 2" :key="n">{{ getDetailSample(key, n) }}</div>
+              <div class="lem-col-line" v-for="n in 1" :key="n">{{ getDetailSample(key, n) }}</div>
             </div>
           </template>
           <template v-else>
@@ -203,18 +203,6 @@
               <span class="lem-style-label">文本内容</span>
             </div>
             <a-input :value="pageLabelText()" disabled class="lem-text-input" />
-          </div>
-          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
-            <div class="lem-field-head">
-              <span class="lem-style-label">文本内容</span>
-              <a-button size="small" class="lem-ocr-btn">OCR</a-button>
-            </div>
-            <a-input
-              :value="currentValue"
-              placeholder="文本内容"
-              class="lem-text-input"
-              @input="updateCurrentValue"
-            />
           </div>
           <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
             <div class="lem-field-head">
@@ -558,8 +546,8 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
-  import { parseSpecItemKey, specNameKey } from '@/views/material/utils/goodsSpecBlocks'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { parseSpecItemKey, specNameKey, isSpecItemKey, editPlaceholderLabel, firstRowForEdit } from '@/views/material/utils/goodsSpecBlocks'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -805,18 +793,18 @@
         var narrow = typeof window !== 'undefined' && window.innerWidth <= 360
         return (narrow ? 164 : 180) + 20
       },
-      // 编辑区与打印分页保持一致：每件一张时只展示第一条商品行（每张标签内容相同）
+      // 编辑区与打印分页保持一致：重复出现的商品属性在编辑页只保留第一组
+      // 具体打印时按打印规则展开全部商品行
       editorGoodsRows() {
         var rows = (this.record && this.record.goodsRows) || []
-        if (this.effectivePageMode !== 'each') return rows
-        var first = rows.filter(function(r) { return hasGoodsValue(r) })[0]
-        return first ? [first] : []
+        return firstRowForEdit(rows, hasGoodsValue)
       },
       // 标签最终布局（与打印预览、打印数据共用同一函数）
       labelLayout() {
+        // 编辑页按占位排版：普通属性只放属性名，规格项保留规格名/规格值本身
         var values = {}
         this.allAttrs.forEach(function(attr) {
-          values[attr.key] = attr.value == null ? '' : attr.value
+          values[attr.key] = isSpecItemKey(attr.key) && attr.value != null ? String(attr.value) : ''
         })
         // 分页标签：文案由当前页/总页数决定，不参与普通文本编辑
         values['page_no'] = this.pageLabelText()
@@ -836,24 +824,32 @@
       goodsRowsData() {
         return this.labelLayout
       },
-      // 元素 key → 实际显示文本（含「属性名: 」前缀 / 省略号裁切结果）
+      // 元素 key → 编辑页显示文本
+      // 编辑页只显示属性名（含表单标题），不展示业务值；规格块显示规格名与规格值本身
       displayParts() {
         var self = this
         var map = {}
         this.selectedAttrs.forEach(function(key) {
-          var texts = self.labelLayout.texts || {}
-          var text = texts[key]
-          if (text == null) {
-            var label = self.attrLabels[key] || ''
-            var value = self.getAttrValue(key)
-            text = label ? label + ': ' + value : value
+          var attr = self.allAttrs.find(function(a) { return a.key === key })
+          // 规格名/规格值：规格块自身内容，按真实数据展示
+          if (isSpecItemKey(key)) {
+            map[key] = { label: '', value: attr && attr.value != null ? String(attr.value) : '' }
+            return
           }
-          text = text == null ? '' : String(text)
-          var firstLine = text.split('\n')[0]
-          var idx = firstLine.indexOf(': ')
-          map[key] = idx > -1
-            ? { label: text.slice(0, idx + 2), value: text.slice(idx + 2) }
-            : { label: '', value: text }
+          // 分页标签：编辑页直接显示当前页码占位
+          if (key === 'page_no') {
+            map[key] = { label: '', value: self.pageLabelText() }
+            return
+          }
+          // 明细表 / 编码由各自模板渲染，不走文本占位
+          if (isGoodsTableKey(key) || key === 'dn_table' || self.isCode(key)) {
+            map[key] = { label: '', value: '' }
+            return
+          }
+          // 其余属性：只显示属性名，业务值在打印时填充
+          // 属性名留空时用字段默认名称占位，便于在编辑页识别元素
+          var label = self.attrLabels[key] || (attr ? attr.label : '')
+          map[key] = { label: '', value: editPlaceholderLabel(label, attr) }
         })
         return map
       },
@@ -872,11 +868,9 @@
       goodsTableColumns() {
         return GOODS_TABLE_COLUMNS
       },
-      // 表格预览行：没有商品数据时给一行占位，便于调整样式
+      // 表格预览行：编辑页只保留一行属性名占位，真实商品行在打印时按规则填充
       goodsTablePreviewRows() {
-        var table = this.goodsTableData
-        if (table && table.rows.length) return table.rows.map(function(row) { return row.cells })
-        return [['商品名称', '规格值1', '规格值2', '规格值3']]
+        return [GOODS_TABLE_COLUMNS]
       },
       goodsTableStyle() {
         var style = this.attrStyles[this.goodsTableKey] || {}
@@ -922,11 +916,6 @@
           map[name].attrs.push(a)
         })
         return groups
-      },
-      currentValue() {
-        if (!this.currentAttrKey) return ''
-        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
-        return attr ? attr.value : ''
       },
       currentLabel() {
         if (!this.currentAttrKey) return ''
@@ -1058,7 +1047,11 @@
        */
       applyReceiptItemElements() {
         if (this.templateType !== 'receipt') return
-        var rows = (this.record && this.record.goodsRows) || []
+        // 编辑页重复属性只保留第一组；没有单据数据时给一组属性名占位，打印时不会输出占位
+        var rows = firstRowForEdit((this.record && this.record.goodsRows) || [], hasGoodsValue)
+        if (!rows.length) {
+          rows = [{ name: '商品名称', spec1: '规格值1：规格值', qty: '数量', price: '单价', amount: '金额' }]
+        }
         var fallbackY = 0
         var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
         var self = this
@@ -1080,10 +1073,10 @@
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
         this.dynamicItemKeys = next.itemKeys
-        // 模板里保存了关闭的规格名/规格值：重建后仍保持隐藏
+        // 模板里保存了关闭的规格名/规格值：重建后仍保持隐藏（按属性维度跨商品行生效）
         if (this.hiddenItemKeys && this.hiddenItemKeys.length) {
           this.selectedAttrs = this.selectedAttrs.filter(function(key) {
-            return self.hiddenItemKeys.indexOf(key) === -1
+            return !isReceiptItemHidden(self.hiddenItemKeys, key)
           })
         }
       },
@@ -1510,23 +1503,23 @@
           { key: 'dn_footer', label: '落款', value: '华夏家纺', group: '其它' }
         ]
       },
-      /** 小票字段：优先使用当前单据数据，缺失时才用占位示例 */
+      /** 小票字段：只引用表单页面已有的元素，编辑页只显示属性名，不填充示例值 */
       buildReceiptAttrs() {
         var record = this.record || {}
-        var pick = function (key, fallback) {
+        var val = function (key) {
           var v = record[key]
-          return (v === null || v === undefined || v === '') ? fallback : String(v)
+          return (v === null || v === undefined) ? '' : String(v)
         }
         return [
-          { key: 'rc_title', label: '小票标题', value: pick('rc_title', '零售小票'), group: '单据头' },
-          { key: 'rc_no', label: '单号', value: pick('rc_no', 'LS261105001'), group: '单据头' },
-          { key: 'rc_date', label: '日期', value: pick('rc_date', '2026-11-05 10:30'), group: '单据头' },
-          { key: 'rc_member', label: '会员', value: pick('rc_member', '张三'), group: '单据头' },
+          { key: 'rc_title', label: '小票标题', value: val('rc_title'), group: '单据头' },
+          { key: 'rc_no', label: '单号', value: val('rc_no'), group: '单据头' },
+          { key: 'rc_date', label: '日期', value: val('rc_date'), group: '单据头' },
+          { key: 'rc_member', label: '会员', value: val('rc_member'), group: '单据头' },
           { key: 'rc_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
-          { key: 'rc_qty_total', label: '数量合计', value: pick('rc_qty_total', '1'), group: '金额合计' },
-          { key: 'rc_amount_total', label: '金额合计', value: pick('rc_amount_total', '¥280.00'), group: '金额合计' },
-          { key: 'rc_remark', label: '备注', value: pick('rc_remark', '谢谢惠顾'), group: '其它' },
-          { key: 'rc_footer', label: '落款', value: pick('rc_footer', '华夏家纺'), group: '其它' }
+          { key: 'rc_qty_total', label: '数量合计', value: val('rc_qty_total'), group: '金额合计' },
+          { key: 'rc_amount_total', label: '金额合计', value: val('rc_amount_total'), group: '金额合计' },
+          { key: 'rc_remark', label: '备注', value: val('rc_remark'), group: '其它' },
+          { key: 'rc_footer', label: '落款', value: val('rc_footer'), group: '其它' }
         ]
       },
       /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
@@ -1586,14 +1579,6 @@
           self.allAttrs.push({ key: key, label: label, value: label, isCustom: true, group: '自定义' })
           exists[key] = true
         })
-      },
-      getAttrValue(key) {
-        // 分页标签文案随页数变化，单独计算
-        if (key === 'page_no') return this.pageLabelText()
-        // 商品信息按勾选的组合字段拼接显示（与打印一致）
-        if (key === GOODS_KEY && this.goodsRowsData.goodsText) return this.goodsRowsData.goodsText
-        var attr = this.allAttrs.find(function(a) { return a.key === key })
-        return attr ? attr.value : ''
       },
       getElementStyle(key) {
         // 使用统一布局结果：商品明细 / 文字折行 / 上下归位后的实际坐标与高度
@@ -1897,11 +1882,6 @@
           })
         }
         this.pushSnapshot()
-      },
-      updateCurrentValue(e) {
-        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
-        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
-        if (attr) attr.value = val
       },
       // 属性面板打开后，把选中元素和手柄平移到面板左侧
       noop() {},

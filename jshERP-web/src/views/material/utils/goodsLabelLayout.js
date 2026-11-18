@@ -7,7 +7,7 @@
  * 3. 表格/组合元素实际变高后，位于其下方的其他元素整体顺移，保持原有相对间距；
  * 4. 只做运行时重排，不回写模板里保存的坐标。
  */
-import { parseGoodsSpecBlocks, isSpecItemKey, specNameKey, specValueKey, formatSpecName } from './goodsSpecBlocks'
+import { parseGoodsSpecBlocks, parseSpecItemKey, isSpecItemKey, specNameKey, specValueKey, formatSpecName } from './goodsSpecBlocks'
 
 export const GOODS_TABLE_KEY = 'goods_table'
 export const GOODS_KEY = 'goods'
@@ -48,6 +48,34 @@ const RECEIPT_STRAY_KEYS = ['name', 'spec1', 'spec2', 'spec3', GOODS_KEY, GOODS_
 export function isReceiptItemKey(key) {
   const text = String(key == null ? '' : key)
   return RECEIPT_ITEM_KEY_RE.test(text) || isSpecItemKey(text)
+}
+
+/**
+ * 编辑页关闭的明细项是否命中当前元素
+ *
+ * 编辑页只展示一组商品明细，开关按属性维度保存：
+ * 规格名/规格值按「块序号 + 值序号」跨商品行共享，名称/数量等字段按字段名跨行共享，
+ * 打印展开全部商品行时沿用同一套开关。
+ */
+export function isReceiptItemHidden(hiddenKeys, key) {
+  const hidden = hiddenKeys || []
+  if (!hidden.length) return false
+  const text = String(key == null ? '' : key)
+  if (hidden.indexOf(text) > -1) return true
+  const parsed = parseSpecItemKey(text)
+  if (parsed) {
+    return hidden.some(function(item) {
+      const other = parseSpecItemKey(item)
+      if (!other || other.kind !== parsed.kind || other.blockNo !== parsed.blockNo) return false
+      return parsed.kind === 'name' || other.valueNo === parsed.valueNo
+    })
+  }
+  const matched = /^item\d+_(name|qty|price|amount)$/.exec(text)
+  if (!matched) return false
+  return hidden.some(function(item) {
+    const other = /^item\d+_(name|qty|price|amount)$/.exec(String(item))
+    return !!other && other[1] === matched[1]
+  })
 }
 
 /** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3 */

@@ -809,7 +809,7 @@
   import { fetchLabelTemplates, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
   import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
   import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
   import LabelPaper from '@/views/material/modules/LabelPaper'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
@@ -856,6 +856,7 @@
         templateLoading: false,
         allAttrs: [],
         selectedAttrs: [],
+        hiddenReceiptKeys: [],
         attrStyles: {},
         attrLabels: {},
         // 商品信息（组合值）显示哪些字段：由模板保存，缺省显示全部
@@ -2462,6 +2463,8 @@
           recordsPerPage: Math.max(1, parseInt(base.recordsPerPage, 10) || 1),
           maxRowsPerPage: Math.max(0, parseInt(base.maxRowsPerPage, 10) || 0),
           repeatHeader: base.repeatHeader !== false,
+          // 编辑页关闭的规格名/规格值，预览与打印时保持隐藏
+          hiddenItemKeys: Array.isArray(src.hiddenItemKeys) ? src.hiddenItemKeys : (Array.isArray(base.hiddenItemKeys) ? base.hiddenItemKeys : []),
           schema: schema
         }
       },
@@ -2494,6 +2497,7 @@
           exists[key] = true
         })
         if (Array.isArray(s.rows)) this.detailRows = s.rows
+        this.hiddenReceiptKeys = Array.isArray(s.hiddenItemKeys) ? s.hiddenItemKeys : []
         // 小票：商品明细按单品拆成独立元素（预览与打印同一套布局）
         this.applyReceiptItemElements()
       },
@@ -2524,6 +2528,14 @@
         this.selectedAttrs = next.selectedAttrs
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
+        var hidden = (this.hiddenReceiptKeys && this.hiddenReceiptKeys.length)
+          ? this.hiddenReceiptKeys
+          : ((this.template && this.template.hiddenItemKeys) || [])
+        if (hidden.length) {
+          this.selectedAttrs = this.selectedAttrs.filter(function(key) {
+            return !isReceiptItemHidden(hidden, key)
+          })
+        }
         // 模板带 schema 时预览按 schema 渲染，这里同步重建，单品元素才会显示
         if (this.templateSchema) {
           var v2 = editorStateToV2({

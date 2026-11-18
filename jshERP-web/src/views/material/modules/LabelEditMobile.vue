@@ -145,6 +145,10 @@
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
           <!-- 规格块：1 个规格名 + N 个规格值，标题与输入框上下换行；每项右侧开关控制是否显示 -->
           <template v-if="selectedKeys.length === 1 && currentSpecBlock">
+            <div class="lem-spec-head">
+              <span class="lem-spec-badge">规格块</span>
+              <a class="lem-spec-close-all" @click="closeSpecBlock">全部关闭</a>
+            </div>
             <div class="lem-field-stack" v-if="currentSpecBlock.nameKey">
               <div class="lem-field-head">
                 <span class="lem-style-label">属性名</span>
@@ -547,7 +551,7 @@
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
   import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
-  import { parseSpecItemKey, specNameKey, isSpecItemKey, editPlaceholderLabel, firstRowForEdit } from '@/views/material/utils/goodsSpecBlocks'
+  import { parseSpecItemKey, specNameKey, isSpecItemKey, editPlaceholderLabel, firstRowForEdit, normalizeSpecBlocks, resolveEditSpecBlocks, buildSpecBlocksFromCategory } from '@/views/material/utils/goodsSpecBlocks'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -637,6 +641,8 @@
         selectedAttrs: [],
         // 小票单品元素中通过开关关闭（不显示）的 key，打印快照时一并带给预览页
         hiddenItemKeys: [],
+        // 规格块结构（规格名 + 属性值名）：编辑态只显示属性名，随模板保存/恢复
+        specBlocks: [],
         attrStyles: {},
         attrLabels: {},
         // 商品组合（商品信息）显示哪些字段：默认全部，可在属性面板按需勾选
@@ -796,6 +802,8 @@
       // 编辑区与打印分页保持一致：重复出现的商品属性在编辑页只保留第一组
       // 具体打印时按打印规则展开全部商品行
       editorGoodsRows() {
+        // 小票编辑的是模板：只用属性名占位，不带入单据业务值与尺寸
+        if (this.templateType === 'receipt') return [this.editGoodsRow()]
         var rows = (this.record && this.record.goodsRows) || []
         return firstRowForEdit(rows, hasGoodsValue)
       },
@@ -1037,6 +1045,15 @@
         var self = this
         Promise.resolve(loaded).then(function() {
           self.initProvider(context)
+          // 小票规格块来自商品品类设置：先取到品类配置，再按规格块拆分商品元素
+          if (self.templateType === 'receipt' && self.receiptCategoryId() != null && !self.categoryTree.length) {
+            self.loadCategoryTree().then(function() {
+              self.applyReceiptItemElements()
+            }, function() {
+              self.applyReceiptItemElements()
+            })
+            return
+          }
           // 小票按单品拆分商品元素：逐件、逐字段独立可编辑
           self.applyReceiptItemElements()
         })
@@ -1047,11 +1064,13 @@
        */
       applyReceiptItemElements() {
         if (this.templateType !== 'receipt') return
-        // 编辑页重复属性只保留第一组；没有单据数据时给一组属性名占位，打印时不会输出占位
-        var rows = firstRowForEdit((this.record && this.record.goodsRows) || [], hasGoodsValue)
-        if (!rows.length) {
-          rows = [{ name: '商品名称', spec1: '规格值1：规格值', qty: '数量', price: '单价', amount: '金额' }]
-        }
+        // 编辑的是模板：规格块优先用模板保存的属性名结构；
+        // 模板未保存时取商品品类设置的规格块，旧数据才兜底从单据首行推导
+        var blocks = resolveEditSpecBlocks(this.specBlocks, (this.record && this.record.goodsRows) || [], hasGoodsValue, this.categorySpecBlocks())
+        if (!blocks.length) blocks = [{ name: '规格值1', values: ['规格值'] }]
+        this.specBlocks = blocks
+        // 商品名称/数量/单价/金额仍按属性名占位，不带业务值
+        var rows = [this.editGoodsRow()]
         var fallbackY = 0
         var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
         var self = this
@@ -1061,6 +1080,7 @@
         })
         var next = replaceReceiptGoodsWithItems({
           rows: rows,
+          specBlocks: blocks,
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
@@ -1079,6 +1099,10 @@
             return !isReceiptItemHidden(self.hiddenItemKeys, key)
           })
         }
+      },
+      /** 编辑态商品行：框架字段只用属性名占位，规格内容由 specBlocks 提供 */
+      editGoodsRow() {
+        return { name: '商品名称', qty: '数量', price: '单价', amount: '金额' }
       },
       /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
       initProvider(context) {
@@ -1351,7 +1375,6 @@
               self.applyDefaultLayout(cfg)
               return
             }
-            if (Array.isArray(raw.hiddenItemKeys)) state.hiddenItemKeys = raw.hiddenItemKeys
             self.applyTemplateSnapshot(state, cfg)
           }).catch(function() {
             if (skipApply) return
@@ -1392,6 +1415,8 @@
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
         this.hiddenItemKeys = Array.isArray(snap.hiddenItemKeys) ? snap.hiddenItemKeys.slice() : []
+        // 规格块结构（属性名 + 属性值名）：旧模板没有该字段时留空，由单品元素重建时兜底推导
+        this.specBlocks = normalizeSpecBlocks(snap.specBlocks)
         // 自定义文本的值随模板保存，加载时合并回属性列表
         if (Array.isArray(snap.customLabels)) {
           snap.customLabels.forEach(function(custom) {
@@ -1526,6 +1551,7 @@
       applyDefaultLayout(cfg) {
         cfg = cfg || TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
         this.hiddenItemKeys = []
+        this.specBlocks = []
         var DEFAULT_KEYS = cfg.defaultKeys || []
         var styles = {}
         var labels = {}
@@ -1723,6 +1749,17 @@
       // 规格名/规格值开关：只控制是否参与标签渲染，保留原位置与字号，关闭后可再次打开
       onSpecVisibleChange(key, checked) {
         this.setAttrVisible(key, !!checked)
+      },
+      // 全部关闭：关闭当前规格块内的属性名与所有属性值开关
+      closeSpecBlock() {
+        var block = this.currentSpecBlock
+        if (!block) return
+        var keys = block.nameKey ? [block.nameKey] : []
+        keys = keys.concat(block.valueKeys)
+        var self = this
+        keys.forEach(function(key) {
+          if (self.isAttrSelected(key)) self.setAttrVisible(key, false)
+        })
       },
       setAttrVisible(key, visible) {
         if (!key) return
@@ -2499,6 +2536,23 @@
         }
         this.renameVisible = false
       },
+      /** 当前面板的规格块结构（规格名 + 属性值名，含已关闭项），随模板保存 */
+      collectSpecBlocks() {
+        var blocks = []
+        this.allAttrs.forEach(function(attr) {
+          var parsed = parseSpecItemKey(attr.key)
+          if (!parsed || parsed.rowNo !== 1) return
+          var block = blocks[parsed.blockNo - 1]
+          if (!block) block = blocks[parsed.blockNo - 1] = { name: '', values: [] }
+          var text = attr.value == null ? '' : String(attr.value)
+          if (parsed.kind === 'name') {
+            block.name = text.replace(/：$/, '')
+          } else {
+            block.values[parsed.valueNo - 1] = text
+          }
+        })
+        return normalizeSpecBlocks(blocks)
+      },
       /** 模板只保存布局与打印设置；方向/份数/设备不写入模板 */
       buildV2(name, cfg) {
         // 小票单品元素按单据逐次生成，不写入模板，避免元素数量越积越多
@@ -2512,6 +2566,10 @@
         Object.keys(this.attrLabels).forEach(function(key) {
           if (!isReceiptItemKey(key)) attrLabels[key] = self.attrLabels[key]
         })
+        // 小票规格名/规格值开关关闭的 key：随模板保存，重开编辑页/打印时保持不显示
+        var hiddenItemKeys = (this.dynamicItemKeys || []).filter(function(key) {
+          return self.selectedAttrs.indexOf(key) === -1
+        })
         var v2 = editorStateToV2({
           name: name,
           provider: this.provider || this.businessType || '',
@@ -2521,6 +2579,8 @@
           attrLabels: attrLabels,
           allAttrs: this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) }),
           goodsFields: this.goodsFields,
+          specBlocks: this.collectSpecBlocks(),
+          hiddenItemKeys: hiddenItemKeys,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
           overflowMode: this.overflowMode,
@@ -2532,11 +2592,6 @@
           type: this.templateType,
           kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null
         })
-        // 小票规格名/规格值开关关闭的 key：随模板保存，重开编辑页/打印时保持不显示
-        var hiddenItemKeys = (this.dynamicItemKeys || []).filter(function(key) {
-          return self.selectedAttrs.indexOf(key) === -1
-        })
-        if (hiddenItemKeys.length) v2.hiddenItemKeys = hiddenItemKeys
         return v2
       },
       /** 发货单/小票/会员/地址：使用统一模板数据保存（不涉及商品类型） */
@@ -2581,9 +2636,41 @@
           return []
         })
       },
+      /** 小票规格块对应的商品品类：单据或明细行上带的 categoryId */
+      receiptCategoryId() {
+        var record = this.record || {}
+        if (record.categoryId != null && record.categoryId !== '') return record.categoryId
+        var rows = Array.isArray(record.goodsRows) ? record.goodsRows : []
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i] && rows[i].categoryId != null && rows[i].categoryId !== '') return rows[i].categoryId
+        }
+        return null
+      },
+      /** 按 id 在类目树里找节点（保留 specConfig） */
+      findCategoryNode(categoryId) {
+        var target = String(categoryId)
+        function walk(nodes) {
+          if (!nodes) return null
+          for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i]
+            if (!node) continue
+            if (String(node.id) === target || String(node.value) === target) return node
+            var found = walk(node.children)
+            if (found) return found
+          }
+          return null
+        }
+        return walk(this.categoryTree)
+      },
+      /** 商品品类设置里的规格块（规格名 + 规格值名） */
+      categorySpecBlocks() {
+        var categoryId = this.receiptCategoryId()
+        if (categoryId == null) return []
+        var node = this.findCategoryNode(categoryId)
+        return node ? buildSpecBlocksFromCategory(node.specConfig) : []
+      },
       // onlyLevel 指定时只保留该级类目（1=一级，2=二级），未返回 categoryLevel 时按树深度判断
-      flattenCategoryTree(tree, onlyLevel) {
-        var result = []
+      flattenCategoryTree(tree, onlyLevel) {        var result = []
         function traverse(nodes, prefix, depth) {
           if (!nodes) return
           nodes.forEach(function(node) {
@@ -3482,6 +3569,33 @@
   line-height: 1.4;
   color: #1890ff;
   margin-bottom: 6px;
+}
+
+/* 规格块：整块标题（角标 + 整块关闭） */
+.lem-spec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.lem-spec-badge {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
+  border-radius: 9px;
+}
+
+.lem-spec-close-all {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  color: #1890ff;
+  padding: 4px 0;
+  white-space: nowrap;
 }
 
 /* 属性名 / 属性值：标题一行，输入框换行整行显示 */

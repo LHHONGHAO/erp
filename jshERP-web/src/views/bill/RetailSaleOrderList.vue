@@ -736,6 +736,8 @@
           barCode: item.mBarCode || item.barCode,
           unit: item.unit,
           stock: item.stock,
+          // 商品品类：小票模板的规格块取自该品类的规格设置
+          categoryId: item.categoryId,
           // 卡片展示用：图片与规格明细（与商品信息页一致）
           imgName: item.imgName,
           attribute: item.attribute,
@@ -1129,6 +1131,8 @@
           const specCell = line => (line.label ? line.label + '：' : '') + line.value
           return {
             name: item.name || '',
+            // 商品品类 id：模板编辑页据此读取品类设置的规格块
+            categoryId: item.categoryId,
             spec: specText(item),
             // 规格逐项拆到 spec1/2/3，供小票明细表按列显示；超过 3 项的合并到第 3 列
             spec1: specLines[0] ? specCell(specLines[0]) : '',

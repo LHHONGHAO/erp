@@ -97,12 +97,17 @@ export function receiptItemValue(row, key) {
  * 每件商品占一行，字段按列坐标摆放，均可在编辑页单独选中修改；
  * 规格按「规格名 + N 个规格值」的规格块拆分，名称与每个值各自控制显隐
  *
- * @param {Object} options rows / paperWidth / x / y / fontSize / lineHeight / gap
+ * @param {Object} options rows / paperWidth / x / y / fontSize / lineHeight / gap / specBlocks
  * @returns {{attrs:Array, styles:Object, keys:Array, height:number}}
  */
 export function buildReceiptItemElements(options) {
   const opts = options || {}
   const rows = (opts.rows || []).filter(hasGoodsValue)
+  // 编辑态传入模板保存的规格块（只含属性名），仅用于单行编辑占位；
+  // 打印路径不传，多行数据仍按各自单据规格拆分
+  const presetBlocks = Array.isArray(opts.specBlocks) && opts.specBlocks.length && rows.length === 1
+    ? opts.specBlocks
+    : null
   const paperWidth = opts.paperWidth > 0 ? opts.paperWidth : 320
   const fontSize = opts.fontSize || 12
   const lineHeight = opts.lineHeight || 1.3
@@ -128,7 +133,7 @@ export function buildReceiptItemElements(options) {
     const specCol = cols[1]
     // 规格块：1 个规格名 + N 个规格值，每个规格值独占一行，均可独立控制显隐
     let specOffset = 0
-    const specLayout = parseGoodsSpecBlocks(row).map(function(block) {
+    const specLayout = (presetBlocks || parseGoodsSpecBlocks(row)).map(function(block) {
       // 分隔符跟随规格名：不要名称时只剩值，不会留下孤立的冒号
       const nameText = formatSpecName(block.name)
       const labelWidth = nameText
@@ -270,7 +275,7 @@ export function buildReceiptItemElements(options) {
  * 小票：把模板里的明细表/商品组合替换成「逐件 + 逐字段」的独立元素
  * 明细表原位作为起点，下方元素按商品行数整体顺移
  *
- * @param {Object} options rows / selectedAttrs / attrStyles / attrLabels / paperWidth / fallbackY
+ * @param {Object} options rows / selectedAttrs / attrStyles / attrLabels / paperWidth / fallbackY / specBlocks
  * @returns {{selectedAttrs:Array, attrStyles:Object, attrLabels:Object, attrs:Array, itemKeys:Array}}
  */
 export function replaceReceiptGoodsWithItems(options) {
@@ -298,6 +303,7 @@ export function replaceReceiptGoodsWithItems(options) {
   const startY = anchorStyle ? (anchorStyle.y || 0) : (opts.fallbackY || 0)
   const built = buildReceiptItemElements({
     rows: rows,
+    specBlocks: opts.specBlocks,
     paperWidth: opts.paperWidth,
     x: anchorStyle ? (anchorStyle.x || 0) : 8,
     y: startY,

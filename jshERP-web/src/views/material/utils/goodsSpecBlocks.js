@@ -22,6 +22,9 @@ const SPEC_NAME_RE = /^item(\d+)_specname(\d+)$/
 const SPEC_VALUE_RE = /^item(\d+)_specvalue(\d+)(?:_(\d+))?$/
 const SPEC_NAME_TEXT_RE = /^([^：:]+)[：:]\s*(.*)$/
 const VALUE_SEPARATOR_RE = /[、,，／|]/
+// 尺寸表达式：数字 × 数字，乘号支持 * x X ×，可带 cm/mm/m/厘米/毫米/米
+const SIZE_TAIL_RE = /[\s]*\d+(?:\.\d+)?\s*[*xX×]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m|厘米|毫米|米)?$/i
+const SIZE_ONLY_RE = /^\d+(?:\.\d+)?\s*[*xX×]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m|厘米|毫米|米)?$/i
 
 /** 规格名元素 key */
 export function specNameKey(rowNo, blockNo) {
@@ -103,6 +106,30 @@ export function splitSpecSegments(row) {
 }
 
 /**
+ * 去掉规格文本末尾的尺寸描述（只服务编辑态，打印仍用原值）
+ *   被套 200*230cm / 床单245*250 / 枕套 48×74cm / 被套 200x230CM → 被套 / 床单 / 枕套
+ * 纯尺寸段（如 200*230cm）返回空串，由调用方丢弃。
+ */
+export function stripSpecSize(text) {
+  const value = text == null ? '' : String(text).trim()
+  if (!value) return ''
+  if (SIZE_ONLY_RE.test(value)) return ''
+  return value.replace(SIZE_TAIL_RE, '').trim()
+}
+
+/** 规格块结构归一化：[{ name, values: [] }]，过滤空值 */
+export function normalizeSpecBlocks(blocks) {
+  const list = Array.isArray(blocks) ? blocks : []
+  return list.map(function(block) {
+    const name = block && block.name != null ? String(block.name).replace(/：$/, '').trim() : ''
+    const values = (block && Array.isArray(block.values) ? block.values : [])
+      .map(function(value) { return value == null ? '' : String(value).trim() })
+      .filter(function(value) { return value !== '' })
+    return { name: name, values: values }
+  }).filter(function(block) { return block.name !== '' || block.values.length > 0 })
+}
+
+/**
  * 编辑页占位文本
  *
  * 编辑页只显示属性名（含表单标题），不展示表单里的业务值；
@@ -133,16 +160,25 @@ export function firstRowForEdit(rows, hasValue) {
   return valid.length ? [valid[0]] : []
 }
 
-/** 商品行 → 规格块列表 */
-export function parseGoodsSpecBlocks(row) {
+/**
+ * 商品行 → 规格块列表
+ *
+ * @param {Object} row 商品行
+ * @param {Object} [options] { stripSize: true } 仅编辑态使用：去掉尺寸描述，只留属性名
+ */
+export function parseGoodsSpecBlocks(row, options) {
+  const stripSize = !!(options && options.stripSize)
   const blocks = []
   splitSpecSegments(row).forEach(function(text) {
-    const matched = SPEC_NAME_TEXT_RE.exec(text)
+    const segment = stripSize ? stripSpecSize(text) : text
+    // 编辑态：纯尺寸段（200*230cm 等）不进入规格块
+    if (!segment) return
+    const matched = SPEC_NAME_TEXT_RE.exec(segment)
     if (matched) {
       const name = matched[1].trim()
       const values = String(matched[2] || '')
         .split(VALUE_SEPARATOR_RE)
-        .map(function(value) { return value.trim() })
+        .map(function(value) { return stripSize ? stripSpecSize(value) : value.trim() })
         .filter(function(value) { return value !== '' })
       const last = blocks[blocks.length - 1]
       if (last && last.name === name) {
@@ -154,10 +190,84 @@ export function parseGoodsSpecBlocks(row) {
     }
     const last = blocks[blocks.length - 1]
     if (last) {
-      last.values.push(text)
+      last.values.push(segment)
     } else {
-      blocks.push({ name: '', values: [text] })
+      blocks.push({ name: '', values: [segment] })
     }
   })
   return blocks
+}
+
+/**
+ * 去掉规格块内的尺寸描述（编辑态回填规则）
+ *
+ * 模板只保存属性名 / 属性值名，尺寸属于单据业务描述，不进入编辑数据。
+ */
+export function stripSpecBlockSizes(blocks) {
+  return normalizeSpecBlocks(blocks).map(function(block) {
+    return {
+      name: stripSpecSize(block.name),
+      values: block.values.map(stripSpecSize).filter(function(value) { return value !== '' })
+    }
+  }).filter(function(block) { return block.name !== '' || block.values.length > 0 })
+}
+
+/**
+ * 商品品类设置的规格配置 → 规格块
+ *
+ * 品类保存的 specConfig 为 [{ name, enableImage, childNames }]（兼容 JSON 字符串），
+ * 规格块只取规格名与规格值名，编辑态不关心图片开关。
+ */
+export function buildSpecBlocksFromCategory(specConfig) {
+  let config = specConfig
+  if (typeof config === 'string') {
+    try {
+      config = JSON.parse(config)
+    } catch (e) {
+      config = null
+    }
+  }
+  if (!Array.isArray(config)) return []
+  const blocks = []
+  config.forEach(function(item) {
+    let name = ''
+    let childNames = []
+    if (typeof item === 'string') {
+      name = item.trim()
+    } else if (item && typeof item === 'object') {
+      name = String(item.name || '').trim()
+      childNames = Array.isArray(item.childNames) ? item.childNames : []
+    }
+    const values = childNames.map(function(value) {
+      return String(value == null ? '' : value).trim()
+    }).filter(function(value) { return value !== '' })
+    if (!name && !values.length) return
+    blocks.push({ name: name, values: values })
+  })
+  return blocks
+}
+
+/**
+ * 模板编辑页数据回填规则（编辑态专用，打印不调用）
+ *
+ * 1. 模板已保存 specBlocks：以模板为准，只保留属性名，去掉尺寸；
+ * 2. 模板未保存：取商品品类设置里的规格块；
+ * 3. 品类也没有：旧数据兜底用单据首行推导一次，同样去掉尺寸；
+ * 4. 都没有（新模板 / 空单据）：返回空数组，由调用方给默认占位。
+ *
+ * 编辑页不回填单据业务值；打印时仍按真实单据值展开。
+ *
+ * @param {Array} savedBlocks 模板保存的规格块
+ * @param {Array} rows 单据明细行
+ * @param {Function} [hasValue] 判断行是否有内容
+ * @param {Array} [categoryBlocks] 商品品类设置的规格块
+ * @returns {Array} [{ name, values: [] }]
+ */
+export function resolveEditSpecBlocks(savedBlocks, rows, hasValue, categoryBlocks) {
+  const saved = stripSpecBlockSizes(savedBlocks)
+  if (saved.length) return saved
+  const fromCategory = normalizeSpecBlocks(categoryBlocks)
+  if (fromCategory.length) return fromCategory
+  const source = firstRowForEdit(rows, hasValue)[0]
+  return source ? stripSpecBlockSizes(parseGoodsSpecBlocks(source, { stripSize: true })) : []
 }

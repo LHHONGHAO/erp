@@ -33,6 +33,7 @@
  */
 import { pxToMm, mmToPx, CODE_KEY_PREFIX } from './labelSchema'
 import { GOODS_KEY, GOODS_TABLE_KEY } from './goodsLabelLayout'
+import { normalizeSpecBlocks } from './goodsSpecBlocks'
 
 export var TEMPLATE_SCHEMA_VERSION = 2
 export var TEMPLATE_VERSION_FIELD = 'schemaVersion'
@@ -84,7 +85,8 @@ function findAttr(attrs, key) {
  *
  * @param {Object} state { name, provider, businessType, selectedAttrs, attrStyles, attrLabels,
  *                         allAttrs, goodsFields, labelWidth, labelHeight, overflowMode,
- *                         pageMode(none/fit/each), maxRowsPerPage, repeatHeader }
+ *                         pageMode(none/fit/each), maxRowsPerPage, repeatHeader,
+ *                         specBlocks, hiddenItemKeys }
  * @param {Object} meta  { id, type, materialId, categoryId, categoryName, kind }
  */
 export function editorStateToV2(state, meta) {
@@ -184,7 +186,7 @@ export function editorStateToV2(state, meta) {
   })
 
   var pageMode = PAGE_MODE_TO_PRINT[src.pageMode] || 'single'
-  return {
+  var v2 = {
     schemaVersion: TEMPLATE_SCHEMA_VERSION,
     name: src.name || '未命名标签',
     businessType: src.businessType || src.provider || '',
@@ -234,6 +236,14 @@ export function editorStateToV2(state, meta) {
       kind: info.kind || null
     }
   }
+  // 规格块结构（规格名 + 属性值名），编辑态只显示属性名，不保存单据业务值
+  var specBlocks = normalizeSpecBlocks(src.specBlocks)
+  if (specBlocks.length) v2.specBlocks = specBlocks
+  // 编辑页关闭的规格名/规格值随模板保存，跨端打开仍保持隐藏
+  var hiddenItemKeys = (Array.isArray(src.hiddenItemKeys) ? src.hiddenItemKeys : [])
+    .filter(function(key) { return !!key })
+  if (hiddenItemKeys.length) v2.hiddenItemKeys = hiddenItemKeys
+  return v2
 }
 
 /**
@@ -312,6 +322,9 @@ export function v2ToEditorState(raw) {
     attrLabels: attrLabels,
     customLabels: customLabels,
     goodsFields: goodsFields,
+    specBlocks: normalizeSpecBlocks(v2.specBlocks),
+    // 编辑页关闭的规格名/规格值，重新打开时保持不显示
+    hiddenItemKeys: Array.isArray(v2.hiddenItemKeys) ? v2.hiddenItemKeys.slice() : [],
     labelWidth: mmToPx(paper.width || 40),
     labelHeight: mmToPx(paper.height || 30),
     overflowMode: layout.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap',

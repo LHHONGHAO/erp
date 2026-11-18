@@ -74,6 +74,9 @@ export function toTemplateV2(tpl) {
     attrLabels: tpl.attrLabels,
     allAttrs: tpl.allAttrs || tpl.customLabels || [],
     goodsFields: tpl.goodsFields,
+    specBlocks: tpl.specBlocks,
+    // 编辑页关闭的规格项随模板透传，避免 PC 端保存时丢失
+    hiddenItemKeys: tpl.hiddenItemKeys,
     labelWidth: tpl.labelWidth || tpl.width || 320,
     labelHeight: tpl.labelHeight || tpl.height || 240,
     overflowMode: tpl.overflowMode,

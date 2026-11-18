@@ -402,6 +402,8 @@
         selectedAttrs: [],
         attrStyles: {},
         attrLabels: {},
+        // 规格块结构（规格名 + 属性值名），随模板保存/恢复，不存单据业务值
+        specBlocks: [],
         // 多商品分页方式：仅透传保存，避免 PC 端覆盖移动端设置
         pageMode: 'none',
         currentAttrKey: null,
@@ -624,6 +626,7 @@
         this.selectedAttrs = []
         this.attrStyles = {}
         this.attrLabels = {}
+        this.specBlocks = []
         this.provider = ''
         this.currentAttrKey = null
         this.selectedKeys = []
@@ -1626,6 +1629,7 @@
           selectedAttrs: JSON.parse(JSON.stringify(this.selectedAttrs)),
           attrStyles: cleanStyles,
           attrLabels: cleanLabels,
+          specBlocks: JSON.parse(JSON.stringify(this.specBlocks || [])),
           customLabels: customLabels,
           labelWidth: this.labelWidth,
           labelHeight: this.labelHeight,
@@ -1836,6 +1840,7 @@
         }
         // 应用选中属性和样式
         this.selectedAttrs = JSON.parse(JSON.stringify(tpl.selectedAttrs))
+        this.specBlocks = Array.isArray(tpl.specBlocks) ? JSON.parse(JSON.stringify(tpl.specBlocks)) : []
         this.attrStyles = {}
         this.attrLabels = {}
         tpl.selectedAttrs.forEach(function(key) {

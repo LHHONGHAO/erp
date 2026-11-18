@@ -2465,6 +2465,8 @@
           repeatHeader: base.repeatHeader !== false,
           // 编辑页关闭的规格名/规格值，预览与打印时保持隐藏
           hiddenItemKeys: Array.isArray(src.hiddenItemKeys) ? src.hiddenItemKeys : (Array.isArray(base.hiddenItemKeys) ? base.hiddenItemKeys : []),
+          // 规格块结构（属性名 + 属性值名），回传给编辑页按模板恢复
+          specBlocks: Array.isArray(base.specBlocks) ? base.specBlocks : [],
           schema: schema
         }
       },

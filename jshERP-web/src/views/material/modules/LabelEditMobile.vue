@@ -20,7 +20,7 @@
     <div class="lem-align-bar">
       <div class="lem-align-hint">
         <span class="lem-align-hint__state" :class="{ 'is-multi': multiSelectMode }">{{ labelStateText }}</span>
-        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白多选' }}</span>
+        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白进入多选' }}</span>
       </div>
       <div class="lem-align-btns">
         <a-button size="small" icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
@@ -701,8 +701,8 @@
     computed: {
       // 顶栏左侧提示：当前标签选中状态
       labelStateText() {
-        if (!this.selectedKeys.length) return '未选中标签'
         if (this.multiSelectMode) return '已选 ' + this.selectedKeys.length + ' 项 · 多选'
+        if (!this.selectedKeys.length) return '未选中标签'
         return '已选 1 项'
       },
       currentTitle() {
@@ -2270,7 +2270,7 @@
         this._prevFocus = null
         this.unbindPointerEvents()
       },
-      // 编辑区空白（含画布外的灰色区域）：长按任意空白全选进入多选，单击空白退出多选
+      // 编辑区空白（含画布外的灰色区域）：长按进入多选并保留当前选中，单击空白退出多选
       startAreaPress(e) {
         var self = this
         if (this.$refs.labelCanvas && this.$refs.labelCanvas.contains(e.target)) return
@@ -2307,8 +2307,7 @@
         }
         timer = setTimeout(function() {
           timer = null
-          self.selectedKeys = self.selectedAttrs.slice()
-          self.currentAttrKey = self.selectedKeys[0] || null
+          // 只切换多选状态，以当前已选元素为基础，不再自动全选
           self.multiSelectMode = true
           self.pushSnapshot()
           if (navigator.vibrate) navigator.vibrate(10)
@@ -2329,16 +2328,14 @@
           startY: (e.clientY - rect.top) / this.zoom,
           x: 0, y: 0, w: 0, h: 0
         }
-        // 长按空白处任意位置：全选标签并进入多选（不再要求先选中元素）
+        // 长按画布空白：进入多选状态并保留当前选中，不再自动全选
         this._marqueeLongPressed = false
         this._marqueeTimer = setTimeout(function() {
           self._marqueeTimer = null
           self._marqueeLongPressed = true
-          // 放弃框选，改为全选
+          // 放弃框选，只切换多选状态
           self.marquee.active = false
           self.marquee.visible = false
-          self.selectedKeys = self.selectedAttrs.slice()
-          self.currentAttrKey = self.selectedKeys[0] || null
           self.multiSelectMode = true
           self.unbindMarqueeEvents()
           self.pushSnapshot()

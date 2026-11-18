@@ -143,9 +143,50 @@
       </div>
       <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
-          <!-- 属性名 / 文本内容（单选时显示） -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
-            <span class="lem-style-label">属性名</span>
+          <!-- 规格块：规格名与规格值同属一个面板，标题与输入框上下换行；标题后开关控制是否显示 -->
+          <template v-if="selectedKeys.length === 1 && currentSpecPair">
+            <div class="lem-field-stack" v-if="currentSpecPair.nameKey">
+              <div class="lem-field-head">
+                <span class="lem-style-label">属性名</span>
+                <a-switch
+                  size="small"
+                  class="lem-field-switch"
+                  :checked="isAttrSelected(currentSpecPair.nameKey)"
+                  @change="onSpecVisibleChange(currentSpecPair.nameKey, $event)"
+                />
+              </div>
+              <a-input
+                :value="specNameText"
+                :disabled="!isAttrSelected(currentSpecPair.nameKey)"
+                placeholder="规格名"
+                class="lem-text-input"
+                @input="updateSpecName"
+              />
+            </div>
+            <div class="lem-field-stack">
+              <div class="lem-field-head">
+                <span class="lem-style-label">属性值</span>
+                <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+                <a-switch
+                  size="small"
+                  class="lem-field-switch"
+                  :checked="isAttrSelected(currentSpecPair.valueKey)"
+                  @change="onSpecVisibleChange(currentSpecPair.valueKey, $event)"
+                />
+              </div>
+              <a-input
+                :value="specValueText"
+                :disabled="!isAttrSelected(currentSpecPair.valueKey)"
+                placeholder="规格值"
+                class="lem-text-input"
+                @input="updateSpecValue"
+              />
+            </div>
+          </template>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
+            <div class="lem-field-head">
+              <span class="lem-style-label">属性名</span>
+            </div>
             <a-input
               :value="currentLabel"
               :placeholder="isCustomAttr(selectedKeys[0]) ? '自定义文本内容' : '属性名（留空不显示）'"
@@ -153,24 +194,28 @@
               @input="updateCurrentLabel"
             />
           </div>
-          <!-- 分页标签：文案自动随页码变化，不可手改 -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && selectedKeys[0] === 'page_no'">
-            <span class="lem-style-label">文本内容</span>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && selectedKeys[0] === 'page_no'">
+            <div class="lem-field-head">
+              <span class="lem-style-label">文本内容</span>
+            </div>
             <a-input :value="pageLabelText()" disabled class="lem-text-input" />
           </div>
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
-            <span class="lem-style-label">文本内容</span>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
+            <div class="lem-field-head">
+              <span class="lem-style-label">文本内容</span>
+              <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+            </div>
             <a-input
               :value="currentValue"
               placeholder="文本内容"
               class="lem-text-input"
               @input="updateCurrentValue"
             />
-            <a-button size="small" class="lem-ocr-btn">OCR</a-button>
           </div>
-          <!-- 商品信息：组合值由勾选的字段拼接（如只勾商品名称+规格值2） -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
-            <span class="lem-style-label">组合字段</span>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
+            <div class="lem-field-head">
+              <span class="lem-style-label">组合字段</span>
+            </div>
             <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
               <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
             </a-checkbox-group>
@@ -597,6 +642,8 @@
         businessType: '',
         allAttrs: [],
         selectedAttrs: [],
+        // 小票单品元素中通过开关关闭（不显示）的 key，打印快照时一并带给预览页
+        hiddenItemKeys: [],
         attrStyles: {},
         attrLabels: {},
         // 商品组合（商品信息）显示哪些字段：默认全部，可在属性面板按需勾选
@@ -880,6 +927,37 @@
         if (!this.currentAttrKey) return ''
         return this.attrLabels[this.currentAttrKey] || ''
       },
+      // 小票规格块：item{行}_specname{序号} 与 item{行}_specvalue{序号} 成对出现
+      currentSpecPair() {
+        if (this.selectedKeys.length !== 1) return null
+        var m = /^item(\d+)_spec(name|value)(\d+)$/.exec(this.selectedKeys[0])
+        if (!m) return null
+        var nameKey = 'item' + m[1] + '_specname' + m[3]
+        var valueKey = 'item' + m[1] + '_specvalue' + m[3]
+        var hasName = this.allAttrs.some(a => a.key === nameKey)
+        return { nameKey: hasName ? nameKey : '', valueKey: valueKey }
+      },
+      specNameText() {
+        var pair = this.currentSpecPair
+        if (!pair || !pair.nameKey) return ''
+        var attr = this.allAttrs.find(a => a.key === pair.nameKey)
+        return attr ? String(attr.value || '').replace(/：$/, '') : ''
+      },
+      specValueText() {
+        var pair = this.currentSpecPair
+        if (!pair) return ''
+        var attr = this.allAttrs.find(a => a.key === pair.valueKey)
+        return attr ? attr.value : ''
+      },
+      // 规格块内已显示的元素（属性名/属性值），字体样式同时作用于它们
+      specPairKeys() {
+        var pair = this.currentSpecPair
+        if (!pair) return []
+        var keys = []
+        if (pair.nameKey && this.isAttrSelected(pair.nameKey)) keys.push(pair.nameKey)
+        if (this.isAttrSelected(pair.valueKey)) keys.push(pair.valueKey)
+        return keys
+      },
       // 字体类字段是否显示：只要选中项中含非编码元素就显示
       showFontFields() {
         if (!this.selectedKeys.length) return false
@@ -996,6 +1074,12 @@
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
         this.dynamicItemKeys = next.itemKeys
+        // 模板里保存了关闭的规格名/规格值：重建后仍保持隐藏
+        if (this.hiddenItemKeys && this.hiddenItemKeys.length) {
+          this.selectedAttrs = this.selectedAttrs.filter(function(key) {
+            return self.hiddenItemKeys.indexOf(key) === -1
+          })
+        }
       },
       /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
       initProvider(context) {
@@ -1268,6 +1352,7 @@
               self.applyDefaultLayout(cfg)
               return
             }
+            if (Array.isArray(raw.hiddenItemKeys)) state.hiddenItemKeys = raw.hiddenItemKeys
             self.applyTemplateSnapshot(state, cfg)
           }).catch(function() {
             if (skipApply) return
@@ -1307,6 +1392,7 @@
         this.selectedAttrs = JSON.parse(JSON.stringify(snap.selectedAttrs))
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        this.hiddenItemKeys = Array.isArray(snap.hiddenItemKeys) ? snap.hiddenItemKeys.slice() : []
         // 自定义文本的值随模板保存，加载时合并回属性列表
         if (Array.isArray(snap.customLabels)) {
           snap.customLabels.forEach(function(custom) {
@@ -1440,6 +1526,7 @@
       /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
       applyDefaultLayout(cfg) {
         cfg = cfg || TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        this.hiddenItemKeys = []
         var DEFAULT_KEYS = cfg.defaultKeys || []
         var styles = {}
         var labels = {}
@@ -1639,13 +1726,76 @@
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
         if (this.currentAttrKey) this.$set(this.attrLabels, this.currentAttrKey, val)
       },
+      isAttrSelected(key) {
+        return !!key && this.selectedAttrs.indexOf(key) > -1
+      },
+      // 规格名/规格值开关：只控制是否参与标签渲染，保留原位置与字号，关闭后可再次打开
+      onSpecVisibleChange(key, checked) {
+        this.setAttrVisible(key, !!checked)
+      },
+      setAttrVisible(key, visible) {
+        if (!key) return
+        var pair = this.currentSpecPair
+        if (visible) {
+          if (this.selectedAttrs.indexOf(key) === -1) this.selectedAttrs.push(key)
+          this.hiddenItemKeys = this.hiddenItemKeys.filter(function(k) { return k !== key })
+          if (!this.attrStyles[key]) {
+            this.$set(this.attrStyles, key, {
+              x: 8, y: 10, width: 0, height: 0,
+              fontSize: 12, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.2
+            })
+          }
+          if (this.attrLabels[key] === undefined) {
+            var attr = this.allAttrs.find(a => a.key === key)
+            this.$set(this.attrLabels, key, attr ? attr.label : '')
+          }
+          this.selectedKeys = [key]
+          this.currentAttrKey = key
+        } else {
+          var aIdx = this.selectedAttrs.indexOf(key)
+          if (aIdx > -1) this.selectedAttrs.splice(aIdx, 1)
+          if (this.hiddenItemKeys.indexOf(key) === -1) this.hiddenItemKeys.push(key)
+          var sIdx = this.selectedKeys.indexOf(key)
+          if (sIdx > -1) this.selectedKeys.splice(sIdx, 1)
+          var other = pair ? (key === pair.nameKey ? pair.valueKey : pair.nameKey) : ''
+          if (other && this.selectedAttrs.indexOf(other) > -1) {
+            if (this.selectedKeys.indexOf(other) === -1) this.selectedKeys.push(other)
+            this.currentAttrKey = other
+          } else if (this.currentAttrKey === key) {
+            this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+          }
+        }
+        this.pushSnapshot()
+      },
+      updateSpecName(e) {
+        var pair = this.currentSpecPair
+        if (!pair || !pair.nameKey) return
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var clean = String(val || '').replace(/：$/, '')
+        var attr = this.allAttrs.find(a => a.key === pair.nameKey)
+        if (attr) attr.value = clean ? clean + '：' : ''
+      },
+      updateSpecValue(e) {
+        var pair = this.currentSpecPair
+        if (!pair) return
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var attr = this.allAttrs.find(a => a.key === pair.valueKey)
+        if (attr) attr.value = val
+      },
+      // 字体类字段作用于规格块的属性名 + 属性值；位置/尺寸只作用于当前元素
+      styleTargets(field) {
+        var fontFields = { fontSize: 1, fontWeight: 1, letterSpacing: 1, lineHeight: 1 }
+        if (fontFields[field] && this.specPairKeys.length > 1) return this.specPairKeys
+        return this.selectedKeys
+      },
       // 多选批量读取：全部一致返回值，否则 null（输入框显示为空）
       getMultiStyle(field) {
-        if (!this.selectedKeys.length) return null
-        var first = this.attrStyles[this.selectedKeys[0]]
+        var keys = this.styleTargets(field)
+        if (!keys.length) return null
+        var first = this.attrStyles[keys[0]]
         var val = first ? first[field] : undefined
-        for (var i = 1; i < this.selectedKeys.length; i++) {
-          var s = this.attrStyles[this.selectedKeys[i]]
+        for (var i = 1; i < keys.length; i++) {
+          var s = this.attrStyles[keys[i]]
           if ((s ? s[field] : undefined) !== val) return null
         }
         return val === undefined ? null : val
@@ -1658,7 +1808,7 @@
       setMultiStyle(field, val) {
         if (val === null || val === undefined || val === '') return
         var self = this
-        this.selectedKeys.forEach(function(key) {
+        this.styleTargets(field).forEach(function(key) {
           if (!self.attrStyles[key]) self.$set(self.attrStyles, key, {})
           self.$set(self.attrStyles[key], field, val)
           // 文字类改宽度后高度跟随内容：清掉固定高度，避免折行被裁切
@@ -2387,7 +2537,7 @@
         Object.keys(this.attrLabels).forEach(function(key) {
           if (!isReceiptItemKey(key)) attrLabels[key] = self.attrLabels[key]
         })
-        return editorStateToV2({
+        var v2 = editorStateToV2({
           name: name,
           provider: this.provider || this.businessType || '',
           businessType: this.provider || this.businessType || '',
@@ -2407,6 +2557,12 @@
           type: this.templateType,
           kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null
         })
+        // 小票规格名/规格值开关关闭的 key：随模板保存，重开编辑页/打印时保持不显示
+        var hiddenItemKeys = (this.dynamicItemKeys || []).filter(function(key) {
+          return self.selectedAttrs.indexOf(key) === -1
+        })
+        if (hiddenItemKeys.length) v2.hiddenItemKeys = hiddenItemKeys
+        return v2
       },
       /** 发货单/小票/会员/地址：使用统一模板数据保存（不涉及商品类型） */
       persistUnifiedTemplate(cfg, name) {
@@ -3353,29 +3509,47 @@
   margin-bottom: 6px;
 }
 
-/* 字段行：属性名与编辑框同行并列 */
-.lem-field {
+/* 属性名 / 属性值：标题一行，输入框换行整行显示 */
+.lem-field-stack {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 8px;
 }
 
-.lem-field > .lem-style-label {
-  flex: 0 0 48px;
-  width: 48px;
+.lem-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.lem-field-head > .lem-style-label {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.lem-field-head > .lem-ocr-btn {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lem-field-switch {
+  margin-left: auto;
+  flex: none;
 }
 
 .lem-text-input {
-  flex: 1 1 0;
-  width: auto;
+  width: 100%;
   min-width: 0;
 }
 
 /* 商品信息组合字段勾选 */
 .lem-goods-field-group {
   flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;

@@ -20,7 +20,7 @@
     <div class="lem-align-bar">
       <div class="lem-align-hint">
         <span class="lem-align-hint__state" :class="{ 'is-multi': multiSelectMode }">{{ labelStateText }}</span>
-        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白多选' }}</span>
+        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白进入多选' }}</span>
       </div>
       <div class="lem-align-btns">
         <a-button size="small" icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
@@ -81,7 +81,7 @@
                 <span class="lem-mini-col-qty">数量</span>
                 <span class="lem-mini-col-spec">规格</span>
               </div>
-              <div class="lem-mini-row" v-for="n in 3" :key="n">
+              <div class="lem-mini-row" v-for="n in 1" :key="n">
                 <span class="lem-mini-col-name">{{ '示例商品' + n }}</span>
                 <span class="lem-mini-col-qty">{{ n }}</span>
                 <span class="lem-mini-col-spec">白色 / XL</span>
@@ -103,7 +103,7 @@
           </template>
           <template v-else-if="isDetailColumn(key)">
             <div class="lem-col-stack">
-              <div class="lem-col-line" v-for="n in 2" :key="n">{{ getDetailSample(key, n) }}</div>
+              <div class="lem-col-line" v-for="n in 1" :key="n">{{ getDetailSample(key, n) }}</div>
             </div>
           </template>
           <template v-else>
@@ -143,9 +143,54 @@
       </div>
       <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
-          <!-- 属性名 / 文本内容（单选时显示） -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
-            <span class="lem-style-label">属性名</span>
+          <!-- 规格块：1 个规格名 + N 个规格值，标题与输入框上下换行；每项右侧开关控制是否显示 -->
+          <template v-if="selectedKeys.length === 1 && currentSpecBlock">
+            <div class="lem-field-stack" v-if="currentSpecBlock.nameKey">
+              <div class="lem-field-head">
+                <span class="lem-style-label">属性名</span>
+                <a-switch
+                  size="small"
+                  class="lem-field-switch"
+                  :checked="isAttrSelected(currentSpecBlock.nameKey)"
+                  @change="onSpecVisibleChange(currentSpecBlock.nameKey, $event)"
+                />
+              </div>
+              <a-input
+                :value="specNameText"
+                :disabled="!isAttrSelected(currentSpecBlock.nameKey)"
+                placeholder="规格名"
+                class="lem-text-input"
+                @input="updateSpecName"
+              />
+            </div>
+            <div class="lem-field-stack">
+              <div class="lem-field-head">
+                <span class="lem-style-label">属性值</span>
+                <a-button size="small" class="lem-ocr-btn">OCR</a-button>
+              </div>
+              <div class="lem-value-list">
+                <div class="lem-value-row" v-for="valueKey in currentSpecBlock.valueKeys" :key="valueKey">
+                  <a-input
+                    :value="specValueTextOf(valueKey)"
+                    :disabled="!isAttrSelected(valueKey)"
+                    placeholder="规格值"
+                    class="lem-text-input"
+                    @input="updateSpecValueAt(valueKey, $event)"
+                  />
+                  <a-switch
+                    size="small"
+                    class="lem-field-switch"
+                    :checked="isAttrSelected(valueKey)"
+                    @change="onSpecVisibleChange(valueKey, $event)"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
+            <div class="lem-field-head">
+              <span class="lem-style-label">属性名</span>
+            </div>
             <a-input
               :value="currentLabel"
               :placeholder="isCustomAttr(selectedKeys[0]) ? '自定义文本内容' : '属性名（留空不显示）'"
@@ -153,24 +198,16 @@
               @input="updateCurrentLabel"
             />
           </div>
-          <!-- 分页标签：文案自动随页码变化，不可手改 -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && selectedKeys[0] === 'page_no'">
-            <span class="lem-style-label">文本内容</span>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && selectedKeys[0] === 'page_no'">
+            <div class="lem-field-head">
+              <span class="lem-style-label">文本内容</span>
+            </div>
             <a-input :value="pageLabelText()" disabled class="lem-text-input" />
           </div>
-          <div class="lem-field" v-if="selectedKeys.length === 1 && showFontFields && !isCustomAttr(selectedKeys[0]) && !isGoodsKey(selectedKeys[0])">
-            <span class="lem-style-label">文本内容</span>
-            <a-input
-              :value="currentValue"
-              placeholder="文本内容"
-              class="lem-text-input"
-              @input="updateCurrentValue"
-            />
-            <a-button size="small" class="lem-ocr-btn">OCR</a-button>
-          </div>
-          <!-- 商品信息：组合值由勾选的字段拼接（如只勾商品名称+规格值2） -->
-          <div class="lem-field" v-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
-            <span class="lem-style-label">组合字段</span>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && isGoodsKey(selectedKeys[0])">
+            <div class="lem-field-head">
+              <span class="lem-style-label">组合字段</span>
+            </div>
             <a-checkbox-group :value="goodsFields" class="lem-goods-field-group" @change="onGoodsFieldsChange">
               <a-checkbox v-for="f in goodsFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</a-checkbox>
             </a-checkbox-group>
@@ -509,7 +546,8 @@
   import { getAction, postAction } from '@/api/manage'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { parseSpecItemKey, specNameKey, isSpecItemKey, editPlaceholderLabel, firstRowForEdit } from '@/views/material/utils/goodsSpecBlocks'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -597,6 +635,8 @@
         businessType: '',
         allAttrs: [],
         selectedAttrs: [],
+        // 小票单品元素中通过开关关闭（不显示）的 key，打印快照时一并带给预览页
+        hiddenItemKeys: [],
         attrStyles: {},
         attrLabels: {},
         // 商品组合（商品信息）显示哪些字段：默认全部，可在属性面板按需勾选
@@ -661,8 +701,8 @@
     computed: {
       // 顶栏左侧提示：当前标签选中状态
       labelStateText() {
-        if (!this.selectedKeys.length) return '未选中标签'
         if (this.multiSelectMode) return '已选 ' + this.selectedKeys.length + ' 项 · 多选'
+        if (!this.selectedKeys.length) return '未选中标签'
         return '已选 1 项'
       },
       currentTitle() {
@@ -753,18 +793,18 @@
         var narrow = typeof window !== 'undefined' && window.innerWidth <= 360
         return (narrow ? 164 : 180) + 20
       },
-      // 编辑区与打印分页保持一致：每件一张时只展示第一条商品行（每张标签内容相同）
+      // 编辑区与打印分页保持一致：重复出现的商品属性在编辑页只保留第一组
+      // 具体打印时按打印规则展开全部商品行
       editorGoodsRows() {
         var rows = (this.record && this.record.goodsRows) || []
-        if (this.effectivePageMode !== 'each') return rows
-        var first = rows.filter(function(r) { return hasGoodsValue(r) })[0]
-        return first ? [first] : []
+        return firstRowForEdit(rows, hasGoodsValue)
       },
       // 标签最终布局（与打印预览、打印数据共用同一函数）
       labelLayout() {
+        // 编辑页按占位排版：普通属性只放属性名，规格项保留规格名/规格值本身
         var values = {}
         this.allAttrs.forEach(function(attr) {
-          values[attr.key] = attr.value == null ? '' : attr.value
+          values[attr.key] = isSpecItemKey(attr.key) && attr.value != null ? String(attr.value) : ''
         })
         // 分页标签：文案由当前页/总页数决定，不参与普通文本编辑
         values['page_no'] = this.pageLabelText()
@@ -784,24 +824,32 @@
       goodsRowsData() {
         return this.labelLayout
       },
-      // 元素 key → 实际显示文本（含「属性名: 」前缀 / 省略号裁切结果）
+      // 元素 key → 编辑页显示文本
+      // 编辑页只显示属性名（含表单标题），不展示业务值；规格块显示规格名与规格值本身
       displayParts() {
         var self = this
         var map = {}
         this.selectedAttrs.forEach(function(key) {
-          var texts = self.labelLayout.texts || {}
-          var text = texts[key]
-          if (text == null) {
-            var label = self.attrLabels[key] || ''
-            var value = self.getAttrValue(key)
-            text = label ? label + ': ' + value : value
+          var attr = self.allAttrs.find(function(a) { return a.key === key })
+          // 规格名/规格值：规格块自身内容，按真实数据展示
+          if (isSpecItemKey(key)) {
+            map[key] = { label: '', value: attr && attr.value != null ? String(attr.value) : '' }
+            return
           }
-          text = text == null ? '' : String(text)
-          var firstLine = text.split('\n')[0]
-          var idx = firstLine.indexOf(': ')
-          map[key] = idx > -1
-            ? { label: text.slice(0, idx + 2), value: text.slice(idx + 2) }
-            : { label: '', value: text }
+          // 分页标签：编辑页直接显示当前页码占位
+          if (key === 'page_no') {
+            map[key] = { label: '', value: self.pageLabelText() }
+            return
+          }
+          // 明细表 / 编码由各自模板渲染，不走文本占位
+          if (isGoodsTableKey(key) || key === 'dn_table' || self.isCode(key)) {
+            map[key] = { label: '', value: '' }
+            return
+          }
+          // 其余属性：只显示属性名，业务值在打印时填充
+          // 属性名留空时用字段默认名称占位，便于在编辑页识别元素
+          var label = self.attrLabels[key] || (attr ? attr.label : '')
+          map[key] = { label: '', value: editPlaceholderLabel(label, attr) }
         })
         return map
       },
@@ -820,11 +868,9 @@
       goodsTableColumns() {
         return GOODS_TABLE_COLUMNS
       },
-      // 表格预览行：没有商品数据时给一行占位，便于调整样式
+      // 表格预览行：编辑页只保留一行属性名占位，真实商品行在打印时按规则填充
       goodsTablePreviewRows() {
-        var table = this.goodsTableData
-        if (table && table.rows.length) return table.rows.map(function(row) { return row.cells })
-        return [['商品名称', '规格值1', '规格值2', '规格值3']]
+        return [GOODS_TABLE_COLUMNS]
       },
       goodsTableStyle() {
         var style = this.attrStyles[this.goodsTableKey] || {}
@@ -871,14 +917,41 @@
         })
         return groups
       },
-      currentValue() {
-        if (!this.currentAttrKey) return ''
-        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
-        return attr ? attr.value : ''
-      },
       currentLabel() {
         if (!this.currentAttrKey) return ''
         return this.attrLabels[this.currentAttrKey] || ''
+      },
+      // 小票规格块：规格名 + N 个规格值，选中块内任一项都按整块展示
+      currentSpecBlock() {
+        if (this.selectedKeys.length !== 1) return null
+        var parsed = parseSpecItemKey(this.selectedKeys[0])
+        if (!parsed) return null
+        var rowNo = parsed.rowNo
+        var blockNo = parsed.blockNo
+        var nameKey = specNameKey(rowNo, blockNo)
+        var hasName = this.allAttrs.some(a => a.key === nameKey)
+        var valueKeys = this.allAttrs.filter(function(attr) {
+          var item = parseSpecItemKey(attr.key)
+          return !!item && item.kind === 'value' && item.rowNo === rowNo && item.blockNo === blockNo
+        }).map(function(attr) { return attr.key })
+        return { nameKey: hasName ? nameKey : '', valueKeys: valueKeys }
+      },
+      specNameText() {
+        var block = this.currentSpecBlock
+        if (!block || !block.nameKey) return ''
+        var attr = this.allAttrs.find(a => a.key === block.nameKey)
+        return attr ? String(attr.value || '').replace(/：$/, '') : ''
+      },
+      // 规格块内已显示的元素（属性名 + 各规格值），字体样式同时作用于它们
+      specBlockKeys() {
+        var block = this.currentSpecBlock
+        if (!block) return []
+        var keys = []
+        if (block.nameKey && this.isAttrSelected(block.nameKey)) keys.push(block.nameKey)
+        block.valueKeys.forEach(key => {
+          if (this.isAttrSelected(key)) keys.push(key)
+        })
+        return keys
       },
       // 字体类字段是否显示：只要选中项中含非编码元素就显示
       showFontFields() {
@@ -974,7 +1047,11 @@
        */
       applyReceiptItemElements() {
         if (this.templateType !== 'receipt') return
-        var rows = (this.record && this.record.goodsRows) || []
+        // 编辑页重复属性只保留第一组；没有单据数据时给一组属性名占位，打印时不会输出占位
+        var rows = firstRowForEdit((this.record && this.record.goodsRows) || [], hasGoodsValue)
+        if (!rows.length) {
+          rows = [{ name: '商品名称', spec1: '规格值1：规格值', qty: '数量', price: '单价', amount: '金额' }]
+        }
         var fallbackY = 0
         var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
         var self = this
@@ -996,6 +1073,12 @@
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
         this.dynamicItemKeys = next.itemKeys
+        // 模板里保存了关闭的规格名/规格值：重建后仍保持隐藏（按属性维度跨商品行生效）
+        if (this.hiddenItemKeys && this.hiddenItemKeys.length) {
+          this.selectedAttrs = this.selectedAttrs.filter(function(key) {
+            return !isReceiptItemHidden(self.hiddenItemKeys, key)
+          })
+        }
       },
       /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
       initProvider(context) {
@@ -1268,6 +1351,7 @@
               self.applyDefaultLayout(cfg)
               return
             }
+            if (Array.isArray(raw.hiddenItemKeys)) state.hiddenItemKeys = raw.hiddenItemKeys
             self.applyTemplateSnapshot(state, cfg)
           }).catch(function() {
             if (skipApply) return
@@ -1307,6 +1391,7 @@
         this.selectedAttrs = JSON.parse(JSON.stringify(snap.selectedAttrs))
         this.attrStyles = JSON.parse(JSON.stringify(snap.attrStyles || {}))
         this.attrLabels = JSON.parse(JSON.stringify(snap.attrLabels || {}))
+        this.hiddenItemKeys = Array.isArray(snap.hiddenItemKeys) ? snap.hiddenItemKeys.slice() : []
         // 自定义文本的值随模板保存，加载时合并回属性列表
         if (Array.isArray(snap.customLabels)) {
           snap.customLabels.forEach(function(custom) {
@@ -1418,28 +1503,29 @@
           { key: 'dn_footer', label: '落款', value: '华夏家纺', group: '其它' }
         ]
       },
-      /** 小票字段：优先使用当前单据数据，缺失时才用占位示例 */
+      /** 小票字段：只引用表单页面已有的元素，编辑页只显示属性名，不填充示例值 */
       buildReceiptAttrs() {
         var record = this.record || {}
-        var pick = function (key, fallback) {
+        var val = function (key) {
           var v = record[key]
-          return (v === null || v === undefined || v === '') ? fallback : String(v)
+          return (v === null || v === undefined) ? '' : String(v)
         }
         return [
-          { key: 'rc_title', label: '小票标题', value: pick('rc_title', '零售小票'), group: '单据头' },
-          { key: 'rc_no', label: '单号', value: pick('rc_no', 'LS261105001'), group: '单据头' },
-          { key: 'rc_date', label: '日期', value: pick('rc_date', '2026-11-05 10:30'), group: '单据头' },
-          { key: 'rc_member', label: '会员', value: pick('rc_member', '张三'), group: '单据头' },
+          { key: 'rc_title', label: '小票标题', value: val('rc_title'), group: '单据头' },
+          { key: 'rc_no', label: '单号', value: val('rc_no'), group: '单据头' },
+          { key: 'rc_date', label: '日期', value: val('rc_date'), group: '单据头' },
+          { key: 'rc_member', label: '会员', value: val('rc_member'), group: '单据头' },
           { key: 'rc_table', label: '商品明细表', value: '商品明细表', group: '商品明细' },
-          { key: 'rc_qty_total', label: '数量合计', value: pick('rc_qty_total', '1'), group: '金额合计' },
-          { key: 'rc_amount_total', label: '金额合计', value: pick('rc_amount_total', '¥280.00'), group: '金额合计' },
-          { key: 'rc_remark', label: '备注', value: pick('rc_remark', '谢谢惠顾'), group: '其它' },
-          { key: 'rc_footer', label: '落款', value: pick('rc_footer', '华夏家纺'), group: '其它' }
+          { key: 'rc_qty_total', label: '数量合计', value: val('rc_qty_total'), group: '金额合计' },
+          { key: 'rc_amount_total', label: '金额合计', value: val('rc_amount_total'), group: '金额合计' },
+          { key: 'rc_remark', label: '备注', value: val('rc_remark'), group: '其它' },
+          { key: 'rc_footer', label: '落款', value: val('rc_footer'), group: '其它' }
         ]
       },
       /** 通用默认布局：从 cfg.defaultKeys 挑字段，从上到下依次排 */
       applyDefaultLayout(cfg) {
         cfg = cfg || TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
+        this.hiddenItemKeys = []
         var DEFAULT_KEYS = cfg.defaultKeys || []
         var styles = {}
         var labels = {}
@@ -1493,14 +1579,6 @@
           self.allAttrs.push({ key: key, label: label, value: label, isCustom: true, group: '自定义' })
           exists[key] = true
         })
-      },
-      getAttrValue(key) {
-        // 分页标签文案随页数变化，单独计算
-        if (key === 'page_no') return this.pageLabelText()
-        // 商品信息按勾选的组合字段拼接显示（与打印一致）
-        if (key === GOODS_KEY && this.goodsRowsData.goodsText) return this.goodsRowsData.goodsText
-        var attr = this.allAttrs.find(function(a) { return a.key === key })
-        return attr ? attr.value : ''
       },
       getElementStyle(key) {
         // 使用统一布局结果：商品明细 / 文字折行 / 上下归位后的实际坐标与高度
@@ -1639,13 +1717,68 @@
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
         if (this.currentAttrKey) this.$set(this.attrLabels, this.currentAttrKey, val)
       },
+      isAttrSelected(key) {
+        return !!key && this.selectedAttrs.indexOf(key) > -1
+      },
+      // 规格名/规格值开关：只控制是否参与标签渲染，保留原位置与字号，关闭后可再次打开
+      onSpecVisibleChange(key, checked) {
+        this.setAttrVisible(key, !!checked)
+      },
+      setAttrVisible(key, visible) {
+        if (!key) return
+        if (visible) {
+          if (this.selectedAttrs.indexOf(key) === -1) this.selectedAttrs.push(key)
+          this.hiddenItemKeys = this.hiddenItemKeys.filter(function(k) { return k !== key })
+          if (!this.attrStyles[key]) {
+            this.$set(this.attrStyles, key, {
+              x: 8, y: 10, width: 0, height: 0,
+              fontSize: 12, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.2
+            })
+          }
+          if (this.attrLabels[key] === undefined) {
+            var attr = this.allAttrs.find(a => a.key === key)
+            this.$set(this.attrLabels, key, attr ? attr.label : '')
+          }
+        } else {
+          var aIdx = this.selectedAttrs.indexOf(key)
+          if (aIdx > -1) this.selectedAttrs.splice(aIdx, 1)
+          if (this.hiddenItemKeys.indexOf(key) === -1) this.hiddenItemKeys.push(key)
+          // 保留选中态：面板不关闭，可再次打开开关
+        }
+        this.pushSnapshot()
+      },
+      updateSpecName(e) {
+        var block = this.currentSpecBlock
+        if (!block || !block.nameKey) return
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var clean = String(val || '').replace(/：$/, '')
+        var attr = this.allAttrs.find(a => a.key === block.nameKey)
+        if (attr) attr.value = clean ? clean + '：' : ''
+      },
+      specValueTextOf(key) {
+        var attr = this.allAttrs.find(a => a.key === key)
+        return attr ? attr.value : ''
+      },
+      updateSpecValueAt(key, e) {
+        if (!key) return
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var attr = this.allAttrs.find(a => a.key === key)
+        if (attr) attr.value = val
+      },
+      // 字体类字段作用于规格块的属性名 + 全部规格值；位置/尺寸只作用于当前元素
+      styleTargets(field) {
+        var fontFields = { fontSize: 1, fontWeight: 1, letterSpacing: 1, lineHeight: 1 }
+        if (fontFields[field] && this.specBlockKeys.length > 1) return this.specBlockKeys
+        return this.selectedKeys
+      },
       // 多选批量读取：全部一致返回值，否则 null（输入框显示为空）
       getMultiStyle(field) {
-        if (!this.selectedKeys.length) return null
-        var first = this.attrStyles[this.selectedKeys[0]]
+        var keys = this.styleTargets(field)
+        if (!keys.length) return null
+        var first = this.attrStyles[keys[0]]
         var val = first ? first[field] : undefined
-        for (var i = 1; i < this.selectedKeys.length; i++) {
-          var s = this.attrStyles[this.selectedKeys[i]]
+        for (var i = 1; i < keys.length; i++) {
+          var s = this.attrStyles[keys[i]]
           if ((s ? s[field] : undefined) !== val) return null
         }
         return val === undefined ? null : val
@@ -1658,7 +1791,7 @@
       setMultiStyle(field, val) {
         if (val === null || val === undefined || val === '') return
         var self = this
-        this.selectedKeys.forEach(function(key) {
+        this.styleTargets(field).forEach(function(key) {
           if (!self.attrStyles[key]) self.$set(self.attrStyles, key, {})
           self.$set(self.attrStyles[key], field, val)
           // 文字类改宽度后高度跟随内容：清掉固定高度，避免折行被裁切
@@ -1749,11 +1882,6 @@
           })
         }
         this.pushSnapshot()
-      },
-      updateCurrentValue(e) {
-        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
-        var attr = this.allAttrs.find(a => a.key === this.currentAttrKey)
-        if (attr) attr.value = val
       },
       // 属性面板打开后，把选中元素和手柄平移到面板左侧
       noop() {},
@@ -2142,7 +2270,7 @@
         this._prevFocus = null
         this.unbindPointerEvents()
       },
-      // 编辑区空白（含画布外的灰色区域）：长按任意空白全选进入多选，单击空白退出多选
+      // 编辑区空白（含画布外的灰色区域）：长按进入多选并保留当前选中，单击空白退出多选
       startAreaPress(e) {
         var self = this
         if (this.$refs.labelCanvas && this.$refs.labelCanvas.contains(e.target)) return
@@ -2179,8 +2307,7 @@
         }
         timer = setTimeout(function() {
           timer = null
-          self.selectedKeys = self.selectedAttrs.slice()
-          self.currentAttrKey = self.selectedKeys[0] || null
+          // 只切换多选状态，以当前已选元素为基础，不再自动全选
           self.multiSelectMode = true
           self.pushSnapshot()
           if (navigator.vibrate) navigator.vibrate(10)
@@ -2201,16 +2328,14 @@
           startY: (e.clientY - rect.top) / this.zoom,
           x: 0, y: 0, w: 0, h: 0
         }
-        // 长按空白处任意位置：全选标签并进入多选（不再要求先选中元素）
+        // 长按画布空白：进入多选状态并保留当前选中，不再自动全选
         this._marqueeLongPressed = false
         this._marqueeTimer = setTimeout(function() {
           self._marqueeTimer = null
           self._marqueeLongPressed = true
-          // 放弃框选，改为全选
+          // 放弃框选，只切换多选状态
           self.marquee.active = false
           self.marquee.visible = false
-          self.selectedKeys = self.selectedAttrs.slice()
-          self.currentAttrKey = self.selectedKeys[0] || null
           self.multiSelectMode = true
           self.unbindMarqueeEvents()
           self.pushSnapshot()
@@ -2387,7 +2512,7 @@
         Object.keys(this.attrLabels).forEach(function(key) {
           if (!isReceiptItemKey(key)) attrLabels[key] = self.attrLabels[key]
         })
-        return editorStateToV2({
+        var v2 = editorStateToV2({
           name: name,
           provider: this.provider || this.businessType || '',
           businessType: this.provider || this.businessType || '',
@@ -2407,6 +2532,12 @@
           type: this.templateType,
           kind: cfg && cfg.storage === 'deliveryTemplate' ? 'delivery-note' : null
         })
+        // 小票规格名/规格值开关关闭的 key：随模板保存，重开编辑页/打印时保持不显示
+        var hiddenItemKeys = (this.dynamicItemKeys || []).filter(function(key) {
+          return self.selectedAttrs.indexOf(key) === -1
+        })
+        if (hiddenItemKeys.length) v2.hiddenItemKeys = hiddenItemKeys
+        return v2
       },
       /** 发货单/小票/会员/地址：使用统一模板数据保存（不涉及商品类型） */
       persistUnifiedTemplate(cfg, name) {
@@ -3353,29 +3484,70 @@
   margin-bottom: 6px;
 }
 
-/* 字段行：属性名与编辑框同行并列 */
-.lem-field {
+/* 属性名 / 属性值：标题一行，输入框换行整行显示 */
+.lem-field-stack {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 8px;
 }
 
-.lem-field > .lem-style-label {
-  flex: 0 0 48px;
-  width: 48px;
+.lem-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.lem-field-head > .lem-style-label {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.lem-field-head > .lem-ocr-btn {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.lem-field-switch {
+  margin-left: auto;
+  flex: none;
 }
 
 .lem-text-input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 规格值列表：一个规格块可挂多个规格值，每个值独立开关 */
+.lem-value-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lem-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lem-value-row > .lem-text-input {
   flex: 1 1 0;
   width: auto;
   min-width: 0;
 }
 
+.lem-value-row > .lem-field-switch {
+  margin-left: 0;
+}
+
 /* 商品信息组合字段勾选 */
 .lem-goods-field-group {
   flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;

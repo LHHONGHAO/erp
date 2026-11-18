@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>地址识别 → 标签编辑 · 数据提取模拟</title>
+<style>
+  :root {
+    --bg: #f3f5fa;
+    --card: #ffffff;
+    --line: #e4e8f0;
+    --text: #1f2733;
+    --sub: #6b7686;
+    --primary: #2f6bff;
+    --primary-soft: #eaf1ff;
+    --warn: #b7791f;
+    --warn-soft: #fff7e6;
+    --ok: #1f8a5b;
+    --ok-soft: #e8f7ef;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .topbar {
+    padding: 20px 24px 16px;
+    background: linear-gradient(135deg, #2646b8, #2f6bff);
+    color: #fff;
+  }
+  .topbar h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  .topbar p { margin: 0; font-size: 13px; opacity: .86; }
+  .rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .rule {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .16);
+    font-size: 12px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 1.05fr 1.15fr 1fr;
+    gap: 16px;
+    padding: 16px 24px 40px;
+    align-items: start;
+  }
+  @media (max-width: 1180px) {
+    main { grid-template-columns: 1fr 1fr; }
+    .canvas-col { grid-column: 1 / -1; }
+  }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; padding: 12px; }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .card > h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .sub { color: var(--sub); font-size: 12px; }
+  .field { margin-bottom: 10px; }
+  .field label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--sub);
+    font-size: 12px;
+  }
+  .field input,
+  .field textarea {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfcff;
+    color: var(--text);
+    font: inherit;
+    outline: none;
+  }
+  .field input:focus,
+  .field textarea:focus { border-color: var(--primary); background: #fff; }
+  .field textarea { resize: vertical; min-height: 56px; }
+  .goods-list { margin-top: 12px; }
+  .goods-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .goods-head strong { font-size: 13px; }
+  .goods-item {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: #fbfcff;
+  }
+  .goods-item .row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 8px;
+  }
+  .goods-item .row + .row { margin-top: 8px; }
+  .goods-item .row.three { grid-template-columns: 1fr 1fr 64px; }
+  .btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 5px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+  .btn.ghost {
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--sub);
+  }
+  .btn.del {
+    border-color: transparent;
+    background: transparent;
+    color: #b42318;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .extract-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .metric {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f7f9ff;
+    border: 1px solid var(--line);
+  }
+  .metric b { display: block; font-size: 18px; line-height: 1.2; }
+  .metric span { color: var(--sub); font-size: 12px; }
+  table.extract {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.extract th,
+  table.extract td {
+    text-align: left;
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.extract th { color: var(--sub); font-weight: 500; background: #fafbfe; }
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .tag.one { background: var(--ok-soft); color: var(--ok); }
+  .tag.multi { background: var(--warn-soft); color: var(--warn); }
+  .tag.spec { background: var(--primary-soft); color: var(--primary); }
+  .spec-list { margin-top: 14px; }
+  .spec-list h3 { margin: 0 0 8px; font-size: 13px; }
+  .spec-row {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    background: #fbfcff;
+  }
+  .spec-row .name { font-size: 12px; color: var(--sub); margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid #dbe4f7;
+    background: #f4f8ff;
+    font-size: 12px;
+  }
+  .chip em { font-style: normal; color: var(--primary); font-weight: 600; }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .canvas-col .tabs {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 10px;
+    background: #eef2fb;
+    margin-bottom: 12px;
+  }
+  .canvas-col .tabs button {
+    border: 0;
+    background: transparent;
+    padding: 5px 14px;
+    border-radius: 8px;
+    font: inherit;
+    color: var(--sub);
+    cursor: pointer;
+  }
+  .canvas-col .tabs button.active {
+    background: #fff;
+    color: var(--primary);
+    box-shadow: 0 1px 4px rgba(31, 63, 140, .12);
+  }
+  .label-stage {
+    display: flex;
+    justify-content: center;
+    padding: 12px 0 6px;
+  }
+  .label-paper {
+    width: 320px;
+    min-height: 240px;
+    background: #fff;
+    border: 1px solid #cfd8ea;
+    border-radius: 6px;
+    box-shadow: 0 10px 24px rgba(28, 50, 96, .12);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 12px;
+    color: #1f2733;
+  }
+  .label-paper .paper-title {
+    font-size: 14px;
+    font-weight: 600;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed #dfe6f3;
+    margin-bottom: 1px;
+  }
+  .label-paper.is-edit .el-label { color: #5b667a; }
+  .label-paper.is-edit .el-value {
+    color: #9aa5b7;
+    font-style: italic;
+  }
+  .label-paper .el-line {
+    display: flex;
+    gap: 6px;
+    min-height: 16px;
+  }
+  .label-paper .el-line .el-label { flex: none; }
+  .label-paper .el-line .el-value { word-break: break-all; }
+  .label-paper .placeholder-hint {
+    color: #c0c8d8;
+    font-size: 11px;
+  }
+  table.paper-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  table.paper-table th,
+  table.paper-table td {
+    border: 1px solid #dfe6f3;
+    padding: 3px 4px;
+    text-align: left;
+  }
+  table.paper-table th { background: #f5f8ff; color: #5b667a; font-weight: 500; }
+  .page-note {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--warn);
+  }
+  .spec-panel {
+    margin-top: 14px;
+    border-top: 1px dashed var(--line);
+    padding-top: 12px;
+  }
+  .spec-panel h3 { margin: 0 0 8px; font-size: 13px; }
+  .spec-block {
+    border: 1px solid #dbe4f7;
+    border-radius: 10px;
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    background: #f8fbff;
+  }
+  .spec-block .spec-name {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #33415c;
+    margin-bottom: 6px;
+  }
+  .switch {
+    width: 30px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--primary);
+    position: relative;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+  }
+  .spec-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12px;
+  }
+  .spec-value .v { color: #33415c; }
+  .spec-value .switch { transform: scale(.85); transform-origin: right center; }
+  .note {
+    margin-top: 12px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: #f7f9ff;
+    color: var(--sub);
+    font-size: 12px;
+  }
+  .note b { color: #33415c; }
+  .footer {
+    padding: 0 24px 28px;
+    color: #8a94a6;
+    font-size: 12px;
+  }
+  code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #eef2fb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>地址识别 → 标签编辑 · 数据提取模拟</h1>
+  <p>用一份地址识别页数据和一个地址打印模板，模拟「进入标签编辑页」时提取到哪些元素，以及打印时如何回填真实值。</p>
+  <div class="rules">
+    <span class="rule">以表单现有元素为准，不补示例值</span>
+    <span class="rule">编辑页只显示属性名与表单标题</span>
+    <span class="rule">重复商品属性编辑页只留一组</span>
+    <span class="rule">规格按「1 名 N 值」规格块输出</span>
+    <span class="rule">打印时填真实值并按行展开</span>
+  </div>
+</header>
+
+<main>
+  <!-- 1. 地址识别页 -->
+  <section class="card">
+    <h2><span class="step">1</span>地址识别页（模拟输入）</h2>
+    <div class="field">
+      <label>表单标题</label>
+      <input id="fTitle" value="地址打印" />
+    </div>
+    <div class="field">
+      <label>联系人</label>
+      <input id="fContacts" value="张女士" />
+    </div>
+    <div class="field">
+      <label>电话</label>
+      <input id="fTelephone" value="138 0013 8000" />
+    </div>
+    <div class="field">
+      <label>账号</label>
+      <input id="fAccount" value="dy_zhang88" />
+    </div>
+    <div class="field">
+      <label>平台</label>
+      <input id="fPlatform" value="抖音" />
+    </div>
+    <div class="field">
+      <label>备注</label>
+      <input id="fRemark" value="尽快发货" />
+    </div>
+    <div class="field">
+      <label>地址</label>
+      <textarea id="fAddress">浙江省杭州市余杭区文一西路 969 号 3 幢 501 室</textarea>
+    </div>
+
+    <div class="goods-list">
+      <div class="goods-head">
+        <strong>商品行（可增删）</strong>
+        <button class="btn ghost" id="addGoods">+ 添加商品</button>
+      </div>
+      <div id="goodsEditor"></div>
+    </div>
+    <div class="note">
+      商品行的 <b>规格值1/2/3</b> 支持「名称：值」写法；多个值用空格或 <code>、，,/｜</code> 分隔，进入标签编辑时按规格块拆分。
+    </div>
+  </section>
+
+  <!-- 2. 提取结果 -->
+  <section class="card">
+    <h2><span class="step">2</span>提取结果（进入标签编辑的元素）</h2>
+    <div class="extract-summary">
+      <div class="metric"><b id="mAttrs">0</b><span>属性元素</span></div>
+      <div class="metric"><b id="mGoods">0</b><span>商品行</span></div>
+      <div class="metric"><b id="mSpec">0</b><span>规格块</span></div>
+    </div>
+    <table class="extract">
+      <thead>
+        <tr>
+          <th style="width:30%">属性 / 元素</th>
+          <th style="width:32%">编辑页显示</th>
+          <th>打印时填充</th>
+        </tr>
+      </thead>
+      <tbody id="extractBody"></tbody>
+    </table>
+
+    <div class="spec-list">
+      <h3>规格块解析</h3>
+      <div id="specList"></div>
+    </div>
+    <div class="note">
+      商品信息、商品明细表属于重复属性：<b>编辑页只保留第一组</b>用于排版，打印时按商品行数与分页规则展开。
+    </div>
+  </section>
+
+  <!-- 3. 标签编辑页 -->
+  <section class="card canvas-col">
+    <h2><span class="step">3</span>标签编辑页</h2>
+    <div class="tabs">
+      <button data-mode="edit" class="active">编辑态</button>
+      <button data-mode="print">打印态</button>
+    </div>
+    <div class="label-stage">
+      <div class="label-paper is-edit" id="labelPaper"></div>
+    </div>
+    <div class="spec-panel">
+      <h3>属性面板 · 规格块</h3>
+      <div id="specPanel"></div>
+    </div>
+    <div class="note" id="modeNote"></div>
+  </section>
+</main>
+
+<div class="footer">
+  模拟说明：本页按当前代码规则演示数据提取与排版，不连接后端、不写入模板；真实页面由
+  <code>LabelEditMobile</code> / <code>LabelPrintModal</code> 与 <code>goodsSpecBlocks.js</code>、
+  <code>goodsLabelLayout.js</code> 渲染。
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ===== 与 goodsSpecBlocks.js 一致的规格块规则 =====
+  var SPEC_NAME_TEXT_RE = /^([^：:]+)[：:]\s*(.*)$/;
+  var VALUE_SEPARATOR_RE = /[、,，／|]/;
+
+  function splitSpecSegments(row) {
+    if (!row) return [];
+    var raw = [];
+    ['spec1', 'spec2', 'spec3'].forEach(function(field) {
+      var value = row[field] == null ? '' : String(row[field]).trim();
+      if (value) raw.push(value);
+    });
+    if (!raw.length) {
+      var spec = row.spec == null ? '' : String(row.spec).trim();
+      if (spec) raw.push(spec);
+    }
+    var segments = [];
+    raw.forEach(function(text) {
+      String(text).split(/[\s\u3000]+/).forEach(function(part) {
+        var value = part.trim();
+        if (value) segments.push(value);
+      });
+    });
+    return segments;
+  }
+
+  function parseGoodsSpecBlocks(row) {
+    var blocks = [];
+    splitSpecSegments(row).forEach(function(text) {
+      var matched = SPEC_NAME_TEXT_RE.exec(text);
+      if (matched) {
+        var name = matched[1].trim();
+        var values = String(matched[2] || '')
+          .split(VALUE_SEPARATOR_RE)
+          .map(function(value) { return value.trim(); })
+          .filter(function(value) { return value !== ''; });
+        var last = blocks[blocks.length - 1];
+        if (last && last.name === name) {
+          last.values = last.values.concat(values);
+        } else {
+          blocks.push({ name: name, values: values });
+        }
+        return;
+      }
+      var prev = blocks[blocks.length - 1];
+      if (prev) {
+        prev.values.push(text);
+      } else {
+        blocks.push({ name: '', values: [text] });
+      }
+    });
+    return blocks;
+  }
+
+  // ===== 模拟数据 =====
+  var state = {
+    mode: 'edit',
+    form: {
+      title: '地址打印',
+      contacts: '张女士',
+      telephone: '138 0013 8000',
+      account: 'dy_zhang88',
+      platform: '抖音',
+      remark: '尽快发货',
+      address: '浙江省杭州市余杭区文一西路 969 号 3 幢 501 室'
+    },
+    goods: [
+      { name: '全棉四件套', spec1: '花色：被套 床单 枕套', spec2: '尺寸：1.8m床', qty: 2 },
+      { name: '乳胶枕', spec1: '规格：标准款', spec2: '', qty: 1 },
+      { name: '夏凉被', spec1: '颜色：浅灰 深灰', spec2: '尺寸：200×230cm', qty: 1 }
+    ]
+  };
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function goodsText(row) {
+    return [row.name, row.spec1, row.spec2, row.spec3]
+      .filter(function(value) { return value != null && String(value).trim() !== ''; })
+      .join(' ');
+  }
+
+  function validGoods() {
+    return state.goods.filter(function(row) {
+      return row && (row.name || row.spec1 || row.spec2 || row.spec3);
+    });
+  }
+
+  function specBlocksOf(row) {
+    return parseGoodsSpecBlocks(row);
+  }
+
+  function allSpecBlocks() {
+    var blocks = [];
+    validGoods().forEach(function(row) {
+      specBlocksOf(row).forEach(function(block) { blocks.push(block); });
+    });
+    return blocks;
+  }
+
+  // ===== 1. 商品行编辑 =====
+  function renderGoodsEditor() {
+    var wrap = document.getElementById('goodsEditor');
+    wrap.innerHTML = '';
+    state.goods.forEach(function(row, index) {
+      var box = document.createElement('div');
+      box.className = 'goods-item';
+      box.innerHTML =
+        '<div class="row">' +
+          '<input data-field="name" data-index="' + index + '" value="' + escapeHtml(row.name) + '" placeholder="商品名称" />' +
+          '<input data-field="spec1" data-index="' + index + '" value="' + escapeHtml(row.spec1) + '" placeholder="规格值1（如 花色：被套 床单）" />' +
+        '</div>' +
+        '<div class="row three">' +
+          '<input data-field="spec2" data-index="' + index + '" value="' + escapeHtml(row.spec2) + '" placeholder="规格值2" />' +
+          '<input data-field="spec3" data-index="' + index + '" value="' + escapeHtml(row.spec3) + '" placeholder="规格值3" />' +
+          '<input data-field="qty" data-index="' + index + '" value="' + escapeHtml(row.qty || 1) + '" placeholder="数量" />' +
+        '</div>' +
+        '<div style="text-align:right"><button class="btn del" data-remove="' + index + '">删除</button></div>';
+      wrap.appendChild(box);
+    });
+    wrap.querySelectorAll('input[data-field]').forEach(function(input) {
+      input.addEventListener('input', function(e) {
+        var index = Number(e.target.getAttribute('data-index'));
+        var field = e.target.getAttribute('data-field');
+        state.goods[index][field] = e.target.value;
+        renderAll();
+      });
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        var index = Number(e.target.getAttribute('data-remove'));
+        state.goods.splice(index, 1);
+        if (!state.goods.length) {
+          state.goods.push({ name: '', spec1: '', spec2: '', spec3: '', qty: 1 });
+        }
+        renderAll();
+      });
+    });
+  }
+
+  // ===== 2. 提取结果 =====
+  function renderExtract() {
+    var goods = validGoods();
+    var blocks = allSpecBlocks();
+    document.getElementById('mAttrs').textContent = 9;
+    document.getElementById('mGoods').textContent = goods.length;
+    document.getElementById('mSpec').textContent = blocks.length;
+
+    var rows = [
+      { name: '表单标题', edit: state.form.title, print: state.form.title, tag: 'one' },
+      { name: '联系人', edit: '联系人', print: state.form.contacts, tag: 'one' },
+      { name: '电话', edit: '电话', print: state.form.telephone, tag: 'one' },
+      { name: '账号', edit: '账号', print: state.form.account, tag: 'one' },
+      { name: '平台', edit: '平台', print: state.form.platform, tag: 'one' },
+      { name: '备注', edit: '备注', print: state.form.remark, tag: 'one' },
+      { name: '地址', edit: '地址', print: state.form.address, tag: 'one' },
+      {
+        name: '商品信息',
+        edit: '商品信息（1 组）',
+        print: goods.length ? goods.map(goodsText).join(' / ') : '',
+        tag: 'multi'
+      },
+      {
+        name: '商品明细表',
+        edit: '表头 + 1 行属性名',
+        print: goods.length ? goods.length + ' 行商品明细' : '无商品行',
+        tag: 'multi'
+      }
+    ];
+
+    document.getElementById('extractBody').innerHTML = rows.map(function(row) {
+      return '<tr>' +
+        '<td>' + escapeHtml(row.name) + '<br><span class="tag ' + row.tag + '">' +
+          (row.tag === 'multi' ? '重复属性' : '单值属性') + '</span></td>' +
+        '<td>' + escapeHtml(row.edit) + '</td>' +
+        '<td>' + (row.print ? escapeHtml(row.print) : '<span class="sub">打印时留空</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    var specList = document.getElementById('specList');
+    specList.innerHTML = '';
+    if (!goods.length) {
+      specList.innerHTML = '<div class="sub">暂无商品行</div>';
+      return;
+    }
+    goods.forEach(function(row) {
+      var list = specBlocksOf(row);
+      var box = document.createElement('div');
+      box.className = 'spec-row';
+      var body = list.map(function(block) {
+        return '<div class="chips">' +
+          (block.name ? '<span class="chip"><em>' + escapeHtml(block.name) + '</em></span>' : '') +
+          block.values.map(function(value) {
+            return '<span class="chip"><span class="dot"></span>' + escapeHtml(value) + '</span>';
+          }).join('') +
+        '</div>';
+      }).join('');
+      box.innerHTML =
+        '<div class="name">' + escapeHtml(row.name || '未命名商品') + ' · ' +
+          list.length + ' 个规格块</div>' + (body || '<span class="sub">无规格</span>');
+      specList.appendChild(box);
+    });
+  }
+
+  // ===== 3. 标签编辑页 =====
+  function buildSimpleLine(label, value, isPrint) {
+    var line = document.createElement('div');
+    line.className = 'el-line';
+    if (!isPrint) {
+      line.innerHTML = '<span class="el-label">' + escapeHtml(label) + '</span>';
+      return line;
+    }
+    if (!value) {
+      line.innerHTML = '<span class="el-label">' + escapeHtml(label) + '：</span>' +
+        '<span class="el-value placeholder-hint">（空）</span>';
+      return line;
+    }
+    line.innerHTML = '<span class="el-label">' + escapeHtml(label) + '：</span>' +
+      '<span class="el-value">' + escapeHtml(value) + '</span>';
+    return line;
+  }
+
+  function buildGoodsTable(rows, isPrint) {
+    var table = document.createElement('table');
+    table.className = 'paper-table';
+    var head = '<thead><tr>' +
+      ['商品名称', '规格值1', '规格值2', '规格值3'].map(function(col) {
+        return '<th>' + col + '</th>';
+      }).join('') + '</tr></thead>';
+    var body = '';
+    if (isPrint) {
+      body = rows.map(function(row) {
+        return '<tr>' +
+          '<td>' + escapeHtml(row.name) + '</td>' +
+          '<td>' + escapeHtml(row.spec1) + '</td>' +
+          '<td>' + escapeHtml(row.spec2) + '</td>' +
+          '<td>' + escapeHtml(row.spec3) + '</td>' +
+        '</tr>';
+      }).join('');
+    } else {
+      // 编辑页只给一行属性名占位
+      body = '<tr>' +
+        ['商品名称', '规格值1', '规格值2', '规格值3'].map(function(col) {
+          return '<td class="placeholder-hint">' + col + '</td>';
+        }).join('') + '</tr>';
+    }
+    table.innerHTML = head + '<tbody>' + body + '</tbody>';
+    return table;
+  }
+
+  function renderLabel() {
+    var paper = document.getElementById('labelPaper');
+    var isPrint = state.mode === 'print';
+    var goods = validGoods();
+    paper.className = 'label-paper ' + (isPrint ? 'is-print' : 'is-edit');
+    paper.innerHTML = '';
+
+    var title = document.createElement('div');
+    title.className = 'paper-title';
+    title.textContent = state.form.title || '地址打印';
+    paper.appendChild(title);
+
+    paper.appendChild(buildSimpleLine('联系人', state.form.contacts, isPrint));
+    paper.appendChild(buildSimpleLine('电话', state.form.telephone, isPrint));
+    paper.appendChild(buildSimpleLine('账号', state.form.account, isPrint));
+    paper.appendChild(buildSimpleLine('平台', state.form.platform, isPrint));
+    paper.appendChild(buildSimpleLine('备注', state.form.remark, isPrint));
+    paper.appendChild(buildSimpleLine('地址', state.form.address, isPrint));
+
+    if (isPrint) {
+      var goodsBox = document.createElement('div');
+      goodsBox.className = 'el-line';
+      goodsBox.style.display = 'block';
+      goodsBox.innerHTML = '<span class="el-label">商品信息：</span>' +
+        (goods.length
+          ? goods.map(function(row) {
+            return '<div class="el-value" style="padding-left:10px">' + escapeHtml(goodsText(row)) + '</div>';
+          }).join('')
+          : '<span class="el-value placeholder-hint">（空）</span>');
+      paper.appendChild(goodsBox);
+    } else {
+      paper.appendChild(buildSimpleLine('商品信息', '', false));
+    }
+
+    var tableWrap = document.createElement('div');
+    if (isPrint) {
+      tableWrap.appendChild(buildGoodsTable(goods, true));
+      var note = document.createElement('div');
+      note.className = 'page-note';
+      note.textContent = goods.length
+        ? '商品明细共 ' + goods.length + ' 行；超出标签高度时按分页规则继续打印。'
+        : '当前没有商品行，打印时不输出明细表。';
+      tableWrap.appendChild(note);
+    } else {
+      tableWrap.appendChild(buildGoodsTable(goods.slice(0, 1), false));
+    }
+    paper.appendChild(tableWrap);
+
+    document.getElementById('modeNote').innerHTML = isPrint
+      ? '<b>打印态：</b>业务值已回填，商品明细按实际行数展开，规格按「名称：值」输出。'
+      : '<b>编辑态：</b>只显示属性名与表单标题；商品明细表只保留一组，商品信息只显示属性名，规格值在下方属性面板中按块编辑。';
+  }
+
+  function renderSpecPanel() {
+    var panel = document.getElementById('specPanel');
+    var isPrint = state.mode === 'print';
+    var goods = validGoods();
+    panel.innerHTML = '';
+    if (!goods.length) {
+      panel.innerHTML = '<div class="sub">暂无商品行，无法生成规格块</div>';
+      return;
+    }
+    var source = isPrint ? goods : [goods[0]];
+    source.forEach(function(row) {
+      var blocks = specBlocksOf(row);
+      var heading = document.createElement('div');
+      heading.className = 'sub';
+      heading.style.margin = '2px 0 6px';
+      heading.textContent = row.name || '未命名商品';
+      panel.appendChild(heading);
+      blocks.forEach(function(block) {
+        var box = document.createElement('div');
+        box.className = 'spec-block';
+        var values = block.values.map(function(value) {
+          return '<div class="spec-value"><span class="v">' + escapeHtml(value) + '</span>' +
+            (isPrint ? '' : '<span class="switch"></span>') + '</div>';
+        }).join('');
+        box.innerHTML =
+          '<div class="spec-name"><span>' + escapeHtml(block.name || '规格') + '</span>' +
+            (isPrint ? '<span class="tag spec">打印</span>' : '<span class="switch"></span>') +
+          '</div>' + values;
+        panel.appendChild(box);
+      });
+    });
+  }
+
+  function renderAll() {
+    renderExtract();
+    renderLabel();
+    renderSpecPanel();
+  }
+
+  // ===== 交互 =====
+  var fieldMap = {
+    fTitle: 'title',
+    fContacts: 'contacts',
+    fTelephone: 'telephone',
+    fAccount: 'account',
+    fPlatform: 'platform',
+    fRemark: 'remark',
+    fAddress: 'address'
+  };
+  Object.keys(fieldMap).forEach(function(id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', function(e) {
+      state.form[fieldMap[id]] = e.target.value;
+      renderAll();
+    });
+  });
+
+  document.getElementById('addGoods').addEventListener('click', function() {
+    state.goods.push({ name: '', spec1: '', spec2: '', spec3: '', qty: 1 });
+    renderGoodsEditor();
+    renderAll();
+  });
+
+  document.querySelectorAll('.tabs button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tabs button').forEach(function(other) {
+        other.classList.toggle('active', other === btn);
+      });
+      state.mode = btn.getAttribute('data-mode');
+      renderLabel();
+      renderSpecPanel();
+    });
+  });
+
+  renderGoodsEditor();
+  renderAll();
+})();
+</script>
+</body>
+</html>

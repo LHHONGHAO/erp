@@ -111,19 +111,43 @@
             <span class="lem-elem-value">{{ displayParts[key] ? displayParts[key].value : '' }}</span>
           </template>
           </div>
-          <span class="lem-elem-frame" aria-hidden="true"></span>
+          <span v-if="!isSpecAttrKey(key)" class="lem-elem-frame" aria-hidden="true"></span>
           <span
-            v-if="currentAttrKey === key"
+            v-if="currentAttrKey === key && !isSpecAttrKey(key)"
             class="lem-resize-handle"
             :style="handleAntiScaleStyle"
             @pointerdown.stop.prevent="startPointerDrag(key, $event, 'resize')"
           ></span>
           <span
-            v-if="currentAttrKey === key && !isCode(key)"
+            v-if="currentAttrKey === key && !isCode(key) && !isSpecAttrKey(key)"
             class="lem-delete-btn"
             :style="deleteBtnAntiScaleStyle"
             @pointerdown.stop.prevent="noop"
             @click.stop="removeAttr(key)"
+          >×</span>
+        </div>
+        <!-- 规格块：属性名 + 全部规格值合并为一个整块，外框/拖动/手柄与普通文字标签一致 -->
+        <div
+          v-for="frame in specBlockFrames"
+          :key="'spec-frame-' + frame.id"
+          class="lem-elem lem-spec-block"
+          :class="{ 'lem-elem--active': frame.active }"
+          :style="frame.style"
+          @pointerdown.stop.prevent="startPointerDrag(frame.anchorKey, $event, 'move')"
+        >
+          <span class="lem-elem-frame" aria-hidden="true"></span>
+          <span
+            v-if="frame.active"
+            class="lem-resize-handle"
+            :style="handleAntiScaleStyle"
+            @pointerdown.stop.prevent="startPointerDrag(frame.anchorKey, $event, 'resize')"
+          ></span>
+          <span
+            v-if="frame.active"
+            class="lem-delete-btn"
+            :style="deleteBtnAntiScaleStyle"
+            @pointerdown.stop.prevent="noop"
+            @click.stop="removeSpecBlock(frame)"
           >×</span>
         </div>
         <!-- 框选矩形 -->
@@ -142,13 +166,9 @@
         <a class="lem-side-close" @click="closeAll">全部关闭</a>
       </div>
       <div class="lem-side-body">
-          <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
-          <!-- 规格块：1 个规格名 + N 个规格值，标题与输入框上下换行；每项右侧开关控制是否显示 -->
-          <template v-if="selectedKeys.length === 1 && currentSpecBlock">
-            <div class="lem-spec-head">
-              <span class="lem-spec-badge">规格块</span>
-              <a class="lem-spec-close-all" @click="closeSpecBlock">全部关闭</a>
-            </div>
+          <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1 && !currentSpecBlock">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
+          <!-- 规格块：属性名 + N 个规格值，整块选中；每项右侧开关控制是否显示 -->
+          <template v-if="currentSpecBlock">
             <div class="lem-field-stack" v-if="currentSpecBlock.nameKey">
               <div class="lem-field-head">
                 <span class="lem-style-label">属性名</span>
@@ -282,17 +302,18 @@
             v-for="attr in group.attrs"
             :key="attr.key"
             class="lem-elem-item"
-            :class="{ 'lem-elem-item-active': selectedAttrs.indexOf(attr.key) > -1 }"
-            @click="toggleAttr(attr.key)"
+            :class="{ 'lem-elem-item-active': isElemItemOn(attr) }"
+            @click="toggleElemItem(attr)"
           >
             <div class="lem-elem-text">
-              <span class="lem-elem-cn">{{ attr.comment || attr.label }}</span>
-              <span class="lem-elem-key">{{ attr.key }}</span>
+              <span class="lem-elem-cn">{{ attr.isSpecBlock ? attr.label : (attr.comment || attr.label) }}</span>
+              <span v-if="attr.isSpecBlock" class="lem-elem-key">规格块 · {{ attr.valueCount }} 个值</span>
+              <span v-else class="lem-elem-key">{{ attr.key }}</span>
             </div>
             <a-icon
-              :type="selectedAttrs.indexOf(attr.key) > -1 ? 'check-circle' : 'plus-circle'"
-              :theme="selectedAttrs.indexOf(attr.key) > -1 ? 'filled' : 'outlined'"
-              :class="{ 'lem-elem-icon--on': selectedAttrs.indexOf(attr.key) > -1 }"
+              :type="isElemItemOn(attr) ? 'check-circle' : 'plus-circle'"
+              :theme="isElemItemOn(attr) ? 'filled' : 'outlined'"
+              :class="{ 'lem-elem-icon--on': isElemItemOn(attr) }"
             />
           </div>
         </div>
@@ -910,9 +931,12 @@
         }
       },
       // 按 group 分组展示全部字段（已选中/未选中都列出，勾选式切换）
+      // 规格名 + 其下全部规格值聚合为一个「规格块」条目，一个块只占一项
       attrGroups() {
+        var self = this
         var groups = []
         var map = {}
+        var blocks = {}
         this.allAttrs.forEach(function(a) {
           // 分页标签用面板底部的专用按钮添加，不在字段列表里重复出现
           if (a.key === 'page_no') return
@@ -921,7 +945,30 @@
             map[name] = { name: name, attrs: [] }
             groups.push(map[name])
           }
-          map[name].attrs.push(a)
+          var item = parseSpecItemKey(a.key)
+          if (!item) {
+            map[name].attrs.push(a)
+            return
+          }
+          var blockId = item.rowNo + '-' + item.blockNo
+          var block = blocks[blockId]
+          if (!block) {
+            var nameKey = specNameKey(item.rowNo, item.blockNo)
+            var nameAttr = self.allAttrs.find(function(x) { return x.key === nameKey })
+            var label = nameAttr && nameAttr.value ? String(nameAttr.value).replace(/：$/, '') : '规格块'
+            block = {
+              key: 'specblock-' + blockId,
+              blockId: blockId,
+              isSpecBlock: true,
+              blockKeys: [],
+              label: label,
+              valueCount: 0
+            }
+            blocks[blockId] = block
+            map[name].attrs.push(block)
+          }
+          block.blockKeys.push(a.key)
+          if (item.kind === 'value') block.valueCount++
         })
         return groups
       },
@@ -931,8 +978,12 @@
       },
       // 小票规格块：规格名 + N 个规格值，选中块内任一项都按整块展示
       currentSpecBlock() {
-        if (this.selectedKeys.length !== 1) return null
-        var parsed = parseSpecItemKey(this.selectedKeys[0])
+        var key = this.currentAttrKey
+        if (!key || !parseSpecItemKey(key)) {
+          key = this.selectedKeys.find(function(k) { return !!parseSpecItemKey(k) })
+        }
+        if (!key) return null
+        var parsed = parseSpecItemKey(key)
         if (!parsed) return null
         var rowNo = parsed.rowNo
         var blockNo = parsed.blockNo
@@ -943,6 +994,56 @@
           return !!item && item.kind === 'value' && item.rowNo === rowNo && item.blockNo === blockNo
         }).map(function(attr) { return attr.key })
         return { nameKey: hasName ? nameKey : '', valueKeys: valueKeys }
+      },
+      // 规格块外框：属性名 + 全部规格值合并为一个实心整块
+      specBlockFrames() {
+        var self = this
+        var blocks = {}
+        this.selectedAttrs.forEach(function(key) {
+          var item = parseSpecItemKey(key)
+          if (!item) return
+          var id = item.rowNo + '-' + item.blockNo
+          if (!blocks[id]) blocks[id] = { id: id, keys: [] }
+          blocks[id].keys.push(key)
+        })
+        return Object.keys(blocks).map(function(id) {
+          var keys = blocks[id].keys
+          var x1 = Infinity
+          var y1 = Infinity
+          var x2 = -Infinity
+          var y2 = -Infinity
+          keys.forEach(function(key) {
+            var style = self.labelLayout.styles[key] || self.attrStyles[key] || {}
+            var size = self.getItemSize(key)
+            var w = style.width > 0 ? style.width : size.w
+            var h = style.height > 0 ? style.height : size.h
+            var x = style.x || 0
+            var y = style.y || 0
+            x1 = Math.min(x1, x)
+            y1 = Math.min(y1, y)
+            x2 = Math.max(x2, x + w)
+            y2 = Math.max(y2, y + h)
+          })
+          if (!isFinite(x1)) return null
+          var pad = 2
+          var nameKey = keys.find(function(key) {
+            var item = parseSpecItemKey(key)
+            return !!item && item.kind === 'name'
+          }) || keys[0]
+          return {
+            id: id,
+            keys: keys,
+            anchorKey: nameKey,
+            active: keys.some(function(key) { return self.selectedKeys.indexOf(key) > -1 }),
+            style: {
+              left: (x1 - pad) + 'px',
+              top: (y1 - pad) + 'px',
+              width: (x2 - x1 + pad * 2) + 'px',
+              height: (y2 - y1 + pad * 2) + 'px',
+              '--lem-zoom': String(self.zoom || 1)
+            }
+          }
+        }).filter(Boolean)
       },
       specNameText() {
         var block = this.currentSpecBlock
@@ -1019,7 +1120,8 @@
         try { context = JSON.parse(sessionStorage.getItem('jsh.labelEdit.context') || 'null') } catch (e) { context = null }
         if (context) {
           try { sessionStorage.removeItem('jsh.labelEdit.context') } catch (e) { /* 忽略 */ }
-          if (context.record) this.record = context.record
+          // 小票编辑的是模板布局，不接收单据业务数据
+          if (context.record && type !== 'receipt') this.record = context.record
           if (context.sku) this.sku = context.sku
         }
         this.templateType = type
@@ -1064,9 +1166,9 @@
        */
       applyReceiptItemElements() {
         if (this.templateType !== 'receipt') return
-        // 编辑的是模板：规格块优先用模板保存的属性名结构；
-        // 模板未保存时取商品品类设置的规格块，旧数据才兜底从单据首行推导
-        var blocks = resolveEditSpecBlocks(this.specBlocks, (this.record && this.record.goodsRows) || [], hasGoodsValue, this.categorySpecBlocks())
+        // 编辑的是模板：规格块只认模板保存的结构，其次是商品品类设置；
+        // 不使用单据明细推导，单据值只在预览/打印阶段注入
+        var blocks = resolveEditSpecBlocks(this.specBlocks, this.categorySpecBlocks())
         if (!blocks.length) blocks = [{ name: '规格值1', values: ['规格值'] }]
         this.specBlocks = blocks
         // 商品名称/数量/单价/金额仍按属性名占位，不带业务值
@@ -1739,6 +1841,23 @@
         }
         this.pushSnapshot()
       },
+      // 规格块整块删除：移除属性名 + 全部规格值，与单项删除行为一致
+      removeSpecBlock(frame) {
+        var self = this
+        var keys = (frame && frame.keys) || []
+        keys.forEach(function(key) {
+          var idx = self.selectedAttrs.indexOf(key)
+          if (idx !== -1) self.selectedAttrs.splice(idx, 1)
+          self.$delete(self.attrStyles, key)
+          self.$delete(self.attrLabels, key)
+          var sIdx = self.selectedKeys.indexOf(key)
+          if (sIdx !== -1) self.selectedKeys.splice(sIdx, 1)
+        })
+        if (keys.indexOf(this.currentAttrKey) > -1) {
+          this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
+        }
+        this.pushSnapshot()
+      },
       updateCurrentLabel(e) {
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
         if (this.currentAttrKey) this.$set(this.attrLabels, this.currentAttrKey, val)
@@ -1746,20 +1865,50 @@
       isAttrSelected(key) {
         return !!key && this.selectedAttrs.indexOf(key) > -1
       },
+      // 是否为规格块内的元素（属性名或规格值）
+      isSpecAttrKey(key) {
+        return !!parseSpecItemKey(key)
+      },
+      // 取规格块的全部元素 key：属性名在前，规格值随后
+      specBlockKeysOf(key) {
+        var parsed = parseSpecItemKey(key)
+        if (!parsed) return []
+        var rowNo = parsed.rowNo
+        var blockNo = parsed.blockNo
+        var keys = []
+        var nameKey = specNameKey(rowNo, blockNo)
+        if (this.allAttrs.some(function(a) { return a.key === nameKey })) keys.push(nameKey)
+        this.allAttrs.forEach(function(a) {
+          var item = parseSpecItemKey(a.key)
+          if (item && item.kind === 'value' && item.rowNo === rowNo && item.blockNo === blockNo) {
+            keys.push(a.key)
+          }
+        })
+        return keys
+      },
+      // 元素面板条目是否已加载（规格块要求块内全部元素都在）
+      isElemItemOn(attr) {
+        var keys = attr && attr.isSpecBlock ? attr.blockKeys : [attr && attr.key]
+        if (!keys || !keys.length) return false
+        var self = this
+        return keys.every(function(key) { return self.selectedAttrs.indexOf(key) > -1 })
+      },
+      // 元素面板点击：规格块按整块开关，普通属性按单项开关
+      toggleElemItem(attr) {
+        if (!attr) return
+        if (!attr.isSpecBlock) {
+          this.toggleAttr(attr.key)
+          return
+        }
+        var self = this
+        var visible = !this.isElemItemOn(attr)
+        attr.blockKeys.forEach(function(key) {
+          if (self.isAttrSelected(key) !== visible) self.setAttrVisible(key, visible)
+        })
+      },
       // 规格名/规格值开关：只控制是否参与标签渲染，保留原位置与字号，关闭后可再次打开
       onSpecVisibleChange(key, checked) {
         this.setAttrVisible(key, !!checked)
-      },
-      // 全部关闭：关闭当前规格块内的属性名与所有属性值开关
-      closeSpecBlock() {
-        var block = this.currentSpecBlock
-        if (!block) return
-        var keys = block.nameKey ? [block.nameKey] : []
-        keys = keys.concat(block.valueKeys)
-        var self = this
-        keys.forEach(function(key) {
-          if (self.isAttrSelected(key)) self.setAttrVisible(key, false)
-        })
       },
       setAttrVisible(key, visible) {
         if (!key) return
@@ -2062,7 +2211,13 @@
         this._selectedBeforeDown = this.selectedKeys.slice()
         this._prevFocus = this.currentAttrKey  // ← 记录 pointerdown 前的焦点
         // ⚠️ 不在这里改 currentAttrKey！焦点只能在 pointerup toggle 后决定
-        var willMultiDrag = mode === 'move' && this.selectedKeys.length > 1
+        // 规格块整体拖动：属性名 + 全部规格值跟随同一个位移
+        var blockKeys = this.specBlockKeysOf(key)
+        this._blockDragKeys = mode === 'move' && blockKeys.length > 1 ? blockKeys : null
+        // 规格块整体缩放：手柄拖动时统一调整块内所有元素宽度
+        this._blockResizeKeys = mode === 'resize' && blockKeys.length > 1 ? blockKeys : null
+        var willMultiDrag = (mode === 'move' || mode === 'resize') &&
+          (this.selectedKeys.length > 1 || !!this._blockDragKeys || !!this._blockResizeKeys)
         this.startActualDrag(key, e, mode, willMultiDrag)
       },
       // 测量元素文字本身的自然尺寸（不换行、不裁剪），用于限制缩放边框的最小值
@@ -2107,13 +2262,20 @@
             if (!origH) origH = Math.round(r.height / this.zoom)
           }
         }
-        // 记录整体拖拽的所有元素起点
-        var allKeys = multiDrag ? this.selectedKeys.slice() : [key]
+        // 记录整体拖拽的所有元素起点（规格块拖动时包含块内隐藏项，保持布局不散）
+        var allKeys = multiDrag ? (this._blockDragKeys || this._blockResizeKeys || this.selectedKeys.slice()) : [key]
+        allKeys = allKeys.filter(function(k) { return !!self.attrStyles[k] })
         var dragOrigins = {}
         allKeys.forEach(function(k) {
           var s = self.attrStyles[k] || {}
           dragOrigins[k] = { x: s.x || 0, y: s.y || 0, width: s.width || 0, height: s.height || 0 }
         })
+        // 规格块缩放：自动宽度的元素以当前渲染宽度为起点，避免手柄拖动时宽度跳变
+        if (mode === 'resize') {
+          allKeys.forEach(function(k) {
+            if (!dragOrigins[k].width) dragOrigins[k].width = self.getItemSize(k).w
+          })
+        }
         // 缩放边框时的最小尺寸
         var minW = 12
         var minH = 12
@@ -2142,6 +2304,7 @@
           minH: minH,
           moved: false,
           multiDrag: multiDrag,
+          blockResizeKeys: this._blockResizeKeys,
           dragOrigins: dragOrigins,
           // 吸附基准：未参与本次拖动的元素外接矩形
           snapTargets: this.collectSnapTargets(allKeys),
@@ -2248,6 +2411,18 @@
           }
         } else if (d.mode === 'resize') {
           var minW = d.minW || 12
+          if (d.blockResizeKeys && d.blockResizeKeys.length) {
+            // 规格块整体缩放：统一调整块内每个元素的宽度，块内各行仍保持原有对齐
+            var self3 = this
+            var deltaW = Math.round(dx / this.zoom)
+            d.blockResizeKeys.forEach(function(k) {
+              var origin = d.dragOrigins[k] || {}
+              var nextW = Math.max(minW, Math.round((origin.width || 0) + deltaW))
+              self3.$set(self3.attrStyles[k], 'width', nextW)
+              if (self3.attrStyles[k].height) self3.$delete(self3.attrStyles[k], 'height')
+            })
+            return
+          }
           if (this.isTextElem(d.key)) {
             // 文字类：只改宽度，清掉固定高度，让文字折行后自动撑高/回缩
             var textW = Math.max(minW, Math.round(d.origW + dx / this.zoom))
@@ -2276,16 +2451,22 @@
         }
         // 没移动 + 不是 resize 手柄操作 → 点击意图，执行 toggle
         if (!didMove && pKey && (!this.dragging.mode || this.dragging.mode === 'move')) {
-          var idx = prevKeys.indexOf(pKey)
-          if (idx > -1) {
-            // 之前已选中 → 移除（点谁踢谁）
-            var next = prevKeys.slice()
-            next.splice(idx, 1)
+          // 规格块内任一元素：点击按整块选中/取消（已关闭的规格值保持关闭），普通元素按单项处理
+          var blockKeys = this.specBlockKeysOf(pKey)
+          var hiddenKeys = this.hiddenItemKeys || []
+          var targets = blockKeys.length
+            ? blockKeys.filter(function(k) { return hiddenKeys.indexOf(k) === -1 })
+            : [pKey]
+          if (!targets.length) targets = [pKey]
+          var allSelected = targets.every(function(k) { return prevKeys.indexOf(k) > -1 })
+          if (allSelected) {
+            // 之前已选中 → 整块移除
+            var next = prevKeys.filter(function(k) { return targets.indexOf(k) === -1 })
             this.selectedKeys = next
             // 焦点逻辑：
             //   移除的是 prevFocus → 无焦点（不自动转给剩余元素）
             //   移除的是非焦点  → prevFocus 保持不变
-            if (pKey === prevFocus) {
+            if (prevFocus && targets.indexOf(prevFocus) > -1) {
               this.currentAttrKey = null
             } else {
               this.currentAttrKey = prevFocus
@@ -2293,13 +2474,19 @@
             // 全部取消后退出多选状态
             if (!next.length) this.multiSelectMode = false
           } else {
-            // 之前未选中：多选状态下追加，普通单击则单选
-            this.selectedKeys = this.multiSelectMode ? prevKeys.concat([pKey]) : [pKey]
+            // 之前未选中：规格块整块选中；多选状态下追加，普通单击则单选
+            var base = this.multiSelectMode ? prevKeys.slice() : []
+            targets.forEach(function(k) {
+              if (base.indexOf(k) === -1) base.push(k)
+            })
+            this.selectedKeys = base
             this.currentAttrKey = pKey
           }
           // 选择/取消选择也计入撤销历史
           this.pushSnapshot()
         }
+        this._blockDragKeys = null
+        this._blockResizeKeys = null
         // 移动过 → 拖拽意图，恢复 pointerdown 前的焦点（如果有的话）
         // 注意 pointerdown 没改 currentAttrKey，所以这里不需要恢复
         this._pointerDownKey = null
@@ -3035,6 +3222,14 @@
   border-color: rgba(24, 144, 255, 0.85);
 }
 
+/* 规格块整块：属性名 + 全部规格值共用一个外框，样式与普通文字标签一致，可整体拖动/缩放 */
+.lem-spec-block {
+  cursor: move;
+  touch-action: none;
+  /* 高于块内文字元素，整块接收点击与拖动 */
+  z-index: 6;
+}
+
 /* 拖动吸附时的对齐线 */
 .lem-guide {
   position: absolute;
@@ -3571,32 +3766,7 @@
   margin-bottom: 6px;
 }
 
-/* 规格块：整块标题（角标 + 整块关闭） */
-.lem-spec-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.lem-spec-badge {
-  flex: none;
-  padding: 0 6px;
-  font-size: 11px;
-  line-height: 18px;
-  color: #1890ff;
-  background: rgba(24, 144, 255, 0.1);
-  border-radius: 9px;
-}
-
-.lem-spec-close-all {
-  flex: none;
-  font-size: 12px;
-  line-height: 1;
-  color: #1890ff;
-  padding: 4px 0;
-  white-space: nowrap;
-}
+/* 规格块：属性名/属性值逐项开关 */
 
 /* 属性名 / 属性值：标题一行，输入框换行整行显示 */
 .lem-field-stack {
@@ -3633,6 +3803,66 @@
 .lem-text-input {
   width: 100%;
   min-width: 0;
+}
+
+/* 属性面板控件：恢复可见外框与紧凑字号（移动端全局样式默认去掉输入框边框） */
+.lem-side-body ::v-deep .ant-input,
+.lem-side-body ::v-deep .ant-input-number,
+.lem-side-body ::v-deep .ant-select-selection {
+  height: 26px !important;
+  box-sizing: border-box;
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  color: #333 !important;
+}
+
+.lem-side-body ::v-deep .ant-input {
+  padding: 0 7px;
+  line-height: 24px !important;
+}
+
+.lem-side-body ::v-deep .ant-input-number {
+  width: 100%;
+}
+
+.lem-side-body ::v-deep .ant-input-number-input {
+  height: 24px !important;
+  padding: 0 7px;
+  font-size: 12px !important;
+  line-height: 24px !important;
+  text-align: left !important;
+}
+
+.lem-side-body ::v-deep .ant-input-number-handler-wrap {
+  display: none !important;
+}
+
+.lem-side-body ::v-deep .ant-select-selection__rendered {
+  margin: 0 7px;
+  font-size: 12px !important;
+  line-height: 24px !important;
+}
+
+.lem-side-body ::v-deep .ant-select-arrow {
+  right: 7px;
+}
+
+.lem-side-body ::v-deep .ant-input:hover,
+.lem-side-body ::v-deep .ant-input:focus,
+.lem-side-body ::v-deep .ant-input-number:hover,
+.lem-side-body ::v-deep .ant-input-number-focused,
+.lem-side-body ::v-deep .ant-select-selection:hover,
+.lem-side-body ::v-deep .ant-select-focused .ant-select-selection {
+  border-color: #40a9ff !important;
+  box-shadow: none !important;
+}
+
+.lem-side-body ::v-deep .ant-input[disabled] {
+  background: #f5f5f5 !important;
+  color: #bfbfbf !important;
 }
 
 /* 规格值列表：一个规格块可挂多个规格值，每个值独立开关 */

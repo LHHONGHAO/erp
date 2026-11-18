@@ -2870,9 +2870,9 @@
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
       handleEdit() {
-        // 小票：编辑页使用本单真实数据（预览快照），不走商品数据表字段
+        // 小票：编辑页只加载模板布局，不携带单据业务数据
         var isReceipt = this.type === 'receipt'
-        var record = isReceipt ? this.buildReceiptRecord() : this.record
+        var record = isReceipt ? {} : this.record
         var payload = {
           record: record,
           sku: this.sku,
@@ -2895,17 +2895,6 @@
           return
         }
         setTimeout(() => this.$emit('edit', payload), 200)
-      },
-      // 小票编辑数据：取预览时写入的单据快照（rc_* 字段值与明细行）
-      buildReceiptRecord() {
-        var snapshot = null
-        try { snapshot = JSON.parse(sessionStorage.getItem('jsh.labelEdit.snapshot') || 'null') } catch (e) { snapshot = null }
-        if (!snapshot || snapshot.type !== 'receipt') return this.record || {}
-        var record = {}
-        var values = snapshot.values || {}
-        Object.keys(values).forEach(function (key) { record[key] = values[key] })
-        record.goodsRows = Array.isArray(snapshot.rows) ? snapshot.rows : []
-        return record
       },
       // 标签编辑关闭后回到打印预览：编辑入口来自预览页本身，关闭时应回退到预览
       handleEditorClosed() {

@@ -250,24 +250,24 @@ export function buildSpecBlocksFromCategory(specConfig) {
 /**
  * 模板编辑页数据回填规则（编辑态专用，打印不调用）
  *
- * 1. 模板已保存 specBlocks：以模板为准，只保留属性名，去掉尺寸；
- * 2. 模板未保存：取商品品类设置里的规格块；
- * 3. 品类也没有：旧数据兜底用单据首行推导一次，同样去掉尺寸；
- * 4. 都没有（新模板 / 空单据）：返回空数组，由调用方给默认占位。
+ * 1. 规格块的属性名和规格值一律以商品品类设置为准（模板只保存布局、块的取舍和关闭项）；
+ * 2. 模板已保存的块名与品类能对上：沿用模板选中的块，规格值刷新为品类最新值；
+ * 3. 对不上（旧模板/品类调整）：回退为品类设置里的全部规格块；
+ * 4. 品类也没有：才使用模板已保存的块（只保留属性名，去掉尺寸）。
  *
- * 编辑页不回填单据业务值；打印时仍按真实单据值展开。
+ * 编辑页只编辑模板结构，不回填单据业务值，也不从单据明细推导规格块；
+ * 打印时仍按真实单据值展开。
  *
  * @param {Array} savedBlocks 模板保存的规格块
- * @param {Array} rows 单据明细行
- * @param {Function} [hasValue] 判断行是否有内容
  * @param {Array} [categoryBlocks] 商品品类设置的规格块
  * @returns {Array} [{ name, values: [] }]
  */
-export function resolveEditSpecBlocks(savedBlocks, rows, hasValue, categoryBlocks) {
+export function resolveEditSpecBlocks(savedBlocks, categoryBlocks) {
   const saved = stripSpecBlockSizes(savedBlocks)
-  if (saved.length) return saved
-  const fromCategory = normalizeSpecBlocks(categoryBlocks)
-  if (fromCategory.length) return fromCategory
-  const source = firstRowForEdit(rows, hasValue)[0]
-  return source ? stripSpecBlockSizes(parseGoodsSpecBlocks(source, { stripSize: true })) : []
+  const category = normalizeSpecBlocks(categoryBlocks)
+  if (!category.length) return saved
+  if (!saved.length) return category
+  const names = saved.map(function(b) { return b.name })
+  const matched = category.filter(function(b) { return names.indexOf(b.name) > -1 })
+  return matched.length ? matched : category
 }

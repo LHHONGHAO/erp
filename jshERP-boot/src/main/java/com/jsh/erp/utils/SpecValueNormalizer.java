@@ -72,9 +72,19 @@ public class SpecValueNormalizer {
         return parsed == null ? null : String.join("*", parsed.numbers);
     }
 
+    /** Numeric dimensions may ignore a missing unit, but two explicit different units are not interchangeable. */
+    public static boolean numericKeyCompatible(String left, String right) {
+        Parsed a = parse(left);
+        Parsed b = parse(right);
+        if (a == null || b == null || !a.numbers.equals(b.numbers)) {
+            return false;
+        }
+        return a.unit.isEmpty() || b.unit.isEmpty() || a.unit.equals(b.unit);
+    }
+
     /**
      * 从候选标准写法中挑选与原始文本最接近的一个：
-     * 先比归一化键，再比数值键（忽略单位），都不中返回 null
+     * 先比归一化键，再允许在单位缺失或一致时比数值键，都不中返回 null
      */
     public static String alignToStandard(String rawText, List<String> standardValues) {
         if (standardValues == null || standardValues.isEmpty()) {
@@ -90,7 +100,7 @@ public class SpecValueNormalizer {
             if (normKey.equals(normKey(standard))) {
                 return standard;
             }
-            if (numericHit == null && numericKey != null && numericKey.equals(numericKey(standard))) {
+            if (numericHit == null && numericKey != null && numericKeyCompatible(rawText, standard)) {
                 numericHit = standard;
             }
         }

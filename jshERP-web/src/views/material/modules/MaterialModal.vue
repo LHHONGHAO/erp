@@ -516,6 +516,10 @@
                 <a-input :ref="'aggProp_' + prop.field" v-model="specAggregateResult.commonProps[prop.field]" size="small"
                          :class="{ 'agg-input-error': aggFieldErrors[prop.field] }"
                          @focus="handleAggPropFocus(prop.field)" @change="markAggPropEdited(prop.field, $event.target.value)" />
+                <div v-if="baseOcrRawMap[prop.field] && normalizeSpecValueKey(baseOcrRawMap[prop.field]) !== normalizeSpecValueKey(specAggregateResult.commonProps[prop.field])"
+                     class="agg-recognition-review">
+                  识别原文：{{ baseOcrRawMap[prop.field] }}；保存商品后会学习这次修正。
+                </div>
                 <a-button v-if="stablePropertyProfile(prop.field) && !specAggregateResult.commonProps[prop.field]"
                           size="small" type="link" class="agg-profile-suggestion"
                           @click="applyStableProfileValue(prop.field)">
@@ -556,12 +560,21 @@
                   <div v-if="!(dim.childNames || []).length" class="agg-value-row">
                     <span class="agg-value-label">规格值：</span>
                     <a-input v-model="dim.value" size="small" :placeholder="dim.name"
+                             @change="markAggregateSpecCorrected(dim)"
                              @focus="setAggFocus({ type: 'dim', groupIndex: group.index, dimName: dim.name })" />
                     <div v-if="dim.enableImage" class="agg-spec-img-upload" @click="openAggSpecImage(dim)">
                       <img v-if="dim.image" :src="getFileAccessHttpUrl(dim.image)" />
                       <a-icon v-else type="plus" />
                     </div>
                     <a-icon type="close" class="agg-row-close" @click="clearSpecValue(group, dim, null)" />
+                  </div>
+                  <div v-if="!(dim.childNames || []).length && dim.rawValue && (dim.needConfirm || dim.reviewAccepted)" class="agg-recognition-review">
+                    <span>识别原文：{{ dim.rawValue }}</span>
+                    <span v-if="dim.needConfirm && dim.reviewCandidates && dim.reviewCandidates.length">可选写法：</span>
+                    <a v-for="candidate in (dim.needConfirm ? (dim.reviewCandidates || []) : [])" :key="'review-' + dim.name + candidate"
+                       class="agg-candidate" @click="applyAggregateSpecCandidate(dim, candidate)">{{ candidate }}</a>
+                    <span v-if="dim.needConfirm && !(dim.reviewCandidates || []).length">可直接编辑为正确值。</span>
+                    <span v-if="dim.reviewAccepted">已确认；保存商品后会学习此对应关系。</span>
                   </div>
                   <a-button v-if="!(dim.childNames || []).length && stableSpecProfile(dim.name) && !dim.value"
                             size="small" type="link" class="agg-profile-suggestion"
@@ -571,12 +584,22 @@
                   <div v-for="(child, childIndex) in (dim.childNames || [])" :key="child" class="agg-value-row">
                     <span class="agg-value-label">{{ child }}：</span>
                     <a-input v-model="dim.subValues[child]" size="small" :placeholder="child"
+                             @change="markAggregateChildCorrected(dim, child)"
                              @focus="setAggFocus({ type: 'child', groupIndex: group.index, dimName: dim.name, child: child })" />
                     <div v-if="childIndex === 0 && dim.enableImage" class="agg-spec-img-upload" @click="openAggSpecImage(dim)">
                       <img v-if="dim.image" :src="getFileAccessHttpUrl(dim.image)" />
                       <a-icon v-else type="plus" />
                     </div>
                     <a-icon type="close" class="agg-row-close" @click="clearSpecValue(group, dim, child)" />
+                  </div>
+                  <div v-for="child in (dim.childNames || [])" :key="'review-child-' + child"
+                       v-if="dim.rawSubValues && dim.rawSubValues[child] && (dim.needConfirm || (dim.reviewAcceptedChildren && dim.reviewAcceptedChildren[child]))" class="agg-recognition-review">
+                    <span>{{ child }}识别原文：{{ dim.rawSubValues[child] }}</span>
+                    <span v-if="dim.needConfirm && childReviewCandidates(dim, child).length">可选写法：</span>
+                    <a v-for="candidate in (dim.needConfirm ? childReviewCandidates(dim, child) : [])" :key="'review-' + child + candidate"
+                       class="agg-candidate" @click="applyAggregateChildCandidate(dim, child, candidate)">{{ candidate }}</a>
+                    <span v-if="dim.needConfirm && !childReviewCandidates(dim, child).length">可直接编辑为正确值。</span>
+                    <span v-if="dim.reviewAcceptedChildren && dim.reviewAcceptedChildren[child]">已确认；保存商品后会学习此对应关系。</span>
                   </div>
                   <div v-for="child in (dim.childNames || [])" :key="'cv-' + child" class="agg-candidate-list"
                        v-show="!(dim.subValues[child] || '').trim() && childCandidates(dim, child).length">
@@ -2806,8 +2829,7 @@
       matchBaseProperty(label) {
         let target = this.normOcrLabel(label)
         if (!target) return null
-        let best = null
-        let bestScore = 0
+        let scores = {}
         this.aggBindableProps.forEach(bp => {
           let names = [bp.label, bp.nativeName]
             .concat(this.propertyNameSynonyms[bp.label] || [])
@@ -2817,14 +2839,17 @@
             if (!text) return
             let score = text === target ? 1
               : (target.indexOf(text) >= 0 || text.indexOf(target) >= 0 ? 0.85 : this.labelSimilarity(target, text))
-            if (score > bestScore) {
-              bestScore = score
-              best = bp
-            }
+            scores[bp.field] = Math.max(scores[bp.field] || 0, score)
           })
         })
         // OCR 短标签的相似度不可靠，模糊命中必须达到高阈值；短标签只接受精确别名。
-        return bestScore >= (target.length <= 3 ? 1 : 0.78) ? best : null
+        let ranked = Object.keys(scores).map(field => ({
+          property: this.aggBindableProps.find(item => item.field === field),
+          score: scores[field]
+        })).filter(item => item.property).sort((a, b) => b.score - a.score)
+        if (!ranked.length || ranked[0].score < (target.length <= 3 ? 1 : 0.78)) return null
+        if (ranked.length > 1 && ranked[0].score - ranked[1].score < 0.05) return null
+        return ranked[0].property
       },
       /** 模糊匹配到规格子项（如 铭套 -> 枕套） */
       matchSpecChild(prop) {
@@ -2835,8 +2860,7 @@
         if (!group) return null
         let target = this.normOcrLabel(prop.label)
         if (!target) return null
-        let best = null
-        let bestScore = 0
+        let scores = {}
         ;(group.dimensions || []).forEach(dim => {
           ;(dim.childNames || []).forEach(child => {
             let learned = (this.aggChildAliases || {})[target]
@@ -2846,14 +2870,18 @@
               if (!text) return
               let score = learned === child ? 1
                 : (text === target ? 1 : (target.indexOf(text) >= 0 || text.indexOf(target) >= 0 ? 0.85 : this.labelSimilarity(target, text)))
-              if (score > bestScore) {
-                bestScore = score
-                best = { groupIndex: group.index, dimName: dim.name, child: child }
-              }
+              let key = JSON.stringify([group.index, dim.name, child])
+              scores[key] = Math.max(scores[key] || 0, score)
             })
           })
         })
-        return bestScore >= (target.length <= 3 ? 1 : 0.78) ? best : null
+        let ranked = Object.keys(scores).map(key => {
+          let parts = JSON.parse(key)
+          return { groupIndex: Number(parts[0]), dimName: parts[1], child: parts[2], score: scores[key] }
+        }).sort((a, b) => b.score - a.score)
+        if (!ranked.length || ranked[0].score < (target.length <= 3 ? 1 : 0.78)) return null
+        if (ranked.length > 1 && ranked[0].score - ranked[1].score < 0.05) return null
+        return { groupIndex: ranked[0].groupIndex, dimName: ranked[0].dimName, child: ranked[0].child }
       },
       /** 识别项自动归一化：能对应基础属性/规格子项的，直接回填到对应输入框 */
       autoNormalizeUnmatchedProps() {
@@ -2885,16 +2913,19 @@
             return
           }
           if (base) {
+            let current = result.commonProps[base.field]
+            let anotherMatch = (result.unmatchedProps || []).some(item =>
+              item !== prop && item.field === base.field && !item.rejected
+            )
+            // Preserve an existing value and leave competing OCR labels for manual review.
+            if ((current !== undefined && current !== null && String(current).trim() !== '') || anotherMatch) return
             prop.field = base.field
             prop.targetLabel = base.label
-            let current = result.commonProps[base.field]
-            if (current === undefined || current === null || current === '') {
-              this.$set(result.commonProps, base.field, prop.value)
-              if (!result.commonPropsRaw) this.$set(result, 'commonPropsRaw', {})
-              this.$set(result.commonPropsRaw, base.field, prop.value)
-              this.$set(this.baseOcrRawMap, base.field, prop.value)
-              prop.autoFilled = true
-            }
+            this.$set(result.commonProps, base.field, prop.value)
+            if (!result.commonPropsRaw) this.$set(result, 'commonPropsRaw', {})
+            this.$set(result.commonPropsRaw, base.field, prop.value)
+            this.$set(this.baseOcrRawMap, base.field, prop.value)
+            prop.autoFilled = true
             return
           }
           if (spec) {
@@ -3056,6 +3087,10 @@
           if (dim.value === undefined || dim.value === null) this.$set(dim, 'value', hit.value || '')
           if (!dim.rawValue) this.$set(dim, 'rawValue', hit.rawValue || '')
           if (dim.needConfirm === undefined) this.$set(dim, 'needConfirm', !!hit.needConfirm)
+          if (!dim.reviewCandidates) this.$set(dim, 'reviewCandidates', (hit.reviewCandidates || []).slice())
+          if (!dim.subReviewCandidates) this.$set(dim, 'subReviewCandidates', Object.assign({}, hit.subReviewCandidates || {}))
+          if (dim.reviewAccepted === undefined) this.$set(dim, 'reviewAccepted', false)
+          if (!dim.reviewAcceptedChildren) this.$set(dim, 'reviewAcceptedChildren', {})
           if (!dim.subValues) this.$set(dim, 'subValues', {})
           if (!dim.childNames) this.$set(dim, 'childNames', [])
           if (!dim.childValues) this.$set(dim, 'childValues', {})
@@ -3302,6 +3337,38 @@
         if (!dim.subValues) this.$set(dim, 'subValues', {})
         this.$set(dim.subValues, child, value)
       },
+      childReviewCandidates(dim, child) {
+        return (dim && dim.subReviewCandidates && dim.subReviewCandidates[child]) || []
+      },
+      applyAggregateSpecCandidate(dim, candidate) {
+        if (!dim || !candidate) return
+        this.$set(dim, 'value', candidate)
+        this.$set(dim, 'reviewAccepted', true)
+        this.$set(dim, 'needConfirm', false)
+      },
+      markAggregateSpecCorrected(dim) {
+        if (!dim || !dim.needConfirm) return
+        if (String(dim.value || '').trim() === String(dim.rawValue || '').trim()) return
+        this.$set(dim, 'reviewAccepted', true)
+        this.$set(dim, 'needConfirm', false)
+      },
+      applyAggregateChildCandidate(dim, child, candidate) {
+        if (!dim || !child || !candidate) return
+        if (!dim.subValues) this.$set(dim, 'subValues', {})
+        this.$set(dim.subValues, child, candidate)
+        const accepted = Object.assign({}, dim.reviewAcceptedChildren || {}, { [child]: true })
+        this.$set(dim, 'reviewAcceptedChildren', accepted)
+        if (Object.keys(dim.rawSubValues || {}).every(name => accepted[name])) this.$set(dim, 'needConfirm', false)
+      },
+      markAggregateChildCorrected(dim, child) {
+        if (!dim || !child || !dim.needConfirm) return
+        const raw = dim.rawSubValues && dim.rawSubValues[child]
+        const current = dim.subValues && dim.subValues[child]
+        if (String(current || '').trim() === String(raw || '').trim()) return
+        const accepted = Object.assign({}, dim.reviewAcceptedChildren || {}, { [child]: true })
+        this.$set(dim, 'reviewAcceptedChildren', accepted)
+        if (Object.keys(dim.rawSubValues || {}).every(name => accepted[name])) this.$set(dim, 'needConfirm', false)
+      },
       stableSpecProfile(name) {
         let profiles = this.specAggregateResult && this.specAggregateResult.propertyProfiles
         let profile = profiles && profiles['spec:' + name]
@@ -3467,8 +3534,9 @@
                 this.$set(this.specOcrRawMap, mIndex + '_' + vIndex + '_child_' + name, childRaw)
               }
             })
-            if (!hasChildRaw && dim.rawText) {
-              this.$set(this.specOcrRawMap, mIndex + '_' + vIndex, dim.rawText)
+            if (!hasChildRaw && (dim.rawValue || dim.rawText)) {
+              // Learn the extracted field value, not the whole image OCR transcript.
+              this.$set(this.specOcrRawMap, mIndex + '_' + vIndex, dim.rawValue || dim.rawText)
             }
           }
         })
@@ -4749,6 +4817,16 @@
   }
   .agg-candidate-tip {
     color: #8c8c8c;
+  }
+  .agg-recognition-review {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 3px 0 5px 64px;
+    color: #8c8c8c;
+    font-size: 11px;
+    line-height: 16px;
   }
   .agg-candidate {
     padding: 1px 6px;

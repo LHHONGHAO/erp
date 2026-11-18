@@ -95,6 +95,9 @@ public class SpecValueSampleService {
                 String numericKey = SpecValueNormalizer.numericKey(rawText);
                 if (StringUtil.isNotEmpty(numericKey)) {
                     sample = specValueSampleMapper.selectByNumericKey(numericKey, attributeId, categoryId, scopeChild, tenantId);
+                    if (sample != null && !SpecValueNormalizer.numericKeyCompatible(rawText, sample.getCanonicalValue())) {
+                        sample = null;
+                    }
                     matchType = "numeric";
                 }
             }
@@ -114,9 +117,12 @@ public class SpecValueSampleService {
             result.put("matchType", matchType);
             result.put("confidence", "similar".equals(matchType) ? new BigDecimal("0.6") : sample.getConfidence());
             // 命中计数：数值模糊匹配置信度低一些
-            specValueSampleMapper.increaseHitCount(sample.getId());
-            if (alias != null) {
-                specValueAliasMapper.increaseHitCount(alias.getId());
+            // A fuzzy candidate is only a suggestion until a user confirms it; do not let it boost its own ranking.
+            if (!"similar".equals(matchType)) {
+                specValueSampleMapper.increaseHitCount(sample.getId());
+                if (alias != null) {
+                    specValueAliasMapper.increaseHitCount(alias.getId());
+                }
             }
         } catch (Exception e) {
             logger.warn("规格值样本比对失败：{}", e.getMessage());
@@ -159,6 +165,17 @@ public class SpecValueSampleService {
         JSONObject sample = match(rawText, categoryId, attributeId, childName);
         if (sample.getBooleanValue("matched")) {
             String canonical = sample.getString("canonicalValue");
+            if ("similar".equals(sample.getString("matchType"))) {
+                result.put("matched", false);
+                result.put("value", rawText.trim());
+                result.put("matchType", "similar");
+                result.put("confidence", sample.get("confidence"));
+                JSONArray candidates = result.getJSONArray("candidates");
+                if (StringUtil.isNotEmpty(canonical) && !candidates.contains(canonical)) {
+                    candidates.add(0, canonical);
+                }
+                return result;
+            }
             String configured = SpecValueNormalizer.alignToStandard(canonical, standards);
             result.put("matched", true);
             result.put("value", configured != null ? configured : canonical);
@@ -309,6 +326,9 @@ public class SpecValueSampleService {
                 if (StringUtil.isNotEmpty(numericKey)) {
                     sample = specValueSampleMapper.selectByNumericKey(
                             numericKey, attributeId, rootCategoryId, scopeChild, tenantId);
+                    if (sample != null && !SpecValueNormalizer.numericKeyCompatible(raw, sample.getCanonicalValue())) {
+                        sample = null;
+                    }
                     matchType = "numeric";
                 }
             }
@@ -357,20 +377,23 @@ public class SpecValueSampleService {
             if (best == null || bestScore < threshold) {
                 return judgeResult;
             }
-            judgeResult.put("value", best.getCanonicalValue());
+            // Keep the OCR value in the editable field. Even a strong fuzzy match is a suggestion,
+            // and becomes a learned mapping only after the user confirms/corrects it and saves.
+            judgeResult.put("value", raw);
             judgeResult.put("score", bestScore);
             judgeResult.put("sampleId", best.getId());
+            judgeResult.put("suggestedValue", best.getCanonicalValue());
+            judgeResult.put("status", "SUGGEST");
+            judgeResult.put("matchType", "similar");
+            JSONArray candidates = new JSONArray();
+            candidates.add(best.getCanonicalValue());
             if (bestScore - secondScore >= 0.05D) {
-                judgeResult.put("matched", true);
-                judgeResult.put("status", "NEAR");
-                judgeResult.put("matchType", "similar");
+                judgeResult.put("candidates", candidates);
             } else {
-                judgeResult.put("status", "SUGGEST");
-                judgeResult.put("matchType", "similar");
-                JSONArray candidates = new JSONArray();
-                candidates.add(best.getCanonicalValue());
                 if (second != null && secondScore >= threshold) {
-                    candidates.add(second.getCanonicalValue());
+                    if (!candidates.contains(second.getCanonicalValue())) {
+                        candidates.add(second.getCanonicalValue());
+                    }
                 }
                 judgeResult.put("candidates", candidates);
             }

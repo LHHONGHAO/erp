@@ -395,7 +395,9 @@ public class SpecRecognizeService {
                                                List<String> childNames, Long categoryId, Long attributeId) {
         Map<String, String> subValues = new LinkedHashMap<>();
         Map<String, String> rawSubValues = new LinkedHashMap<>();
+        JSONObject subReviewCandidates = new JSONObject(true);
         List<String> values = new ArrayList<>();
+        List<String> rawValues = new ArrayList<>();
         boolean needConfirm = false;
         List<String> orderedNames = childNames.isEmpty() ? new ArrayList<>(labelSubValues.keySet()) : childNames;
         for (String childName : orderedNames) {
@@ -404,15 +406,32 @@ public class SpecRecognizeService {
                 continue;
             }
             List<String> childStandards = childStandardValues(childName, standards);
-            String aligned = alignValue(text, categoryId, attributeId, childName, childStandards);
+            JSONObject alignment = specValueSampleService.align(text, categoryId, attributeId, childName, childStandards);
+            String aligned = alignment.getBooleanValue("matched") && StringUtil.isNotEmpty(alignment.getString("value"))
+                    ? alignment.getString("value") : normalizeSize(text);
             subValues.put(childName, aligned);
             rawSubValues.put(childName, text);
             values.add(aligned);
+            rawValues.add(text);
+            JSONArray candidates = alignment.getJSONArray("candidates");
+            if (candidates != null && !candidates.isEmpty()) {
+                subReviewCandidates.put(childName, candidates);
+            }
+            if ("similar".equals(alignment.getString("matchType"))) {
+                subValues.put(childName, text);
+                values.set(values.size() - 1, text);
+                needConfirm = true;
+            }
             if (!childStandards.isEmpty() && !containsValue(childStandards, aligned)) {
                 needConfirm = true;
             }
         }
-        return buildHit(joinSlash(values), joinSlash(values), needConfirm, "label", childNames, subValues, rawSubValues);
+        JSONObject hit = buildHit(joinSlash(values), joinSlash(rawValues), needConfirm, "label", childNames, subValues, rawSubValues);
+        if (!subReviewCandidates.isEmpty()) {
+            hit.put("subReviewCandidates", subReviewCandidates);
+            hit.put("reviewStatus", "SUGGEST");
+        }
+        return hit;
     }
 
     /** 子规格名命中：尺寸优先取该子规格已配置的写法，否则原样保留尺寸 */
@@ -605,24 +624,34 @@ public class SpecRecognizeService {
             return true;
         }
         String numericA = SpecValueNormalizer.numericKey(a);
-        String numericB = SpecValueNormalizer.numericKey(b);
-        return numericA != null && numericA.equals(numericB);
+        return numericA != null && SpecValueNormalizer.numericKeyCompatible(a, b);
     }
 
     private void applyAligned(ImageData data, String name, String candidate, Long categoryId, JSONObject dim,
                               List<String> standards, List<String> childNames, String source, String raw) {
         String finalValue = candidate;
         boolean needConfirm = standards.isEmpty();
-        if (!standards.isEmpty()) {
-            JSONObject aligned = specValueSampleService.align(candidate, categoryId, dim.getLong("attributeId"), standards);
-            if (aligned.getBooleanValue("matched") && StringUtil.isNotEmpty(aligned.getString("value"))) {
-                finalValue = aligned.getString("value");
-                needConfirm = aligned.getBooleanValue("notConfigured");
-            } else {
-                needConfirm = true;
+        JSONObject aligned = specValueSampleService.align(candidate, categoryId, dim.getLong("attributeId"), standards);
+        if (aligned.getBooleanValue("matched") && StringUtil.isNotEmpty(aligned.getString("value"))) {
+            finalValue = aligned.getString("value");
+            needConfirm = aligned.getBooleanValue("notConfigured");
+        } else {
+            needConfirm = true;
+        }
+        JSONObject hit = buildHit(finalValue, candidate, needConfirm, source, childNames, null, null);
+        if (aligned != null) {
+            JSONArray candidates = aligned.getJSONArray("candidates");
+            if (candidates != null && !candidates.isEmpty()) {
+                hit.put("reviewCandidates", candidates);
+            }
+            if ("similar".equals(aligned.getString("matchType"))) {
+                // Similarity is advisory; preserve OCR text until the user chooses a candidate or edits it.
+                hit.put("value", candidate);
+                hit.put("needConfirm", true);
+                hit.put("reviewStatus", "SUGGEST");
             }
         }
-                data.values.put(name, buildHit(finalValue, candidate, needConfirm, source, childNames, null, null));
+        data.values.put(name, hit);
     }
 
     /** 构建命中结果：subValues 优先，否则按 "/" 拆出子规格值；subRawValues 保留每个子规格的识别原文用于学习 */
@@ -885,6 +914,9 @@ public class SpecRecognizeService {
         try {
             JSONObject learned = specValueSampleService.match(value, categoryId, baseFieldSampleId(field));
             if (learned.getBooleanValue("matched")) {
+                if ("similar".equals(learned.getString("matchType"))) {
+                    return value;
+                }
                 String canonical = learned.getString("canonicalValue");
                 if (StringUtil.isNotEmpty(canonical) && !isPropertyField(canonical)) {
                     return canonical;

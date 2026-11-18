@@ -143,21 +143,21 @@
       </div>
       <div class="lem-side-body">
           <div class="lem-panel-multi-tip" v-if="selectedKeys.length > 1">已选 {{ selectedKeys.length }} 项，样式修改应用到全部选中元素</div>
-          <!-- 规格块：规格名与规格值同属一个面板，标题与输入框上下换行；标题后开关控制是否显示 -->
-          <template v-if="selectedKeys.length === 1 && currentSpecPair">
-            <div class="lem-field-stack" v-if="currentSpecPair.nameKey">
+          <!-- 规格块：1 个规格名 + N 个规格值，标题与输入框上下换行；每项右侧开关控制是否显示 -->
+          <template v-if="selectedKeys.length === 1 && currentSpecBlock">
+            <div class="lem-field-stack" v-if="currentSpecBlock.nameKey">
               <div class="lem-field-head">
                 <span class="lem-style-label">属性名</span>
                 <a-switch
                   size="small"
                   class="lem-field-switch"
-                  :checked="isAttrSelected(currentSpecPair.nameKey)"
-                  @change="onSpecVisibleChange(currentSpecPair.nameKey, $event)"
+                  :checked="isAttrSelected(currentSpecBlock.nameKey)"
+                  @change="onSpecVisibleChange(currentSpecBlock.nameKey, $event)"
                 />
               </div>
               <a-input
                 :value="specNameText"
-                :disabled="!isAttrSelected(currentSpecPair.nameKey)"
+                :disabled="!isAttrSelected(currentSpecBlock.nameKey)"
                 placeholder="规格名"
                 class="lem-text-input"
                 @input="updateSpecName"
@@ -167,20 +167,24 @@
               <div class="lem-field-head">
                 <span class="lem-style-label">属性值</span>
                 <a-button size="small" class="lem-ocr-btn">OCR</a-button>
-                <a-switch
-                  size="small"
-                  class="lem-field-switch"
-                  :checked="isAttrSelected(currentSpecPair.valueKey)"
-                  @change="onSpecVisibleChange(currentSpecPair.valueKey, $event)"
-                />
               </div>
-              <a-input
-                :value="specValueText"
-                :disabled="!isAttrSelected(currentSpecPair.valueKey)"
-                placeholder="规格值"
-                class="lem-text-input"
-                @input="updateSpecValue"
-              />
+              <div class="lem-value-list">
+                <div class="lem-value-row" v-for="valueKey in currentSpecBlock.valueKeys" :key="valueKey">
+                  <a-input
+                    :value="specValueTextOf(valueKey)"
+                    :disabled="!isAttrSelected(valueKey)"
+                    placeholder="规格值"
+                    class="lem-text-input"
+                    @input="updateSpecValueAt(valueKey, $event)"
+                  />
+                  <a-switch
+                    size="small"
+                    class="lem-field-switch"
+                    :checked="isAttrSelected(valueKey)"
+                    @change="onSpecVisibleChange(valueKey, $event)"
+                  />
+                </div>
+              </div>
             </div>
           </template>
           <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
@@ -555,6 +559,7 @@
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
   import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
+  import { parseSpecItemKey, specNameKey } from '@/views/material/utils/goodsSpecBlocks'
 
   const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
@@ -927,35 +932,36 @@
         if (!this.currentAttrKey) return ''
         return this.attrLabels[this.currentAttrKey] || ''
       },
-      // 小票规格块：item{行}_specname{序号} 与 item{行}_specvalue{序号} 成对出现
-      currentSpecPair() {
+      // 小票规格块：规格名 + N 个规格值，选中块内任一项都按整块展示
+      currentSpecBlock() {
         if (this.selectedKeys.length !== 1) return null
-        var m = /^item(\d+)_spec(name|value)(\d+)$/.exec(this.selectedKeys[0])
-        if (!m) return null
-        var nameKey = 'item' + m[1] + '_specname' + m[3]
-        var valueKey = 'item' + m[1] + '_specvalue' + m[3]
+        var parsed = parseSpecItemKey(this.selectedKeys[0])
+        if (!parsed) return null
+        var rowNo = parsed.rowNo
+        var blockNo = parsed.blockNo
+        var nameKey = specNameKey(rowNo, blockNo)
         var hasName = this.allAttrs.some(a => a.key === nameKey)
-        return { nameKey: hasName ? nameKey : '', valueKey: valueKey }
+        var valueKeys = this.allAttrs.filter(function(attr) {
+          var item = parseSpecItemKey(attr.key)
+          return !!item && item.kind === 'value' && item.rowNo === rowNo && item.blockNo === blockNo
+        }).map(function(attr) { return attr.key })
+        return { nameKey: hasName ? nameKey : '', valueKeys: valueKeys }
       },
       specNameText() {
-        var pair = this.currentSpecPair
-        if (!pair || !pair.nameKey) return ''
-        var attr = this.allAttrs.find(a => a.key === pair.nameKey)
+        var block = this.currentSpecBlock
+        if (!block || !block.nameKey) return ''
+        var attr = this.allAttrs.find(a => a.key === block.nameKey)
         return attr ? String(attr.value || '').replace(/：$/, '') : ''
       },
-      specValueText() {
-        var pair = this.currentSpecPair
-        if (!pair) return ''
-        var attr = this.allAttrs.find(a => a.key === pair.valueKey)
-        return attr ? attr.value : ''
-      },
-      // 规格块内已显示的元素（属性名/属性值），字体样式同时作用于它们
-      specPairKeys() {
-        var pair = this.currentSpecPair
-        if (!pair) return []
+      // 规格块内已显示的元素（属性名 + 各规格值），字体样式同时作用于它们
+      specBlockKeys() {
+        var block = this.currentSpecBlock
+        if (!block) return []
         var keys = []
-        if (pair.nameKey && this.isAttrSelected(pair.nameKey)) keys.push(pair.nameKey)
-        if (this.isAttrSelected(pair.valueKey)) keys.push(pair.valueKey)
+        if (block.nameKey && this.isAttrSelected(block.nameKey)) keys.push(block.nameKey)
+        block.valueKeys.forEach(key => {
+          if (this.isAttrSelected(key)) keys.push(key)
+        })
         return keys
       },
       // 字体类字段是否显示：只要选中项中含非编码元素就显示
@@ -1735,7 +1741,6 @@
       },
       setAttrVisible(key, visible) {
         if (!key) return
-        var pair = this.currentSpecPair
         if (visible) {
           if (this.selectedAttrs.indexOf(key) === -1) this.selectedAttrs.push(key)
           this.hiddenItemKeys = this.hiddenItemKeys.filter(function(k) { return k !== key })
@@ -1749,43 +1754,36 @@
             var attr = this.allAttrs.find(a => a.key === key)
             this.$set(this.attrLabels, key, attr ? attr.label : '')
           }
-          this.selectedKeys = [key]
-          this.currentAttrKey = key
         } else {
           var aIdx = this.selectedAttrs.indexOf(key)
           if (aIdx > -1) this.selectedAttrs.splice(aIdx, 1)
           if (this.hiddenItemKeys.indexOf(key) === -1) this.hiddenItemKeys.push(key)
-          var sIdx = this.selectedKeys.indexOf(key)
-          if (sIdx > -1) this.selectedKeys.splice(sIdx, 1)
-          var other = pair ? (key === pair.nameKey ? pair.valueKey : pair.nameKey) : ''
-          if (other && this.selectedAttrs.indexOf(other) > -1) {
-            if (this.selectedKeys.indexOf(other) === -1) this.selectedKeys.push(other)
-            this.currentAttrKey = other
-          } else if (this.currentAttrKey === key) {
-            this.currentAttrKey = this.selectedKeys.length ? this.selectedKeys[this.selectedKeys.length - 1] : null
-          }
+          // 保留选中态：面板不关闭，可再次打开开关
         }
         this.pushSnapshot()
       },
       updateSpecName(e) {
-        var pair = this.currentSpecPair
-        if (!pair || !pair.nameKey) return
+        var block = this.currentSpecBlock
+        if (!block || !block.nameKey) return
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
         var clean = String(val || '').replace(/：$/, '')
-        var attr = this.allAttrs.find(a => a.key === pair.nameKey)
+        var attr = this.allAttrs.find(a => a.key === block.nameKey)
         if (attr) attr.value = clean ? clean + '：' : ''
       },
-      updateSpecValue(e) {
-        var pair = this.currentSpecPair
-        if (!pair) return
+      specValueTextOf(key) {
+        var attr = this.allAttrs.find(a => a.key === key)
+        return attr ? attr.value : ''
+      },
+      updateSpecValueAt(key, e) {
+        if (!key) return
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
-        var attr = this.allAttrs.find(a => a.key === pair.valueKey)
+        var attr = this.allAttrs.find(a => a.key === key)
         if (attr) attr.value = val
       },
-      // 字体类字段作用于规格块的属性名 + 属性值；位置/尺寸只作用于当前元素
+      // 字体类字段作用于规格块的属性名 + 全部规格值；位置/尺寸只作用于当前元素
       styleTargets(field) {
         var fontFields = { fontSize: 1, fontWeight: 1, letterSpacing: 1, lineHeight: 1 }
-        if (fontFields[field] && this.specPairKeys.length > 1) return this.specPairKeys
+        if (fontFields[field] && this.specBlockKeys.length > 1) return this.specBlockKeys
         return this.selectedKeys
       },
       // 多选批量读取：全部一致返回值，否则 null（输入框显示为空）
@@ -3544,6 +3542,29 @@
 .lem-text-input {
   width: 100%;
   min-width: 0;
+}
+
+/* 规格值列表：一个规格块可挂多个规格值，每个值独立开关 */
+.lem-value-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lem-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lem-value-row > .lem-text-input {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
+.lem-value-row > .lem-field-switch {
+  margin-left: 0;
 }
 
 /* 商品信息组合字段勾选 */

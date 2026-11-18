@@ -7,6 +7,8 @@
  * 3. 表格/组合元素实际变高后，位于其下方的其他元素整体顺移，保持原有相对间距；
  * 4. 只做运行时重排，不回写模板里保存的坐标。
  */
+import { parseGoodsSpecBlocks, isSpecItemKey, specNameKey, specValueKey, formatSpecName } from './goodsSpecBlocks'
+
 export const GOODS_TABLE_KEY = 'goods_table'
 export const GOODS_KEY = 'goods'
 /** 小票模板里的商品明细表字段（与 goods_table 同义） */
@@ -38,13 +40,14 @@ export const RECEIPT_ITEM_FIELDS = [
   { key: 'price', label: '单价', weight: 0.16 },
   { key: 'amount', label: '金额', weight: 0.16 }
 ]
-const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|specname\d+|specvalue\d+|qty|price|amount)$/
+const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|specname\d+|specvalue\d+(?:_\d+)?|qty|price|amount)$/
 /** 小票里属于商品标签、不参与小票排版的遗留字段 */
 const RECEIPT_STRAY_KEYS = ['name', 'spec1', 'spec2', 'spec3', GOODS_KEY, GOODS_TABLE_KEY, RECEIPT_TABLE_KEY]
 
 /** 是否为小票「按单品拆分」生成的动态元素（只参与本次编辑/打印，不写入模板） */
 export function isReceiptItemKey(key) {
-  return RECEIPT_ITEM_KEY_RE.test(String(key == null ? '' : key))
+  const text = String(key == null ? '' : key)
+  return RECEIPT_ITEM_KEY_RE.test(text) || isSpecItemKey(text)
 }
 
 /** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3 */
@@ -62,38 +65,9 @@ export function receiptItemValue(row, key) {
 }
 
 /**
- * 小票单品的规格组合 → [{ name, value }]
- * 快照行里有 spec1/spec2/spec3 时优先使用，否则按全角空格拆分合并后的 spec
- */
-export function receiptSpecItems(row) {
-  if (!row) return []
-  const raw = []
-  ;['spec1', 'spec2', 'spec3'].forEach(function(k) {
-    const value = row[k] == null ? '' : String(row[k]).trim()
-    if (value) raw.push(value)
-  })
-  if (!raw.length) {
-    const spec = row.spec == null ? '' : String(row.spec).trim()
-    if (spec) raw.push(spec)
-  }
-  const parts = []
-  raw.forEach(function(text) {
-    String(text).split(/[\n　]+/).forEach(function(part) {
-      const value = part.trim()
-      if (value) parts.push(value)
-    })
-  })
-  return parts.map(function(text) {
-    const matched = text.match(/^([^：:]+)[：:]\s*(.*)$/)
-    if (matched) return { name: matched[1].trim(), value: matched[2].trim() }
-    return { name: '', value: text }
-  })
-}
-
-/**
  * 小票商品明细 → 逐件、逐字段的独立元素
  * 每件商品占一行，字段按列坐标摆放，均可在编辑页单独选中修改；
- * 规格是「规格名 + 规格值」的组合时，每一项再拆成两个元素分别控制显隐
+ * 规格按「规格名 + N 个规格值」的规格块拆分，名称与每个值各自控制显隐
  *
  * @param {Object} options rows / paperWidth / x / y / fontSize / lineHeight / gap
  * @returns {{attrs:Array, styles:Object, keys:Array, height:number}}
@@ -124,11 +98,11 @@ export function buildReceiptItemElements(options) {
   rows.forEach(function(row, rowIndex) {
     const index = rowIndex + 1
     const specCol = cols[1]
-    // 规格是「名 + 值」的组合：每一项拆成规格名、规格值两个元素，各自可独立勾选
+    // 规格块：1 个规格名 + N 个规格值，每个规格值独占一行，均可独立控制显隐
     let specOffset = 0
-    const specLayout = receiptSpecItems(row).map(function(item, specIndex) {
+    const specLayout = parseGoodsSpecBlocks(row).map(function(block) {
       // 分隔符跟随规格名：不要名称时只剩值，不会留下孤立的冒号
-      const nameText = item.name ? item.name + '：' : ''
+      const nameText = formatSpecName(block.name)
       const labelWidth = nameText
         ? Math.min(
           Math.floor(specCol.width * 0.6),
@@ -136,20 +110,34 @@ export function buildReceiptItemElements(options) {
         )
         : 0
       const valueWidth = Math.max(8, specCol.width - labelWidth)
-      const lines = Math.max(
-        nameText ? measureTextLines(nameText, labelWidth, fontSize, false, 0) : 1,
-        measureTextLines(item.value, valueWidth, fontSize, false, 0)
-      )
-      const height = Math.round(Math.max(linePx, lines * linePx))
+      const values = block.values.filter(function(value) { return value !== '' })
+      let top = specOffset
+      const valueLayouts = []
+      if (!values.length) {
+        const height = Math.round(Math.max(linePx, measureTextLines(nameText, labelWidth, fontSize, false, 0) * linePx))
+        valueLayouts.push({ value: '', top: top, height: height })
+        top += height
+      } else {
+        values.forEach(function(value, valueIndex) {
+          const lines = Math.max(
+            valueIndex === 0 && nameText ? measureTextLines(nameText, labelWidth, fontSize, false, 0) : 1,
+            measureTextLines(value, valueWidth, fontSize, false, 0)
+          )
+          const height = Math.round(Math.max(linePx, lines * linePx))
+          valueLayouts.push({ value: value, top: top, height: height })
+          top += height
+        })
+      }
       const layout = {
-        item: item,
+        name: block.name,
         nameText: nameText,
         labelWidth: labelWidth,
         valueWidth: valueWidth,
         top: specOffset,
-        height: height
+        height: top - specOffset,
+        values: valueLayouts
       }
-      specOffset += height
+      specOffset += layout.height
       return layout
     })
     // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推
@@ -194,17 +182,18 @@ export function buildReceiptItemElements(options) {
       fields[0].value,
       cellStyle(0, rowHeight, 0)
     )
-    specLayout.forEach(function(layout, specIndex) {
-      if (layout.labelWidth > 0) {
+    specLayout.forEach(function(block, blockIndex) {
+      const blockNo = blockIndex + 1
+      if (block.labelWidth > 0) {
         pushElement(
-          'item' + index + '_specname' + (specIndex + 1),
-          layout.item.name,
-          layout.nameText,
+          specNameKey(index, blockNo),
+          block.name,
+          block.nameText,
           {
             x: x + specCol.x,
-            y: cursor + layout.top,
-            width: layout.labelWidth,
-            height: layout.height,
+            y: cursor + block.top,
+            width: block.labelWidth,
+            height: block.values[0] ? block.values[0].height : block.height,
             fontSize: fontSize,
             fontWeight: 'normal',
             letterSpacing: 0,
@@ -212,21 +201,24 @@ export function buildReceiptItemElements(options) {
           }
         )
       }
-      pushElement(
-        'item' + index + '_specvalue' + (specIndex + 1),
-        '规格值' + (specIndex + 1),
-        layout.item.value,
-        {
-          x: x + specCol.x + layout.labelWidth,
-          y: cursor + layout.top,
-          width: layout.valueWidth,
-          height: layout.height,
-          fontSize: fontSize,
-          fontWeight: 'normal',
-          letterSpacing: 0,
-          lineHeight: lineHeight
-        }
-      )
+      block.values.forEach(function(layout, valueIndex) {
+        if (!layout.value) return
+        pushElement(
+          specValueKey(index, blockNo, valueIndex + 1),
+          '规格值' + blockNo + (valueIndex > 0 ? '·' + (valueIndex + 1) : ''),
+          layout.value,
+          {
+            x: x + specCol.x + block.labelWidth,
+            y: cursor + layout.top,
+            width: block.valueWidth,
+            height: layout.height,
+            fontSize: fontSize,
+            fontWeight: 'normal',
+            letterSpacing: 0,
+            lineHeight: lineHeight
+          }
+        )
+      })
     })
     fields.slice(1).forEach(function(item) {
       pushElement(

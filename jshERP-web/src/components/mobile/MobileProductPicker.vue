@@ -241,6 +241,7 @@ export default {
     formatGoods(item) {
       var spec = this.specOf(item)
       var values = this.splitSpecValues(spec)
+      var material = (item && item.raw) || item || {}
       return {
         key: this.goodsKey(item),
         name: item.name || '',
@@ -248,6 +249,10 @@ export default {
         spec1: values[0] || '',
         spec2: values[1] || '',
         spec3: values[2] || '',
+        // 商品类别：标签打印按类别匹配规格映射表
+        categoryId: (item && item.categoryId) || material.categoryId || '',
+        // SKU 主键：标签打印按 SKU 读取规格明细
+        skuId: (item && item.meId) || material.meId || '',
         imgUrl: getRowImgUrl(item),
         specLines: this.buildSpecLines(spec).slice(0, 2),
         // 标准卡片信息行：零售价 / 数量（取库存）

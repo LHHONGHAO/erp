@@ -140,24 +140,27 @@ export function buildLabelAttrs(record, sku) {
       ? getSpecDisplay(Object.assign({}, row, skuRow))
       : resolve(col.field)
     exists[col.field] = true
-    list.push({ key: col.field, label: col.title, value: value == null ? '' : String(value), isCustom: false })
+    var group = (col.dimensions || []).indexOf('spu') > -1
+      ? '商品基础属性'
+      : ((col.dimensions || []).indexOf('sku') > -1 ? 'SKU属性' : '库存属性')
+    list.push({ key: col.field, label: col.title, value: value == null ? '' : String(value), isCustom: false, group: group })
   })
   var legacy = [
-    { key: 'standard', label: '规格型号', value: row.standard },
-    { key: 'model', label: '型号', value: row.model },
-    { key: 'color', label: '颜色', value: row.color },
-    { key: 'commodityUnit', label: '单位', value: row.commodityUnit },
-    { key: 'otherField1', label: '扩展1', value: row.otherField1 },
-    { key: 'otherField2', label: '扩展2', value: row.otherField2 },
-    { key: 'otherField3', label: '扩展3', value: row.otherField3 },
-    { key: 'specValues', label: '规格值', value: skuRow.specValuesText },
-    { key: 'wholesaleDecimal', label: '销售价', value: skuRow.wholesaleDecimal },
-    { key: 'lowDecimal', label: '最低售价', value: skuRow.lowDecimal }
+    { key: 'standard', label: '规格型号', value: row.standard, group: '商品基础属性' },
+    { key: 'model', label: '型号', value: row.model, group: '商品基础属性' },
+    { key: 'color', label: '颜色', value: row.color, group: '商品基础属性' },
+    { key: 'commodityUnit', label: '单位', value: row.commodityUnit, group: '商品基础属性' },
+    { key: 'otherField1', label: '扩展1', value: row.otherField1, group: '商品基础属性' },
+    { key: 'otherField2', label: '扩展2', value: row.otherField2, group: '商品基础属性' },
+    { key: 'otherField3', label: '扩展3', value: row.otherField3, group: '商品基础属性' },
+    { key: 'specValues', label: '规格值', value: skuRow.specValuesText, group: 'SKU属性' },
+    { key: 'wholesaleDecimal', label: '销售价', value: skuRow.wholesaleDecimal, group: 'SKU属性' },
+    { key: 'lowDecimal', label: '最低售价', value: skuRow.lowDecimal, group: 'SKU属性' }
   ]
   legacy.forEach(function(attr) {
     if (exists[attr.key]) return
     exists[attr.key] = true
-    list.push({ key: attr.key, label: attr.label, value: attr.value == null ? '' : String(attr.value), isCustom: false })
+    list.push({ key: attr.key, label: attr.label, value: attr.value == null ? '' : String(attr.value), isCustom: false, group: attr.group })
   })
   return list
 }

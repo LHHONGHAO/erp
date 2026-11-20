@@ -4,7 +4,7 @@
  * 有业务数据源时走向后端适配器（统一 JSON），
  * 没有数据源（旧模板/本地商品标签）时回退商品属性，保证历史模板继续可用。
  */
-import { buildLabelAttrs } from './materialDisplay'
+import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
 import { fetchLabelData, fetchProviderFields } from './labelProviderApi'
 
 function toText(value) {
@@ -24,6 +24,7 @@ export function normalizeRows(items) {
       qty: toText(row.quantity != null ? row.quantity : row.qty),
       price: toText(row.price),
       amount: toText(row.amount),
+      categoryId: row.categoryId != null ? row.categoryId : (row.materialCategoryId != null ? row.materialCategoryId : null),
       raw: row
     }
   })
@@ -45,11 +46,12 @@ export function resolveTemplateData(options) {
   var provider = opts.provider
   var documentId = opts.documentId
 
-  if (provider && documentId != null && documentId !== '') {
+  function resolveRemote() {
+    if (!provider || documentId == null || documentId === '') return Promise.resolve(null)
     var fieldTask = opts.fields && opts.fields.length
       ? Promise.resolve(opts.fields)
       : fetchProviderFields(provider)
-    return Promise.all([fieldTask, fetchLabelData(provider, documentId, opts.subId)]).then(function(result) {
+    return Promise.all([fieldTask, fetchLabelData(provider, documentId, opts.subId, opts.businessType)]).then(function(result) {
       var fields = result[0] || []
       var data = result[1] || {}
       var values = {}
@@ -78,15 +80,32 @@ export function resolveTemplateData(options) {
     })
   }
 
-  var localAttrs = buildLabelAttrs(opts.record, opts.sku)
-  var localValues = {}
-  localAttrs.forEach(function(attr) {
-    localValues[attr.key] = attr.value == null ? '' : String(attr.value)
-  })
-  return Promise.resolve({
-    attrs: localAttrs,
-    values: localValues,
-    rows: normalizeRows(opts.rows),
-    fields: []
+  function resolveLocal(includeRows) {
+    var localAttrs = buildLabelAttrs(opts.record, opts.sku)
+    var localValues = {}
+    localAttrs.forEach(function(attr) {
+      localValues[attr.key] = attr.value == null ? '' : String(attr.value)
+    })
+    return {
+      attrs: localAttrs,
+      values: localValues,
+      rows: includeRows ? normalizeRows(opts.rows) : [],
+      fields: []
+    }
+  }
+
+  // 业务适配器只负责取值和归一化；模板结构、字段 key 和渲染规则仍由 V2 模板定义。
+  // 小票明细随当前单据进入，不从商品标签接口推导；快递单由发货单 provider 取值；
+  // 商品/会员/地址标签优先走各自绑定的 provider，无单据 ID 时使用页面本地对象。
+  var adapters = {
+    receipt: function() { return Promise.resolve(resolveLocal(true)) },
+    delivery: function() { return resolveRemote().then(function(data) { return data || resolveLocal(true) }) },
+    label: function() { return resolveRemote().then(function(data) { return data || resolveLocal(false) }) },
+    member: function() { return resolveRemote().then(function(data) { return data || resolveLocal(false) }) },
+    address: function() { return resolveRemote().then(function(data) { return data || resolveLocal(false) }) }
+  }
+  var adapter = adapters[opts.businessMode]
+  return adapter ? adapter() : resolveRemote().then(function(data) {
+    return data || resolveLocal(true)
   })
 }

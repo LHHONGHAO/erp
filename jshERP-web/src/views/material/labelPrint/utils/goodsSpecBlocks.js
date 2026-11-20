@@ -21,19 +21,28 @@
 const SPEC_NAME_RE = /^item(\d+)_specname(\d+)$/
 const SPEC_VALUE_RE = /^item(\d+)_specvalue(\d+)(?:_(\d+))?$/
 const SPEC_NAME_TEXT_RE = /^([^：:]+)[：:]\s*(.*)$/
-const VALUE_SEPARATOR_RE = /[、,，／|]/
+const VALUE_SEPARATOR_RE = /[、,，／/|]/
 // 尺寸表达式：数字 × 数字，乘号支持 * x X ×，可带 cm/mm/m/厘米/毫米/米
 const SIZE_TAIL_RE = /[\s]*\d+(?:\.\d+)?\s*[*xX×]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m|厘米|毫米|米)?$/i
 const SIZE_ONLY_RE = /^\d+(?:\.\d+)?\s*[*xX×]\s*\d+(?:\.\d+)?\s*(?:cm|mm|m|厘米|毫米|米)?$/i
 
 /** 规格名元素 key */
-export function specNameKey(rowNo, blockNo) {
+export function specNameKey(rowNo, blockNo, categoryId, blockIdentity) {
+  if (categoryId != null && categoryId !== '') {
+    const identity = blockIdentity == null ? '' : '_n' + encodeURIComponent(String(blockIdentity))
+    return 'item' + rowNo + '_specname_c' + encodeURIComponent(String(categoryId)) + '_b' + blockNo + identity
+  }
   return 'item' + rowNo + '_specname' + blockNo
 }
 
 /** 规格值元素 key（第一个值不带序号后缀，兼容已保存的模板） */
-export function specValueKey(rowNo, blockNo, valueNo) {
+export function specValueKey(rowNo, blockNo, valueNo, categoryId, blockIdentity, valueIdentity) {
   const no = valueNo || 1
+  if (categoryId != null && categoryId !== '') {
+    const blockPart = blockIdentity == null ? '' : '_n' + encodeURIComponent(String(blockIdentity))
+    const valuePart = valueIdentity == null ? '' : '_i' + encodeURIComponent(String(valueIdentity))
+    return 'item' + rowNo + '_specvalue_c' + encodeURIComponent(String(categoryId)) + '_b' + blockNo + blockPart + '_v' + no + valuePart
+  }
   return no > 1
     ? 'item' + rowNo + '_specvalue' + blockNo + '_' + no
     : 'item' + rowNo + '_specvalue' + blockNo
@@ -42,7 +51,15 @@ export function specValueKey(rowNo, blockNo, valueNo) {
 /** 解析规格元素 key，非规格元素返回 null */
 export function parseSpecItemKey(key) {
   const text = key == null ? '' : String(key)
-  let matched = SPEC_NAME_RE.exec(text)
+  let matched = /^item(\d+)_specname_c(.+)_b(\d+?)(?:_n(.*))?$/.exec(text)
+  if (matched) {
+    return { kind: 'name', rowNo: Number(matched[1]), categoryId: decodeURIComponent(matched[2]), blockNo: Number(matched[3]), blockIdentity: matched[4] ? decodeURIComponent(matched[4]) : null, valueNo: 0 }
+  }
+  matched = /^item(\d+)_specvalue_c(.+)_b(\d+?)(?:_n(.*?))?_v(\d+)(?:_i(.*))?$/.exec(text)
+  if (matched) {
+    return { kind: 'value', rowNo: Number(matched[1]), categoryId: decodeURIComponent(matched[2]), blockNo: Number(matched[3]), blockIdentity: matched[4] ? decodeURIComponent(matched[4]) : null, valueNo: Number(matched[5]), valueIdentity: matched[6] ? decodeURIComponent(matched[6]) : null }
+  }
+  matched = SPEC_NAME_RE.exec(text)
   if (matched) {
     return {
       kind: 'name',
@@ -124,8 +141,14 @@ export function normalizeSpecBlocks(blocks) {
     const name = block && block.name != null ? String(block.name).replace(/：$/, '').trim() : ''
     const values = (block && Array.isArray(block.values) ? block.values : [])
       .map(function(value) { return value == null ? '' : String(value).trim() })
-      .filter(function(value) { return value !== '' })
-    return { name: name, values: values }
+    const normalized = { name: name, values: values.filter(function(value) { return value !== '' }) }
+    if (block && block.categoryId != null) normalized.categoryId = String(block.categoryId)
+    if (block && block.categoryName) normalized.categoryName = String(block.categoryName)
+    if (block && Array.isArray(block.categoryMemberIds)) normalized.categoryMemberIds = block.categoryMemberIds.map(function(id) { return String(id) })
+    if (block && block.blockNo != null) normalized.blockNo = Number(block.blockNo)
+    if (block && block.sourceName) normalized.sourceName = String(block.sourceName)
+    if (block && Array.isArray(block.sourceValues)) normalized.sourceValues = block.sourceValues.map(function(value) { return String(value == null ? '' : value) })
+    return normalized
   }).filter(function(block) { return block.name !== '' || block.values.length > 0 })
 }
 
@@ -199,16 +222,90 @@ export function parseGoodsSpecBlocks(row, options) {
 }
 
 /**
+ * SKU 规格 JSON（sku.spec_json）→ 规格块
+ *
+ * 两种形态都支持：
+ * 1. [{ name: '花色', value: '浅灰' }, { name: '尺寸', value: '200x230cm' }]
+ * 2. [{ attributeName: '花色', childNames: ['颜色'], subValues: { 颜色: '浅灰' } }]
+ */
+function specBlocksFromJson(source) {
+  let list = source
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list)
+    } catch (e) {
+      return []
+    }
+  }
+  if (!Array.isArray(list)) return []
+  const blocks = []
+  list.forEach(function(item) {
+    if (!item || typeof item !== 'object') return
+    const childNames = Array.isArray(item.childNames) ? item.childNames : []
+    const subValues = item.subValues || {}
+    if (childNames.length) {
+      childNames.forEach(function(child) {
+        const name = String(child == null ? '' : child).trim()
+        const value = subValues[child]
+        const text = value == null ? '' : String(value).trim()
+        if (name && text) blocks.push({ name: name, values: [text] })
+      })
+      return
+    }
+    const name = String(item.name || item.attributeName || '').trim()
+    const value = item.value != null ? item.value : item.valueText
+    const text = value == null ? '' : String(value).trim()
+    if (!name || !text) return
+    blocks.push({
+      name: name,
+      values: text.split(VALUE_SEPARATOR_RE).map(function(part) { return part.trim() }).filter(function(part) { return part !== '' })
+    })
+  })
+  return blocks
+}
+
+/**
+ * 商品行 → 规格块（打印取值专用）
+ *
+ * 优先使用 SKU 的结构化规格数据（sku.spec_json / specValues），
+ * 没有时才退回规格显示文本，避免「行里只有文本、文本为空就取不到规格」。
+ */
+export function specBlocksFromRow(row) {
+  if (!row) return []
+  const raw = row.raw || null
+  // 商品流里 raw 有时还嵌一层原始行数据
+  const holder = (raw && raw.raw) || raw
+  const sources = [
+    row.specJson,
+    holder && holder.specJson,
+    holder && holder.spec_json,
+    holder && holder.specValues
+  ]
+  for (let i = 0; i < sources.length; i++) {
+    const blocks = specBlocksFromJson(sources[i])
+    if (blocks.length) return blocks
+  }
+  return parseGoodsSpecBlocks(row)
+}
+
+/**
  * 去掉规格块内的尺寸描述（编辑态回填规则）
  *
  * 模板只保存属性名 / 属性值名，尺寸属于单据业务描述，不进入编辑数据。
  */
 export function stripSpecBlockSizes(blocks) {
   return normalizeSpecBlocks(blocks).map(function(block) {
-    return {
+    const item = {
       name: stripSpecSize(block.name),
       values: block.values.map(stripSpecSize).filter(function(value) { return value !== '' })
     }
+    if (block.categoryId != null) item.categoryId = block.categoryId
+    if (block.categoryName) item.categoryName = block.categoryName
+    if (block.categoryMemberIds) item.categoryMemberIds = block.categoryMemberIds.slice()
+    if (block.blockNo != null) item.blockNo = block.blockNo
+    if (block.sourceName) item.sourceName = block.sourceName
+    if (block.sourceValues) item.sourceValues = block.sourceValues.slice()
+    return item
   }).filter(function(block) { return block.name !== '' || block.values.length > 0 })
 }
 
@@ -250,13 +347,12 @@ export function buildSpecBlocksFromCategory(specConfig) {
 /**
  * 模板编辑页数据回填规则（编辑态专用，打印不调用）
  *
- * 1. 规格块的属性名和规格值一律以商品品类设置为准（模板只保存布局、块的取舍和关闭项）；
- * 2. 模板已保存的块名与品类能对上：沿用模板选中的块，规格值刷新为品类最新值；
- * 3. 对不上（旧模板/品类调整）：回退为品类设置里的全部规格块；
- * 4. 品类也没有：才使用模板已保存的块（只保留属性名，去掉尺寸）。
+ * 1. 已保存且非通用占位的 specBlocks 是模板结构，保留用户编辑过的规格名/子属性名；
+ * 2. 无已保存规格块，或只有“规格值1/规格值”一类旧占位时，以商品品类 specConfig 初始化；
+ * 3. 品类无配置时保留有效的模板规格块；不从单据行的实际规格值推导编辑属性；
+ * 4. 尺寸等商品业务值不进入编辑模板。
  *
- * 编辑页只编辑模板结构，不回填单据业务值，也不从单据明细推导规格块；
- * 打印时仍按真实单据值展开。
+ * 编辑页只编辑模板结构，不回填单据业务值；打印时仍按真实单据值展开。
  *
  * @param {Array} savedBlocks 模板保存的规格块
  * @param {Array} [categoryBlocks] 商品品类设置的规格块
@@ -265,9 +361,13 @@ export function buildSpecBlocksFromCategory(specConfig) {
 export function resolveEditSpecBlocks(savedBlocks, categoryBlocks) {
   const saved = stripSpecBlockSizes(savedBlocks)
   const category = normalizeSpecBlocks(categoryBlocks)
-  if (!category.length) return saved
-  if (!saved.length) return category
-  const names = saved.map(function(b) { return b.name })
-  const matched = category.filter(function(b) { return names.indexOf(b.name) > -1 })
-  return matched.length ? matched : category
+  const isGeneric = function(text) {
+    return /^(?:规格(?:值)?\s*\d*|规格)$/i.test(String(text || '').trim())
+  }
+  const onlyGenericPlaceholders = saved.length > 0 && saved.every(function(block) {
+    return isGeneric(block.name) && block.values.every(isGeneric)
+  })
+  if (saved.length && !onlyGenericPlaceholders) return saved
+  if (category.length) return category
+  return saved
 }

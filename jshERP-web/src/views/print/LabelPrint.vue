@@ -74,7 +74,7 @@
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileGoodsFeed from '@/components/mobile/MobileGoodsFeed'
   import OcrRecognizeModal from '@/views/material/modules/OcrRecognizeModal'
-  import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+  import { LabelPrintModal } from '@/views/material/labelPrint'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
 
   /**

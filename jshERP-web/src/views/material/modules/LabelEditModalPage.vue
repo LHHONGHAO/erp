@@ -48,6 +48,7 @@
             record: opts.record || {},
             sku: opts.sku || {},
             template: opts.template || null,
+            editorData: opts.editorData || null,
             provider: opts.provider || '',
             businessType: opts.businessType || ''
           }))

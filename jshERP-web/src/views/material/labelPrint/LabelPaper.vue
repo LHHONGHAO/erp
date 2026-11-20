@@ -9,6 +9,21 @@
       :style="el.style"
     >{{ el.display }}</div>
 
+    <!-- 规格块：行布局由编辑器/预览共用算法算好后直接输出，屏幕与打印同一份样式 -->
+    <div
+      v-for="el in specElems"
+      :key="el.id"
+      class="lpp-spec"
+      :style="el.style"
+    >
+      <div
+        v-for="(line, li) in el.lines"
+        :key="li"
+        class="lpp-spec-line"
+        :style="{ height: el.lineHeightPx + 'px', lineHeight: el.lineHeightPx + 'px', textAlign: el.textAlign }"
+      >{{ line }}</div>
+    </div>
+
     <!-- 条码 / 二维码 -->
     <img
       v-for="el in codeElems"
@@ -38,8 +53,9 @@
    * 值由父组件通过 values / rows 传入（来自统一数据接口，可能是业务适配器数据）。
    * 条码与二维码按时实际尺寸生成图片，保证预览与打印尺寸一致。
    */
-  import { mmToPx } from '../utils/labelSchema'
-  import { renderCodeDataUrl, fitCodeSize } from '../utils/labelCode'
+  import { mmToPx } from './utils/labelSchema'
+  import { renderCodeDataUrl, fitCodeSize } from './utils/labelCode'
+  import { SPEC_BLOCK_PAD_X } from './utils/specBlockLayout'
 
   var DEFAULT_COLUMNS = [
     { field: 'name', label: '商品', flex: '1 1 auto' },
@@ -102,7 +118,7 @@
       textElems() {
         var self = this
         return this.elements.filter(function(el) {
-          return el.type !== 'barcode' && el.type !== 'qrcode' && el.type !== 'table'
+          return el.type !== 'barcode' && el.type !== 'qrcode' && el.type !== 'table' && el.type !== 'specblock'
         }).map(function(el) {
           var value = el.field ? self.textOf(self.values[el.field]) : self.textOf(el.text)
           var display = (el.label && el.field !== 'page_no') ? el.label + ': ' + value : value
@@ -121,6 +137,33 @@
             display: display,
             multiline: value.indexOf('\n') > -1,
             style: style
+          }
+        })
+      },
+      // 规格块：直接复用行布局结果（lines）输出，屏幕与打印样式一致
+      specElems() {
+        var self = this
+        return this.elements.filter(function(el) {
+          return el.type === 'specblock'
+        }).map(function(el) {
+          var fontSize = el.fontSize || 12
+          return {
+            id: el.id,
+            lines: Array.isArray(el.lines) ? el.lines : [],
+            textAlign: el.textAlign === 'center' || el.textAlign === 'right' ? el.textAlign : 'left',
+            lineHeightPx: el.lineHeightPx || Math.max(1, Math.round(fontSize * (el.lineHeight || 1.3))),
+            style: {
+              left: mmToPx(el.x || 0) + 'px',
+              top: mmToPx(el.y || 0) + 'px',
+              width: mmToPx(el.width || 0) + 'px',
+              height: mmToPx(el.height || 0) + 'px',
+              fontSize: fontSize + 'px',
+              fontWeight: el.fontWeight || 'normal',
+              letterSpacing: (el.letterSpacing || 0) + 'px',
+              lineHeight: String(el.lineHeight || 1.3),
+              padding: '0 ' + SPEC_BLOCK_PAD_X + 'px',
+              boxSizing: 'border-box'
+            }
           }
         })
       },
@@ -231,6 +274,16 @@
   .lpp-code {
     position: absolute;
     object-fit: fill;
+  }
+  /* 规格块：整块输出，行文本不换行、按对齐方式显示在块宽内 */
+  .lpp-spec {
+    position: absolute;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .lpp-spec-line {
+    white-space: pre;
+    overflow: hidden;
   }
   .lpp-table {
     position: absolute;

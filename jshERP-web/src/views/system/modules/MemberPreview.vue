@@ -20,7 +20,7 @@
 
 <script>
   import MobileModalPage from '@/components/mobile/MobileModalPage'
-  import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+  import { LabelPrintModal } from '@/views/material/labelPrint'
 
   export default {
     name: 'MemberPreview',

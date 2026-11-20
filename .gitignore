@@ -59,3 +59,6 @@ tools/local-print-agent/build/
 *.out
 *.err
 jshERP-web/dist-deploy.zip
+
+## 本地缓存（代理 npm cache）
+.npm-cache-codex/

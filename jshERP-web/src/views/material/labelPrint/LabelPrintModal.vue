@@ -32,7 +32,11 @@
               <span v-if="templateLoadError">{{ templateLoadError }}</span>
               <span v-else>可点击右上角编辑图标创建模板</span>
               <a
-                v-if="templateLoadError"
+                v-if="outdatedTemplate"
+                class="lmp-empty-link"
+                @click="deleteOutdatedTemplate">删除旧模板</a>
+              <a
+                v-else-if="templateLoadError"
                 class="lmp-empty-link"
                 @click="reloadRouteTemplate">重新加载</a>
               <a
@@ -801,16 +805,20 @@
 </template>
 
 <script>
-  import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
-  import { printLabel } from '@/views/material/utils/labelPrint'
-  import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from '@/views/material/utils/labelCode'
-  import { mmToPx } from '@/views/material/utils/labelSchema'
-  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH, editorStateToV2 } from '@/views/material/utils/labelTemplateV2'
-  import { fetchLabelTemplates, deleteLabelTemplate } from '@/views/material/utils/labelTemplateStore'
-  import { fetchDeliveryTemplate } from '@/views/bill/utils/deliveryNoteTemplateStore'
-  import { resolveTemplateData } from '@/views/material/utils/labelDataResolver'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/utils/goodsLabelLayout'
-  import LabelPaper from '@/views/material/modules/LabelPaper'
+  import { printLabel } from './utils/labelPrint'
+  import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from './utils/labelCode'
+  import { mmToPx } from './utils/labelSchema'
+  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH, editorStateToV2 } from './utils/labelTemplateV2'
+  import { fetchTemplateList, resolveTemplate, deleteTemplate } from './utils/labelTemplateFlow'
+  import { resolveTemplateData } from './utils/labelDataResolver'
+  import { buildTemplateEditContext } from './utils/templateEditDataModel'
+  import { ADDRESS_FORM_TITLE, buildAddressAttrs } from './utils/addressFormFields'
+  import { buildFormFieldAttrs } from './config/formFields'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems, buildSpecValuesFromRows } from './utils/goodsLabelLayout'
+  import { LABEL_CATEGORY_KEY, LABEL_SPEC_KEY, flattenSpecMapping, resolveSpecTextFromDefs } from './utils/categorySpec'
+  import { parseSpecItemKey, specNameKey, isSpecItemKey, buildSpecBlocksFromCategory, specBlocksFromRow } from './utils/goodsSpecBlocks'
+  import { buildSpecBlockItems, resolveSpecBlockLines, SPEC_BLOCK_PAD_X, SPEC_BLOCK_GAP } from './utils/specBlockLayout'
+  import LabelPaper from './LabelPaper'
   import LabelEditModalPage from '@/views/material/modules/LabelEditModalPage'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { getAction, postAction } from '@/api/manage'
@@ -847,6 +855,8 @@
         template: null,
         // 加载到旧结构模板：不再兼容，空状态提示删除后重建
         outdatedTemplate: false,
+        // 旧模板描述（platformConfig 单 key 模板删除时需要 key）
+        outdatedTemplateInfo: null,
         // 路由模板加载失败原因：区分「加载失败」与「确实没有模板」
         templateLoadError: '',
         // 更多模板：可切换的模板列表与当前模板 id
@@ -1074,11 +1084,12 @@
         var self = this
         return this.pageIndexes.map(function(p) {
           var layout = self.layoutForPage(p)
+          var values = self.valuesForPage(p, layout)
           return {
             index: p,
             layout: layout,
-            schema: self.schemaForLayout(layout),
-            values: self.valuesForPage(p, layout),
+            schema: self.schemaForLayout(layout, values),
+            values: values,
             rows: self.rowsForPage(p),
             texts: layout.texts || {}
           }
@@ -1275,12 +1286,19 @@
       // 内容超出标签底部的像素数：只按标签边界裁切并提示，不缩小字号
       overflowPixels() {
         var styles = this.labelLayout.styles || {}
+        // 单页多商品：模板的名称/类别/规格由逐商品行组替代，下方元素随行组顺移
+        var groups = this.multiGoodsGroups(this.rowsForPage(this.previewPage))
+        var plan = groups ? this.multiGoodsGroupPlan(this.labelLayout, groups) : null
         var bottom = 0
         Object.keys(styles).forEach(function(key) {
           var s = styles[key]
           if (!s) return
-          bottom = Math.max(bottom, (s.y || 0) + (s.height || 0))
+          if (plan && plan.keys.indexOf(key) > -1) return
+          var y = s.y || 0
+          if (plan && plan.belowShift > 0 && y >= plan.belowFrom - 0.5) y += plan.belowShift
+          bottom = Math.max(bottom, y + (s.height || 0))
         })
+        if (plan) bottom = Math.max(bottom, plan.belowFrom + plan.belowShift)
         var over = Math.ceil(bottom - this.labelHeight)
         return over > 1 ? over : 0
       },
@@ -1315,7 +1333,7 @@
       },
       // 预览 schema：套用折行后的实际坐标与高度
       previewSchema() {
-        return this.schemaForLayout(this.overflowLayout)
+        return this.schemaForLayout(this.overflowLayout, this.previewValues)
       },
       // 省略号模式预览文本：直接用裁切后的文本
       previewTexts() {
@@ -1467,6 +1485,7 @@
         // 切换业务类型时先清空上一套模板，避免模板加载失败或为空时残留上次的标签内容
         this.template = null
         this.outdatedTemplate = false
+        this.outdatedTemplateInfo = null
         this.templateLoadError = ''
         this.templateChoices = []
         this.currentTemplateId = ''
@@ -2167,9 +2186,9 @@
       loadTemplateChoices() {
         var self = this
         if (this.type !== 'label') return Promise.resolve([])
-        return fetchLabelTemplates().then(function(list) {
+        return fetchTemplateList().then(function(list) {
           var choices = (list || []).filter(function(t) {
-            return t && !t.outdated && t.selectedAttrs && t.selectedAttrs.length
+            return t && !t.outdated
           })
           self.templateChoices = choices
           var exists = choices.some(function(t) {
@@ -2224,6 +2243,7 @@
         var self = this
         this.templateLoadError = ''
         this.outdatedTemplate = false
+        this.outdatedTemplateInfo = null
         // 商品标签：按当前商品/品类重新匹配模板
         if (this.type === 'label' && this.record && this.record.id) {
           this.loadTemplate().then(function(tpl) {
@@ -2252,7 +2272,7 @@
         var self = this
         this.templateLoading = true
         return Promise.all([
-          fetchLabelTemplates(),
+          fetchTemplateList(),
           // 类目树只用于把商品的末级类目回溯到上级（模板按一级类目绑定）
           queryMaterialCategoryTreeList({ id: '' }).catch(function() { return [] })
         ]).then(function(results) {
@@ -2281,8 +2301,9 @@
             self.outdatedTemplate = true
             self.confirmDeleteOutdated(outdated)
           }
-          self.applyTemplate(tpl)
-          return tpl
+          var norm = tpl ? self.normalizeTemplate(tpl) : null
+          self.applyTemplate(norm)
+          return norm
         }).catch(function(err) {
           self.templateLoading = false
           self.templateLoadError = (err && (err.message || err.msg)) || '模板读取失败'
@@ -2322,7 +2343,7 @@
           okText: '删除',
           cancelText: '取消',
           onOk: function() {
-            var tasks = list.map(function(t) { return deleteLabelTemplate(t) })
+            var tasks = list.map(function(t) { return deleteTemplate(null, t) })
             return Promise.all(tasks).then(function() {
               self.$message.success('旧模板已删除')
               self.outdatedTemplate = false
@@ -2334,96 +2355,83 @@
           }
         })
       },
-      // 路由页：按类型从统一模板存储读取模板（label 支持按 templateId/name 定位）
+      // platformConfig 单 key 旧模板：确认后删除并重新加载预览
+      deleteOutdatedTemplate() {
+        var self = this
+        var info = this.outdatedTemplateInfo
+        if (!info) return
+        this.$confirm({
+          title: '有旧模板',
+          content: '模板「' + (info.name || '该模板') + '」为旧结构，已不支持，是否删除？',
+          okText: '删除',
+          cancelText: '取消',
+          onOk: function() {
+            return Promise.resolve(deleteTemplate(null, info)).then(function() {
+              self.$message.success('旧模板已删除')
+              // 删除后回到空状态，重新进入编辑即可新建模板
+              self.template = null
+              self.outdatedTemplate = false
+              self.outdatedTemplateInfo = null
+              self.templateLoadError = ''
+            }).catch(function() {
+              self.$message.error('删除失败，请稍后重试')
+            })
+          }
+        })
+      },
+      // 路由页：按类型从统一模板流程读取（label 支持按 templateId/name 定位）
       // 会员标签 / 地址打印 / 小票各自独立的 platformConfig key，互不复用
       loadRouteTemplate(q) {
+        var self = this
         if (this.type === 'delivery') {
-          return fetchDeliveryTemplate().then(function(tpl) {
-            return tpl || null
-          }).catch(function() { return null })
+          return resolveTemplate({ storage: 'deliveryTemplate' }).then(function(res) {
+            return res.template || null
+          })
         }
         var configs = {
-          member: { key: 'member_layout', name: '会员标签模板', width: 320, height: 240, businessType: 'member.layout' },
-          address: { key: 'address_layout', name: '地址打印模板', width: 320, height: 240, businessType: 'address.layout' },
-          receipt: { key: 'receipt_layout', name: '小票模板', width: 380, height: 600, businessType: 'receipt.layout' }
+          member: { key: 'member_layout', name: '会员标签模板' },
+          address: { key: 'address_layout', name: '地址打印模板' },
+          receipt: { key: 'receipt_layout', name: '小票模板' }
         }
-        var self = this
         var cfgInfo = configs[this.type]
         if (cfgInfo) {
-          var cfgKey = cfgInfo.key
-          return getAction('/platformConfig/getUiConfig', { key: cfgKey, _t: Date.now() }).then(function(res) {
-            if (!res || res.code !== 200) {
-              self.templateLoadError = '接口返回异常'
-              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, res && res.code)
-              return null
+          return resolveTemplate({
+            storage: 'platformConfig',
+            platformConfigKey: cfgInfo.key,
+            title: cfgInfo.name.replace('模板', '')
+          }, { useCache: true }).then(function(res) {
+            if (res.error) {
+              self.templateLoadError = res.error
+              console.warn('[LabelPrintModal] 模板加载失败', cfgInfo.key, res.error)
             }
-            var rawData = res.data
-            // 服务器尚未保存过模板：走正常空状态，提供创建入口
-            if (rawData == null || rawData === '') { self._diag = 'data-empty'; return null }
-            var cfg = parseTemplateRaw(rawData)
-            if (!cfg) {
-              self.templateLoadError = '模板数据为空或格式无法解析'
-              console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
-              return null
+            if (res.outdated && res.outdated.length) {
+              self.outdatedTemplate = true
+              self.outdatedTemplateInfo = res.outdated[0]
             }
-            // 旧模板不再兼容：标记后由空状态提示删除重建
-            if (!isLabelTemplateV2(cfg)) {
-              self._diag = 'not-v2:sv=' + cfg.schemaVersion + ',els=' + (cfg.layout && cfg.layout.elements ? cfg.layout.elements.length : 'none')
+            return res.template || null
+          })
+        }
+        return resolveTemplate({ storage: 'localTemplates' }, { templateId: q && q.templateId }).then(function(res) {
+          var tpl = res.template
+          if (!tpl && q && q.name && Array.isArray(res.list)) {
+            tpl = res.list.find(function(t) { return t.name === q.name }) || null
+            if (tpl && tpl.outdated) {
               self.outdatedTemplate = true
               return null
             }
-            // 成功读取后写本地缓存，供弱网/离线时兜底
-            try {
-              localStorage.setItem('jsh.uiConfig.' + cfgKey, typeof rawData === 'string' ? rawData : JSON.stringify(cfg))
-            } catch (e) { /* 忽略 */ }
-            return cfg
-          }).catch(function(err) {
-            self.templateLoadError = (err && (err.message || err.msg)) || '网络异常'
-            console.warn('[LabelPrintModal] 模板加载失败', cfgKey, self.templateLoadError)
-            // 请求失败时回退本地缓存（编辑保存时写入），保证离线仍可打印
-            try {
-              var cached = parseTemplateRaw(localStorage.getItem('jsh.uiConfig.' + cfgKey))
-              if (cached && isLabelTemplateV2(cached)) return cached
-            } catch (e2) { /* 忽略 */ }
-            return null
-          })
-        }
-        return fetchLabelTemplates().then(function(list) {
-          var id = q && q.templateId
-          var tpl = null
-          if (id) {
-            tpl = (list || []).find(function(t) {
-              return String(t.serverId) === String(id) || String(t.id) === String(id)
-            })
           }
-          if (!tpl && q && q.name) {
-            tpl = (list || []).find(function(t) { return t.name === q.name })
-          }
-          if (tpl && tpl.outdated) {
-            self.outdatedTemplate = true
-            return null
-          }
+          if (res.outdated && res.outdated.length) self.outdatedTemplate = true
           return tpl || null
         }).catch(function() { return null })
       },
-      // 模板结构标准化：只接受 v2 模板（或模板存储已还原的 v2 编辑器结构）
+      // 模板结构标准化：只接受 v2（唯一存储格式）
       // 统一转换成本页预览使用的编辑器结构，保证打印预览与编辑器显示一致
       normalizeTemplate(raw) {
         var names = { label: '标签模板', delivery: '发货单模板', receipt: '小票模板', member: '会员标签模板', address: '地址打印模板' }
         var src = parseTemplateRaw(raw)
-        if (!src || src.outdated) return null
-        var schema
-        var base
-        if (isLabelTemplateV2(src)) {
-          base = v2ToEditorState(src)
-          schema = v2ToSchemaView(src)
-        } else if (Array.isArray(src.selectedAttrs)) {
-          // 模板存储返回的编辑器结构（已由 v2 还原）
-          base = src
-          schema = src.schema || null
-        } else {
-          return null
-        }
+        if (!src || src.outdated || !isLabelTemplateV2(src)) return null
+        var base = v2ToEditorState(src)
+        var schema = v2ToSchemaView(src)
         var selectedAttrs = Array.isArray(base && base.selectedAttrs) ? base.selectedAttrs : []
         selectedAttrs = selectedAttrs
           .filter(function(key) { return key != null && key !== '' })
@@ -2467,6 +2475,12 @@
           hiddenItemKeys: Array.isArray(src.hiddenItemKeys) ? src.hiddenItemKeys : (Array.isArray(base.hiddenItemKeys) ? base.hiddenItemKeys : []),
           // 规格块结构（属性名 + 属性值名），回传给编辑页按模板恢复
           specBlocks: Array.isArray(base.specBlocks) ? base.specBlocks : [],
+          // 规格数据映射表（唯一权威，按类别分组），回传给编辑页恢复选择
+          specMapping: Array.isArray(base.specMapping) ? base.specMapping : [],
+          // 模板已有映射表时预览/打印只加载已选规格；无映射表沿用规格块（旧路径）
+          specMappingReady: base.specMappingReady === true,
+          // 编辑面板字段结构单独保存；预览/打印渲染仍只读 layout.elements。
+          editorData: base.editorData || (src && src.editorData) || null,
           schema: schema
         }
       },
@@ -2502,6 +2516,105 @@
         this.hiddenReceiptKeys = Array.isArray(s.hiddenItemKeys) ? s.hiddenItemKeys : []
         // 小票：商品明细按单品拆成独立元素（预览与打印同一套布局）
         this.applyReceiptItemElements()
+        // 地址打印：历史模板缺失品类规格结构时按商品行类目补回
+        this.ensureSpecBlocks()
+      },
+      /**
+       * 通用兼容：类别/规格归一为 label_category / label_spec 后，模板 specBlocks 可能为空，
+       * 打印时按商品行所属一级类目补回规格结构，保证「规格」按映射表取值。
+       */
+      ensureSpecBlocks() {
+        var self = this
+        if (['label', 'address', 'delivery', 'receipt'].indexOf(this.type) === -1) return
+        var tpl = this.template
+        // 已建立数据映射表的模板（即使映射为空）以模板选择为准，不再自动补回规格
+        if (!tpl || tpl.specMappingReady === true) return
+        var ids = []
+        ;(this.detailRows || []).forEach(function(row) {
+          if (!row) return
+          var id = row.categoryId != null
+            ? row.categoryId
+            : (row.materialCategoryId != null
+              ? row.materialCategoryId
+              : ((row.raw && row.raw.categoryId != null) ? row.raw.categoryId : (row.sku && row.sku.categoryId)))
+          if (id != null && id !== '' && ids.map(String).indexOf(String(id)) === -1) ids.push(id)
+        })
+        if (!ids.length) return
+        var blocks = Array.isArray(tpl.specBlocks) ? tpl.specBlocks : []
+        // 行类目已被规格块覆盖（一级类目或其成员）时不需要补回；
+        // 模板规格块缺失或只覆盖部分商品类目时，按行类目重建，避免多商品取不到规格
+        var covered = function(id) {
+          return blocks.some(function(block) {
+            if (!block || block.categoryId == null) return false
+            if (String(block.categoryId) === String(id)) return true
+            return Array.isArray(block.categoryMemberIds) &&
+              block.categoryMemberIds.map(String).indexOf(String(id)) > -1
+          })
+        }
+        var missing = ids.filter(function(id) { return !covered(id) })
+        if (!missing.length) return
+        queryMaterialCategoryTreeList({ id: '' }).then(function(tree) {
+          var next = blocks.slice()
+          ids.forEach(function(id) {
+            var chain = self.collectCategoryChain(tree, id)
+            var rootId = chain.length ? chain[chain.length - 1] : ''
+            if (!rootId) return
+            var node = self.categoryNode(tree, rootId)
+            var name = self.categoryNodeName(tree, rootId)
+            if (!name) return
+            // 按类目保存的规格配置重建该类目的规格块（保留规格名，值由商品行提供）
+            var specs = buildSpecBlocksFromCategory(node && node.specConfig)
+            if (!specs.length) specs = [{ name: '', values: [] }]
+            // 先移除该类目的旧规格块，再按配置顺序写入，避免旧结构缺 memberIds 导致匹配失败
+            next = next.filter(function(block) {
+              return String(block.categoryId) !== String(rootId)
+            })
+            specs.forEach(function(spec, index) {
+              next.push({
+                categoryId: rootId,
+                categoryName: name,
+                categoryMemberIds: chain,
+                blockNo: index + 1,
+                name: spec.name,
+                values: spec.values,
+                sourceValues: spec.values
+              })
+            })
+          })
+          if (next.length) self.$set(self.template, 'specBlocks', next)
+        }).catch(function() { /* 类目读取失败保持原样 */ })
+      },
+      /** 类目树节点（用于读取 specConfig） */
+      categoryNode(nodes, id) {
+        var target = String(id)
+        var walk = function(list) {
+          if (!Array.isArray(list)) return null
+          for (var i = 0; i < list.length; i++) {
+            var node = list[i] || {}
+            var nodeId = String(node.value != null ? node.value : node.id)
+            if (nodeId === target) return node
+            var found = walk(node.children)
+            if (found) return found
+          }
+          return null
+        }
+        return walk(nodes)
+      },
+      /** 类目树节点名称 */
+      categoryNodeName(nodes, id) {
+        var target = String(id)
+        var walk = function(list) {
+          if (!Array.isArray(list)) return ''
+          for (var i = 0; i < list.length; i++) {
+            var node = list[i] || {}
+            var nodeId = String(node.value != null ? node.value : node.id)
+            if (nodeId === target) return node.name || node.label || node.title || ''
+            var found = walk(node.children)
+            if (found) return found
+          }
+          return ''
+        }
+        return walk(nodes)
       },
       /**
        * 小票预览/打印：把明细行拆成「每件商品 × 每个字段」的独立元素
@@ -2517,11 +2630,17 @@
           var style = self.attrStyles[key]
           if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
         })
+        var hidden = (this.hiddenReceiptKeys && this.hiddenReceiptKeys.length)
+          ? this.hiddenReceiptKeys
+          : ((this.template && this.template.hiddenItemKeys) || [])
         var next = replaceReceiptGoodsWithItems({
           rows: this.detailRows,
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
+          specBlocks: this.template && this.template.specBlocks,
+          compactHidden: true,
+          hiddenKeys: hidden,
           paperWidth: this.labelWidth,
           fallbackY: fallbackY ? fallbackY + 8 : 100
         })
@@ -2530,9 +2649,6 @@
         this.selectedAttrs = next.selectedAttrs
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
-        var hidden = (this.hiddenReceiptKeys && this.hiddenReceiptKeys.length)
-          ? this.hiddenReceiptKeys
-          : ((this.template && this.template.hiddenItemKeys) || [])
         if (hidden.length) {
           this.selectedAttrs = this.selectedAttrs.filter(function(key) {
             return !isReceiptItemHidden(hidden, key)
@@ -2627,7 +2743,14 @@
         resolveTemplateData({
           provider: provider,
           documentId: this.record.id,
-          sku: this.sku
+          subId: this.sku && (this.sku.id || this.sku.skuId),
+          businessType: this.type,
+          businessMode: this.type,
+          record: this.record,
+          sku: this.sku,
+          rows: (this.detailRows && this.detailRows.length)
+            ? this.detailRows
+            : ((this.record && this.record.goodsRows) || [])
         }).then(function(result) {
           if (!self.template || self.template.id !== tpl.id) return
           var attrs = (result.attrs || []).map(function(attr) {
@@ -2647,24 +2770,255 @@
               self.$set(self.attrLabels, attr.key, attr.label)
             }
           })
+          // 地址打印：历史模板缺失品类规格结构时按商品行类目补回
+          self.ensureSpecBlocks()
         })
       },
       // 用指定商品行计算布局（不依赖当前预览页，供分页与打印复用）
       layoutWithRows(rows, values) {
-        return resolveLabelLayout({
+        var layoutValues = values || this.attrValues
+        var groups = this.multiGoodsGroups(rows)
+        if (groups) {
+          // 单页多商品：名称/类别/规格改由逐商品行组输出，模板原元素留空不参与排版
+          layoutValues = Object.assign({}, layoutValues, { name: '' })
+          layoutValues[LABEL_CATEGORY_KEY] = ''
+          layoutValues[LABEL_SPEC_KEY] = ''
+        } else if (this.type === 'address' && this.selectedAttrs.indexOf(GOODS_KEY) === -1 &&
+          Array.isArray(rows) && rows.length) {
+          // 分页打印（每页一行商品）时，名称必须取本页商品，不能沿用表单里第一个商品
+          var pageNames = rows.map(function(row) {
+            return row && row.name != null ? String(row.name).trim() : ''
+          }).filter(function(name) { return !!name })
+          if (pageNames.length) {
+            layoutValues = Object.assign({}, layoutValues, { name: pageNames.join('\n') })
+          }
+        }
+        // 单页多商品行组依赖完整行（raw.categoryId/specJson）匹配映射表，
+        // resolveLabelLayout 返回的 goodsRows 已被 normalizeGoodsRows 精简为
+        // {name,spec1..3}，会丢失类别/规格匹配依据，这里用原始行覆盖
+        var layout = resolveLabelLayout({
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
-          values: values || this.attrValues,
+          values: layoutValues,
           labels: this.attrLabels,
           goodsRows: rows,
+          // 规格块按位置取值：模板规格块 N 取商品规格块 N 的值
+          specBlocks: groups ? [] : (this.template && this.template.specBlocks),
+          // 模板已建立数据映射表：只有选中的规格值才加载业务数据
+          specMappingReady: !!(this.template && this.template.specMappingReady),
           paperWidth: this.labelWidth,
           goodsLabel: this.attrLabels[GOODS_KEY] || '',
           goodsFields: this.goodsFields,
           mode: this.overflowMode
         })
+        if (Array.isArray(rows) && rows.length) layout.goodsRows = rows
+        return layout
+      },
+      // 地址打印单页多商品：每个商品输出「名称 / 类别 / 规格」一组，
+      // 全部数据仍打印在同一张标签上，但各商品的值一一对应不再上下错位
+      multiGoodsGroups(rows) {
+        if (this.type !== 'address') return null
+        if (this.goodsPageMode !== 'none') return null
+        if (this.selectedAttrs.indexOf(GOODS_KEY) > -1) return null
+        if (this.selectedAttrs.some(isGoodsTableKey)) return null
+        var list = (Array.isArray(rows) ? rows : []).filter(hasGoodsValue)
+        if (list.length < 2) return null
+        var self = this
+        var template = this.template || {}
+        // 模板可能只持久化了映射表，规格块按映射表还原
+        var blocks = Array.isArray(template.specBlocks) && template.specBlocks.length
+          ? template.specBlocks
+          : flattenSpecMapping(template.specMapping)
+        var categoryGroups = this.groupSpecDefs(blocks)
+        var groups = []
+        list.forEach(function(row) {
+          var name = row && row.name != null ? String(row.name).trim() : ''
+          // 商品行规格以 SKU 的 spec_json 为准（没有时才退回显示文本）
+          var rowBlocks = specBlocksFromRow(row)
+          var pairs = rowBlocks.map(function(block) {
+            return {
+              name: block.name,
+              value: (block.values || []).join('/')
+            }
+          })
+          var matched = self.matchGoodsSpecGroup(pairs, row, categoryGroups)
+          var category = matched ? (matched.categoryName || '') : ''
+          // 只取映射表里勾选的规格值，未勾选的不输出
+          var spec = matched ? resolveSpecTextFromDefs(matched.specs, rowBlocks) : ''
+          // 模板没有映射表时才退回商品本身的规格显示值；
+          // 有映射表但类别不匹配时宁可不打，也不读错规格
+          if (!spec && !categoryGroups.length) {
+            spec = pairs.map(function(pair) { return pair.value }).join('/')
+              || (row && row.spec ? String(row.spec).trim() : '')
+          }
+          if (!name && !category && !spec) return
+          groups.push({ name: name, category: category, spec: spec })
+        })
+        return groups.length > 1 ? groups : null
+      },
+      // 规格块按类别分组：每组记录类别名、成员类别与勾选的规格名
+      groupSpecDefs(blocks) {
+        var out = []
+        var map = {}
+        ;(blocks || []).forEach(function(def) {
+          if (!def) return
+          var key = String(def.categoryId || def.categoryName || def.name || '')
+          if (!map[key]) {
+            map[key] = {
+              categoryId: def.categoryId || '',
+              categoryName: def.categoryName || '',
+              memberIds: def.categoryMemberIds || [],
+              specs: []
+            }
+            out.push(map[key])
+          }
+          // 保留勾选值 / 品类配置值，取值时才能定位该规格下的具体子规格
+          if (def.name) map[key].specs.push(def)
+        })
+        return out
+      },
+      specNameKey(name) {
+        return String(name == null ? '' : name).replace(/\s+/g, '').toLowerCase()
+      },
+      sameSpecName(a, b) {
+        return this.specNameKey(a) === this.specNameKey(b)
+      },
+      // 商品行的规格键值对：优先 raw.specJson，其次「名称:值;名称:值」文本
+      // 商品行的规格键值对：优先 SKU 的 spec_json（规格明细），其次「名称:值;名称:值」文本
+      parseGoodsSpecPairs(row) {
+        var pairs = []
+        specBlocksFromRow(row).forEach(function(block) {
+          if (!block) return
+          var name = block.name == null ? '' : String(block.name).trim()
+          var value = (block.values || []).map(function(item) { return String(item == null ? '' : item).trim() }).filter(Boolean).join('/')
+          if (name && value) pairs.push({ name: name, value: value })
+        })
+        return pairs
+      },
+      // 映射表优先：先按商品类别锁定映射表里的类别组，只读该组勾选的规格；
+      // 类别不在映射表内就不输出规格，避免读错数据
+      matchGoodsSpecGroup(pairs, row, categoryGroups) {
+        var self = this
+        var rowCategoryId = (row && ((row.raw && row.raw.categoryId) || row.categoryId)) || ''
+        if (rowCategoryId) {
+          var hit = null
+          ;(categoryGroups || []).forEach(function(group) {
+            if (hit) return
+            var memberIds = (group.memberIds || []).map(function(id) { return String(id) })
+            if (String(group.categoryId) === String(rowCategoryId) ||
+              memberIds.indexOf(String(rowCategoryId)) > -1) hit = group
+          })
+          return hit
+        }
+        // 没有类别信息时，只有唯一一个类别组能覆盖商品全部规格名才使用
+        var candidates = (categoryGroups || []).filter(function(group) {
+          var slots = group.specs || []
+          if (!slots.length) return false
+          return slots.every(function(slot) {
+            return pairs.some(function(pair) { return self.sameSpecName(pair.name, slot.name) })
+          })
+        })
+        return candidates.length === 1 ? candidates[0] : null
+      },
+      // 一组商品的行组排版计划：沿用模板中「商品名称 / 类别 / 规格」元素的坐标与样式，
+      // 下一组在上组下方顺移；位于行组下方的其它元素（页码等）顺移到最后一组下方
+      multiGoodsGroupPlan(layout, groups) {
+        var self = this
+        var styles = (layout && layout.styles) || {}
+        var styleOf = function(key) { return styles[key] || self.attrStyles[key] || {} }
+        var hidden = (self.template && self.template.hiddenItemKeys) || []
+        var keys = ['name', LABEL_CATEGORY_KEY, LABEL_SPEC_KEY].filter(function(key) {
+          if (hidden.indexOf(key) > -1) return false
+          return !!(styles[key] || self.attrStyles[key])
+        })
+        var members = keys.map(function(key) {
+          var style = styleOf(key)
+          var fontSize = style.fontSize || 12
+          var lineHeight = style.lineHeight || 1.2
+          return {
+            key: key,
+            x: style.x || 0,
+            y: style.y || 0,
+            width: style.width || 0,
+            height: style.height || 0,
+            fontSize: fontSize,
+            fontWeight: style.fontWeight || 'normal',
+            letterSpacing: style.letterSpacing || 0,
+            lineHeight: lineHeight,
+            lineHeightPx: fontSize * lineHeight
+          }
+        })
+        if (!members.length) return null
+        var baseY = Math.min.apply(null, members.map(function(m) { return m.y }))
+        members.forEach(function(m) { m.offsetY = m.y - baseY })
+        var groupHeight = members.reduce(function(max, m) {
+          var h = m.height || m.lineHeightPx
+          return Math.max(max, m.offsetY + h)
+        }, 0)
+        var belowFrom = baseY + groupHeight
+        // 组与组之间的间距：优先沿用模板里组内元素的间距（如名称到规格），
+        // 只有一个元素时才取行组下方元素与行组底部的距离
+        var gap = 0
+        if (members.length > 1) {
+          gap = members[1].offsetY
+        } else {
+          Object.keys(styles).forEach(function(key) {
+            if (keys.indexOf(key) > -1) return
+            var style = styles[key]
+            if (!style) return
+            var y = style.y || 0
+            if (y < belowFrom - 0.5) return
+            var d = y - belowFrom
+            if (!gap || d < gap) gap = d
+          })
+        }
+        var stride = groupHeight + gap
+        return {
+          baseY: baseY,
+          groupHeight: groupHeight,
+          stride: stride,
+          belowFrom: belowFrom,
+          belowShift: (groups.length - 1) * stride,
+          members: members,
+          keys: keys
+        }
+      },
+      multiGoodsGroupText(group, key) {
+        if (!group) return ''
+        if (key === 'name') return group.name || ''
+        if (key === LABEL_CATEGORY_KEY) return group.category || ''
+        if (key === LABEL_SPEC_KEY) return group.spec || ''
+        return ''
+      },
+      // 行组 → schema 文本元素（毫米坐标，预览与打印同一份内容）
+      multiGoodsSchemaElements(groups, plan) {
+        var self = this
+        var elems = []
+        groups.forEach(function(group, gi) {
+          plan.members.forEach(function(m, mi) {
+            var text = self.multiGoodsGroupText(group, m.key)
+            if (!text) return
+            var y = plan.baseY + gi * plan.stride + m.offsetY
+            var el = {
+              id: 'mg_' + gi + '_' + mi,
+              type: 'text',
+              x: Math.round(m.x / PX_PER_MM * 100) / 100,
+              y: Math.round(y / PX_PER_MM * 100) / 100,
+              fontSize: m.fontSize,
+              fontWeight: m.fontWeight,
+              letterSpacing: m.letterSpacing,
+              lineHeight: m.lineHeight,
+              text: text
+            }
+            if (m.width) el.width = Math.round(m.width / PX_PER_MM * 100) / 100
+            if (m.height) el.height = Math.round(m.height / PX_PER_MM * 100) / 100
+            elems.push(el)
+          })
+        })
+        return elems
       },
       // 把某一页的布局坐标套进 schema（堆叠预览逐页调用）
-      schemaForLayout(layout) {
+      schemaForLayout(layout, values) {
         var schema = this.templateSchema
         if (!schema || !schema.elements) return schema
         var styles = layout.styles
@@ -2674,6 +3028,11 @@
           var key = (el.type === 'barcode' || el.type === 'qrcode')
             ? CODE_KEY_PREFIX + el.field
             : (el.field || el.id)
+          // 规格块由共享模块整体输出（type: specblock），schema 中不再逐个元素输出
+          if (el.type !== 'barcode' && el.type !== 'qrcode' && isSpecItemKey(key)) {
+            changed = true
+            return null
+          }
           var style = styles[key]
           if (!style) return el
           var next = el
@@ -2688,8 +3047,55 @@
             changed = true
           }
           return next
-        })
+        }).filter(function(el) { return !!el })
+        // 单页多商品：模板的名称/类别/规格元素由逐商品行组替代，保证一个商品对应自己的值
+        var groups = this.multiGoodsGroups(layout.goodsRows)
+        var plan = groups ? this.multiGoodsGroupPlan(layout, groups) : null
+        if (plan) {
+          elements = elements.filter(function(el) {
+            var key = el && (el.field || el.key || el.id)
+            return plan.keys.indexOf(key) === -1
+          })
+          // 行组下方的其它元素顺移到最后一组下方
+          if (plan.belowShift > 0) {
+            var shiftMm = plan.belowShift / PX_PER_MM
+            elements = elements.map(function(el) {
+              if (!el) return el
+              if ((el.y || 0) * PX_PER_MM < plan.belowFrom - 0.5) return el
+              return Object.assign({}, el, { y: Math.round(((el.y || 0) + shiftMm) * 100) / 100 })
+            })
+          }
+          elements = elements.concat(this.multiGoodsSchemaElements(groups, plan))
+          changed = true
+        }
+        // 多商品行组已经逐个商品输出规格，不再叠加整体规格块
+        var specElements = plan ? [] : this.specElementsFor(layout, values)
+        if (specElements.length) {
+          elements = elements.concat(specElements)
+          changed = true
+        }
         return changed ? Object.assign({}, schema, { elements: elements }) : schema
+      },
+      // 规格块 → schema 元素（type: specblock），由 LabelPaper 模块统一输出到屏幕与打印
+      specElementsFor(layout, values) {
+        return this.specBlockViewsFor(layout, values).map(function(view) {
+          return {
+            id: 'specblock_' + view.id,
+            type: 'specblock',
+            field: view.anchorKey,
+            x: Math.round(parseFloat(view.frameStyle.left || 0) / PX_PER_MM * 100) / 100,
+            y: Math.round(parseFloat(view.frameStyle.top || 0) / PX_PER_MM * 100) / 100,
+            width: Math.round(parseFloat(view.frameStyle.width || 0) / PX_PER_MM * 100) / 100,
+            height: Math.round(parseFloat(view.frameStyle.height || 0) / PX_PER_MM * 100) / 100,
+            fontSize: parseFloat(view.frameStyle.fontSize || 12),
+            fontWeight: view.frameStyle.fontWeight || 'normal',
+            letterSpacing: parseFloat(view.frameStyle.letterSpacing || 0),
+            lineHeight: parseFloat(view.frameStyle.lineHeight || 1.3),
+            textAlign: view.frameStyle.textAlign || 'left',
+            lineHeightPx: view.layout.lineHeightPx,
+            lines: view.layout.lines.map(function(line) { return line.text })
+          }
+        })
       },
       // 指定页的业务值（分页标签文案随页变化，商品组合取该页内容）
       valuesForPage(page, layout) {
@@ -2723,6 +3129,133 @@
         var plan = this.goodsPagePlan
         idx = Math.min(idx, plan.pages.length - 1)
         return this.layoutWithRows(plan.pages[idx] ? plan.pages[idx].rows : [], values)
+      },
+      // 规格块预览视图：与编辑页 specBlockViews 使用同一套组装与行布局
+      specBlockViewsFor(layout, values) {
+        var self = this
+        var styles = (layout && layout.styles) || {}
+        var map = {}
+        var order = []
+        ;(this.selectedAttrList || []).forEach(function(attr) {
+          var item = parseSpecItemKey(attr.key)
+          if (!item) return
+          var id = item.rowNo + '-' + (item.categoryId || '') + '-' + (item.blockIdentity || item.blockNo)
+          if (!map[id]) {
+            map[id] = { id: id, keys: [] }
+            order.push(id)
+          }
+          map[id].keys.push(attr.key)
+        })
+        var labelWidth = this.labelWidth || 320
+        var lastRight = 0
+        var lastBottom = 0
+        // 打印只输出本页商品所属品类的规格块；品类名挂在每个品类的第一个规格块上
+        var categoryIds = (layout && Array.isArray(layout.categoryIds)) ? layout.categoryIds : []
+        var templateBlocks = (this.template && Array.isArray(this.template.specBlocks)) ? this.template.specBlocks : []
+        // 明细行类目落在某个一级类目下时，该一级类目的规格段才算命中
+        var allowedCategoryKeys = {}
+        if (categoryIds.length) {
+          var categoryIdSet = categoryIds.map(String)
+          templateBlocks.forEach(function(block) {
+            if (block.categoryId == null) return
+            var members = Array.isArray(block.categoryMemberIds) && block.categoryMemberIds.length
+              ? block.categoryMemberIds.map(String)
+              : [String(block.categoryId)]
+            var matched = members.some(function(categoryId) { return categoryIdSet.indexOf(categoryId) > -1 })
+            if (matched) allowedCategoryKeys[String(block.categoryId)] = true
+          })
+        }
+        var categoryNameOf = function(parsed) {
+          if (parsed.categoryId == null) return ''
+          var found = templateBlocks.filter(function(block) {
+            return block.categoryId != null && String(block.categoryId) === String(parsed.categoryId)
+          })[0]
+          if (found && found.categoryName) return String(found.categoryName)
+          var nameAttr = self.allAttrs.find(function(a) { return a.categoryName && String(a.categoryId || '') === String(parsed.categoryId) })
+          return nameAttr ? String(nameAttr.categoryName) : ''
+        }
+        var lastCategory = null
+        return order.map(function(id) {
+          var block = map[id]
+          var parsed = parseSpecItemKey(block.keys[0])
+          var categoryKey = parsed.categoryId == null ? '' : String(parsed.categoryId)
+          if (categoryKey !== '' && categoryIds.length && !allowedCategoryKeys[categoryKey]) return null
+          var firstOfCategory = categoryKey !== '' && categoryKey !== lastCategory
+          lastCategory = categoryKey
+          var categoryText = firstOfCategory ? categoryNameOf(parsed) : ''
+          var nameKey = specNameKey(parsed.rowNo, parsed.blockNo, parsed.categoryId, parsed.blockIdentity)
+          var hasName = block.keys.indexOf(nameKey) > -1
+          var nameAttr = self.allAttrs.find(function(a) { return a.key === nameKey })
+          var nameValue = hasName && values ? values[nameKey] : ''
+          var nameText = hasName
+            ? String(nameValue || (nameAttr && (nameAttr.value || nameAttr.label)) || '').replace(/：$/, '')
+            : ''
+          // 几何只认属性名锚点；名称隐藏时退回块内第一个元素
+          var anchorKey = styles[nameKey] ? nameKey : block.keys[0]
+          var style = styles[anchorKey] || {}
+          var items = buildSpecBlockItems({
+            nameKey: nameKey,
+            categoryText: categoryText,
+            nameText: nameText ? nameText + '：' : '',
+            nameWrap: !!style.specWrap,
+            values: block.keys.filter(function(key) { return key !== nameKey }).map(function(key) {
+              return { key: key, text: values && values[key] != null ? values[key] : '' }
+            })
+          })
+          if (!items.length) return null
+          var lines = resolveSpecBlockLines({
+            items: items,
+            // 与编辑页一致：未手动拖宽过的规格块按自然宽度并列排列
+            width: style.specWidthLocked && style.width > 0 ? style.width : 0,
+            fontSize: style.fontSize || 12,
+            fontWeight: style.fontWeight || 'normal',
+            letterSpacing: style.letterSpacing || 0,
+            lineHeight: style.lineHeight || 1.3,
+            textAlign: style.textAlign || 'left'
+          })
+          // 锚点缺几何时顺排到上一块右侧/下一行，避免打印/预览跳到左上角
+          var hasGeom = style.x != null && style.y != null && isFinite(style.x) && isFinite(style.y)
+          var x, y
+          if (hasGeom) {
+            x = Number(style.x)
+            y = Number(style.y)
+          } else if (categoryKey !== '') {
+            // 多品类规格：每个规格块独占一行，新品类前空一行
+            x = 20
+            y = lastBottom > 0 ? lastBottom + (firstOfCategory ? lines.lineHeightPx : 4) : 10
+          } else {
+            x = lastRight > 0 ? lastRight + SPEC_BLOCK_GAP : 20
+            y = lastBottom > 0 ? lastBottom + 4 : 10
+            if (x + lines.width > labelWidth - 10) {
+              x = 20
+              y = lastBottom > 0 ? lastBottom + 4 : 10
+            }
+          }
+          lastRight = Math.max(lastRight, x + lines.width)
+          lastBottom = Math.max(lastBottom, y + lines.height)
+          return {
+            id: id,
+            anchorKey: anchorKey,
+            keys: block.keys,
+            layout: lines,
+            frameStyle: {
+              left: x + 'px',
+              top: y + 'px',
+              width: lines.width + 'px',
+              height: lines.height + 'px',
+              fontSize: (style.fontSize || 12) + 'px',
+              fontWeight: style.fontWeight || 'normal',
+              letterSpacing: (style.letterSpacing || 0) + 'px',
+              lineHeight: String(style.lineHeight || 1.3),
+              textAlign: lines.textAlign,
+              padding: '0 ' + SPEC_BLOCK_PAD_X + 'px',
+              boxSizing: 'border-box',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              display: 'block'
+            }
+          }
+        }).filter(function(view) { return !!view })
       },
       itemStyle(key, layoutOpt) {
         // 商品明细表/商品组合按商品行数动态变高，使用重排后的坐标
@@ -2800,44 +3333,14 @@
         var text = this.overflowLayout.texts && this.overflowLayout.texts[item.attr.key]
         return text != null ? text : this.getItemText(item)
       },
-      // 与标签编辑弹层共用同一套属性来源，避免模板里的属性在这里丢失
+      // 与标签编辑弹层共用同一套表单字段配置，避免模板里的属性在这里丢失
       buildAttrList() {
-        // 地址打印：字段只取地址识别页面的输入框数据
-        var list = this.type === 'address' ? this.buildAddressAttrs() : buildLabelAttrs(this.record, this.sku)
+        var list = buildFormFieldAttrs(this.type, { record: this.record, sku: this.sku })
         // 分页标签：模板元素，文案由当前预览/打印页决定
         if (!list.some(function(a) { return a.key === 'page_no' })) {
           list.push({ key: 'page_no', label: '分页标签', value: '', isCustom: true, isPage: true, group: '模板元素' })
         }
         return list
-      },
-      /** 地址打印字段（key 与地址识别页面 form 字段一致） */
-      buildAddressAttrs() {
-        var r = this.record || {}
-        var mk = function(key, label, value) {
-          return {
-            key: key,
-            label: label,
-            value: value == null ? '' : String(value),
-            isCustom: false,
-            group: '地址信息'
-          }
-        }
-        return [
-          mk('contacts', '联系人', r.contacts),
-          mk('telephone', '电话', r.telephone),
-          mk('account', '账号', r.account),
-          mk('platform', '平台', r.platform),
-          mk('remark', '备注', r.remark),
-          mk('address', '地址', r.address),
-          mk('goods', '商品信息', r.goods),
-          {
-            key: GOODS_TABLE_KEY,
-            label: '商品明细表',
-            value: '',
-            isCustom: false,
-            group: '地址信息'
-          }
-        ]
       },
       // 发货单/小票模板里的字段不在 label attrs 里 → 补回缺失 key
       restoreMissingAttrs(keys) {
@@ -2857,7 +3360,7 @@
       handleCreateTemplate() {
         var isAddress = this.type === 'address'
         this.visible = false
-        this.$refs.labelEditor.open({
+        var payload = {
           type: isAddress ? 'address' : 'member',
           businessType: isAddress ? '' : 'member',
           provider: isAddress ? '' : 'table.jsh_supplier',
@@ -2865,23 +3368,49 @@
           record: this.record || {},
           sku: {},
           template: null
-        })
+        }
+        // 地址打印：元素回填统一走编辑上下文模块，由表单标题与字段结构生成
+        if (isAddress) {
+          var createContext = buildTemplateEditContext({
+            record: this.record || {},
+            rows: this.detailRows,
+            fields: buildAddressAttrs(this.record),
+            title: ADDRESS_FORM_TITLE,
+            includeProductAttributes: true
+          })
+          payload.record = createContext.record
+          payload.editorData = createContext.editorData
+        }
+        this.$refs.labelEditor.open(payload)
       },
       // 编辑：先关闭预览层，动画结束后再交给标签编辑弹层，避免两层重叠
       // 同时带上当前预览使用的模板 id，编辑页按它加载同一套标签数据
       handleEdit() {
         // 小票：编辑页只加载模板布局，不携带单据业务数据
         var isReceipt = this.type === 'receipt'
-        var record = isReceipt ? {} : this.record
+        // 商品标签/小票编辑统一只接收模板结构与品类标识，不带入业务值。
+        var isAddress = this.type === 'address'
+        // 地址打印：元素回填统一由地址表单的标题与字段结构生成
+        var editContext = buildTemplateEditContext({
+          record: this.record,
+          rows: this.detailRows,
+          fields: isAddress ? buildAddressAttrs(this.record) : this.allAttrs,
+          title: isAddress ? ADDRESS_FORM_TITLE : undefined,
+          includeProductAttributes: isAddress || this.type === 'label' || this.type === 'receipt' || this.type === 'delivery',
+          productFields: this.type === 'label' ? buildFormFieldAttrs('label', { record: this.record, sku: this.sku }) : [],
+          specBlocks: this.template && this.template.specBlocks
+        })
+        var record = editContext.record
         var payload = {
           record: record,
-          sku: this.sku,
-          templateId: this.template ? this.template.id : null
+          sku: {},
+          editorData: editContext.editorData,
+          templateId: this.template ? this.template.id : null,
+          template: this.template || null
         }
         this.visible = false
         // 弹层直达方式（无父组件监听 edit）→ 直接打开标准标签编辑弹层页面
         if (this.directEntry && !(this.$listeners && this.$listeners.edit)) {
-          var isAddress = this.type === 'address'
           var businessType = (isAddress || isReceipt) ? '' : (this.type === 'delivery' ? 'delivery' : (this.type === 'member' ? 'member' : 'product'))
           this.$refs.labelEditor.open({
             type: this.type || 'label',
@@ -2889,7 +3418,8 @@
             provider: isReceipt ? '' : ((this.template && this.template.provider) || (isAddress ? '' : (this.type === 'delivery' ? 'sales.delivery' : (this.type === 'member' ? 'table.jsh_supplier' : 'product.label')))),
             templateId: payload.templateId || null,
             record: record || {},
-            sku: this.sku || {},
+            sku: {},
+            editorData: payload.editorData,
             template: this.template || null
           })
           return
@@ -3183,7 +3713,11 @@
         if (page == null) page = this._batchPrint ? this.printPage : this.previewPage
         var layout = this.layoutForPage(page)
         var resolved = layout.styles
+        // 单页多商品：名称/类别/规格按模板布局样式逐组输出
+        var groups = this.multiGoodsGroups(layout.goodsRows)
+        var plan = groups ? this.multiGoodsGroupPlan(layout, groups) : null
         this.renderItems.forEach(function(item) {
+          if (plan && plan.keys.indexOf(item.key) > -1) return
           var style = resolved[item.key] || self.attrStyles[item.key]
           if (!style) return
           // 多行顺移后超出标签底边的内容直接裁掉
@@ -3276,6 +3810,33 @@
             text: displayText
           })
         })
+        // 行组下方的其它元素顺移到最后一组下方
+        if (plan && plan.belowShift > 0) {
+          items.forEach(function(item) {
+            if ((item.y || 0) >= plan.belowFrom - 0.5) item.y += plan.belowShift
+          })
+        }
+        if (plan) {
+          groups.forEach(function(group, gi) {
+            plan.members.forEach(function(m) {
+              var text = self.multiGoodsGroupText(group, m.key)
+              if (!text) return
+              var y = plan.baseY + gi * plan.stride + m.offsetY
+              if (y >= self.labelHeight) return
+              items.push({
+                x: m.x,
+                y: y,
+                width: m.width || null,
+                height: m.height || null,
+                fontSize: m.fontSize,
+                fontWeight: m.fontWeight,
+                letterSpacing: m.letterSpacing,
+                lineHeight: m.lineHeight,
+                text: text
+              })
+            })
+          })
+        }
         return items
       },
       // 打印到 Wi-Fi 打印机：后端通过 Socket 发送 TSPL 指令到 ip:端口

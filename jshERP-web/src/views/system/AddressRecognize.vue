@@ -85,7 +85,8 @@
 <script>
 import { saveMemberFromAddress } from '@/api/api'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
-import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+import { LabelPrintModal } from '@/views/material/labelPrint'
+import { ADDRESS_PANEL_FIELDS } from '@/views/material/labelPrint/utils/addressFormFields'
 import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
 import MobileProductPicker from '@/components/mobile/MobileProductPicker'
 
@@ -109,13 +110,7 @@ export default {
       },
       // 平台下拉框内置选项
       platformOptions: ['微信', '抖音', '淘宝'],
-      fields: [
-        { field: 'contacts', label: '联系人', type: 'input' },
-        { field: 'telephone', label: '电话', type: 'textarea' },
-        { field: 'account', label: '账号', type: 'input' },
-        { field: 'remark', label: '备注', type: 'input' },
-        { field: 'address', label: '地址', type: 'textarea' }
-      ],
+      fields: ADDRESS_PANEL_FIELDS.map(function(field) { return Object.assign({}, field) }),
       // 商品行：每行一个已选商品
       goodsRows: [{ key: '', name: '', spec: '', spec1: '', spec2: '', spec3: '' }],
       goodsTargetIndex: 0,
@@ -158,17 +153,23 @@ export default {
       // 一个商品一行，打印时按行数换行排版
       return list.join('\n')
     },
-    /** 商品多行数据（打印/模板编辑用）：名称 + 规格值1/2/3 + 数量 */
+    /** 商品多行数据（打印/模板编辑用）：名称 + 规格 + 规格值1/2/3 + 数量，保留原始商品记录 */
     goodsRowList() {
       return this.goodsRows.filter(function(g) {
         return g && (g.name || g.spec1 || g.spec2 || g.spec3)
       }).map(function(g) {
         return {
           name: g.name || '',
+          // 品类 ID：打印时按一级类目映射规格（取原始商品记录的类目）
+          categoryId: (g.raw && g.raw.categoryId) || g.categoryId || '',
+          // SKU 主键：打印时按 SKU 读取规格明细
+          skuId: g.skuId || (g.raw && (g.raw.meId || (g.raw.raw && g.raw.raw.meId))) || '',
+          spec: g.spec || '',
           spec1: g.spec1 || '',
           spec2: g.spec2 || '',
           spec3: g.spec3 || '',
-          qty: Math.min(99, Math.max(1, parseInt(g.qty, 10) || 1))
+          qty: Math.min(99, Math.max(1, parseInt(g.qty, 10) || 1)),
+          raw: g.raw || null
         }
       })
     },
@@ -269,8 +270,9 @@ export default {
       this.goodsTargetIndex = index
       this.goodsPickerVisible = true
     },
-    /** 转为商品行数据结构 */
+    /** 转为商品行数据结构：保留所选商品原始记录，供标签模板回填商品属性 */
     toGoodsRow(goods) {
+      var raw = goods.raw || null
       return {
         key: goods.key || '',
         name: goods.name || '',
@@ -278,7 +280,12 @@ export default {
         spec1: goods.spec1 || '',
         spec2: goods.spec2 || '',
         spec3: goods.spec3 || '',
-        qty: Math.min(99, Math.max(1, parseInt(goods.qty, 10) || 1))
+        // 商品类别：标签打印按类别匹配规格映射表
+        categoryId: goods.categoryId || (raw && (raw.categoryId || (raw.raw && raw.raw.categoryId))) || '',
+        // SKU 主键：标签打印按 SKU 读取规格明细
+        skuId: goods.skuId || (raw && (raw.meId || (raw.raw && raw.raw.meId))) || '',
+        qty: Math.min(99, Math.max(1, parseInt(goods.qty, 10) || 1)),
+        raw: raw
       }
     },
     /** 多选：从当前行开始依次回填，超出已有行则追加 */

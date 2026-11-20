@@ -293,7 +293,7 @@
   import RetailBackModal from './modules/RetailBackModal'
   import BillDetail from './dialog/BillDetail'
   import BillExcelIframe from '@/components/tools/BillExcelIframe'
-  import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+  import { LabelPrintModal } from '@/views/material/labelPrint'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'

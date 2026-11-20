@@ -33,9 +33,13 @@
  */
 import { pxToMm, mmToPx, CODE_KEY_PREFIX } from './labelSchema'
 import { GOODS_KEY, GOODS_TABLE_KEY } from './goodsLabelLayout'
-import { normalizeSpecBlocks } from './goodsSpecBlocks'
+import { normalizeSpecBlocks, isSpecNameKey } from './goodsSpecBlocks'
+import { normalizeSpecMapping, flattenSpecMapping } from './categorySpec'
+import { normalizeEditorData } from './templateEditDataModel'
 
 export var TEMPLATE_SCHEMA_VERSION = 2
+// 渲染代次：规格块「名称锚点 + 占位」改版后升到 3；低于该值的模板一律按旧模板处理（提示删除，不加载）
+export var TEMPLATE_RENDER_VERSION = 3
 export var TEMPLATE_VERSION_FIELD = 'schemaVersion'
 // 明细集合在业务记录对象里的默认路径（地址/发货单均把商品行放在 goodsRows）
 export var DEFAULT_ITEM_PATH = 'goodsRows'
@@ -60,11 +64,12 @@ export function parseTemplateRaw(raw) {
   return cfg && typeof cfg === 'object' ? cfg : null
 }
 
-/** 是否 v2 模板（唯一被支持的格式） */
+/** 是否可加载的 v2 模板：结构为 v2 且渲染代次匹配 */
 export function isLabelTemplateV2(raw) {
   var cfg = parseTemplateRaw(raw)
   if (!cfg) return false
   return Number(cfg[TEMPLATE_VERSION_FIELD]) === TEMPLATE_SCHEMA_VERSION &&
+    Number(cfg.renderVersion) === TEMPLATE_RENDER_VERSION &&
     !!cfg.layout && Array.isArray(cfg.layout.elements)
 }
 
@@ -127,6 +132,13 @@ export function editorStateToV2(state, meta) {
     }
     if (style.width) element.width = pxToMm(style.width)
     if (style.height) element.height = pxToMm(style.height)
+    // 规格块几何与排版只挂在属性名（锚点）上：对齐、折行随模板保存，编辑器/打印共用
+    if (isSpecNameKey(key)) {
+      element.textAlign = style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left'
+      element.specWrap = !!style.specWrap
+      // 仅用户手动拖宽过的规格块才保存固定块宽，其余按内容自然并列
+      if (style.specWidthLocked && style.width > 0) element.specWidth = pxToMm(style.width)
+    }
     if (custom) {
       element.custom = true
       element.text = attr && attr.value != null ? String(attr.value) : ''
@@ -188,6 +200,7 @@ export function editorStateToV2(state, meta) {
   var pageMode = PAGE_MODE_TO_PRINT[src.pageMode] || 'single'
   var v2 = {
     schemaVersion: TEMPLATE_SCHEMA_VERSION,
+    renderVersion: TEMPLATE_RENDER_VERSION,
     name: src.name || '未命名标签',
     businessType: src.businessType || src.provider || '',
     paper: {
@@ -236,13 +249,30 @@ export function editorStateToV2(state, meta) {
       kind: info.kind || null
     }
   }
-  // 规格块结构（规格名 + 属性值名），编辑态只显示属性名，不保存单据业务值
-  var specBlocks = normalizeSpecBlocks(src.specBlocks)
+  // 规格数据映射表（按类别分组）：模板唯一权威结构，记录读取哪个类别的哪个规格值
+  var specMapping = normalizeSpecMapping(src.specMapping)
+  v2.specMapping = specMapping
+  // 只有建立了映射表才走「仅加载已选规格」；否则沿用编辑器当前规格块（旧路径）
+  v2.specMappingReady = specMapping.length > 0
+  // 渲染内部结构：有映射表时由映射表派生，逐类别保留 blockNo / memberIds
+  var specBlocks = specMapping.length
+    ? normalizeSpecBlocks(flattenSpecMapping(specMapping))
+    : normalizeSpecBlocks(src.specBlocks)
   if (specBlocks.length) v2.specBlocks = specBlocks
+  // 仅供编辑属性面板恢复的结构快照；严格排除 value 等业务数据，不参与预览/打印。
+  v2.editorData = normalizeEditorData(src.editorData || {
+    fields: src.allAttrs,
+    title: src.formTitle,
+    specBlocks: specBlocks
+  })
   // 编辑页关闭的规格名/规格值随模板保存，跨端打开仍保持隐藏
   var hiddenItemKeys = (Array.isArray(src.hiddenItemKeys) ? src.hiddenItemKeys : [])
     .filter(function(key) { return !!key })
   if (hiddenItemKeys.length) v2.hiddenItemKeys = hiddenItemKeys
+  // 「表单数据」里勾选的项：元素面板始终列出这些项，与画布上是否已删除无关
+  var formDataKeys = (Array.isArray(src.formDataCheckedKeys) ? src.formDataCheckedKeys : [])
+    .filter(function(key) { return !!key })
+  if (formDataKeys.length) v2.formDataKeys = formDataKeys
   return v2
 }
 
@@ -289,6 +319,14 @@ export function v2ToEditorState(raw) {
     }
     if (element.width) style.width = mmToPx(element.width)
     if (element.height) style.height = mmToPx(element.height)
+    if (isSpecNameKey(key)) {
+      style.textAlign = element.textAlign === 'center' || element.textAlign === 'right' ? element.textAlign : 'left'
+      style.specWrap = !!element.specWrap
+      if (element.specWidth > 0) {
+        style.width = mmToPx(element.specWidth)
+        style.specWidthLocked = true
+      }
+    }
     attrStyles[key] = style
     attrLabels[key] = element.label == null ? '' : element.label
     if (key === GOODS_KEY && Array.isArray(element.itemFields)) {
@@ -315,6 +353,7 @@ export function v2ToEditorState(raw) {
   })
   return {
     name: v2.name || '',
+    renderVersion: TEMPLATE_RENDER_VERSION,
     provider: (v2.dataSource && v2.dataSource.provider) || '',
     businessType: v2.businessType || '',
     selectedAttrs: selectedAttrs,
@@ -322,9 +361,17 @@ export function v2ToEditorState(raw) {
     attrLabels: attrLabels,
     customLabels: customLabels,
     goodsFields: goodsFields,
-    specBlocks: normalizeSpecBlocks(v2.specBlocks),
+    // 规格映射表为唯一权威；无映射表的模板沿用已保存的规格块（旧路径取值）
+    specBlocks: normalizeSpecMapping(v2.specMapping).length
+      ? normalizeSpecBlocks(flattenSpecMapping(v2.specMapping))
+      : normalizeSpecBlocks(v2.specBlocks),
+    specMapping: normalizeSpecMapping(v2.specMapping),
+    specMappingReady: v2.specMappingReady === true && normalizeSpecMapping(v2.specMapping).length > 0,
+    editorData: normalizeEditorData(v2.editorData),
     // 编辑页关闭的规格名/规格值，重新打开时保持不显示
     hiddenItemKeys: Array.isArray(v2.hiddenItemKeys) ? v2.hiddenItemKeys.slice() : [],
+    // 「表单数据」勾选项：元素面板始终显示，画布删除不影响
+    formDataCheckedKeys: Array.isArray(v2.formDataKeys) ? v2.formDataKeys.slice() : [],
     labelWidth: mmToPx(paper.width || 40),
     labelHeight: mmToPx(paper.height || 30),
     overflowMode: layout.overflowMode === 'ellipsis' ? 'ellipsis' : 'wrap',

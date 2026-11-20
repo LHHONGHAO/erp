@@ -273,7 +273,8 @@
   import MobileBottomBar from '@/components/mobile/MobileBottomBar'
   import MobileScanPage from '@/components/mobile/MobileScanPage'
   import MobileInputPopup from '@/components/mobile/MobileInputPopup'
-  import LabelPrintModal from '@/views/material/modules/LabelPrintModal'
+  import { LabelPrintModal } from '@/views/material/labelPrint'
+  import { extractRetailSaleValues } from '@/views/material/labelPrint/utils/retailSaleFormFields'
   import { USER_INFO } from '@/store/mutation-types'
   import { setMobileHeaderActions, clearMobileHeaderActions } from '@/utils/mobilePageHeader'
   import moment from 'moment'
@@ -1114,16 +1115,22 @@
         const specText = item => (this.cartSpecLines(item) || []).map(line => {
           return (line.label ? line.label + '：' : '') + line.value
         }).join('　')
-        const values = {
-          rc_title: '零售小票',
-          rc_no: number || '',
-          rc_date: moment().format('YYYY-MM-DD HH:mm'),
-          rc_member: this.selectedMember ? (this.selectedMember.supplier || this.selectedMember.contacts || '') : '',
-          rc_qty_total: String(this.cartCount),
-          rc_amount_total: '¥' + this.settleDisplay,
-          rc_remark: '',
-          rc_footer: '谢谢惠顾，欢迎再次光临'
-        }
+        const depot = (this.depotList || []).find(item => String(item.id) === String(this.billForm.depotId)) || {}
+        const goodsAmount = this.cartTotal - 0
+        const amountTotal = this.settleDisplay - 0
+        // 销售开单表单数据统一由提取模块生成，编辑页「表单数据」按钮按同一字段清单加载
+        const values = extractRetailSaleValues({
+          number,
+          date: moment().format('YYYY-MM-DD HH:mm'),
+          memberName: this.selectedMember ? (this.selectedMember.supplier || this.selectedMember.contacts || '') : '',
+          depotName: depot.name || '',
+          payType: this.billForm.payType,
+          qtyTotal: this.cartCount,
+          goodsAmount: goodsAmount.toFixed(2),
+          discount: this.discountDisplay + '折',
+          discountAmount: Math.max(0, goodsAmount - amountTotal).toFixed(2),
+          amountTotal: amountTotal.toFixed(2)
+        })
         const rows = this.cartList.map(item => {
           const qty = item.operNumber - 0 || 0
           const price = (item.unitPrice - 0) || (item.commodityDecimal - 0) || 0

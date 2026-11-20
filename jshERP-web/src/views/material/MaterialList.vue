@@ -253,7 +253,6 @@
         <!-- 表单区域 -->
         <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
-        <label-edit-modal ref="labelEditModal"></label-edit-modal>
         <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
       </a-card>
     </a-col>
@@ -262,9 +261,8 @@
 <script>
   import MaterialModal from './modules/MaterialModal'
   import ImportFileModal from '@/components/tools/ImportFileModal'
-  import LabelEditModal from './modules/LabelEditModal'
   import LabelEditModalPage from './modules/LabelEditModalPage'
-  import LabelPrintModal from './modules/LabelPrintModal'
+  import { LabelPrintModal } from '@/views/material/labelPrint'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { postAction, deleteAction, getAction } from '@/api/manage'
@@ -286,7 +284,6 @@
     components: {
       MaterialModal,
       ImportFileModal,
-      LabelEditModal,
       LabelEditModalPage,
       LabelPrintModal,
       OcrRecognizeModal,
@@ -523,20 +520,18 @@
         }
         this.$refs.labelPrintModal.open(record, sku)
       },
-      // 预览弹层点「编辑」：电脑端保留原桌面编辑器，手机端走标准复用弹层页
-      handleEditLabel({ record, sku, categoryTree, templateId }) {
-        if (window.innerWidth <= 768) {
-          this.$refs.labelEditor.open({
-            type: 'label',
-            businessType: 'product',
-            provider: 'product.label',
-            templateId: templateId || null,
-            record: record || {},
-            sku: sku || {}
-          })
-          return
-        }
-        this.$refs.labelEditModal.open(record, sku, categoryTree || this.categoryTree, templateId, 'label', 'product')
+      // 预览弹层点「编辑」：统一走标准复用编辑页（电脑端与手机端一致）
+      handleEditLabel({ record, sku, templateId, editorData, template }) {
+        this.$refs.labelEditor.open({
+          type: 'label',
+          businessType: 'product',
+          provider: 'product.label',
+          templateId: templateId || null,
+          record: record || {},
+          sku: sku || {},
+          editorData: editorData || null,
+          template: template || null
+        })
       },
       handleImportXls() {
         let importExcelUrl = this.url.importExcelUrl

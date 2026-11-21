@@ -3618,14 +3618,10 @@
           })
         })
       },
-      /** 价格弹层规格选择框：默认选中每个规格类的第一个规格值 */
+      /** 价格弹层规格选择框：默认不选中任何规格值（文本黑色），点选后变绿 */
       initSheetSpecSelection() {
         this.sheetCommonOff = {}
-        this.sheetSpecSelection = this.specModules.map(module => {
-          if (!module.name) return []
-          let values = (module.values || []).map(v => v.text).filter(Boolean)
-          return values.length ? [values[0]] : []
-        })
+        this.sheetSpecSelection = this.specModules.map(() => [])
       },
       isSheetSpecSelected(mIndex, text) {
         return (this.sheetSpecSelection[mIndex] || []).indexOf(text) !== -1
@@ -6169,12 +6165,9 @@
   cursor: pointer;
   transition: color 0.12s;
 }
-.sheet-choice-tag:hover {
-  color: #0d9f5b;
-}
 .sheet-choice-tag.is-on {
+  /* 选中只改文字颜色：绿色；取消选中恢复默认黑色（不做 hover 变色，触屏上 hover 会残留） */
   color: #0d9f5b;
-  font-weight: 600;
 }
 .sheet-choice-divider {
   height: 0;

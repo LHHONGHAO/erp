@@ -36,6 +36,62 @@ export function resolveCategorySpecNames(categoryName) {
 }
 
 /**
+ * 解析商品类目对应的一级类目名称（类目属性取值约定：取一级类目，
+ * 一级类目下的二级子类目都引用一级类目的配置读映射表）
+ *
+ * @param {Array} tree 类目树（queryMaterialCategoryTreeList 返回）
+ * @param {String|Number} categoryId 商品类目 id
+ * @returns {String} 一级类目名称；解析失败返回空字符串
+ */
+export function resolvePrimaryCategoryName(tree, categoryId) {
+  if (!categoryId) return ''
+  const target = String(categoryId)
+  let path = null
+  const walk = function(nodes, trail) {
+    if (!nodes || path) return
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]
+      if (!node) continue
+      const nodeId = String(node.value != null ? node.value : node.id)
+      const next = trail.concat(node)
+      if (nodeId === target) {
+        path = next.slice()
+        return
+      }
+      if (node.children && node.children.length) {
+        walk(node.children, next)
+        if (path) return
+      }
+    }
+  }
+  walk(Array.isArray(tree) ? tree : [], [])
+  // 路径首节点即树根 = 一级类目
+  const root = path && path.length ? path[0] : null
+  return root ? String(root.title || root.label || root.name || '') : ''
+}
+
+/**
+ * 明细行品类 id（统一解析链，全部表单/预览共用）
+ *
+ * 解析优先级：categoryId → materialCategoryId → raw.categoryId → sku.categoryId。
+ * 返回 null 表示该行没有类目信息（调用方按无类目处理）。
+ *
+ * @param {Object} row 业务明细行（可带 raw / sku）
+ * @returns {String|Number|null}
+ */
+export function resolveRowCategoryId(row) {
+  if (!row) return null
+  const id = row.categoryId != null
+    ? row.categoryId
+    : (row.materialCategoryId != null
+      ? row.materialCategoryId
+      : ((row.raw && row.raw.categoryId != null)
+        ? row.raw.categoryId
+        : (row.sku && row.sku.categoryId != null ? row.sku.categoryId : null)))
+  return id == null || id === '' ? null : id
+}
+
+/**
  * 从商品行的规格块中按映射表挑选规格值
  *
  * @param {String} categoryName 一级类目名称

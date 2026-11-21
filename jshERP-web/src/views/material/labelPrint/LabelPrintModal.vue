@@ -68,6 +68,7 @@
                     :values="pg.values"
                     :rows="pg.rows"
                     :texts="pg.texts"
+                    :overflow-mode="overflowMode"
                     :scale="1" />
                   <template v-else>
                     <div
@@ -107,6 +108,7 @@
                 :values="previewValues"
                 :rows="pageDetailRows"
                 :texts="previewTexts"
+                :overflow-mode="overflowMode"
                 :scale="1" />
               <template v-else>
                 <div
@@ -602,6 +604,7 @@
                 :values="previewValues"
                 :rows="pageDetailRows"
                 :texts="previewTexts"
+                :overflow-mode="overflowMode"
                 :scale="1" />
               <template v-else>
                 <div
@@ -807,15 +810,16 @@
 <script>
   import { printLabel } from './utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from './utils/labelCode'
-  import { mmToPx } from './utils/labelSchema'
-  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH, editorStateToV2 } from './utils/labelTemplateV2'
-  import { fetchTemplateList, resolveTemplate, deleteTemplate } from './utils/labelTemplateFlow'
+  import { mmToPx, PX_PER_MM } from './utils/labelSchema'
+  import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH } from './utils/labelTemplateV2'
+  import { fetchTemplateList, resolveTemplate, deleteTemplate, applyReceiptRowsToState } from './utils/labelTemplateFlow'
   import { resolveTemplateData } from './utils/labelDataResolver'
   import { buildTemplateEditContext } from './utils/templateEditDataModel'
   import { ADDRESS_FORM_TITLE, buildAddressAttrs } from './utils/addressFormFields'
   import { buildFormFieldAttrs } from './config/formFields'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems, buildSpecValuesFromRows } from './utils/goodsLabelLayout'
-  import { LABEL_CATEGORY_KEY, LABEL_SPEC_KEY, flattenSpecMapping, resolveSpecTextFromDefs } from './utils/categorySpec'
+  import { readLabelEditSnapshot, saveLabelEditSnapshot, valuesFromAttrs } from './utils/labelEditSnapshot'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, resolveLabelLayout, paginateGoodsRows, hasGoodsValue, isGoodsTableKey, buildSpecValuesFromRows } from './utils/goodsLabelLayout'
+  import { LABEL_CATEGORY_KEY, LABEL_SPEC_KEY, flattenSpecMapping, resolveSpecTextFromDefs, resolvePrimaryCategoryName, resolveRowCategoryId } from './utils/categorySpec'
   import { parseSpecItemKey, specNameKey, isSpecItemKey, buildSpecBlocksFromCategory, specBlocksFromRow } from './utils/goodsSpecBlocks'
   import { buildSpecBlockItems, resolveSpecBlockLines, SPEC_BLOCK_PAD_X, SPEC_BLOCK_GAP } from './utils/specBlockLayout'
   import LabelPaper from './LabelPaper'
@@ -836,7 +840,6 @@
   import { fetchLocalPrinters, printToLocalPrinter, isLocalPrinter, localPrinterName, LOCAL_PRINTER_PREFIX, detectLocalAgent, LOCAL_AGENT_DOWNLOAD_URL } from '@/utils/localPrintAgent'
   import { getPrintAgentList, printViaAgent } from '@/api/printAgent'
   import PrinterDeviceConfig from '@/views/print/agent/PrinterDeviceConfig'
-  var PX_PER_MM = 3.779528
   export default {
     name: 'LabelPrintModal',
     // 异步引入，避免与内嵌在标签编辑页里的本组件形成循环依赖
@@ -1088,7 +1091,7 @@
           return {
             index: p,
             layout: layout,
-            schema: self.schemaForLayout(layout, values),
+            schema: self.schemaForLayout(layout, values, p),
             values: values,
             rows: self.rowsForPage(p),
             texts: layout.texts || {}
@@ -1333,7 +1336,7 @@
       },
       // 预览 schema：套用折行后的实际坐标与高度
       previewSchema() {
-        return this.schemaForLayout(this.overflowLayout, this.previewValues)
+        return this.schemaForLayout(this.overflowLayout, this.previewValues, this.previewPage)
       },
       // 省略号模式预览文本：直接用裁切后的文本
       previewTexts() {
@@ -1347,6 +1350,11 @@
         var items = []
         var styles = this.attrStyles
         this.selectedAttrList.forEach(function(attr) {
+          // 自定义码元素：样式与内容都挂在元素自身 key 上，不走文字渲染
+          if (attr.isCodeElem) {
+            items.push({ key: attr.key, attr: attr, isCode: true })
+            return
+          }
           items.push({ key: attr.key, attr: attr, isCode: false })
           if (styles[CODE_KEY_PREFIX + attr.key]) {
             items.push({ key: CODE_KEY_PREFIX + attr.key, attr: attr, isCode: true })
@@ -1359,7 +1367,7 @@
         var self = this
         return this.renderItems.filter(function(item) { return item.isCode }).map(function(item) {
           var s = self.attrStyles[item.key] || {}
-          return [item.key, s.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
+          return [item.key, s.codeType || item.attr.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
         }).join(';')
       }
     },
@@ -1407,10 +1415,8 @@
         var idx = Math.max(0, page || 0)
         return (idx + 1) + '/' + this.pageCount
       },
-      // 手机端：按容器尺寸等比缩放小票/标签
-      //   宽度约束：容器宽 - 左右各 8px
-      //   高度约束：容器高 - 上边距 16px - 底部控件区
-      //   最终 scale = Math.min(scaleW, scaleH) → 完整显示不溢出
+      // 手机端：按标签实际物理尺寸预览（设计像素 = 96dpi，1px ≈ 1/3.78mm）
+      //   默认 1:1 展示，不放大；仅当屏幕放不下时按宽/高等比缩小
       updatePreviewScale() {
         var self = this
         this.$nextTick(function() {
@@ -1425,19 +1431,25 @@
           var availH = rect.height - padT
           var scaleW = availW / self.labelWidth
           var scaleH = availH / self.labelHeight
-          self.previewScale = Math.min(scaleW, scaleH)
+          self.previewScale = Math.min(scaleW, scaleH, 1)
         })
       },
       // 编码元素的图形布局：尺寸取元素自身宽高，按打印机能力换算
       codeLayout(codeKey) {
         var s = this.attrStyles[codeKey] || {}
-        var isQr = s.codeType === 'qrcode'
         var sourceKey = codeSourceKey(codeKey)
         var attr = this.allAttrs.find(function(a) { return a.key === sourceKey })
+        if (!attr) {
+          // 自定义码元素：属性与样式共用元素自身 key
+          var selfAttr = this.allAttrs.find(function(a) { return a.key === codeKey })
+          if (selfAttr && selfAttr.isCodeElem) attr = selfAttr
+        }
         var value = attr && attr.value != null ? attr.value : ''
+        var codeType = s.codeType || (attr && attr.isCodeElem ? attr.codeType : '')
+        var isQr = codeType === 'qrcode'
         var boxWidth = s.width || (isQr ? 80 : 160)
         var boxHeight = s.height || (isQr ? 80 : 50)
-        var fitted = fitCodeSize(s.codeType, value, boxWidth, boxHeight)
+        var fitted = fitCodeSize(codeType, value, boxWidth, boxHeight)
         return {
           value: value,
           imgWidth: fitted.width,
@@ -1567,24 +1579,11 @@
           self.loadTemplateChoices()
         })
         // 恢复上次使用的打印机并加载设备列表，保证「打印」按钮可用
-        var last = null
-        try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e) { last = null }
-        if (last && last.type) {
-          this.printerType = last.type
-          if (last.type === 'backend') this.selectedPrinter = last.name || undefined
-          else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
-          else this.selectedPrinter = undefined
-        }
+        this.restoreLastPrinterState(false)
         // 恢复上次设备分类
         this.deviceTab = this.printerType === 'wifi'
           ? 'network'
           : (this.printerType === 'backend' && this.selectedPrinter && this.selectedPrinter.indexOf('agent:') === 0 ? 'cloud' : (this.printerType === 'cloud' ? 'cloud' : 'local'))
-        this.loadPrinters()
-        this.loadWifiPrinters()
-        if (this.isMobile) {
-          this.$nextTick(function() { self.updatePreviewScale() })
-          setTimeout(function() { self.updatePreviewScale() }, 300)
-        }
       },
       open(record, sku, preferredTpl) {
         this.directEntry = false
@@ -1592,6 +1591,17 @@
         this.record = record || {}
         this.sku = sku || {}
         this.allAttrs = this.buildAttrList()
+        // 商品标签业务快照：编辑页「打印」按同一快照合并（type=label），
+        // 保证「预览 → 编辑 → 打印」后商品字段/明细不丢；无业务数据时不写，避免覆盖有效快照
+        var source = this.record
+        if (source.id != null || (Array.isArray(source.goodsRows) && source.goodsRows.length)) {
+          saveLabelEditSnapshot({
+            type: 'label',
+            number: source.number || source.code || '',
+            values: valuesFromAttrs(this.allAttrs),
+            rows: Array.isArray(source.goodsRows) ? source.goodsRows : []
+          })
+        }
         if (preferredTpl) {
           // 由标签编辑页打开时直接使用其当前编辑内容，保持所见即所得
           this.template = null
@@ -1612,27 +1622,30 @@
         this.showPrinterSheet = false
         this.cloudAddVisible = false
         this.wifiAddStep = ''
-        // 恢复上次使用的打印机（localStorage）
+        this.visible = true
+        // 恢复上次使用的打印机并加载设备列表
+        this.restoreLastPrinterState(true)
+      },
+      // 恢复上次使用的打印机并加载设备列表（open / openByType 共用）
+      // fallbackToBackend：无历史记录时是否强制回到后端打印机（open 场景需要，openByType 保持现状）
+      restoreLastPrinterState(fallbackToBackend) {
+        var self = this
         var last = null
         try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e) { last = null }
         if (last && last.type) {
           this.printerType = last.type
           if (last.type === 'backend') this.selectedPrinter = last.name || undefined
           else if (last.type === 'wifi') { this.activeWifiId = last.name || null; this.selectedPrinter = last.name || undefined }
-          else if (last.type === 'cloud') { this.selectedPrinter = undefined }
-          else { this.selectedPrinter = undefined }
-        } else {
+          else this.selectedPrinter = undefined
+        } else if (fallbackToBackend) {
           this.printerType = 'backend'
           this.selectedPrinter = undefined
         }
         this.loadPrinters()
         this.loadWifiPrinters()
-        this.visible = true
-        // 手机端：打开后计算预览缩放（等 DOM 渲染完）
+        // 手机端：打开后计算预览缩放（等 DOM 渲染完；模板可能异步加载，延迟再算一次）
         if (this.isMobile) {
-          var self = this
           this.$nextTick(function() { self.updatePreviewScale() })
-          // 模板可能异步加载，延迟再算一次
           setTimeout(function() { self.updatePreviewScale() }, 300)
         }
       },
@@ -2486,17 +2499,14 @@
       },
       // 路由页兜底：存储里没有模板时，用编辑页快照还原预览
       applySnapshot() {
-        var s = null
-        try { s = JSON.parse(sessionStorage.getItem('jsh.labelEdit.snapshot') || 'null') } catch (e) { s = null }
-        var tpl = this.normalizeTemplate(s)
+        var tpl = this.normalizeTemplate(readLabelEditSnapshot())
         if (!tpl) return
         this.applyTemplate(tpl, true)
         this.applySnapshotValues()
       },
       // 快照里的业务值：模板结构标准化完成后按字段 key 回填，保证预览读的是统一结构
       applySnapshotValues() {
-        var s = null
-        try { s = JSON.parse(sessionStorage.getItem('jsh.labelEdit.snapshot') || 'null') } catch (e) { s = null }
+        var s = readLabelEditSnapshot()
         if (!s || !s.values || typeof s.values !== 'object') return
         var self = this
         var exists = {}
@@ -2518,6 +2528,37 @@
         this.applyReceiptItemElements()
         // 地址打印：历史模板缺失品类规格结构时按商品行类目补回
         this.ensureSpecBlocks()
+        // 类别字段统一约定：快照未携带时按明细行类目解析一级类目名回填
+        this.ensureCategoryValues()
+      },
+      // 类别属性取值约定：取一级类目，一级类目下的二级子类目都引用一级类目的配置读映射表。
+      // 快照 values 未携带 label_category 时，按明细行 categoryId 拉类目树解析一级类目名回填。
+      ensureCategoryValues() {
+        var self = this
+        var attr = this.allAttrs.find(function(a) { return a.key === LABEL_CATEGORY_KEY })
+        if (!attr) return
+        var value = attr.value == null ? '' : String(attr.value)
+        // 已有真实值（快照回填/映射器注入）时不再覆盖；「类别」为字段占位
+        if (value && value !== '类别') return
+        var rows = Array.isArray(this.detailRows) ? this.detailRows : []
+        var categoryId = null
+        rows.some(function(row) {
+          var id = resolveRowCategoryId(row)
+          if (id != null) {
+            categoryId = id
+            return true
+          }
+          return false
+        })
+        if (categoryId == null) return
+        queryMaterialCategoryTreeList({ id: '' }).then(function(tree) {
+          var name = resolvePrimaryCategoryName(tree, categoryId)
+          if (!name) return
+          var target = self.allAttrs.find(function(a) { return a.key === LABEL_CATEGORY_KEY })
+          if (!target) return
+          var cur = target.value == null ? '' : String(target.value)
+          if (!cur || cur === '类别') target.value = name
+        }).catch(function() { /* 类目解析失败保持占位 */ })
       },
       /**
        * 通用兼容：类别/规格归一为 label_category / label_spec 后，模板 specBlocks 可能为空，
@@ -2531,13 +2572,8 @@
         if (!tpl || tpl.specMappingReady === true) return
         var ids = []
         ;(this.detailRows || []).forEach(function(row) {
-          if (!row) return
-          var id = row.categoryId != null
-            ? row.categoryId
-            : (row.materialCategoryId != null
-              ? row.materialCategoryId
-              : ((row.raw && row.raw.categoryId != null) ? row.raw.categoryId : (row.sku && row.sku.categoryId)))
-          if (id != null && id !== '' && ids.map(String).indexOf(String(id)) === -1) ids.push(id)
+          var id = resolveRowCategoryId(row)
+          if (id != null && ids.map(String).indexOf(String(id)) === -1) ids.push(id)
         })
         if (!ids.length) return
         var blocks = Array.isArray(tpl.specBlocks) ? tpl.specBlocks : []
@@ -2617,60 +2653,38 @@
         return walk(nodes)
       },
       /**
-       * 小票预览/打印：把明细行拆成「每件商品 × 每个字段」的独立元素
-       * 与编辑页共用 replaceReceiptGoodsWithItems，保证预览、编辑、打印一致
+       * 小票预览/打印：把明细行拆成「每件商品 × 每个字段」的独立元素。
+       * 拆分/隐藏过滤/schema 重建统一走共享链路 applyReceiptRowsToState（与编辑页同一入口），
+       * 预览页只负责准备数据来源（真实明细行与模板配置）
        */
       applyReceiptItemElements() {
         if (this.type !== 'receipt' || this.receiptItemsApplied) return
         if (!Array.isArray(this.detailRows) || !this.detailRows.length) return
-        var fallbackY = 0
-        var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
-        var self = this
-        headerKeys.forEach(function(key) {
-          var style = self.attrStyles[key]
-          if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
-        })
         var hidden = (this.hiddenReceiptKeys && this.hiddenReceiptKeys.length)
           ? this.hiddenReceiptKeys
           : ((this.template && this.template.hiddenItemKeys) || [])
-        var next = replaceReceiptGoodsWithItems({
+        var next = applyReceiptRowsToState({
           rows: this.detailRows,
+          specBlocks: this.template && this.template.specBlocks,
+          specMappingReady: !!(this.template && this.template.specMappingReady),
+          compactHidden: true,
+          hiddenKeys: hidden,
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
-          specBlocks: this.template && this.template.specBlocks,
-          compactHidden: true,
-          hiddenKeys: hidden,
+          allAttrs: this.allAttrs,
           paperWidth: this.labelWidth,
-          fallbackY: fallbackY ? fallbackY + 8 : 100
+          labelHeight: this.labelHeight,
+          overflowMode: this.overflowMode,
+          template: this.template
         })
-        this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
-        next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
+        this.allAttrs = next.allAttrs
         this.selectedAttrs = next.selectedAttrs
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
-        if (hidden.length) {
-          this.selectedAttrs = this.selectedAttrs.filter(function(key) {
-            return !isReceiptItemHidden(hidden, key)
-          })
-        }
-        // 模板带 schema 时预览按 schema 渲染，这里同步重建，单品元素才会显示
-        if (this.templateSchema) {
-          var v2 = editorStateToV2({
-            name: this.template.name,
-            provider: this.template.provider,
-            businessType: this.template.businessType,
-            selectedAttrs: this.selectedAttrs,
-            attrStyles: this.attrStyles,
-            attrLabels: this.attrLabels,
-            allAttrs: this.allAttrs,
-            goodsFields: this.template.goodsFields,
-            labelWidth: this.labelWidth,
-            labelHeight: this.labelHeight,
-            overflowMode: this.overflowMode,
-            flowElementKeys: this.template.flowElementKeys
-          })
-          this.template = Object.assign({}, this.template, { schema: v2ToSchemaView(v2) })
+        // 模板带 schema 时预览按 schema 渲染，共享链路里同步重建，单品元素才会显示
+        if (next.schema) {
+          this.template = Object.assign({}, this.template, { schema: next.schema })
         }
         this.receiptItemsApplied = true
       },
@@ -2775,7 +2789,7 @@
         })
       },
       // 用指定商品行计算布局（不依赖当前预览页，供分页与打印复用）
-      layoutWithRows(rows, values) {
+      layoutWithRows(rows, values, pageIdx) {
         var layoutValues = values || this.attrValues
         var groups = this.multiGoodsGroups(rows)
         if (groups) {
@@ -2796,9 +2810,11 @@
         // 单页多商品行组依赖完整行（raw.categoryId/specJson）匹配映射表，
         // resolveLabelLayout 返回的 goodsRows 已被 normalizeGoodsRows 精简为
         // {name,spec1..3}，会丢失类别/规格匹配依据，这里用原始行覆盖
+        // 分页打印第 2 页起：只排版勾选的元素（分页标签固定打印），按模板布局整体顺移
+        var contPlan = this.pagedContinuationPlanFor(pageIdx)
         var layout = resolveLabelLayout({
-          selectedAttrs: this.selectedAttrs,
-          attrStyles: this.attrStyles,
+          selectedAttrs: contPlan ? contPlan.keys : this.selectedAttrs,
+          attrStyles: contPlan ? contPlan.styles : this.attrStyles,
           values: layoutValues,
           labels: this.attrLabels,
           goodsRows: rows,
@@ -2813,6 +2829,51 @@
         })
         if (Array.isArray(rows) && rows.length) layout.goodsRows = rows
         return layout
+      },
+      // 分页打印续页计划：第 2 页起仅排版勾选元素 + 分页标签，
+      // 选中的元素块按模板布局整体上移到顶部（顺移），分页标签保持原位每页打印
+      pagedContinuationPlanFor(pageIdx) {
+        if (this.goodsPageMode !== 'each') return null
+        if (pageIdx == null || pageIdx <= 0) return null
+        var self = this
+        var flowKeys = (this.template && Array.isArray(this.template.flowElementKeys)) ? this.template.flowElementKeys : []
+        var flow = flowKeys.filter(function(key) {
+          return key !== 'page_no' && self.selectedAttrs.indexOf(key) > -1 && self.attrStyles[key]
+        })
+        if (!flow.length) return null
+        var keys = flow.slice()
+        if (this.selectedAttrs.indexOf('page_no') > -1 && this.attrStyles.page_no) keys.push('page_no')
+        // 顺移量 = 勾选元素最小 y - 模板全部元素最小 y，勾选块整体上移到模板顶部
+        var minY = null
+        var selMin = null
+        this.selectedAttrs.forEach(function(key) {
+          var s = self.attrStyles[key]
+          if (!s || key === 'page_no') return
+          var y = s.y || 0
+          if (minY == null || y < minY) minY = y
+        })
+        flow.forEach(function(key) {
+          var s = self.attrStyles[key]
+          if (!s) return
+          var y = s.y || 0
+          if (selMin == null || y < selMin) selMin = y
+        })
+        var shift = (selMin != null && minY != null && selMin > minY) ? selMin - minY : 0
+        var styles = this.attrStyles
+        if (shift > 0) {
+          styles = {}
+          this.selectedAttrs.forEach(function(key) {
+            var s = self.attrStyles[key]
+            if (!s) return
+            if (flow.indexOf(key) > -1) {
+              styles[key] = Object.assign({}, s, { y: (s.y || 0) - shift })
+            } else if (key === 'page_no') {
+              // 分页标签固定原位每页打印，不参与顺移
+              styles[key] = s
+            }
+          })
+        }
+        return { keys: keys, styles: styles }
       },
       // 地址打印单页多商品：每个商品输出「名称 / 类别 / 规格」一组，
       // 全部数据仍打印在同一张标签上，但各商品的值一一对应不再上下错位
@@ -2883,18 +2944,6 @@
       sameSpecName(a, b) {
         return this.specNameKey(a) === this.specNameKey(b)
       },
-      // 商品行的规格键值对：优先 raw.specJson，其次「名称:值;名称:值」文本
-      // 商品行的规格键值对：优先 SKU 的 spec_json（规格明细），其次「名称:值;名称:值」文本
-      parseGoodsSpecPairs(row) {
-        var pairs = []
-        specBlocksFromRow(row).forEach(function(block) {
-          if (!block) return
-          var name = block.name == null ? '' : String(block.name).trim()
-          var value = (block.values || []).map(function(item) { return String(item == null ? '' : item).trim() }).filter(Boolean).join('/')
-          if (name && value) pairs.push({ name: name, value: value })
-        })
-        return pairs
-      },
       // 映射表优先：先按商品类别锁定映射表里的类别组，只读该组勾选的规格；
       // 类别不在映射表内就不输出规格，避免读错数据
       matchGoodsSpecGroup(pairs, row, categoryGroups) {
@@ -2945,8 +2994,16 @@
             fontWeight: style.fontWeight || 'normal',
             letterSpacing: style.letterSpacing || 0,
             lineHeight: lineHeight,
-            lineHeightPx: fontSize * lineHeight
+            lineHeightPx: fontSize * lineHeight,
+            textAlign: style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left'
           }
+        })
+        // 未选中/无数据的项不占位：所有分组都取不到文本的成员直接剔除，
+        // 避免 groupHeight 与组间距仍为隐藏项保留空间
+        members = members.filter(function(m) {
+          return groups.some(function(group) {
+            return !!String(self.multiGoodsGroupText(group, m.key) || '').trim()
+          })
         })
         if (!members.length) return null
         var baseY = Math.min.apply(null, members.map(function(m) { return m.y }))
@@ -2957,10 +3014,13 @@
         }, 0)
         var belowFrom = baseY + groupHeight
         // 组与组之间的间距：优先沿用模板里组内元素的间距（如名称到规格），
-        // 只有一个元素时才取行组下方元素与行组底部的距离
+        // 只有一个元素时才取行组下方元素与行组底部的距离。
+        // members 按 y 排序取第二个的偏移，避免 keys 顺序（名称/类别/规格）
+        // 与模板 y 顺序不一致时间距被放大成整行留白
         var gap = 0
         if (members.length > 1) {
-          gap = members[1].offsetY
+          var sorted = members.slice().sort(function(a, b) { return a.offsetY - b.offsetY })
+          gap = sorted[1].offsetY
         } else {
           Object.keys(styles).forEach(function(key) {
             if (keys.indexOf(key) > -1) return
@@ -3018,23 +3078,44 @@
         return elems
       },
       // 把某一页的布局坐标套进 schema（堆叠预览逐页调用）
-      schemaForLayout(layout, values) {
+      schemaForLayout(layout, values, pageIdx) {
         var schema = this.templateSchema
         if (!schema || !schema.elements) return schema
         var styles = layout.styles
+        // 分页打印续页：只保留勾选元素与分页标签，其余元素整页移除
+        var contPlan = this.pagedContinuationPlanFor(pageIdx)
+        var contKeys = contPlan ? contPlan.keys : null
+        var contShiftPx = contPlan ? contPlan.shift : 0
         var changed = false
         var elements = schema.elements.map(function(el) {
           if (!el) return el
-          var key = (el.type === 'barcode' || el.type === 'qrcode')
-            ? CODE_KEY_PREFIX + el.field
-            : (el.field || el.id)
+          var isCode = el.type === 'barcode' || el.type === 'qrcode'
+          var key = isCode ? CODE_KEY_PREFIX + el.field : (el.field || el.id)
           // 规格块由共享模块整体输出（type: specblock），schema 中不再逐个元素输出
-          if (el.type !== 'barcode' && el.type !== 'qrcode' && isSpecItemKey(key)) {
+          if (!isCode && isSpecItemKey(key)) {
             changed = true
             return null
           }
+          // 续页只输出勾选元素：编码元素按其绑定的属性键判断
+          if (contKeys) {
+            var baseKey = isCode ? (el.field || '') : key
+            if (contKeys.indexOf(baseKey) === -1) {
+              changed = true
+              return null
+            }
+          }
           var style = styles[key]
-          if (!style) return el
+          if (!style) {
+            // 续页顺移：布局未覆盖的编码元素跟随其属性键上移
+            if (contShiftPx > 0 && contKeys && contKeys.indexOf(isCode ? (el.field || '') : key) > -1) {
+              var shiftedY = Math.round((((el.y || 0) * PX_PER_MM) - contShiftPx) / PX_PER_MM * 100) / 100
+              if (Math.abs((el.y || 0) - shiftedY) > 0.01) {
+                changed = true
+                return Object.assign({}, el, { y: shiftedY })
+              }
+            }
+            return el
+          }
           var next = el
           var y = Math.round((style.y || 0) / PX_PER_MM * 100) / 100
           if (Math.abs((el.y || 0) - y) > 0.01) {
@@ -3125,10 +3206,10 @@
         // 每页的分页标签文案不同，布局时按该页的值计算
         var values = Object.assign({}, this.attrValues)
         values['page_no'] = this.pageNoTextFor(idx)
-        if (this.goodsPageMode === 'none') return this.layoutWithRows(this.goodsRowsForLayout, values)
+        if (this.goodsPageMode === 'none') return this.layoutWithRows(this.goodsRowsForLayout, values, idx)
         var plan = this.goodsPagePlan
         idx = Math.min(idx, plan.pages.length - 1)
-        return this.layoutWithRows(plan.pages[idx] ? plan.pages[idx].rows : [], values)
+        return this.layoutWithRows(plan.pages[idx] ? plan.pages[idx].rows : [], values, idx)
       },
       // 规格块预览视图：与编辑页 specBlockViews 使用同一套组装与行布局
       specBlockViewsFor(layout, values) {
@@ -3291,8 +3372,10 @@
           letterSpacing: (s.letterSpacing || 0) + 'px',
           lineHeight: String(s.lineHeight || 1.3)
         }
-        // 未设置宽度时按「标签宽 - 左边距」自动折行，与布局计算结果保持一致
-        var wrapWidth = s.width > 0 ? s.width : Math.max(20, this.labelWidth - (s.x || 0))
+        // 折行宽度 = min(元素边框宽度, 标签可用宽度)：元素宽于标签时按标签边界折行，
+        // 与布局计算 / 打印下发保持一致，避免文字溢出标签被裁切
+        var labelLimit = Math.max(20, this.labelWidth - (s.x || 0))
+        var wrapWidth = s.width > 0 ? Math.min(s.width, labelLimit) : labelLimit
         style.width = wrapWidth + 'px'
         style.whiteSpace = 'pre-wrap'
         style.wordBreak = 'break-all'
@@ -3436,11 +3519,11 @@
       handleDiscoveredPrint() {
         var printer = this.discoveredPrinter
         var type = printer.type
-        this.printing = true
-        var items = this.buildPrintItems()
         if (type === 'bluetooth') {
-          return this.printViaBluetooth(printer, items)
+          return this.printViaBluetooth(printer)
         }
+        this.printing = true
+        var items = this.buildLayoutItems()
         if (type === 'cloud') {
           this.printing = false
           this.printByBrowser(items)
@@ -3448,15 +3531,52 @@
         }
         return Promise.resolve(false)
       },
-      // 蓝牙打印：连接 GATT 并发送打印数据
-      printViaBluetooth(printer, items) {
+      // 蓝牙打印：复用后端指令生成模块（与网络打印同一套 TSPL/CPCL 排版指令），
+      // 仅传输通道由「后端远程下发」改为「本地蓝牙 GATT 直发」
+      printViaBluetooth(printer) {
         var self = this
         var device = printer.device
         if (!device) {
-          this.printing = false
           this.$message.error('蓝牙设备未连接')
           return Promise.resolve(false)
         }
+        this.printing = true
+        // 指令集与网络打印共用一套配置；蓝牙标签机默认 TSPL
+        var cmdSet = String(printer.cmdSet || 'TSPL').toUpperCase()
+        var needsImage = cmdSet === 'CPCL' || cmdSet === 'ESC/POS'
+        var items = this.buildLayoutItems()
+        var prepare = needsImage ? this.renderLabelToPng() : Promise.resolve(null)
+        return prepare.then(function(image) {
+          var payload = {
+            cmdSet: cmdSet,
+            copies: self.copies,
+            width: self.labelWidth,
+            height: self.labelHeight,
+            items: items
+          }
+          if (image) payload.image = image
+          return postAction('/print/labelCommands', payload)
+        }).then(function(res) {
+          var data = (res && res.data) || {}
+          if (!res || res.code !== 200 || !data.commands) {
+            self.printing = false
+            self.msgError((typeof data === 'string' ? data : data.message) || '打印指令生成失败')
+            return false
+          }
+          // Base64 → 字节流 → 本地蓝牙写入
+          var raw = atob(data.commands)
+          var bytes = new Uint8Array(raw.length)
+          for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+          return self.sendViaBluetooth(device, printer, bytes)
+        }).catch(function(err) {
+          self.printing = false
+          self.msgError('蓝牙打印失败：' + ((err && err.message) || err))
+          return false
+        })
+      },
+      // 连接蓝牙 GATT 并分包写入指令字节
+      sendViaBluetooth(device, printer, bytes) {
+        var self = this
         return device.gatt.connect().then(function(server) {
           // 获取打印服务（取第一个可用的打印服务）
           var servicePromises = printer.capabilities.services.map(function(uuid) {
@@ -3473,9 +3593,7 @@
             return c.properties.write || c.properties.writeWithoutResponse
           })
           if (!writable) throw new Error('未找到可写特征值')
-          // 将打印内容转为字节流（ESC/POS 简化指令：文本 + 条码）
-          var data = self.buildEscPosData(items)
-          return self.sendChunks(writable, data)
+          return self.sendChunks(writable, bytes)
         }).then(function() {
           self.printing = false
           self.msgSuccess('已发送到蓝牙打印机：' + printer.name)
@@ -3483,7 +3601,7 @@
           return true
         }).catch(function(err) {
           self.printing = false
-          self.msgError('蓝牙打印失败：' + (err.message || err))
+          self.msgError('蓝牙打印失败：' + ((err && err.message) || err))
           return false
         })
       },
@@ -3498,27 +3616,6 @@
           return char.writeValue(chunk).then(sendNext)
         }
         return sendNext()
-      },
-      // 构造 ESC/POS 打印数据（简化版）
-      buildEscPosData(items) {
-        var enc = new TextEncoder()
-        var bytes = []
-        // 初始化
-        bytes.push(0x1b, 0x40)
-        items.forEach(function(item) {
-          if (item.text) {
-            var line = item.text + '\n'
-            var arr = enc.encode(line)
-            for (var j = 0; j < arr.length; j++) bytes.push(arr[j])
-          }
-        })
-        // 走纸切纸
-        bytes.push(0x1d, 0x56, 0x00)
-        return new Uint8Array(bytes)
-      },
-      // 构造打印项数组（供 discovered 打印复用）
-      buildPrintItems() {
-        return this.buildLayoutItems()
       },
       // 打印成功后通知父页面（地址打印页据此生成并保存会员信息）
       notifyPrintSuccess() {
@@ -3713,13 +3810,26 @@
         if (page == null) page = this._batchPrint ? this.printPage : this.previewPage
         var layout = this.layoutForPage(page)
         var resolved = layout.styles
+        // 分页打印续页：仅输出勾选元素（分页标签固定打印）
+        var contPlan = this.pagedContinuationPlanFor(page)
         // 单页多商品：名称/类别/规格按模板布局样式逐组输出
         var groups = this.multiGoodsGroups(layout.goodsRows)
         var plan = groups ? this.multiGoodsGroupPlan(layout, groups) : null
         this.renderItems.forEach(function(item) {
           if (plan && plan.keys.indexOf(item.key) > -1) return
+          if (contPlan) {
+            // 绑定属性的编码元素 key 带 code__ 前缀，续页勾选按属性键匹配；自定义码元素 key 即属性键
+            var contKey = item.isCode && item.key.indexOf(CODE_KEY_PREFIX) === 0
+              ? item.key.slice(CODE_KEY_PREFIX.length)
+              : item.key
+            if (contPlan.keys.indexOf(contKey) === -1) return
+          }
           var style = resolved[item.key] || self.attrStyles[item.key]
           if (!style) return
+          // 续页顺移：布局未覆盖的编码项跟随其属性键上移
+          if (contPlan && contPlan.shift > 0 && !resolved[item.key]) {
+            style = Object.assign({}, style, { y: (style.y || 0) - contPlan.shift })
+          }
           // 多行顺移后超出标签底边的内容直接裁掉
           if ((style.y || 0) >= self.labelHeight) return
           // 商品明细表：按行展开为“表头 + 每行各列”文字项，行高按实际折行行数
@@ -3772,7 +3882,7 @@
               y: style.y || 0,
               width: code.imgWidth,
               height: code.imgHeight,
-              codeType: style.codeType,
+              codeType: style.codeType || (item.attr.isCodeElem ? item.attr.codeType : ''),
               codeText: code.value,
               // 硬件取整参数：后端直接使用，不能自行按宽度重算
               narrow: code.narrow,
@@ -3807,6 +3917,7 @@
             fontWeight: style.fontWeight,
             letterSpacing: style.letterSpacing || 0,
             lineHeight: style.lineHeight || 1.3,
+            textAlign: style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left',
             text: displayText
           })
         })
@@ -3832,6 +3943,7 @@
                 fontWeight: m.fontWeight,
                 letterSpacing: m.letterSpacing,
                 lineHeight: m.lineHeight,
+                textAlign: m.textAlign || 'left',
                 text: text
               })
             })
@@ -3923,6 +4035,7 @@
             'font-weight:' + item.fontWeight + ';' +
             'letter-spacing:' + (item.letterSpacing || 0) + 'px;' +
             'line-height:' + (item.lineHeight || 1.3) + ';' +
+            'text-align:' + (item.textAlign || 'left') + ';' +
             wrapStyle +
             '">' + item.text + '</div>'
         })

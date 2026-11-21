@@ -27,6 +27,12 @@
     <a-button type="dashed" block size="small" class="lem-add-custom" @click="$emit('add-custom')">
       <a-icon type="plus" />自定义标签
     </a-button>
+    <a-button type="dashed" block size="small" class="lem-add-custom" @click="$emit('add-separator')">
+      <a-icon type="plus" />间隔符
+    </a-button>
+    <a-button type="dashed" block size="small" class="lem-add-custom" @click="$emit('add-code')">
+      <a-icon type="plus" />二维码/条码
+    </a-button>
   </div>
 </template>
 

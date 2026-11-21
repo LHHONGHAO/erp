@@ -4,7 +4,8 @@
  * 不再各自实现一套存储分发与快照组装。
  */
 import { getAction, postAction } from '@/api/manage'
-import { editorStateToV2, isLabelTemplateV2 } from './labelTemplateV2'
+import { editorStateToV2, isLabelTemplateV2, v2ToSchemaView } from './labelTemplateV2'
+import { replaceReceiptGoodsWithItems, isReceiptItemKey, isReceiptItemHidden } from './goodsLabelLayout'
 import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate } from './labelTemplateStore'
 import { fetchDeliveryTemplate, saveDeliveryTemplate } from './deliveryNoteTemplateStore'
 import { normalizeEditorData } from './templateEditDataModel'
@@ -12,6 +13,84 @@ import { normalizeEditorData } from './templateEditDataModel'
 /** 元素数据（属性面板结构）：保存模板、还原面板共用同一份结构 */
 export function buildEditorData(attrs, title, specBlocks) {
   return normalizeEditorData({ fields: attrs, title: title, specBlocks: specBlocks })
+}
+
+/**
+ * 小票明细元素统一链路（唯一入口）：编辑页占位数据、预览/打印真实数据都走这里。
+ * 明细拆分（replaceReceiptGoodsWithItems）、隐藏项过滤、schema 重建全部收敛在本函数，
+ * 编辑页与预览页只传数据来源，不再各自拼装。
+ *
+ * @param {Object} state {
+ *   rows 明细数据行（编辑页传占位行，预览/打印传真实明细）,
+ *   specBlocks 规格块, useSpecBlockPreset 编辑占位预置开关,
+ *   compactHidden 按模板保存的可见项压缩, hiddenKeys 关闭的明细项,
+ *   selectedAttrs, attrStyles, attrLabels, allAttrs 当前编辑态,
+ *   paperWidth 纸宽, labelHeight/overflowMode schema 重建参数,
+ *   template 预览/打印传入当前模板（带 schema 时同步重建 schema 视图）
+ * }
+ * @returns {Object} { selectedAttrs, attrStyles, attrLabels, allAttrs, itemKeys, schema? }
+ */
+export function applyReceiptRowsToState(state) {
+  var s = state || {}
+  var styles = s.attrStyles || {}
+  // 明细起点：单据头（标题/单号/日期/会员）最低元素的底部 + 8
+  var fallbackY = 0
+  var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
+  headerKeys.forEach(function(key) {
+    var style = styles[key]
+    if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
+  })
+  var hiddenKeys = s.hiddenKeys || []
+  var next = replaceReceiptGoodsWithItems({
+    rows: s.rows,
+    specBlocks: s.specBlocks,
+    specMappingReady: s.specMappingReady === true,
+    useSpecBlockPreset: !!s.useSpecBlockPreset,
+    compactHidden: !!s.compactHidden,
+    hiddenKeys: hiddenKeys,
+    selectedAttrs: s.selectedAttrs,
+    attrStyles: s.attrStyles,
+    attrLabels: s.attrLabels,
+    paperWidth: s.paperWidth,
+    fallbackY: fallbackY ? fallbackY + 8 : 100
+  })
+  // 商品块转换后返回的有效隐藏清单：并入数据块的静态字段对应动态列隐藏项已被剔除
+  var effectiveHidden = next.hiddenKeys || hiddenKeys
+  var allAttrs = (s.allAttrs || []).filter(function(attr) {
+    return !isReceiptItemKey(attr.key)
+  }).concat(next.attrs)
+  var selectedAttrs = next.selectedAttrs
+  if (effectiveHidden.length) {
+    selectedAttrs = selectedAttrs.filter(function(key) {
+      return !isReceiptItemHidden(effectiveHidden, key)
+    })
+  }
+  var result = {
+    selectedAttrs: selectedAttrs,
+    attrStyles: next.attrStyles,
+    attrLabels: next.attrLabels,
+    allAttrs: allAttrs,
+    itemKeys: next.itemKeys
+  }
+  var tpl = s.template
+  if (tpl && tpl.schema) {
+    var v2 = editorStateToV2({
+      name: tpl.name,
+      provider: tpl.provider,
+      businessType: tpl.businessType,
+      selectedAttrs: selectedAttrs,
+      attrStyles: next.attrStyles,
+      attrLabels: next.attrLabels,
+      allAttrs: allAttrs,
+      goodsFields: tpl.goodsFields,
+      labelWidth: s.paperWidth,
+      labelHeight: s.labelHeight,
+      overflowMode: s.overflowMode,
+      flowElementKeys: tpl.flowElementKeys
+    })
+    result.schema = v2ToSchemaView(v2)
+  }
+  return result
 }
 
 /** getUiConfig 返回值可能是字符串或已解析对象，统一处理 */
@@ -80,7 +159,8 @@ export function buildTemplateSnapshot(vm, cfg, name, meta, options) {
     pageMode: vm.effectivePageMode,
     maxRowsPerPage: 0,
     repeatHeader: vm.repeatHeader,
-    flowElementKeys: vm.flowElementKeys.slice()
+    // 分页标签固定每页打印，不参与勾选，不写入勾选列表
+    flowElementKeys: vm.flowElementKeys.filter(function(key) { return key !== 'page_no' })
   }, {
     type: info.type || (isDelivery ? 'delivery' : vm.templateType),
     kind: isDelivery ? 'delivery-note' : null,

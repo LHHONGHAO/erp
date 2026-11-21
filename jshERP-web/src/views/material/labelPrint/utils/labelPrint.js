@@ -5,7 +5,7 @@
  * 并按标签实际尺寸设置 @page 纸张大小，保证打印位置与预览一致。
  */
 
-var PX_PER_MM = 3.779528
+import { PX_PER_MM } from './labelSchema'
 
 function buildHtml(options) {
   var widthPx = options.widthPx || 320

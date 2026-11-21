@@ -45,6 +45,24 @@
           AND jt.valueText IS NOT NULL AND TRIM(jt.valueText) != ''
         GROUP BY jt.attributeName, jt.valueText
     </select>
+    <select id="selectSkuAttributeValueStats" resultType="map">
+        SELECT jt.valueText AS valueText,
+               COUNT(*) AS valueCount
+        FROM sku s
+        INNER JOIN jsh_material m ON m.id = s.spu_id
+        JOIN JSON_TABLE(s.spec_json, '$[*]' COLUMNS (
+            attributeName VARCHAR(100) PATH '$.name',
+            valueText VARCHAR(255) PATH '$.value'
+        )) jt
+        WHERE jt.attributeName = #{attributeName}
+          AND IFNULL(m.delete_flag,'0') != '1'
+          AND s.deleted_at IS NULL
+          AND IFNULL(m.tenant_id,0) = IFNULL(#{tenantId},0)
+          AND IFNULL(s.tenant_id,0) = IFNULL(#{tenantId},0)
+          AND jt.valueText IS NOT NULL AND TRIM(jt.valueText) != ''
+        GROUP BY jt.valueText
+        ORDER BY valueCount DESC, jt.valueText
+    </select>
     <resultMap extends="com.jsh.erp.datasource.mappers.MaterialMapper.BaseResultMap" id="ResultMapList" type="com.jsh.erp.datasource.entities.MaterialVo4Unit">
         <result column="unitName" jdbcType="VARCHAR" property="unitName" />
         <result column="ratio" jdbcType="DECIMAL" property="ratio" />
@@ -315,6 +333,15 @@
             and (jm.bar_code like #{bindKey} or jme.sku_code like #{bindKey} or jm.name like #{bindKey}
             or jm.mnemonic like #{bindKey} or jm.brand like #{bindKey} or jm.mfrs like #{bindKey}
             or jme.spec_summary like #{bindKey})
+        </if>
+        <if test="size != null and size !=''">
+            and exists (
+                select 1 from json_table(jme.spec_json, '$[*]' columns(
+                    attr_name varchar(100) path '$.name',
+                    attr_value varchar(255) path '$.value'
+                )) st
+                where st.attr_name = '尺寸' and st.attr_value = #{size}
+            )
         </if>
 
 

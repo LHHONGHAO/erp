@@ -163,7 +163,7 @@ public class MaterialService {
     public List<MaterialVo4Unit> selectSkuList(String materialParam, String standard, String model, String color, String brand, String mfrs,
                                                String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String weight, String expiryNum, String enableSerialNumber,
                                                String enableBatchNumber, String position, String enabled, String remark, String categoryId,
-                                               String mpList)
+                                               String size, String mpList)
             throws Exception{
         String[] mpArr = new String[]{};
         if(StringUtil.isNotEmpty(mpList)){
@@ -178,7 +178,7 @@ public class MaterialService {
             PageUtils.startPage();
             list = materialMapperEx.selectSkuListByConditionMaterial(materialParam, standard, model, color, brand, mfrs,
                     otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum,
-                    enableSerialNumber, enableBatchNumber, position, enabled, remark, idList);
+                    enableSerialNumber, enableBatchNumber, position, enabled, remark, idList, size);
             if (null != list && list.size()>0) {
                 for (MaterialVo4Unit m : list) {
                     if(fileUploadType == 2) {
@@ -195,6 +195,21 @@ public class MaterialService {
                 }
             }
         } catch(Exception e){
+            JshException.readFail(logger, e);
+        }
+        return list;
+    }
+
+    /**
+     * 全部商品的 SKU 规格属性去重值统计（如「尺寸」的 200/220），供移动端筛选卡槽使用
+     */
+    public List<Map<String, Object>> getSkuAttributeValueStats(String attributeName) throws Exception {
+        List<Map<String, Object>> list = new ArrayList<>();
+        try {
+            User currentUser = userService.getCurrentUser();
+            Long tenantId = currentUser == null ? null : currentUser.getTenantId();
+            list = materialMapperEx.selectSkuAttributeValueStats(attributeName, tenantId);
+        } catch (Exception e) {
             JshException.readFail(logger, e);
         }
         return list;

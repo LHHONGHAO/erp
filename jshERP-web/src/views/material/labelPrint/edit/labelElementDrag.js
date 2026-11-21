@@ -10,6 +10,26 @@ export function createLabelElementDrag(vm) {
   var selectedBeforeDown = []
   var prevFocus = null
   var blockDragKeys = null
+  var pressTimer = null
+  var longPressRequired = false
+  var longPressReady = false
+  var pressCancelled = false
+
+  function clearLongPressTimer() {
+    if (pressTimer) {
+      clearTimeout(pressTimer)
+      pressTimer = null
+    }
+  }
+
+  function selectionTargetsFor(key) {
+    var blockKeys = vm.specBlockKeysOf(key)
+    var hiddenKeys = vm.hiddenItemKeys || []
+    var targets = blockKeys.length
+      ? blockKeys.filter(function(k) { return hiddenKeys.indexOf(k) === -1 })
+      : [key]
+    return targets.length ? targets : [key]
+  }
 
   function createDraggingState() {
     return {
@@ -24,17 +44,36 @@ export function createLabelElementDrag(vm) {
   // 手指移出元素后事件仍持续派发到捕获元素，不依赖 touch passive 机制
   // 选中逻辑也在这里完成（彻底移除 click 事件避免时序冲突）
   function startPointerDrag(key, e, mode) {
+    clearLongPressTimer()
+    longPressRequired = mode === 'move' && vm.isTextElem && vm.isTextElem(key)
+    longPressReady = false
+    pressCancelled = false
     // 记录 pointerdown 瞬间的快照，留到 pointerup 做 toggle 判断
     pointerDownKey = key
     selectedBeforeDown = vm.selectedKeys.slice()
     prevFocus = vm.currentAttrKey
-    // 不在这里改 currentAttrKey！焦点只能在 pointerup toggle 后决定
+    // 不在这里改 currentAttrKey！焦点只能在 pointerup toggle 或长按激活后决定
     // 规格块整体拖动：属性名 + 全部规格值跟随同一个位移
     var blockKeys = vm.specBlockKeysOf(key)
     blockDragKeys = mode === 'move' && blockKeys.length > 1 ? blockKeys : null
     var willMultiDrag = (mode === 'move' || mode === 'resize') &&
       (vm.selectedKeys.length > 1 || !!blockDragKeys)
     startActualDrag(key, e, mode, willMultiDrag)
+    if (longPressRequired) {
+      pressTimer = setTimeout(function() {
+        pressTimer = null
+        if (!dragging.active || pressCancelled) return
+        longPressReady = true
+        // 长按激活文本手柄；多选模式下保留已有选择
+        var base = vm.multiSelectMode ? vm.selectedKeys.slice() : []
+        selectionTargetsFor(key).forEach(function(k) {
+          if (base.indexOf(k) === -1) base.push(k)
+        })
+        vm.selectedKeys = base
+        vm.currentAttrKey = key
+        if (navigator.vibrate) navigator.vibrate(10)
+      }, 600)
+    }
   }
 
   // 测量元素文字本身的自然尺寸（不换行、不裁剪），用于限制缩放边框的最小值
@@ -204,6 +243,15 @@ export function createLabelElementDrag(vm) {
     var d = dragging
     var dx = e.clientX - d.startX
     var dy = e.clientY - d.startY
+    if (longPressRequired && !longPressReady) {
+      // 文本未达到长按时长就移动：取消本次激活，不触发拖动或点击选中
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        pressCancelled = true
+        d.moved = true
+        clearLongPressTimer()
+      }
+      return
+    }
     if (!d.moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
       d.moved = true
     }
@@ -255,10 +303,12 @@ export function createLabelElementDrag(vm) {
   }
 
   function onPointerUp() {
+    clearLongPressTimer()
     var prevKeys = selectedBeforeDown || []
     var pKey = pointerDownKey
     var didMove = dragging.moved
     var dragMode = dragging.mode
+    var wasLongPress = longPressReady
     if (dragging.active) {
       dragging.active = false
       dragging.moved = false
@@ -266,14 +316,9 @@ export function createLabelElementDrag(vm) {
       vm.pushSnapshot()
     }
     // 没移动 + 不是 resize 手柄操作 → 点击意图，执行 toggle
-    if (!didMove && pKey && (!dragMode || dragMode === 'move')) {
+    if (!didMove && !wasLongPress && pKey && (!dragMode || dragMode === 'move')) {
       // 规格块内任一元素：点击按整块选中/取消（已关闭的规格值保持关闭），普通元素按单项处理
-      var blockKeys = vm.specBlockKeysOf(pKey)
-      var hiddenKeys = vm.hiddenItemKeys || []
-      var targets = blockKeys.length
-        ? blockKeys.filter(function(k) { return hiddenKeys.indexOf(k) === -1 })
-        : [pKey]
-      if (!targets.length) targets = [pKey]
+      var targets = selectionTargetsFor(pKey)
       var allSelected = targets.every(function(k) { return prevKeys.indexOf(k) > -1 })
       if (allSelected) {
         // 之前已选中 → 整块移除
@@ -306,12 +351,18 @@ export function createLabelElementDrag(vm) {
     pointerDownKey = null
     selectedBeforeDown = []
     prevFocus = null
+    longPressRequired = false
+    longPressReady = false
+    pressCancelled = false
     unbindPointerEvents()
   }
 
   return {
     startPointerDrag: startPointerDrag,
-    // 编辑页销毁时解绑全局监听
-    destroy: unbindPointerEvents
+    // 编辑页销毁时解绑全局监听并取消未完成的长按
+    destroy: function() {
+      clearLongPressTimer()
+      unbindPointerEvents()
+    }
   }
 }

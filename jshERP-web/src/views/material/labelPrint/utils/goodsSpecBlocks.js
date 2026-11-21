@@ -85,11 +85,6 @@ export function isSpecNameKey(key) {
   return !!parsed && parsed.kind === 'name'
 }
 
-export function isSpecValueKey(key) {
-  const parsed = parseSpecItemKey(key)
-  return !!parsed && parsed.kind === 'value'
-}
-
 export function isSpecItemKey(key) {
   return !!parseSpecItemKey(key)
 }
@@ -150,21 +145,6 @@ export function normalizeSpecBlocks(blocks) {
     if (block && Array.isArray(block.sourceValues)) normalized.sourceValues = block.sourceValues.map(function(value) { return String(value == null ? '' : value) })
     return normalized
   }).filter(function(block) { return block.name !== '' || block.values.length > 0 })
-}
-
-/**
- * 编辑页占位文本
- *
- * 编辑页只显示属性名（含表单标题），不展示表单里的业务值；
- * 业务值在打印预览/打印时按打印规则填充。
- * 自定义标签没有业务数据，直接显示其自身文案。
- */
-export function editPlaceholderLabel(label, attr) {
-  const name = label == null ? '' : String(label)
-  if (!name && attr && attr.isCustom) {
-    return attr.value == null ? '' : String(attr.value)
-  }
-  return name
 }
 
 /**

@@ -7,7 +7,7 @@
  *
  * 字段 key 沿用小票（receipt）前缀，保证已有小票模板无需迁移即可识别新增字段。
  */
-import { buildProductFormAttrs } from './productFormFields'
+import { buildProductFormAttrs, mergeProductAttrValues } from './productFormFields'
 import { appendCategorySpecAttrs } from './categorySpec'
 
 /** 销售开单表单字段定义（顺序即面板展示顺序） */
@@ -68,11 +68,12 @@ export function buildRetailSaleAttrs(record) {
  *   number 单号 / date 日期 / memberName 会员 / depotName 仓库 / payType 收款类型
  *   qtyTotal 数量合计 / goodsAmount 商品金额 / discount 折扣 /
  *   discountAmount 优惠金额 / amountTotal 应收金额 / remark 备注 / footer 落款
- * @returns {Object} rc_* 字段值
+ *   items 购物车商品明细（商品字段统一约定：回填商品基础属性 / SKU 属性值）
+ * @returns {Object} rc_* 字段值 + 商品字段值
  */
 export function extractRetailSaleValues(source) {
   var s = source || {}
-  return {
+  var values = {
     rc_title: toText(s.title) || '零售小票',
     rc_no: toText(s.number),
     rc_date: toText(s.date),
@@ -87,4 +88,42 @@ export function extractRetailSaleValues(source) {
     rc_remark: toText(s.remark),
     rc_footer: toText(s.footer) || '谢谢惠顾，欢迎再次光临'
   }
+  return mergeProductAttrValues(values, s.items)
+}
+
+/**
+ * 从销售开单购物车明细提取小票明细表行（name/spec/spec1-3/qty/price/amount）
+ *
+ * @param {Array} items 购物车明细
+ * @param {Object} helpers 页面业务取值函数：
+ *   specLines(item) 规格逐项 [{ label, value }]，settle(item) 行结算金额
+ * @returns {Array} 明细行（规格逐项拆到 spec1/2/3，超过 3 项的合并到第 3 列）
+ */
+export function extractReceiptRows(items, helpers) {
+  var h = helpers || {}
+  var specLines = h.specLines || function() { return [] }
+  var settle = h.settle || function() { return 0 }
+  var specCell = function(line) {
+    return (line && line.label ? line.label + '：' : '') + (line ? line.value : '')
+  }
+  return (Array.isArray(items) ? items : []).map(function(item) {
+    var qty = item.operNumber - 0 || 0
+    var price = (item.unitPrice - 0) || (item.commodityDecimal - 0) || 0
+    var lines = specLines(item) || []
+    return {
+      name: item.name || '',
+      // 商品品类 id：模板编辑页据此读取品类设置的规格块
+      categoryId: item.categoryId,
+      spec: lines.map(function(line) {
+        return (line && line.label ? line.label + '：' : '') + (line ? line.value : '')
+      }).join('　'),
+      spec1: lines[0] ? specCell(lines[0]) : '',
+      spec2: lines[1] ? specCell(lines[1]) : '',
+      spec3: lines.slice(2).map(specCell).join('　'),
+      qty: String(qty),
+      price: price.toFixed(2),
+      // 小票明细金额取本行结算金额（未改写时即零售价×数量）
+      amount: settle(item).toFixed(2)
+    }
+  })
 }

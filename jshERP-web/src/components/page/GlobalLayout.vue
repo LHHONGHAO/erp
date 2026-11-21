@@ -75,7 +75,6 @@
         collapsed: false,
         activeMenu:{},
         menus: [],
-        touchStart: null,
         backNavigating: false,
         mobileNavStack: [],
         mobileInited: false
@@ -124,10 +123,6 @@
     },
     mounted() {
       this.initMobileNav()
-    },
-    beforeDestroy() {
-      document.removeEventListener('touchstart', this.handleTouchStart)
-      document.removeEventListener('touchend', this.handleTouchEnd)
     },
     methods: {
       ...mapActions(['setSidebar']),
@@ -201,8 +196,6 @@
         }
         this.mobileNavStack = stack
         this.saveNavStack()
-        document.addEventListener('touchstart', this.handleTouchStart, { passive: true })
-        document.addEventListener('touchend', this.handleTouchEnd, { passive: true })
       },
       saveNavStack() {
         sessionStorage.setItem('mobileNavStack', JSON.stringify(this.mobileNavStack))
@@ -234,36 +227,6 @@
         this.$router.push(target).catch(() => {
           this.backNavigating = false
         })
-      },
-      handleTouchStart(e) {
-        if (!this.isMobile() || e.touches.length !== 1) {
-          this.touchStart = null
-          return
-        }
-        let target = e.target
-        if (target && target.closest && target.closest('.ant-table-content, .ant-table-body, .ant-modal-root, .ant-drawer, .ant-select-dropdown, .ant-calendar-picker-container')) {
-          this.touchStart = null
-          return
-        }
-        this.touchStart = {
-          x: e.touches[0].clientX,
-          y: e.touches[0].clientY,
-          time: Date.now()
-        }
-      },
-      handleTouchEnd(e) {
-        if (!this.isMobile() || !this.touchStart) {
-          return
-        }
-        let touch = e.changedTouches[0]
-        let dx = touch.clientX - this.touchStart.x
-        let dy = touch.clientY - this.touchStart.y
-        let duration = Date.now() - this.touchStart.time
-        this.touchStart = null
-        // 页面右滑退回上一级菜单
-        if (dx >= 100 && Math.abs(dy) <= 60 && duration <= 800) {
-          this.goBack()
-        }
       }
     }
   }

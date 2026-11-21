@@ -52,7 +52,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-try { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8 } catch {}
+# 管道编码必须无 BOM：[Text.Encoding]::UTF8 的 Preamble 是 EF BB BF，本机环境下
+# 原生程序 stdin 管道跟随 Console.OutputEncoding，BOM 会被写进 plink stdin，
+# bash 把 BOM 粘在首命令上报 command not found
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch {}
 
 $root      = Split-Path -Parent $MyInvocation.MyCommand.Path
 $toolsDir  = Join-Path $root 'tools'
@@ -129,14 +132,21 @@ function Invoke-WebBuild {
 Write-Host '==> [0/6] 建立 SSH 会话 ...'
 Ensure-Tools
 
-if (-not (Test-InnasPort -Server $Server -Port $Port -IPv6:$IPv6)) {
+# 解析可连接地址：本机 DNS 被代理 fake-ip 劫持时回退 DoH，拿到真实 IPv6 字面量直连
+$addr = Resolve-InnasAddress -Server $Server
+if (-not $addr) {
     $hint = Get-InnasAddressHint -Server $Server
-    $msg = "无法连接 ${Server}:${Port}（IPv6=$([bool]$IPv6)）。"
+    $msg = "无法解析 $Server 的可连接地址（IPv6=$([bool]$IPv6)）。"
     if ($hint) { $msg += " $hint。" }
-    $msg += ' 请确认主机可达、SSH 端口正确，或在 hosts 中配置真实地址。'
+    $msg += ' 请确认域名存在 AAAA 记录、本机具备 IPv6 出口，或在 hosts 中配置真实地址。'
     throw $msg
 }
-$session = Initialize-InnasSession -Server $Server -Port $Port -User $SshUser -HostKey $HostKey -IPv6:$IPv6 `
+if ($addr -ne $Server) { Write-Host "   $Server -> $addr（本机 DNS 被代理劫持，已改用 DoH 解析）" }
+
+if (-not (Test-InnasPort -Server $addr -Port $Port -IPv6:$IPv6)) {
+    throw "无法连接 ${addr}:${Port}。请确认主机可达、SSH 端口正确，或在 hosts 中配置真实地址。"
+}
+$session = Initialize-InnasSession -Server $addr -Port $Port -User $SshUser -HostKey $HostKey -IPv6:$IPv6 `
     -Password $SshPassword -ToolsDir $toolsDir
 if (-not $session.HasPwd) { Write-Host '   未提供密码，将使用已保存的 SSH 密钥或 Pageant 凭据。' }
 Write-Host "   目标: $($session.Target)  指纹: $($session.HostKey)"
@@ -189,23 +199,25 @@ echo "jar backup done"
     if ($Frontend) {
         $distDir = Join-Path $webDir 'dist'
         if (-not (Test-Path (Join-Path $distDir 'index.html'))) { throw "未找到前端产物: $distDir\index.html" }
-        if (-not (Get-Command tar.exe -ErrorAction SilentlyContinue)) { throw '系统缺少 tar.exe（Windows 10 1803+ 自带），无法打包前端' }
-        $tarFile = Join-Path $env:TEMP 'jsherp-dist.tar.gz'
-        if (Test-Path $tarFile) { Remove-Item $tarFile -Force }
-        Push-Location $distDir
-        try {
-            & tar.exe -czf $tarFile .
-            if ($LASTEXITCODE -ne 0) { throw '前端打包失败' }
-        } finally { Pop-Location }
-        Copy-ToInnas -Path $tarFile -RemotePath "$RemoteDir/dist.tar.gz"
+        # 本机无 tar.exe，改用 pscp 递归上传 dist 内容到远端暂存目录，再原子换目录
+        $stage = @'
+cd __DIR__ || exit 1
+rm -rf dist-upload
+mkdir -p dist-upload
+echo "stage ready"
+'@
+        $stage = $stage -replace '__DIR__', $RemoteDir
+        Invoke-InnasScript -Script $stage | Out-Null
+        Copy-ToInnasDir -LocalDir $distDir -RemotePath "$RemoteDir/dist-upload"
 
         # 容器把 ./frontend-dist 挂到 /app/frontend-dist，必须解包到该目录
+        # pscp -r 传目录本身，远端暂存结构为 dist-upload/dist/<files>
         $swap = @'
 cd __DIR__ || exit 1
 mv frontend-dist "frontend-dist-bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null
 mkdir -p frontend-dist
-tar -xzf dist.tar.gz -C frontend-dist || exit 1
-rm -f dist.tar.gz
+cp -a dist-upload/dist/. frontend-dist/ || exit 1
+rm -rf dist-upload
 ls -1dt frontend-dist-bak-* 2>/dev/null | sed '1,3d' | while read f; do rm -rf "$f"; done
 echo "frontend updated"
 '@

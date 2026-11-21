@@ -274,7 +274,8 @@
   import MobileScanPage from '@/components/mobile/MobileScanPage'
   import MobileInputPopup from '@/components/mobile/MobileInputPopup'
   import { LabelPrintModal } from '@/views/material/labelPrint'
-  import { extractRetailSaleValues } from '@/views/material/labelPrint/utils/retailSaleFormFields'
+  import { extractRetailSaleValues, extractReceiptRows } from '@/views/material/labelPrint/utils/retailSaleFormFields'
+  import { saveLabelEditSnapshot } from '@/views/material/labelPrint/utils/labelEditSnapshot'
   import { USER_INFO } from '@/store/mutation-types'
   import { setMobileHeaderActions, clearMobileHeaderActions } from '@/utils/mobilePageHeader'
   import moment from 'moment'
@@ -1112,9 +1113,6 @@
       },
       /** 结算成功：写入小票快照并弹出标准小票打印预览（receipt 类型，80mm 纸宽） */
       openReceiptPrint (number) {
-        const specText = item => (this.cartSpecLines(item) || []).map(line => {
-          return (line.label ? line.label + '：' : '') + line.value
-        }).join('　')
         const depot = (this.depotList || []).find(item => String(item.id) === String(this.billForm.depotId)) || {}
         const goodsAmount = this.cartTotal - 0
         const amountTotal = this.settleDisplay - 0
@@ -1129,38 +1127,20 @@
           goodsAmount: goodsAmount.toFixed(2),
           discount: this.discountDisplay + '折',
           discountAmount: Math.max(0, goodsAmount - amountTotal).toFixed(2),
-          amountTotal: amountTotal.toFixed(2)
+          amountTotal: amountTotal.toFixed(2),
+          items: this.cartList
         })
-        const rows = this.cartList.map(item => {
-          const qty = item.operNumber - 0 || 0
-          const price = (item.unitPrice - 0) || (item.commodityDecimal - 0) || 0
-          const specLines = this.cartSpecLines(item) || []
-          const specCell = line => (line.label ? line.label + '：' : '') + line.value
-          return {
-            name: item.name || '',
-            // 商品品类 id：模板编辑页据此读取品类设置的规格块
-            categoryId: item.categoryId,
-            spec: specText(item),
-            // 规格逐项拆到 spec1/2/3，供小票明细表按列显示；超过 3 项的合并到第 3 列
-            spec1: specLines[0] ? specCell(specLines[0]) : '',
-            spec2: specLines[1] ? specCell(specLines[1]) : '',
-            spec3: specLines.slice(2).map(specCell).join('　'),
-            qty: String(qty),
-            price: price.toFixed(2),
-            // 小票明细金额取本行结算金额（未改写时即零售价×数量）
-            amount: this.lineSettle(item).toFixed(2)
-          }
+        const rows = extractReceiptRows(this.cartList, {
+          specLines: item => this.cartSpecLines(item),
+          settle: item => this.lineSettle(item)
         })
-        try {
-          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
-            type: 'receipt',
-            number: number || '',
-            values: values,
-            rows: rows
-          }))
-        } catch (e) {
-          // 存储异常不阻塞打印预览打开
-        }
+        // 快照统一由标签编辑快照模块写入
+        saveLabelEditSnapshot({
+          type: 'receipt',
+          number: number || '',
+          values: values,
+          rows: rows
+        })
         const modal = this.$refs.receiptPrintModal
         if (modal && typeof modal.openByType === 'function') {
           this.$nextTick(() => modal.openByType('receipt'))

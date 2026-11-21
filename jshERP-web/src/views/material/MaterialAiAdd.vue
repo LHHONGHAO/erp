@@ -9,12 +9,34 @@
     <div class="aip-body">
       <!-- 图片框置顶：占用剩余空白高度，图片按比例完整缩放显示 -->
       <div class="aip-preview" :class="{ 'is-empty': !image }" @click="triggerGallery">
-        <img v-if="image" :src="image.preview" />
+        <img v-if="image" :src="image.preview" :style="angleDragStyle" />
         <div v-else class="aip-preview__empty">
           <a-icon type="picture" />
           <span>点击选择商品图片</span>
         </div>
-        <span v-if="image && image.loading" class="aip-preview__mask">识别中</span>
+        <span v-if="image && image.loading" class="aip-preview__mask">加载中</span>
+        <!-- 角度刻度尺：刻度按绝对角度铺开，拖动时整体平移，中心游标始终停在当前角度 -->
+        <div
+          v-if="image && !image.loading"
+          class="aip-preview__angle"
+          @click.stop
+          @pointerdown.stop.prevent="startAngleDrag"
+          @pointermove.stop.prevent="moveAngleDrag"
+          @pointerup.stop.prevent="endAngleDrag"
+          @pointercancel.stop.prevent="endAngleDrag"
+        >
+          <div class="aip-preview__ruler" :style="angleRulerStyle">
+            <span
+              v-for="tick in angleTicks"
+              :key="tick.key"
+              class="aip-preview__tick"
+              :class="{ 'is-major': tick.major }"
+              :style="{ left: tick.left }"
+            ></span>
+          </div>
+          <span class="aip-preview__cursor"></span>
+          <span class="aip-preview__angle-value">{{ angleText }}</span>
+        </div>
         <a-icon v-if="image" type="close-circle" class="aip-preview__del" @click.stop="removeImage" />
       </div>
 
@@ -49,7 +71,7 @@
     </div>
 
     <div class="aip-footer">
-      <button class="aip-btn" :disabled="!canRecognize" @click="openResult">识 别</button>
+      <button class="aip-btn" :disabled="!canRecognize || recognizingText" @click="openResult">{{ recognizingText ? '识别中…' : '识 别' }}</button>
     </div>
 
     <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="aip-file" @change="onFilesChange" />
@@ -70,6 +92,11 @@
   import { axios as uploadHttp } from '@/utils/request'
   import { recognizeTextFromImage } from '@/views/material/utils/productTextScan'
 
+  /** 角度刻度尺：每 1° 对应的像素宽度 */
+  const ANGLE_PX_PER_DEG = 4
+  // 送 OCR 的图片长边上限（压缩后再识别，避免超大图识别为空）
+  const MAX_OCR_EDGE = 2048
+
   export default {
     name: 'MaterialAiAdd',
     components: {
@@ -80,6 +107,16 @@
       return {
         // 已选图片（单图单商品）
         image: null,
+        // 角度调整后同步图片地址的防抖计时器
+        rotateTimer: null,
+        // 点击「识别」后的 OCR 进行中状态
+        recognizingText: false,
+        // 角度刻度尺：刻度按绝对角度生成，拖动状态
+        angleTicks: [],
+        angleDragging: false,
+        angleStartX: 0,
+        angleStartAngle: 0,
+        angleDragValue: 0,
         pickedFrom: '',
         // 商品类别
         categoryId: undefined,
@@ -91,12 +128,30 @@
     computed: {
       canRecognize() {
         return !!this.categoryId && !!this.image && !this.image.loading
+      },
+      // 当前角度：拖动中取实时值，静止时取图片已落地的角度
+      angleValue() {
+        if (this.angleDragging) return this.angleDragValue
+        return (this.image && this.image.angle) || 0
+      },
+      angleText() {
+        return this.angleValue + '°'
+      },
+      // 刻度按绝对角度铺开，整体平移到当前角度，中心游标固定不动
+      angleRulerStyle() {
+        return { transform: 'translateX(' + (-this.angleValue * ANGLE_PX_PER_DEG) + 'px)' }
+      },
+      // 拖动刻度时只做 CSS 旋转预览，松手后再按真实像素重绘
+      angleDragStyle() {
+        if (!this.angleDragging || !this.image) return null
+        return { transform: 'rotate(' + (this.angleDragValue - this.angleStartAngle) + 'deg)' }
       }
     },
     mounted() {
       document.body.classList.add('mm-no-pull-refresh')
       this.registerMobileHeader()
       this.loadCategoryTree()
+      this.ensureAngleTicks()
     },
     // keep-alive 缓存页面返回时重新注册顶栏标题
     activated() {
@@ -113,6 +168,7 @@
       clearMobileHeaderActions()
       clearMobileHeaderTitle()
       document.body.classList.remove('mm-no-pull-refresh')
+      if (this.rotateTimer) clearTimeout(this.rotateTimer)
     },
     methods: {
       registerMobileHeader() {
@@ -157,30 +213,157 @@
         this.addImage(files[0])
       },
       addImage(file) {
-        const item = { preview: '', imagePath: '', rawText: '', loading: true }
+        // origin 保留原图，旋转始终基于原图重绘，避免多次调整累积画质损失；
+        // 选图阶段只上传不识别，点「识别」时才发起 OCR
+        const item = { preview: '', origin: '', angle: 0, imagePath: '', rawText: '', loading: true }
         this.image = item
-        this.fileToBase64(file).then(base64 => {
+        this.fileToBase64(file).then(base64 => this.normalizeImage(base64)).then(base64 => {
           item.preview = base64
+          item.origin = base64
+          item.loading = false
+          this.angleDragging = false
+          this.image = Object.assign({}, item)
           const formData = new FormData()
           formData.append('file', file)
           formData.append('biz', 'material')
           uploadHttp.post('/systemConfig/upload', formData).then(res => {
-            if (res && res.code === 200 && res.data) item.imagePath = res.data
+            if (!this.image || this.image.origin !== item.origin) return
+            if (res && res.code === 200 && res.data) {
+              this.image = Object.assign({}, this.image, { imagePath: res.data })
+            }
           }).catch(() => {})
-          return recognizeTextFromImage(base64)
-        }).then(res => {
-          item.loading = false
-          const rawText = res && res.code === 200 && res.data && typeof res.data.rawText === 'string' ? res.data.rawText : ''
-          if (rawText) item.rawText = rawText
-          else this.$message.warning('有图片未识别到文字，可换一张或直接识别')
-          this.image = Object.assign({}, item)
         }).catch(() => {
-          item.loading = false
-          this.$message.error('图片识别失败，请重试')
-          this.image = Object.assign({}, item)
+          if (this.image === item) this.image = null
+          this.$message.error('图片读取失败，请重试')
+        })
+      },
+      // 刻度按绝对角度一次性铺开（±230°，覆盖一屏），拖动时只平移整条刻度
+      ensureAngleTicks() {
+        if (this.angleTicks.length) return
+        const ticks = []
+        for (let deg = -230; deg <= 230; deg++) {
+          ticks.push({
+            key: deg,
+            left: 'calc(50% + ' + deg * ANGLE_PX_PER_DEG + 'px)',
+            major: Math.abs(deg % 5) === 0
+          })
+        }
+        this.angleTicks = ticks
+      },
+      startAngleDrag(e) {
+        if (!this.image || this.image.loading) return
+        if (e.pointerType === 'mouse' && e.button !== 0) return
+        this.angleDragging = true
+        this.angleStartX = e.clientX
+        this.angleStartAngle = this.image.angle || 0
+        this.angleDragValue = this.angleStartAngle
+        const track = e.currentTarget
+        if (track && track.setPointerCapture) {
+          try { track.setPointerCapture(e.pointerId) } catch (err) { /* 部分环境不支持指针捕获 */ }
+        }
+      },
+      moveAngleDrag(e) {
+        if (!this.angleDragging) return
+        const delta = (e.clientX - this.angleStartX) / ANGLE_PX_PER_DEG
+        const next = Math.round(this.angleStartAngle + delta)
+        this.angleDragValue = Math.max(-180, Math.min(180, next))
+      },
+      endAngleDrag() {
+        if (!this.angleDragging) return
+        this.angleDragging = false
+        const target = this.angleDragValue
+        const item = this.image
+        if (!item || target === this.angleStartAngle) return
+        this.loadImage(item.origin).then(img => {
+          const base64 = this.rotateBase64(img, target)
+          if (!base64 || !this.image || this.image.origin !== item.origin) return
+          this.image = Object.assign({}, item, { preview: base64, angle: target })
+          this.scheduleRotateUpload(base64)
+        }).catch(() => {
+          this.$message.error('图片旋转失败，请重试')
+        })
+      },
+      // 角度调整后只同步图片地址，识别仍由「识别」按钮触发
+      scheduleRotateUpload(base64) {
+        if (this.rotateTimer) clearTimeout(this.rotateTimer)
+        this.rotateTimer = setTimeout(() => {
+          this.rotateTimer = null
+          if (!this.image || this.image.preview !== base64) return
+          this.uploadBase64(base64).then(path => {
+            if (!path || !this.image || this.image.preview !== base64) return
+            this.image = Object.assign({}, this.image, { imagePath: path })
+          }).catch(() => {})
+        }, 400)
+      },
+      loadImage(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image()
+          img.onload = () => resolve(img)
+          img.onerror = reject
+          img.src = src
+        })
+      },
+      // 识别前统一压缩：长边限制在 2048px 内并转 JPEG，
+      // 避免大图/旋转后外接矩形过大导致 OCR 接口拒绝或无结果
+      normalizeImage(src) {
+        return this.loadImage(src).then(img => {
+          const width = img.naturalWidth || img.width
+          const height = img.naturalHeight || img.height
+          if (!width || !height) return src
+          const scale = Math.min(1, MAX_OCR_EDGE / Math.max(width, height))
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.max(1, Math.round(width * scale))
+          canvas.height = Math.max(1, Math.round(height * scale))
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return src
+          ctx.fillStyle = '#fff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          return canvas.toDataURL('image/jpeg', 0.9)
+        })
+      },
+      // 任意角度旋转：画布按外接矩形扩大并限制长边，白底避免黑角影响 OCR
+      rotateBase64(img, deg) {
+        const width = img.naturalWidth || img.width
+        const height = img.naturalHeight || img.height
+        if (!width || !height) return ''
+        const rad = deg * Math.PI / 180
+        const cos = Math.abs(Math.cos(rad))
+        const sin = Math.abs(Math.sin(rad))
+        const boundWidth = width * cos + height * sin
+        const boundHeight = width * sin + height * cos
+        const scale = Math.min(1, MAX_OCR_EDGE / Math.max(boundWidth, boundHeight))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(boundWidth * scale))
+        canvas.height = Math.max(1, Math.round(boundHeight * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return ''
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.translate(canvas.width / 2, canvas.height / 2)
+        ctx.rotate(rad)
+        ctx.drawImage(img, -width * scale / 2, -height * scale / 2, width * scale, height * scale)
+        return canvas.toDataURL('image/jpeg', 0.9)
+      },
+      // 旋转后的图片同样要上传，识别结果页使用的是最新 imagePath
+      uploadBase64(base64) {
+        const parts = String(base64 || '').split(',')
+        const mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg'
+        const binary = window.atob(parts[1] || '')
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+        const formData = new FormData()
+        formData.append('file', new Blob([bytes], { type: mime }), 'product.jpg')
+        formData.append('biz', 'material')
+        return uploadHttp.post('/systemConfig/upload', formData).then(res => {
+          return res && res.code === 200 && res.data ? res.data : ''
         })
       },
       removeImage() {
+        if (this.rotateTimer) {
+          clearTimeout(this.rotateTimer)
+          this.rotateTimer = null
+        }
         this.image = null
         this.pickedFrom = ''
       },
@@ -192,11 +375,33 @@
           reader.readAsDataURL(file)
         })
       },
-      // 识别：弹出识别结果弹层，本页状态保持不变
+      // 识别：点击后才对当前图片发起 OCR，再打开识别结果弹层
       openResult() {
-        if (!this.canRecognize) return
-        const item = this.image || {}
-        const image = { rawText: item.rawText || '', imagePath: item.imagePath || '' }
+        if (!this.canRecognize || this.recognizingText) return
+        const item = this.image
+        this.recognizingText = true
+        recognizeTextFromImage(item.preview).then(res => {
+          this.recognizingText = false
+          // 后端失败时把真实原因提示出来，避免所有异常都显示成「未识别到文字」
+          if (!res || res.code !== 200) {
+            const message = res && res.data && res.data.message ? res.data.message : '图片识别失败，请重试'
+            this.$message.error(message)
+            return
+          }
+          const rawText = res.data && typeof res.data.rawText === 'string' ? res.data.rawText : ''
+          if (!rawText) {
+            this.$message.warning('未识别到图片文字，可调整角度或更换图片')
+            return
+          }
+          this.image = Object.assign({}, this.image, { rawText })
+          this.openResultWith(rawText)
+        }).catch(() => {
+          this.recognizingText = false
+          this.$message.error('图片识别失败，请重试')
+        })
+      },
+      openResultWith(rawText) {
+        const image = { rawText: rawText || '', imagePath: (this.image && this.image.imagePath) || '' }
         this.recognizing = true
         this.$nextTick(() => {
           const form = this.$refs.form
@@ -422,6 +627,64 @@
       color: rgba(17, 24, 39, 0.55);
       background: #fff;
       border-radius: 50%;
+    }
+    /* 角度刻度尺：左右拖动微调，黄色游标指示当前角度 */
+    &__angle {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      height: 46px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.94);
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(16, 24, 40, 0.16);
+      touch-action: none;
+      user-select: none;
+      cursor: ew-resize;
+    }
+    /* 刻度层：整体随角度平移，刻度本身固定不动 */
+    &__ruler {
+      position: absolute;
+      inset: 0;
+      will-change: transform;
+      pointer-events: none;
+    }
+    &__tick {
+      position: absolute;
+      top: 50%;
+      width: 1px;
+      height: 10px;
+      margin-top: -3px;
+      background: #c9d0db;
+      transform: translateX(-50%);
+      pointer-events: none;
+      &.is-major {
+        height: 18px;
+        margin-top: -7px;
+        background: #98a1b0;
+      }
+    }
+    &__cursor {
+      position: absolute;
+      left: 50%;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      margin-left: -1px;
+      background: #f5b301;
+      pointer-events: none;
+    }
+    &__angle-value {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding-left: 6px;
+      font-size: 11px;
+      color: #5b6678;
+      background: rgba(255, 255, 255, 0.92);
+      pointer-events: none;
     }
   }
   .aip-category {

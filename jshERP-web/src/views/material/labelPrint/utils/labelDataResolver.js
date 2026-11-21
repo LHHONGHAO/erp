@@ -6,6 +6,7 @@
  */
 import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
 import { fetchLabelData, fetchProviderFields } from './labelProviderApi'
+import { resolveRowCategoryId } from './categorySpec'
 
 function toText(value) {
   if (value == null) return ''
@@ -24,7 +25,7 @@ export function normalizeRows(items) {
       qty: toText(row.quantity != null ? row.quantity : row.qty),
       price: toText(row.price),
       amount: toText(row.amount),
-      categoryId: row.categoryId != null ? row.categoryId : (row.materialCategoryId != null ? row.materialCategoryId : null),
+      categoryId: resolveRowCategoryId(row),
       raw: row
     }
   })

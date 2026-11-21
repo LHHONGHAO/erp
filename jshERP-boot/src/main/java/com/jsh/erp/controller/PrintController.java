@@ -65,6 +65,27 @@ public class PrintController extends BaseController {
         }
     }
 
+    @PostMapping(value = "/labelCommands")
+    @ApiOperation(value = "只生成标签打印指令不下发（蓝牙本地直发复用同一指令生成模块）")
+    public String buildLabelCommands(@RequestBody JSONObject body) {
+        Map<String, Object> objectMap = new HashMap<>();
+        int copies = body.getIntValue("copies") > 0 ? body.getIntValue("copies") : 1;
+        int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
+        int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
+        JSONArray items = body.getJSONArray("items");
+        String image = body.getString("image");
+        // 与网络打印一致：按打印机指令集生成 TSPL / CPCL / DDPL / ESC-POS
+        String cmdSet = body.getString("cmdSet");
+        try {
+            String commands = labelPrinterService.buildLabelCommands(cmdSet, copies, width, height, items, image);
+            objectMap.put("commands", commands);
+            return returnJson(objectMap, "生成成功", ErpInfo.OK.code);
+        } catch (Exception e) {
+            logger.error("标签指令生成失败", e);
+            return returnJson(objectMap, "指令生成失败：" + e.getMessage(), ErpInfo.ERROR.code);
+        }
+    }
+
     @PostMapping(value = "/networkTest")
     @ApiOperation(value = "测试网络打印机连通性")
     public String networkTest(@RequestBody JSONObject body) {

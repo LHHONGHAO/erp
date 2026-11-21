@@ -21,6 +21,8 @@
 <script>
   import MobileModalPage from '@/components/mobile/MobileModalPage'
   import { LabelPrintModal } from '@/views/material/labelPrint'
+  import { extractMemberValues } from '@/views/material/labelPrint/config/formFields/memberForm'
+  import { saveLabelEditSnapshot, LABEL_EDIT_SNAPSHOT_DEFAULTS } from '@/views/material/labelPrint/utils/labelEditSnapshot'
 
   export default {
     name: 'MemberPreview',
@@ -67,25 +69,17 @@
       // 会员卡片「打印」：不打开信息预览页，直接弹出打印层
       openPrint(member) {
         this.member = member || {}
-        this.buildSnapshot(this.member)
+        this.buildSnapshot()
         this.$refs.labelPrintModal.openByType('member', { record: this.member })
       },
       // 模板只提供布局，会员数据通过快照带入
-      buildSnapshot(m) {
-        var values = {}
-        this.rows.forEach(function(row) {
-          values[row.key] = row.value === '--' ? '' : row.value
-        })
-        try {
-          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
-            labelWidth: 320,
-            labelHeight: 240,
-            selectedAttrs: [],
-            attrStyles: {},
-            attrLabels: {},
-            values: values
-          }))
-        } catch (e) { /* 忽略 */ }
+      // 表单数据统一由会员提取模块生成，快照统一由标签编辑快照模块写入
+      buildSnapshot() {
+        saveLabelEditSnapshot(Object.assign({}, LABEL_EDIT_SNAPSHOT_DEFAULTS, {
+          // 快照身份：编辑页打印合并时按 type 隔离，避免带入其它单据数据
+          type: 'member',
+          values: extractMemberValues(this.rows)
+        }))
       }
     }
   }

@@ -35,10 +35,3 @@ export function buildFormFieldAttrs(type, context) {
   var list = config.buildAttrs(context || {}) || []
   return list.map(function(attr) { return Object.assign({}, attr) })
 }
-
-/** 字段结构签名：字段集合或显示名变化时签名变化，供后续「重建字段」比对使用 */
-export function buildFormFieldSignature(type, context) {
-  return buildFormFieldAttrs(type, context)
-    .map(function(attr) { return attr.key + ':' + attr.label })
-    .join('|')
-}

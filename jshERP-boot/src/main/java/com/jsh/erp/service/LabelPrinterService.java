@@ -139,6 +139,17 @@ public class LabelPrinterService {
     }
 
     /**
+     * 只生成打印指令不下发：蓝牙打印复用同一指令生成模块，
+     * 前端拿到指令字节后经本地蓝牙 GATT 直发（传输通道由远程改为本地）
+     *
+     * @return Base64 编码的指令字节流
+     */
+    public String buildLabelCommands(String cmdSet, int copies, int widthPx, int heightPx, JSONArray items, String image) throws IOException {
+        byte[] data = buildJob(cmdSet, widthPx, heightPx, items, copies, image, 0, 0);
+        return Base64.getEncoder().encodeToString(data);
+    }
+
+    /**
      * 按指令集分发：TSPL（默认）、CPCL、DDPL，均优先使用整张位图，避免中文编码问题
      */
     private byte[] buildJob(String cmdSet, int widthPx, int heightPx, JSONArray items, int copies,
@@ -430,7 +441,8 @@ public class LabelPrinterService {
 
     /**
      * 文字：硬件字库 TEXT 指令，按前端字号换算出字体放大倍数；
-     * 指定宽度时按框宽逐字换行，指定高度时只打印框内完整行（超出部分不打印）
+     * 指定宽度时按框宽逐字换行，指定高度时只打印框内完整行（超出部分不打印）；
+     * textAlign 支持 left/center/right：中右对齐按行宽在框宽内平移
      */
     private void appendText(ByteArrayOutputStream out, JSONObject item) throws IOException {
         String text = item.getString("text");
@@ -451,17 +463,37 @@ public class LabelPrinterService {
         }
         int widthDots = item.getIntValue("width") > 0 ? toDots(item.getIntValue("width")) : 0;
         int heightDots = item.getIntValue("height") > 0 ? toDots(item.getIntValue("height")) : 0;
+        String textAlign = item.getString("textAlign");
+        boolean center = "center".equals(textAlign) && widthDots > 0;
+        boolean right = "right".equals(textAlign) && widthDots > 0;
         List<String> lines = wrapText(text, widthDots, scale);
         // 高度略小于一行行高时仍要打印第一行，避免整张标签空白
         int maxLines = heightDots > 0 ? Math.max(1, heightDots / lineStep) : lines.size();
         for (int i = 0; i < lines.size() && i < maxLines; i++) {
             String line = lines.get(i);
             if (!line.isEmpty()) {
-                writeLine(out, "TEXT " + x + "," + y + ",\"" + TEXT_FONT + "\",0," + scale + "," + scale
+                int lineX = x;
+                if (center || right) {
+                    int lineWidth = textWidthDots(line, scale);
+                    int offset = widthDots - lineWidth;
+                    if (offset > 0) {
+                        lineX = center ? x + offset / 2 : x + offset;
+                    }
+                }
+                writeLine(out, "TEXT " + lineX + "," + y + ",\"" + TEXT_FONT + "\",0," + scale + "," + scale
                         + ",\"" + escape(line) + "\"");
             }
             y += lineStep;
         }
+    }
+
+    /** 按字库宽度计算单行文本宽度（点）：全角 24*scale，半角 12*scale */
+    private int textWidthDots(String line, int scale) {
+        int width = 0;
+        for (int i = 0; i < line.length(); i++) {
+            width += isFullWidth(line.charAt(i)) ? 24 * scale : 12 * scale;
+        }
+        return width;
     }
 
     /**

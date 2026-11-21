@@ -41,9 +41,13 @@ export const RECEIPT_ITEM_FIELDS = [
   { key: 'price', label: '单价', weight: 0.16 },
   { key: 'amount', label: '金额', weight: 0.16 }
 ]
-const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|spec|specname\d+|specvalue\d+(?:_\d+)?|specname_c.+_b\d+(?:_n.*)?|specvalue_c.+_b\d+(?:_n.*?)?_v\d+(?:_i.*)?|qty|price|amount)$/
-/** 小票里属于商品标签、不参与小票排版的遗留字段 */
-const RECEIPT_STRAY_KEYS = ['name', 'spec1', 'spec2', 'spec3', GOODS_KEY, GOODS_TABLE_KEY, RECEIPT_TABLE_KEY]
+const RECEIPT_ITEM_KEY_RE = /^item\d+_(?:name|category|spec|specname\d+|specvalue\d+(?:_\d+)?|specname_c.+_b\d+(?:_n.*)?|specvalue_c.+_b\d+(?:_n.*?)?_v\d+(?:_i.*)?|qty|price|amount)$/
+/**
+ * 小票里由 replaceReceiptGoodsWithItems 统一移除的遗留组合/明细表字段。
+ * 编辑页元素面板提供的商品字段（商品名称 name、规格 spec1-3）随模板正常保存，
+ * 预览/打印加载时必须保留，不在此列。
+ */
+const RECEIPT_STRAY_KEYS = [GOODS_KEY, GOODS_TABLE_KEY, RECEIPT_TABLE_KEY]
 
 /** 是否为小票「按单品拆分」生成的动态元素（只参与本次编辑/打印，不写入模板） */
 export function isReceiptItemKey(key) {
@@ -90,7 +94,7 @@ export function isReceiptItemHidden(hiddenKeys, key) {
   })
 }
 
-/** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3 */
+/** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3；类别取行自带类别名 */
 export function receiptItemValue(row, key) {
   if (!row) return ''
   if (key === 'spec') {
@@ -100,6 +104,11 @@ export function receiptItemValue(row, key) {
       .map(function(k) { return row[k] == null ? '' : String(row[k]).trim() })
       .filter(function(v) { return v !== '' })
       .join(' ')
+  }
+  if (key === 'category') {
+    const categoryName = row.categoryName != null ? String(row.categoryName).trim() : ''
+    if (categoryName) return categoryName
+    return row.category == null ? '' : String(row.category)
   }
   return row[key] == null ? '' : String(row[key])
 }
@@ -149,6 +158,11 @@ export function buildReceiptItemElements(options) {
   const attrs = []
   const styles = {}
   let cursor = startY
+  // 明细字段列过滤：只生成模板实际表达的字段（模板保存的 itemN_* 或全新默认模板的全套），
+  // 模板未表达的字段不再凭 fallback 权重凭空生成，避免与静态元素/已存列打架。
+  // 注意：fields 传空数组表示「模板未表达任何明细字段」→ 一个都不生成；
+  // 只有未传 fields（undefined）才走全套默认。
+  const fieldFilter = Array.isArray(opts.fields) ? opts.fields : null
   rows.forEach(function(row, rowIndex) {
     const index = rowIndex + 1
     // 规格块在商品行内占整行宽度，与编辑器的规格块画布宽度一致。
@@ -184,7 +198,9 @@ export function buildReceiptItemElements(options) {
         return Object.assign({}, block, { blockNo: blockIndex + 1 })
       })
     }
-    const specLayout = (rowSpecBlocks || parseGoodsSpecBlocks(row)).map(function(block, blockIndex) {
+    // specField 模式：规格已由数据块的规格字段逐件输出，不再生成规格块，
+    // 否则未渲染的规格块仍占高度，会把下一件商品的数据块推得过远
+    const specLayout = opts.specField ? [] : (rowSpecBlocks || parseGoodsSpecBlocks(row)).map(function(block, blockIndex) {
       const blockNo = Number(block.blockNo) || blockIndex + 1
       const categoryId = block.categoryId
       const blockIdentity = block.sourceName || block.name
@@ -247,18 +263,26 @@ export function buildReceiptItemElements(options) {
       specOffset = Math.max(specOffset, top)
       return layout
     })
-    // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推
+    // 每行按各列折行后的最大行数确定行高，避免同一行各列各自把下方元素重复下推。
+    // specField 模式（模板的静态规格/类别标签并入数据块）下，规格/类别按映射表逐件解析，
+    // 与静态标签合并文本（buildSpecValuesFromRows）共用同一份解析结果，保证取值一致。
+    const blockSpec = opts.specField
+      ? resolveRowMappedCategorySpec(row, opts.specBlocks, opts.specMappingReady === true)
+      : null
     const fields = [
       { key: 'name', label: '商品名称', value: receiptItemValue(row, 'name'), colIndex: 0 },
+      { key: 'spec', label: '规格', value: blockSpec ? (blockSpec.spec || receiptItemValue(row, 'spec')) : receiptItemValue(row, 'spec'), colIndex: 1 },
+      { key: 'category', label: '类别', value: blockSpec ? (blockSpec.category || receiptItemValue(row, 'category')) : receiptItemValue(row, 'category'), colIndex: 1 },
       { key: 'qty', label: '数量', value: receiptItemValue(row, 'qty'), colIndex: 2 },
       { key: 'price', label: '单价', value: receiptItemValue(row, 'price'), colIndex: 3 },
       { key: 'amount', label: '金额', value: receiptItemValue(row, 'amount'), colIndex: 4 }
     ]
+    const activeFields = fieldFilter ? fields.filter(function(item) { return fieldFilter.indexOf(item.key) > -1 }) : fields
     let hasVisibleItem = specLayout.some(function(block) {
       return block.nameVisible || block.values.some(function(value) { return value.visible })
     })
     let rowHeight = specOffset
-    fields.forEach(function(item) {
+    activeFields.forEach(function(item) {
       item.visible = keyVisible('item' + index + '_' + item.key)
       const override = overrideFor('item' + index + '_' + item.key)
       const itemWidth = override.width > 0 ? override.width : cols[item.colIndex].width
@@ -301,14 +325,17 @@ export function buildReceiptItemElements(options) {
         lineHeight: lineHeight
       }
     }
-    pushElement(
-      'item' + index + '_name',
-      fields[0].label,
-      fields[0].value,
-      // 元素框高度按本字段内容计算；整行高度仅用于下一条商品的纵向起点。
-      // 否则规格列的多行内容会把商品名称/价格等单行框一起撑高，重开模板后看起来像多行框。
-      cellStyle(0, Math.max(linePx, fields[0].lines * linePx), 0)
-    )
+    const nameField = activeFields.filter(function(item) { return item.key === 'name' })[0]
+    if (nameField) {
+      pushElement(
+        'item' + index + '_name',
+        nameField.label,
+        nameField.value,
+        // 元素框高度按本字段内容计算；整行高度仅用于下一条商品的纵向起点。
+        // 否则规格列的多行内容会把商品名称/价格等单行框一起撑高，重开模板后看起来像多行框。
+        cellStyle(0, Math.max(linePx, nameField.lines * linePx), 0)
+      )
+    }
     specLayout.forEach(function(block, blockIndex) {
       const blockNo = Number(block.blockNo) || blockIndex + 1
       const blockIdentity = block.sourceName || block.name
@@ -355,7 +382,7 @@ export function buildReceiptItemElements(options) {
         )
       })
     })
-    fields.slice(1).forEach(function(item) {
+    activeFields.filter(function(item) { return item.key !== 'name' }).forEach(function(item) {
       pushElement(
         'item' + index + '_' + item.key,
         item.label,
@@ -404,7 +431,6 @@ export function replaceReceiptGoodsWithItems(options) {
       categoryOrigins[categoryKey] = Number(style.y || 0)
     }
   })
-  const hasSavedVisibility = templateKeys.length > 0
   const legacyKeyFor = function(key) {
     const parsed = parseSpecItemKey(key)
     if (!parsed || parsed.categoryId == null) return null
@@ -437,16 +463,88 @@ export function replaceReceiptGoodsWithItems(options) {
   Object.keys(styles).forEach(function(key) { if (isReceiptItemKey(key)) delete styles[key] })
   Object.keys(labels).forEach(function(key) { if (isReceiptItemKey(key)) delete labels[key] })
   if (!rows.length) {
-    return { selectedAttrs: kept, attrStyles: styles, attrLabels: labels, attrs: [], itemKeys: [] }
+    return { selectedAttrs: kept, attrStyles: styles, attrLabels: labels, attrs: [], itemKeys: [], hiddenKeys: opts.hiddenKeys || [] }
   }
+  // ── 商品数据块模型 ──
+  // 多件商品时，模板里的静态商品字段（商品名称/类别/规格）并入逐件数据块：
+  // 编辑态保存的单件占位布局就是数据块的内部排版——首件按保存坐标原位输出，
+  // 后续商品按同一相对布局整块顺移到上一块实际底部之下（见下方碰撞顺移段）。
+  // 单件明细（编辑占位 / 单行预览）不转换，静态元素照常渲染。
+  const BLOCK_FIELD_MAP = [
+    { staticKey: 'name', canonical: 'item1_name' },
+    { staticKey: LABEL_CATEGORY_KEY, canonical: 'item1_category' },
+    { staticKey: LABEL_SPEC_KEY, canonical: 'item1_spec' }
+  ]
+  const convertedCanonicals = {}
+  if (rows.length > 1) {
+    BLOCK_FIELD_MAP.forEach(function(map) {
+      const staticIndex = kept.indexOf(map.staticKey)
+      if (staticIndex < 0 || !styles[map.staticKey]) return
+      // 动态列已表达该字段：移除静态元素，避免同一数据双份渲染
+      if (templateStyles[map.canonical]) {
+        kept.splice(staticIndex, 1)
+        delete styles[map.staticKey]
+        delete labels[map.staticKey]
+        return
+      }
+      templateStyles[map.canonical] = styles[map.staticKey]
+      // 明细只显示字段值，不带属性名前缀
+      templateLabels[map.canonical] = ''
+      kept.splice(staticIndex, 1)
+      delete styles[map.staticKey]
+      delete labels[map.staticKey]
+      if (templateKeys.indexOf(map.canonical) === -1) templateKeys.push(map.canonical)
+      // 静态字段的显隐由元素面板控制，模板里对应的动态列隐藏项不再生效
+      convertedCanonicals[map.canonical] = true
+    })
+  }
+  // 隐藏清单剔除已并入数据块的静态字段对应项，避免商品名/规格在预览里整体消失
+  const effectiveHidden = (opts.hiddenKeys || []).filter(function(key) {
+    return !convertedCanonicals[canonicalReceiptItemKey(key)]
+  })
+  const hasSavedVisibility = templateKeys.length > 0
+  // 明细字段列的唯一权威：模板保存的 itemN_* 动态元素（含并入数据块的静态商品字段）。
+  // 静态面板商品字段（name/qty/price/amount）只在其动态列未生成时保留渲染，
+  // 避免同一数据双份渲染（静态商品名 + 动态明细列并存）。
+  const STATIC_GOODS_FIELD_KEYS = ['name', 'qty', 'price', 'amount']
+  const RECEIPT_ITEM_FIELD_KEYS = ['name', 'spec', 'category', 'qty', 'price', 'amount']
+  const staticFieldSelected = {}
+  ;(opts.selectedAttrs || []).forEach(function(key) {
+    if (STATIC_GOODS_FIELD_KEYS.indexOf(key) > -1) staticFieldSelected[key] = true
+  })
+  const savedFieldSet = {}
+  templateKeys.forEach(function(key) {
+    const matched = /^item1_(name|qty|price|amount|spec|category)$/.exec(String(key))
+    if (matched) savedFieldSet[matched[1]] = true
+  })
+  const hasSavedField = Object.keys(savedFieldSet).length > 0
+  const hasStaticField = Object.keys(staticFieldSelected).length > 0
+  let fieldsToGenerate
+  if (!hasSavedField && !hasStaticField) {
+    // 全新默认模板：完整列，保证默认小票可用
+    fieldsToGenerate = ['name', 'qty', 'price', 'amount']
+  } else {
+    // 只生成模板保存过的动态列（含并入数据块的静态规格/类别）；未表达的字段不凭空生成
+    fieldsToGenerate = RECEIPT_ITEM_FIELD_KEYS.filter(function(field) { return !!savedFieldSet[field] })
+  }
+  fieldsToGenerate.forEach(function(field) {
+    if (!staticFieldSelected[field]) return
+    const staticIndex = kept.indexOf(field)
+    if (staticIndex > -1) kept.splice(staticIndex, 1)
+    delete styles[field]
+    delete labels[field]
+  })
   const startY = anchorStyle ? (anchorStyle.y || 0) : (opts.fallbackY || 0)
   const built = buildReceiptItemElements({
     rows: rows,
     specBlocks: opts.specBlocks,
+    specMappingReady: opts.specMappingReady === true,
+    specField: !!savedFieldSet.spec,
     useSpecBlockPreset: !!opts.useSpecBlockPreset,
     visibleKeys: opts.compactHidden && templateKeys.length ? templateKeys : null,
-    hiddenKeys: opts.compactHidden ? opts.hiddenKeys : null,
+    hiddenKeys: opts.compactHidden ? effectiveHidden : null,
     styleOverrides: templateStyles,
+    fields: fieldsToGenerate,
     paperWidth: opts.paperWidth,
     x: anchorStyle ? (anchorStyle.x || 0) : 8,
     y: startY,
@@ -490,6 +588,16 @@ export function replaceReceiptGoodsWithItems(options) {
       return !categoryHasRules
     })
     : built.keys
+  // 规格块已按行渲染规格值时，静态规格值字段（spec1-3）不再重复渲染
+  const hasDynamicSpec = built.keys.some(function(key) { return isSpecItemKey(String(key)) })
+  if (hasDynamicSpec) {
+    ;['spec1', 'spec2', 'spec3'].forEach(function(field) {
+      const staticIndex = kept.indexOf(field)
+      if (staticIndex > -1) kept.splice(staticIndex, 1)
+      delete styles[field]
+      delete labels[field]
+    })
+  }
   // 一件商品是一整个纵向组合块。基础行高按自然规格顺序测算，但模板可以保存单项坐标；
   // 坐标覆盖后必须再按该商品实际显示的所有元素求块底部，再决定下一件商品的起点，
   // 否则第一件较低的规格值会与第二件名称/数量等字段交叉。
@@ -517,7 +625,9 @@ export function replaceReceiptGoodsWithItems(options) {
       const style = styles[key]
       if (!style) return
       top = Math.min(top, Number(style.y) || 0)
-      bottom = Math.max(bottom, (Number(style.y) || 0) + (Number(style.height) || 0))
+      // 高度缺失（旧模板未序列化 height）时按单行文本兜底，避免行块底部被当成 0 导致行间交叉
+      const styleHeight = Number(style.height) || (Number(style.fontSize) || 12) * (Number(style.lineHeight) || 1.3)
+      bottom = Math.max(bottom, (Number(style.y) || 0) + styleHeight)
     })
     if (!isFinite(top) || !isFinite(bottom)) return
     const shift = previousVisibleBottom == null ? 0 : Math.max(0, previousVisibleBottom + rowGap - top)
@@ -533,8 +643,22 @@ export function replaceReceiptGoodsWithItems(options) {
     finalBottom = Math.max(finalBottom, bottom)
   })
   built.height = Math.max(0, finalBottom - startY)
-  // 原明细表占位高度与逐件组合块实际总高度差，下方元素整体顺移。
-  const delta = built.height - (anchorStyle ? (anchorStyle.height || 0) : 0)
+  // 原占位高度与逐件组合块实际总高度差，下方元素整体顺移：
+  // 有明细表元素时参考其保存高度；无明细表的模板（编辑页以逐件元素保存占位布局）
+  // 参考模板保存的明细元素占位总高度，否则按整块高度顺移会把下方元素越推越远。
+  let referenceHeight = anchorStyle ? (anchorStyle.height || 0) : 0
+  if (!anchorStyle && templateStyleKeys.length) {
+    let placeholderBottom = startY
+    Object.keys(templateStyles).forEach(function(key) {
+      const style = templateStyles[key]
+      if (!style) return
+      // 同上：高度缺失按单行文本兜底
+      const styleHeight = Number(style.height) || (Number(style.fontSize) || 12) * (Number(style.lineHeight) || 1.3)
+      placeholderBottom = Math.max(placeholderBottom, (Number(style.y) || 0) + styleHeight)
+    })
+    referenceHeight = Math.max(0, placeholderBottom - startY)
+  }
+  const delta = built.height - referenceHeight
   if (delta !== 0) {
     kept.forEach(function(key) {
       const style = styles[key]
@@ -548,7 +672,8 @@ export function replaceReceiptGoodsWithItems(options) {
     attrStyles: styles,
     attrLabels: labels,
     attrs: built.attrs,
-    itemKeys: built.keys
+    itemKeys: built.keys,
+    hiddenKeys: effectiveHidden
   }
 }
 
@@ -604,16 +729,6 @@ export function measureTextLines(text, width, fontSize, bold, letterSpacing) {
     total += count
   })
   return Math.max(1, total)
-}
-
-/** 文本在指定字号下的渲染宽度（px） */
-function measureTextWidth(text, fontSize, bold, letterSpacing) {
-  const value = text == null ? '' : String(text)
-  if (!value) return 0
-  const ctx = measureCtx()
-  if (!ctx) return value.length * (fontSize || 12)
-  ctx.font = (bold ? 'bold ' : '') + (fontSize || 12) + 'px sans-serif'
-  return ctx.measureText(value).width + value.length * (letterSpacing || 0)
 }
 
 /** 单个商品的组合文案；fields 为空数组时返回空串，未传时默认全部字段 */
@@ -1016,6 +1131,49 @@ function defMatchesRowSpec(def, blocks) {
 }
 
 /**
+ * 单行商品 → 按模板规格映射解析出的类别名与规格文本。
+ * 静态类别/规格标签的合并文本（buildSpecValuesFromRows）与商品数据块的逐件规格/类别字段
+ * 共用这一份解析，保证两条输出链路对同一行商品取值一致。
+ * 行无类目信息时按规格名 / 已选规格值判断映射项是否命中（defMatchesRowSpec）。
+ */
+function resolveRowMappedCategorySpec(row, specBlocks, specMappingReady) {
+  if (!row) return { category: '', spec: '' }
+  const defs = Array.isArray(specBlocks) ? specBlocks : []
+  const blocks = productSpecBlocks(row)
+  const rawCategoryId = row.categoryId != null ? row.categoryId : row.materialCategoryId
+  const rowCategoryId = rawCategoryId != null && String(rawCategoryId).trim() !== '' ? rawCategoryId : null
+  const rowCategoryName = row.categoryName != null ? String(row.categoryName).trim() : ''
+  const rowDefs = defs.filter(function(def) {
+    if (!specMappingReady) {
+      if (def.categoryId == null || rowCategoryId == null) return true
+      if (String(def.categoryId) === String(rowCategoryId)) return true
+      return Array.isArray(def.categoryMemberIds) &&
+        def.categoryMemberIds.map(String).indexOf(String(rowCategoryId)) > -1
+    }
+    if (def.categoryId != null && rowCategoryId != null) {
+      if (String(def.categoryId) === String(rowCategoryId)) return true
+      return Array.isArray(def.categoryMemberIds) &&
+        def.categoryMemberIds.map(String).indexOf(String(rowCategoryId)) > -1
+    }
+    if (rowCategoryId == null) {
+      // 行没有类目属性：先按品类名兜底，再按规格名 / 已选规格值回退命中
+      if (rowCategoryName) return String(def.categoryName || '').trim() === rowCategoryName
+      return defMatchesRowSpec(def, blocks)
+    }
+    return false
+  })
+  const categoryDef = rowDefs.filter(function(def) { return def.categoryName })[0]
+  if (!categoryDef) return { category: '', spec: '' }
+  if (specMappingReady) {
+    // 已选规格驱动：只有模板选中的规格值才加载业务数据
+    return { category: categoryDef.categoryName, spec: resolveSpecTextFromDefs(rowDefs, blocks) }
+  }
+  const resolved = resolveCategorySpecText(categoryDef.categoryName, blocks)
+  if (!resolved) return { category: '', spec: '' }
+  return { category: resolved.categoryName, spec: resolved.specText }
+}
+
+/**
  * 规格块按位置对应取值：模板第 N 个规格块取商品第 N 个规格块的值。
  * 元素 key 与编辑页 buildCategorySpecEditAttrs 保持一致，供预览与打印直接合并进业务值。
  */
@@ -1060,20 +1218,10 @@ export function buildSpecValuesFromRows(rows, specBlocks, specMappingReady) {
       return false
     })
     // 归一化标签：类别 = 一级类目名，规格 = 映射表配置的规格值（/ 拼接）
-    const categoryDef = rowDefs.filter(function(def) { return def.categoryName })[0]
-    if (categoryDef) {
-      if (specMappingReady) {
-        // 已选规格驱动：只有模板选中的规格值才加载业务数据
-        pushLine(categoryLines, categoryDef.categoryName)
-        pushLine(specLines, resolveSpecTextFromDefs(rowDefs, blocks))
-      } else {
-        const resolved = resolveCategorySpecText(categoryDef.categoryName, blocks)
-        if (resolved) {
-          pushLine(categoryLines, resolved.categoryName)
-          pushLine(specLines, resolved.specText)
-        }
-      }
-    }
+    // 与商品数据块的逐件规格/类别字段共用同一份解析（resolveRowMappedCategorySpec）
+    const mapped = resolveRowMappedCategorySpec(row, defs, specMappingReady)
+    pushLine(categoryLines, mapped.category)
+    pushLine(specLines, mapped.spec)
     // 已建立映射表的模板只渲染已选规格；旧模板按商品行规格块顺序兜底
     const slots = specMappingReady ? rowDefs : (rowDefs.length ? rowDefs : blocks.map(function(block, i) {
       return Object.assign({}, block, { blockNo: i + 1 })

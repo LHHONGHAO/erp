@@ -8,14 +8,17 @@
   <meta name="description" content="进销存、零售、财务一体化管理移动端">
   <meta name="format-detection" content="telephone=no">
   <!-- PWA：添加到主屏幕后以独立窗口运行 -->
-  <link rel="manifest" href="<%= BASE_URL %>manifest.json?v=20261116b">
+  <link rel="manifest" href="<%= BASE_URL %>manifest.json?v=20261120c">
   <meta name="theme-color" content="#1890ff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="管伊佳ERP">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="<%= BASE_URL %>icons/pwa-192-2026b.png">
-  <link rel="icon" type="image/png" href="<%= BASE_URL %>icons/pwa-192.png?v=20261116">
+  <!-- iOS 主屏幕图标：v5 为全新文件名路径，v4 及更早历史图标文件已全部删除 -->
+  <link rel="apple-touch-icon" href="<%= BASE_URL %>icons/pwa-192-v5.png?v=20261120c">
+  <link rel="apple-touch-icon" sizes="180x180" href="<%= BASE_URL %>icons/pwa-192-v5.png?v=20261120c">
+  <link rel="apple-touch-icon-precomposed" href="<%= BASE_URL %>icons/pwa-192-v5.png?v=20261120c">
+  <link rel="icon" type="image/png" href="<%= BASE_URL %>icons/pwa-192-v5.png?v=20261120c">
   <style>
     html, body, #app {
       height: 100%;

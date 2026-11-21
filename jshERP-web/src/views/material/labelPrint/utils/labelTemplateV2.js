@@ -31,7 +31,7 @@
  *   meta: { type, materialId, categoryId, categoryName, kind }
  * }
  */
-import { pxToMm, mmToPx, CODE_KEY_PREFIX } from './labelSchema'
+import { pxToMm, mmToPx, CODE_KEY_PREFIX, fillSeparatorText } from './labelSchema'
 import { GOODS_KEY, GOODS_TABLE_KEY } from './goodsLabelLayout'
 import { normalizeSpecBlocks, isSpecNameKey } from './goodsSpecBlocks'
 import { normalizeSpecMapping, flattenSpecMapping } from './categorySpec'
@@ -132,24 +132,50 @@ export function editorStateToV2(state, meta) {
     }
     if (style.width) element.width = pxToMm(style.width)
     if (style.height) element.height = pxToMm(style.height)
-    // 规格块几何与排版只挂在属性名（锚点）上：对齐、折行随模板保存，编辑器/打印共用
+    // 文字对齐随模板保存，编辑器/打印共用
+    element.textAlign = style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left'
+    // 规格块几何与排版只挂在属性名（锚点）上：折行随模板保存，编辑器/打印共用
     if (isSpecNameKey(key)) {
-      element.textAlign = style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left'
       element.specWrap = !!style.specWrap
       // 仅用户手动拖宽过的规格块才保存固定块宽，其余按内容自然并列
       if (style.specWidthLocked && style.width > 0) element.specWidth = pxToMm(style.width)
     }
     if (custom) {
       element.custom = true
-      element.text = attr && attr.value != null ? String(attr.value) : ''
       // 分页标签：文案由运行时页码决定，绑定字段而不是固定文本
       if (key === 'page_no') {
         element.field = 'page_no'
         element.prefixLabel = false
+      } else if (attr && attr.isSeparator) {
+        // 间隔符：保存原始符号，导出文本按元素宽度与字号自动铺满
+        element.separator = true
+        element.symbol = attr.value == null ? '' : String(attr.value)
+        var sepStyle = styles[key] || {}
+        element.text = fillSeparatorText(element.symbol, Number(sepStyle.width) || 40, sepStyle.fontSize || 12)
+      } else if (attr && attr.isCodeElem) {
+        // 自定义码元素：类型（barcode/qrcode）与内容都挂在元素自身，不绑定业务字段
+        element.type = attr.codeType === 'barcode' ? 'barcode' : 'qrcode'
+        element.customCode = true
+        element.text = attr.value == null ? '' : String(attr.value)
+        element.prefixLabel = false
+      } else {
+        element.text = attr && attr.value != null ? String(attr.value) : ''
       }
     }
     if (key === GOODS_KEY && Array.isArray(src.goodsFields)) {
       element.itemFields = src.goodsFields.slice()
+    }
+    // 文本元素附加码类型：属性面板选中「二维码/条码」后，打印/预览按元素文本或字段值自动生成码。
+    // 导出即转为标准码元素（type=barcode/qrcode），打印链路对 textCodeFrom 元素完全复用既有码渲染；
+    // textCodeFrom=text 标记导入时还原为原文本元素（而不是独立码元素）
+    if (attr && (attr.textCodeType === 'qrcode' || attr.textCodeType === 'barcode') && key !== 'page_no') {
+      element.type = attr.textCodeType
+      element.textCodeFrom = 'text'
+      if (custom) {
+        element.customCode = true
+        element.text = attr.value == null ? '' : String(attr.value)
+        element.prefixLabel = false
+      }
     }
     if (key === GOODS_TABLE_KEY) element.table = true
     // 元素声明自己属于哪一层数据：明细元素逐条循环，其余每条记录画一次
@@ -291,10 +317,39 @@ export function v2ToEditorState(raw) {
   var attrLabels = {}
   var customLabels = []
   var goodsFields = null
+  // 文本转码元素（textCodeFrom=text）：key → 码类型，导入时还原为文本元素上的码类型标记
+  var textCodeTypes = {}
 
   elements.forEach(function(element) {
     if (!element) return
-    if (element.type === 'barcode' || element.type === 'qrcode') {
+    if ((element.type === 'barcode' || element.type === 'qrcode') && element.textCodeFrom === 'text' && element.key) {
+      textCodeTypes[element.key] = element.type
+    }
+    // 文本转码元素（textCodeFrom=text）不走独立码还原，落到下方文本还原路径，
+    // 由 textCodeTypes 把码类型标记还原回文本元素
+    if ((element.type === 'barcode' || element.type === 'qrcode') && element.textCodeFrom !== 'text') {
+      // 自定义码元素：类型与内容挂在元素自身，还原为自定义属性
+      if (element.customCode) {
+        var codeKey = element.key || ('code_' + customLabels.length + '_' + Date.now())
+        selectedAttrs.push(codeKey)
+        attrStyles[codeKey] = {
+          x: mmToPx(element.x),
+          y: mmToPx(element.y),
+          width: mmToPx(element.width || 0),
+          height: mmToPx(element.height || 0)
+        }
+        attrLabels[codeKey] = element.label == null ? '' : element.label
+        customLabels.push({
+          key: codeKey,
+          label: element.label || (element.type === 'qrcode' ? '二维码' : '条码'),
+          value: element.text == null ? '' : String(element.text),
+          isCustom: true,
+          isCodeElem: true,
+          codeType: element.type,
+          group: '自定义'
+        })
+        return
+      }
       var source = element.sourceKey || String(element.key || '').replace(CODE_KEY_PREFIX, '')
       if (!source) return
       attrStyles[CODE_KEY_PREFIX + source] = {
@@ -319,8 +374,9 @@ export function v2ToEditorState(raw) {
     }
     if (element.width) style.width = mmToPx(element.width)
     if (element.height) style.height = mmToPx(element.height)
+    // 文字对齐所有文本元素通用还原
+    style.textAlign = element.textAlign === 'center' || element.textAlign === 'right' ? element.textAlign : 'left'
     if (isSpecNameKey(key)) {
-      style.textAlign = element.textAlign === 'center' || element.textAlign === 'right' ? element.textAlign : 'left'
       style.specWrap = !!element.specWrap
       if (element.specWidth > 0) {
         style.width = mmToPx(element.specWidth)
@@ -333,11 +389,14 @@ export function v2ToEditorState(raw) {
       goodsFields = element.itemFields.slice()
     }
     if (element.custom) {
+      var isSeparator = !!element.separator
       customLabels.push({
         key: key,
-        label: element.label || '',
-        value: element.text == null ? '' : element.text,
+        label: isSeparator ? (element.label || '间隔符') : (element.label || ''),
+        // 间隔符还原为原始符号（填充串在导出/打印时按宽度重新生成）
+        value: isSeparator && element.symbol != null ? String(element.symbol) : (element.text == null ? '' : element.text),
         isCustom: true,
+        isSeparator: isSeparator,
         group: '自定义'
       })
     }
@@ -359,6 +418,8 @@ export function v2ToEditorState(raw) {
     selectedAttrs: selectedAttrs,
     attrStyles: attrStyles,
     attrLabels: attrLabels,
+    // 文本转码元素还原用：key → qrcode/barcode
+    textCodeTypes: textCodeTypes,
     customLabels: customLabels,
     goodsFields: goodsFields,
     // 规格映射表为唯一权威；无映射表的模板沿用已保存的规格块（旧路径取值）
@@ -431,7 +492,10 @@ export function v2ToSchemaView(raw) {
       return {
         id: el.id || ('code_' + index),
         type: el.type,
-        field: el.sourceKey || String(el.key || '').replace(CODE_KEY_PREFIX, ''),
+        // 自定义码元素：field 指向元素自身 key（分页勾选/顺移按它匹配），文本固定
+        field: el.customCode ? String(el.key || '') : (el.sourceKey || String(el.key || '').replace(CODE_KEY_PREFIX, '')),
+        text: el.customCode ? (el.text == null ? '' : String(el.text)) : undefined,
+        customCode: !!el.customCode,
         x: el.x,
         y: el.y,
         width: el.width,
@@ -451,7 +515,8 @@ export function v2ToSchemaView(raw) {
       fontSize: el.fontSize,
       fontWeight: el.fontWeight,
       letterSpacing: el.letterSpacing,
-      lineHeight: el.lineHeight
+      lineHeight: el.lineHeight,
+      textAlign: el.textAlign
     }
   }).filter(function(el) { return !!el })
 
@@ -468,13 +533,4 @@ export function v2ToSchemaView(raw) {
   }
 }
 
-/** v2 模板对应的标签尺寸（mm） */
-export function v2PaperSize(raw) {
-  var v2 = parseTemplateRaw(raw) || {}
-  var paper = v2.paper || {}
-  return {
-    width: Number(paper.width) || 40,
-    height: Number(paper.height) || 30,
-    unit: paper.unit || 'mm'
-  }
-}
+

@@ -294,6 +294,8 @@
   import BillDetail from './dialog/BillDetail'
   import BillExcelIframe from '@/components/tools/BillExcelIframe'
   import { LabelPrintModal } from '@/views/material/labelPrint'
+  import { extractDeliveryValues, extractDeliveryRows } from '@/views/material/labelPrint/config/formFields/deliveryForm'
+  import { saveLabelEditSnapshot } from '@/views/material/labelPrint/utils/labelEditSnapshot'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
@@ -303,7 +305,7 @@
   import DataTable from '@/components/DataTable'
   import Vue from 'vue'
   import moment from 'moment'
-  import { getAction, postAction } from '@/api/manage'
+  import { deleteAction, getAction, postAction } from '@/api/manage'
   import { findBillDetailByNumber } from '@/api/api'
   import { getMpListShort } from '@/utils/util'
   import { getRowImgUrl } from '@/views/material/utils/materialDisplay'
@@ -647,57 +649,18 @@
         }
       },
       // 组装发货单打印数据（字段 key 与发货单模板一致），写入快照后打开打印弹层
+      // 表单数据统一由发货单提取模块生成，快照统一由标签编辑快照模块写入
       openDeliveryPrint (bill) {
         const member = this.billMember(bill) || {}
         const items = bill.items || []
-        const num = v => { const n = Number(v); return isNaN(n) ? 0 : n }
-        const money = v => num(v).toFixed(2)
-        const totalQty = items.reduce((sum, item) => sum + num(item.operNumber), 0)
-        const totalAmount = items.reduce((sum, item) => sum + (num(item.allPrice) || num(item.unitPrice) * num(item.operNumber)), 0)
-        const paidAmount = bill.changeAmount == null ? totalAmount : num(bill.changeAmount)
-        const statusMap = { '0': '未审核', '1': '已审核', '2': '已完成', '3': '已关闭' }
-        const values = {
-          dn_title: '发货单',
-          dn_no: bill.number || '--',
-          dn_date: bill.operTimeStr || '--',
-          dn_member: bill.organName || member.name || '散客',
-          dn_receiver: bill.contacts || member.contacts || member.name || '散客',
-          dn_phone: bill.telephone || member.telephone || '--',
-          dn_address: bill.address || member.address || '--',
-          dn_depot: bill.depotName || '--',
-          dn_paytype: bill.payType || '--',
-          dn_account: bill.accountName || '--',
-          dn_operator: bill.userName || '--',
-          dn_salesman: bill.salesManStr || '--',
-          dn_remark: bill.remark || '',
-          dn_attach: bill.fileName || '无',
-          dn_qty_total: Number.isInteger(totalQty) ? String(totalQty) : totalQty.toFixed(2),
-          dn_amount_total: '¥' + money(totalAmount),
-          dn_paid_total: '¥' + money(paidAmount),
-          dn_discount: bill.discount == null ? '--' : String(bill.discount),
-          dn_discount_amount: bill.discountMoney == null ? '--' : money(bill.discountMoney),
-          dn_real_amount: bill.discountLastMoney == null ? money(totalAmount) : money(bill.discountLastMoney),
-          dn_back_amount: bill.backAmount == null ? '0.00' : money(bill.backAmount),
-          dn_status: statusMap[String(bill.status)] || (bill.status == null ? '--' : String(bill.status))
-        }
-        const rows = items.map(item => {
-          const amount = num(item.allPrice) || num(item.unitPrice) * num(item.operNumber)
-          return {
-            name: item.materialName || item.name || '',
-            spec: this.itemSpec(item),
-            qty: Number.isInteger(num(item.operNumber)) ? String(num(item.operNumber)) : num(item.operNumber).toFixed(2),
-            price: money(item.unitPrice),
-            amount: money(amount)
-          }
+        const values = extractDeliveryValues({ bill: bill, member: member, items: items })
+        const rows = extractDeliveryRows(items, { spec: item => this.itemSpec(item) })
+        saveLabelEditSnapshot({
+          type: 'delivery',
+          number: bill.number,
+          values: values,
+          rows: rows
         })
-        try {
-          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
-            type: 'delivery',
-            number: bill.number,
-            values: values,
-            rows: rows
-          }))
-        } catch (e) { /* 忽略存储异常 */ }
         this.$refs.deliveryPrintModal.openByType('delivery')
       },
       // 审核 / 反审核
@@ -735,7 +698,8 @@
           title: '确认操作',
           content: '是否删除选中数据?',
           onOk () {
-            return postAction(that.url.deleteBatch, { ids: that.mobileSelectedIds.join(',') }).then(res => {
+            // deleteBatch 后端为 @DeleteMapping，必须用 DELETE 请求（POST 会报未知异常）
+            return deleteAction(that.url.deleteBatch, { ids: that.mobileSelectedIds.join(',') }).then(res => {
               if (res && res.code === 200) {
                 that.$message.success('删除成功')
                 that.mobileSelectedIds = []

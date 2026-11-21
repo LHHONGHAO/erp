@@ -26,6 +26,11 @@ spring:
   # 默认读取启动目录下的 frontend-dist（部署脚本会同步该目录）；可用 -Dspring.resources.static-locations 覆盖
   resources:
     static-locations: classpath:/static/,file:./frontend-dist/
+    # 入口页与图标类文件必须每次向服务器校验新鲜度（304 或新内容），
+    # 否则 iOS Safari 会长期复用旧入口页，导致「添加到主屏幕」图标无法更新
+    cache:
+      cachecontrol:
+        no-cache: true
   datasource:
     # 数据库连接通过部署环境注入；生产账号应使用仅访问 jsh_erp 的专用账号
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/jsh_erp?useUnicode=true&characterEncoding=utf8&useCursorFetch=true&defaultFetchSize=500&allowMultiQueries=true&rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true}

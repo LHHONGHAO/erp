@@ -44,3 +44,18 @@ export default {
     })
   }
 }
+
+/**
+ * 从会员信息页展示行提取打印字段值（唯一提取入口）
+ *
+ * @param {Array} displayRows 页面展示行 [{ key, value }]，'--' 视为未填写
+ * @returns {Object} 会员字段值
+ */
+export function extractMemberValues(displayRows) {
+  var values = {}
+  ;(Array.isArray(displayRows) ? displayRows : []).forEach(function(row) {
+    if (!row || !row.key) return
+    values[row.key] = row.value === '--' ? '' : row.value
+  })
+  return values
+}

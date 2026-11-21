@@ -20,7 +20,7 @@
         v-for="(line, li) in el.lines"
         :key="li"
         class="lpp-spec-line"
-        :style="{ height: el.lineHeightPx + 'px', lineHeight: el.lineHeightPx + 'px', textAlign: el.textAlign }"
+        :style="{ minHeight: el.lineHeightPx + 'px', lineHeight: el.lineHeightPx + 'px', textAlign: el.textAlign, whiteSpace: el.wrap ? 'pre-wrap' : 'pre', wordBreak: el.wrap ? 'break-all' : 'normal', overflow: el.wrap ? 'visible' : 'hidden', textOverflow: el.wrap ? 'clip' : 'ellipsis' }"
       >{{ line }}</div>
     </div>
 
@@ -72,6 +72,8 @@
       rows:            { type: Array,  default: function() { return [] } },
       // 处理后的文本（省略号裁切模式）：元素 key → 最终文本
       texts:           { type: Object, default: null },
+      // 打印设置「文本超出」：wrap = 超宽一律折行；ellipsis = 超宽以省略号截断
+      overflowMode:    { type: String, default: 'wrap' },
       scale:           { type: Number, default: null },
       transformOrigin: { type: String, default: 'center top' },
       padLR:           { type: Number, default: 12 },
@@ -125,12 +127,24 @@
           var key = el.field || el.id
           if (self.texts && self.texts[key] != null) display = self.texts[key]
           var style = self.baseStyle(el)
-          // 指定宽度：按框宽自动换行；指定高度：超出部分不打印（裁剪）
-          if (el.width) {
+          // 文字对齐：模板元素级设置，未设置时默认居左
+          style.textAlign = el.textAlign === 'center' || el.textAlign === 'right' ? el.textAlign : 'left'
+          // 折行宽度 = min(框宽, 标签右边可用宽)：文本框超过标签右边时按标签右边缘处理
+          var limit = Math.max(20, self.paperW - mmToPx(el.x || 0))
+          var widthPx = el.width ? mmToPx(el.width) : 0
+          style.width = Math.min(widthPx || limit, limit) + 'px'
+          if (self.overflowMode === 'ellipsis') {
+            // 不折行：超出以省略号截断，打印到此结束
+            style.whiteSpace = 'nowrap'
+            style.textOverflow = 'ellipsis'
+            style.overflow = 'hidden'
+          } else {
+            // 折行：超出框宽/标签右边一律自动换行
             style.whiteSpace = 'pre-wrap'
             style.wordBreak = 'break-all'
             style.overflowWrap = 'anywhere'
           }
+          // 指定高度：超出部分不打印（裁剪）
           if (el.height) style.overflow = 'hidden'
           return {
             id: el.id,
@@ -150,12 +164,18 @@
           return {
             id: el.id,
             lines: Array.isArray(el.lines) ? el.lines : [],
+            wrap: self.overflowMode !== 'ellipsis',
             textAlign: el.textAlign === 'center' || el.textAlign === 'right' ? el.textAlign : 'left',
             lineHeightPx: el.lineHeightPx || Math.max(1, Math.round(fontSize * (el.lineHeight || 1.3))),
             style: {
               left: mmToPx(el.x || 0) + 'px',
               top: mmToPx(el.y || 0) + 'px',
-              width: mmToPx(el.width || 0) + 'px',
+              // 块宽同样钳制到标签右边缘，超出部分不再被纸张裁掉而是按模式折行/截断
+              width: (function() {
+                var limit = Math.max(20, self.paperW - mmToPx(el.x || 0))
+                var widthPx = mmToPx(el.width || 0)
+                return Math.min(widthPx || limit, limit) + 'px'
+              })(),
               height: mmToPx(el.height || 0) + 'px',
               fontSize: fontSize + 'px',
               fontWeight: el.fontWeight || 'normal',
@@ -172,7 +192,8 @@
         return this.elements.filter(function(el) {
           return el.type === 'barcode' || el.type === 'qrcode'
         }).map(function(el) {
-          var text = self.textOf(self.values[el.field])
+          // 自定义码元素：文本固定在模板里，不查业务数据
+          var text = el.customCode ? self.textOf(el.text) : self.textOf(self.values[el.field])
           var width = mmToPx(el.width || 20)
           var height = mmToPx(el.height || 10)
           var fitted = fitCodeSize(el.type, text, width, height)

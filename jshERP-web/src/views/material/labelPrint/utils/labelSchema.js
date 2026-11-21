@@ -1,5 +1,5 @@
 /**
- * 标签模板 v3 结构（elements[]）与编辑器内部结构互转
+ * 标签模板公共常量与毫米/像素换算
  *
  * 约定：
  *   - 模板坐标/尺寸统一用毫米（x、y、width、height）
@@ -8,7 +8,6 @@
  */
 
 export var PX_PER_MM = 3.779528
-export var SCHEMA_VERSION = 1
 export var CODE_KEY_PREFIX = 'code__'
 
 function round2(value) {
@@ -23,52 +22,37 @@ export function mmToPx(mm) {
   return Math.round((Number(mm) || 0) * PX_PER_MM)
 }
 
-/** 新建空模板 */
-export function createSchema(options) {
-  var opts = options || {}
-  return {
-    name: opts.name || '未命名标签',
-    version: SCHEMA_VERSION,
-    businessType: opts.businessType || opts.provider || '',
-    size: {
-      width: opts.width || 40,
-      height: opts.height || 30,
-      unit: 'mm'
-    },
-    dataSource: {
-      provider: opts.provider || '',
-      fields: []
-    },
-    elements: [],
-    meta: {}
+/** 估算文本像素宽：全角字符按 1em，半角按 0.5em */
+export function estimateTextWidth(text, fontSize) {
+  var fs = Number(fontSize) || 12
+  var width = 0
+  var textStr = text == null ? '' : String(text)
+  for (var i = 0; i < textStr.length; i++) {
+    var code = textStr.charCodeAt(i)
+    var fullWidth = code >= 0x2e80 || (code >= 0x2010 && code <= 0x203a)
+    width += fullWidth ? fs : fs * 0.5
   }
+  return width
 }
 
-/** 校验模板结构，返回错误信息数组（空数组表示通过） */
-export function validateSchema(schema) {
-  var errors = []
-  if (!schema || typeof schema !== 'object') {
-    return ['模板结构为空']
-  }
-  if (!schema.name) errors.push('模板名称不能为空')
-  if (!schema.size || !schema.size.width || !schema.size.height) {
-    errors.push('缺少标签尺寸')
-  }
-  var provider = schema.dataSource && schema.dataSource.provider
-  if (!provider) errors.push('未指定业务数据源')
-  var fields = (schema.dataSource && schema.dataSource.fields) || []
-  var ids = {}
-  ;(schema.elements || []).forEach(function(element, index) {
-    if (!element.id) {
-      errors.push('第 ' + (index + 1) + ' 个元素缺少唯一 ID')
-    } else if (ids[element.id]) {
-      errors.push('元素 ID 重复：' + element.id)
-    } else {
-      ids[element.id] = true
-    }
-    if (element.field && fields.indexOf(element.field) === -1) {
-      errors.push('元素 ' + (element.id || index) + ' 的字段不在数据源字段内：' + element.field)
-    }
-  })
-  return errors
+/**
+ * 间隔符填充：把符号按元素宽度重复铺满（长度随宽自动调节，字号随样式）
+ * @param symbol 间隔符符号（可为多字符，如 '- -'）
+ * @param widthPx 元素宽度（px）
+ * @param fontSize 字号（px）
+ */
+export function fillSeparatorText(symbol, widthPx, fontSize) {
+  var sym = symbol == null ? '' : String(symbol)
+  if (!sym) return ''
+  var width = Number(widthPx) || 0
+  if (width <= 0) return sym
+  var symWidth = estimateTextWidth(sym, fontSize)
+  if (symWidth <= 0) return sym
+  var count = Math.floor(width / symWidth)
+  if (count < 1) count = 1
+  if (count > 500) count = 500
+  var out = ''
+  for (var i = 0; i < count; i++) out += sym
+  return out
 }
+

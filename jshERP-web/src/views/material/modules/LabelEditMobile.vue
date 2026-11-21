@@ -1,5 +1,6 @@
 <template>
   <mobile-modal-page
+    class="label-edit-swipe-lock"
     :visible="true"
     :title="currentTitle"
     @close="handleBack">
@@ -20,7 +21,7 @@
     <div class="lem-align-bar">
       <div class="lem-align-hint">
         <span class="lem-align-hint__state" :class="{ 'is-multi': multiSelectMode }">{{ labelStateText }}</span>
-        <span class="lem-align-hint__tip">{{ multiSelectMode ? '单击空白单选' : '长按空白进入多选' }}</span>
+        <span class="lem-align-hint__tip">{{ multiSelectMode ? '长按空白退出多选' : '长按空白进入多选' }}</span>
       </div>
       <div class="lem-align-btns">
         <a-button size="small" icon="align-left" title="左对齐" :disabled="selectedKeys.length < 2" @click="alignSelected('left')" />
@@ -69,12 +70,12 @@
           :active="selectedKeys.indexOf(key) !== -1"
           :show-frame="true"
           :show-handle="currentAttrKey === key"
-          :show-delete="currentAttrKey === key && !isCode(key)"
-          :extra-class="isCode(key) ? 'lem-elem-code' : ''"
+          :show-delete="canDeleteElem(key)"
+          :extra-class="isCodeElem(key) ? 'lem-elem-code' : ''"
           @drag-start="startPointerDrag"
           @delete="removeAttr(key)"
         >
-          <template v-if="isCode(key)">
+          <template v-if="isCodeElem(key)">
             <img v-if="codeImages[key]" :src="codeImages[key]" class="lem-code-img" />
             <span v-else class="lem-code-placeholder">编码</span>
           </template>
@@ -243,6 +244,36 @@
               </div>
             </template>
           </template>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && isSeparatorElem(selectedKeys[0])">
+            <div class="lem-field-head">
+              <span class="lem-style-label">符号</span>
+            </div>
+            <a-input
+              :value="currentSymbol"
+              placeholder="间隔符符号"
+              class="lem-text-input"
+              @input="updateCurrentSymbol"
+            />
+          </div>
+          <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && isCustomCodeElem(selectedKeys[0])">
+            <div class="lem-field-head">
+              <span class="lem-style-label">类型</span>
+            </div>
+            <a-radio-group :value="currentCodeType" class="lem-code-type-group" @change="updateCurrentCodeType">
+              <a-radio value="qrcode">二维码</a-radio>
+              <a-radio value="barcode">条码</a-radio>
+            </a-radio-group>
+            <div class="lem-field-head" style="margin-top: 8px;">
+              <span class="lem-style-label">内容</span>
+            </div>
+            <a-textarea
+              :value="currentCodeContent"
+              placeholder="输入二维码/条码内容"
+              :rows="2"
+              class="lem-text-input"
+              @input="updateCurrentCodeContent"
+            />
+          </div>
           <div class="lem-field-stack" v-else-if="selectedKeys.length === 1 && showFontFields && selectedKeys[0] !== 'page_no'">
             <div class="lem-field-head">
               <span class="lem-style-label">属性名</span>
@@ -289,6 +320,14 @@
               <span class="lem-style-label">行距</span>
               <a-input-number :value="getMultiStyle('lineHeight')" @change="onStyleChange('lineHeight', $event)" :min="0.8" :max="4" :step="0.1" size="small" class="lem-style-control" placeholder="多值" />
             </div>
+            <div class="lem-style-item" v-if="showFontFields && !specBlockKeys.length">
+              <span class="lem-style-label">对齐</span>
+              <a-select :value="getMultiStyle('textAlign')" @change="onStyleChange('textAlign', $event)" size="small" class="lem-style-control" placeholder="多值">
+                <a-select-option value="left">居左</a-select-option>
+                <a-select-option value="center">居中</a-select-option>
+                <a-select-option value="right">居右</a-select-option>
+              </a-select>
+            </div>
             <div class="lem-style-item">
               <span class="lem-style-label">X</span>
               <a-input-number :value="getMultiStyle('x')" @change="onStyleChange('x', $event)" size="small" class="lem-style-control" />
@@ -322,6 +361,8 @@
         @provider-change="onProviderChange"
         @toggle-item="toggleElemItem"
         @add-custom="addCustomLabel"
+        @add-separator="addSeparatorElement"
+        @add-code="addCodeElement"
       />
       <div class="lem-side-foot">
         <a-button type="primary" size="small" block icon="profile" @click="openFormDataSheet">表单数据</a-button>
@@ -448,7 +489,7 @@
         </div>
         <div class="lem-flow-cards">
           <div
-            v-for="key in selectedAttrs"
+            v-for="key in pagedFlowCards"
             :key="key"
             class="lem-flow-row"
             :class="{ 'is-on': flowElementKeys.indexOf(key) > -1 }"
@@ -586,20 +627,21 @@
   import LabelElementPanel from '@/views/material/labelPrint/edit/LabelElementPanel'
   import LabelFormDataSheet from '@/views/material/labelPrint/edit/LabelFormDataSheet'
   import { createLabelElementDrag } from '@/views/material/labelPrint/edit/labelElementDrag'
-  import { isCodeKey } from '@/views/material/labelPrint/utils/labelCode'
-  import { buildTemplateSnapshot, saveTemplateSnapshot, resolveTemplate, deleteTemplate } from '@/views/material/labelPrint/utils/labelTemplateFlow'
+  import { isCodeKey, renderCodeDataUrl } from '@/views/material/labelPrint/utils/labelCode'
+  import { buildTemplateSnapshot, saveTemplateSnapshot, resolveTemplate, deleteTemplate, applyReceiptRowsToState } from '@/views/material/labelPrint/utils/labelTemplateFlow'
   import { v2ToEditorState, TEMPLATE_RENDER_VERSION } from '@/views/material/labelPrint/utils/labelTemplateV2'
   import { fetchProviders, fetchProviderFields } from '@/views/material/labelPrint/utils/labelProviderApi'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { computeSpacer, centerScroll, setupLabelScroll, computeFitScale } from '@/utils/label-scroll'
-  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemKey, isReceiptItemHidden, replaceReceiptGoodsWithItems } from '@/views/material/labelPrint/utils/goodsLabelLayout'
+  import { GOODS_TABLE_KEY, GOODS_KEY, GOODS_TABLE_COLUMNS, GOODS_FIELD_OPTIONS, hasGoodsValue, resolveLabelLayout, isGoodsTableKey, isReceiptItemHidden } from '@/views/material/labelPrint/utils/goodsLabelLayout'
   import { parseSpecItemKey, specNameKey, isSpecItemKey, firstRowForEdit, normalizeSpecBlocks, resolveEditSpecBlocks, buildSpecBlocksFromCategory } from '@/views/material/labelPrint/utils/goodsSpecBlocks'
   import { normalizeEditorData } from '@/views/material/labelPrint/utils/templateEditDataModel'
   import { buildSpecBlockItems, resolveSpecBlockLines, SPEC_BLOCK_PAD_X, SPEC_BLOCK_GAP } from '@/views/material/labelPrint/utils/specBlockLayout'
   import { LABEL_CATEGORY_KEY, LABEL_SPEC_KEY, buildCategorySpecAttrs, normalizeSpecMapping, flattenSpecMapping, specMappingHasSelection } from '@/views/material/labelPrint/utils/categorySpec'
   import { buildFormFieldAttrs } from '@/views/material/labelPrint/config/formFields'
+  import { saveLabelEditSnapshot, valuesFromAttrs, mergeEditSnapshotForPrint } from '@/views/material/labelPrint/utils/labelEditSnapshot'
+  import { PX_PER_MM, fillSeparatorText } from '@/views/material/labelPrint/utils/labelSchema'
 
-  const PX_PER_MM = 3.779528
   // 标签默认缩放：预览区四周留白（与设计稿一致，左右各 20px）
   const LABEL_FIT_PADDING = 20
   // 默认缩放上限与放大按钮上限保持一致
@@ -804,15 +846,6 @@
       allCategoryList() {
         return this.flattenCategoryTree(this.categoryTree)
       },
-      // 所选类目下已存在的其它模板：一个类目只保留一个模板，保存时覆盖
-      conflictTemplate() {
-        var id = this.templateCategoryId
-        if (!id) return null
-        var self = this
-        return this.templates.find(function(t) {
-          return t.type === 'default' && String(t.categoryId) === String(id) && t.id !== self.selectedTemplateId
-        }) || null
-      },
       labelWidthMm() {
         return Math.round(this.labelWidth / PX_PER_MM)
       },
@@ -907,7 +940,7 @@
             return
           }
           // 明细表 / 编码由各自模板渲染，不走文本占位
-          if (isGoodsTableKey(key) || key === 'dn_table' || self.isCode(key)) {
+          if (isGoodsTableKey(key) || key === 'dn_table' || self.isCodeElem(key)) {
             map[key] = { label: '', value: '' }
             return
           }
@@ -915,7 +948,16 @@
           // 属性名有文本正常显示；属性名留空时用字段默认名称浅灰占位，便于在编辑页识别元素
           var hasLabelProp = Object.prototype.hasOwnProperty.call(self.attrLabels, key)
           var label = hasLabelProp ? String(self.attrLabels[key] == null ? '' : self.attrLabels[key]) : ''
-          if (!label && attr && attr.isCustom) {
+          if (attr && attr.isSeparator) {
+            // 间隔符：符号按元素宽度重复铺满，字号决定符号大小
+            var sepStyle = self.attrStyles[key] || {}
+            var sepWidth = Number(sepStyle.width) || 40
+            map[key] = {
+              label: '',
+              value: fillSeparatorText(attr.value, sepWidth, sepStyle.fontSize || 12),
+              placeholder: ''
+            }
+          } else if (!label && attr && attr.isCustom) {
             // 自定义标签没有业务名，直接显示自身文案
             map[key] = { label: '', value: attr.value == null ? '' : String(attr.value), placeholder: '' }
           } else if (label) {
@@ -1021,6 +1063,12 @@
       currentLabel() {
         if (!this.currentAttrKey) return ''
         return this.attrLabels[this.currentAttrKey] || ''
+      },
+      /** 间隔符元素当前符号（存 attr.value，随模板保存） */
+      currentSymbol() {
+        if (!this.currentAttrKey) return ''
+        var attr = this.allAttrs.find(function(a) { return a.key === this.currentAttrKey }, this)
+        return attr && attr.value != null ? String(attr.value) : ''
       },
       // 「表单数据」全域字段：当前字段清单为主，配置字段补差；规格项按块聚合、不展开为普通字段
       formDataFieldList() {
@@ -1485,10 +1533,26 @@
         })
         return keys
       },
-      // 字体类字段是否显示：只要选中项中含非编码元素就显示
+      // 分页打印卡片列表：分页标签不参与勾选，存在即每页固定打印
+      pagedFlowCards() {
+        return this.selectedAttrs.filter(function(key) {
+          return key !== 'page_no'
+        })
+      },
+      // 字体类字段是否显示：只要选中项中含非编码元素就显示（自定义码元素同属编码类）
       showFontFields() {
         if (!this.selectedKeys.length) return false
-        return !this.selectedKeys.every(k => this.isCode(k))
+        return !this.selectedKeys.every(k => this.isCodeElem(k))
+      },
+      // 自定义码元素签名：内容/类型/尺寸变化时重新生成预览图
+      customCodeSignatures() {
+        var self = this
+        return this.selectedAttrs.map(function(key) {
+          if (!self.isCustomCodeElem(key)) return ''
+          var attr = self.allAttrs.find(function(a) { return a.key === key })
+          var style = self.attrStyles[key] || {}
+          return [key, attr ? attr.codeType : '', attr ? attr.value : '', style.width || '', style.height || ''].join('|')
+        }).join(';')
       },
       marqueeStyle() {
         return {
@@ -1500,6 +1564,10 @@
       }
     },
     watch: {
+      // 自定义码元素内容/类型/尺寸变化时重新生成预览图
+      customCodeSignatures() {
+        this.refreshCodeImages()
+      },
       // 取消选中后自动收起属性面板
       selectedKeys(val) {
         var self = this
@@ -1527,6 +1595,8 @@
     },
     mounted() {
       this.initEditor()
+      // 已加载模板里的自定义码元素生成预览图
+      this.refreshCodeImages()
       // 标签居中 + 对称滑动：用 label-scroll 模块
       setupLabelScroll(this, 'previewWrap', 'labelWidth', 'zoom', 'wrapScrolling')
     },
@@ -1598,8 +1668,9 @@
         })
       },
       /**
-       * 小票：把商品数据拆成「每件商品 × 每个字段」的独立元素
-       * 明细表/商品组合/遗留商品字段由 replaceReceiptGoodsWithItems 统一移除
+       * 小票：把商品数据拆成「每件商品 × 每个字段」的独立元素。
+       * 拆分/隐藏过滤统一走共享链路 applyReceiptRowsToState（与预览、打印同一入口），
+       * 编辑页只负责准备编辑态的数据来源（规格块与占位行）
        */
       applyReceiptItemElements() {
         if (this.templateType !== 'receipt') return
@@ -1610,36 +1681,22 @@
         if (!blocks.length && !this.specMappingReady) blocks = resolveEditSpecBlocks(this.specBlocks, [])
         this.specBlocks = blocks
         // 商品名称/数量/单价/金额仍按属性名占位，不带业务值
-        var rows = [this.editGoodsRow()]
-        var fallbackY = 0
-        var headerKeys = ['rc_title', 'rc_no', 'rc_date', 'rc_member']
-        var self = this
-        headerKeys.forEach(function(key) {
-          var style = self.attrStyles[key]
-          if (style) fallbackY = Math.max(fallbackY, (style.y || 0) + (style.height || 20))
-        })
-        var next = replaceReceiptGoodsWithItems({
-          rows: rows,
+        var next = applyReceiptRowsToState({
+          rows: [this.editGoodsRow()],
           specBlocks: blocks,
           useSpecBlockPreset: true,
+          hiddenKeys: this.hiddenItemKeys || [],
           selectedAttrs: this.selectedAttrs,
           attrStyles: this.attrStyles,
           attrLabels: this.attrLabels,
-          paperWidth: this.labelWidth,
-          fallbackY: fallbackY ? fallbackY + 8 : 100
+          allAttrs: this.allAttrs,
+          paperWidth: this.labelWidth
         })
-        this.allAttrs = this.allAttrs.filter(function(attr) { return !isReceiptItemKey(attr.key) })
-        next.attrs.forEach(function(attr) { self.allAttrs.push(attr) })
+        this.allAttrs = next.allAttrs
         this.selectedAttrs = next.selectedAttrs
         this.attrStyles = next.attrStyles
         this.attrLabels = next.attrLabels
         this.dynamicItemKeys = next.itemKeys
-        // 模板里保存了关闭的规格名/规格值：重建后仍保持隐藏（按属性维度跨商品行生效）
-        if (this.hiddenItemKeys && this.hiddenItemKeys.length) {
-          this.selectedAttrs = this.selectedAttrs.filter(function(key) {
-            return !isReceiptItemHidden(self.hiddenItemKeys, key)
-          })
-        }
       },
       /** 商品类表单与小票共用类别规格块；商品标签只扩充规格属性，不带入当前商品值。 */
       applyCategoryEditElements() {
@@ -1814,10 +1871,17 @@
       editGoodsRow() {
         return { name: '商品名称', qty: '数量', price: '单价', amount: '金额' }
       },
-      /** 数据表下拉：加载列表，并按来源业务自动选中对应表 */
+      /** 数据表下拉：加载列表，并按来源业务自动选中对应表；发货模板固定表单字段链路，不展示数据表 */
       initProvider(context) {
         var self = this
         this.providerList = []
+        // 发货模板：字段唯一来源为表单配置 +「表单数据」回填，不接数据源下拉；
+        // provider 仅作存储标识随模板保存（与既有模板快照兼容），不进 UI
+        if (this.templateType === 'delivery') {
+          this.provider = (context && context.provider) ||
+            (context && context.template && context.template.provider) || 'sales.delivery'
+          return
+        }
         if (!this.businessType) return
         fetchProviders(this.businessType).then(function(list) {
           self.providerList = list || []
@@ -1919,6 +1983,8 @@
       },
       // 分页打印对象：点击卡片切换是否参与商品分页
       toggleFlowElement(key) {
+        // 分页标签固定每页打印，不参与勾选
+        if (key === 'page_no') return
         var wasEmpty = this.flowElementKeys.length === 0
         var idx = this.flowElementKeys.indexOf(key)
         if (idx > -1) this.flowElementKeys.splice(idx, 1)
@@ -2040,6 +2106,11 @@
             if (exist) {
               exist.value = custom.value
               exist.label = custom.label || exist.label
+              // editorData 快照不存码元素标记，从 customLabels 补回
+              if (custom.isCodeElem) {
+                exist.isCodeElem = true
+                exist.codeType = custom.codeType || 'qrcode'
+              }
             } else {
               self.allAttrs.push(JSON.parse(JSON.stringify(custom)))
             }
@@ -2059,8 +2130,9 @@
         this.maxRowsPerPage = Math.max(0, parseInt(snap.maxRowsPerPage, 10) || 0)
         this.repeatHeader = snap.repeatHeader !== false
         // 「分页打印」勾选对象只服务于商品分页：旧模板按原打印方式还原，其余方式清空
+        // 分页标签不参与勾选：旧模板把它存进了勾选列表时剔除
         var flow = Array.isArray(snap.flowElementKeys)
-          ? snap.flowElementKeys.filter(function(key) { return self.selectedAttrs.indexOf(key) >= 0 })
+          ? snap.flowElementKeys.filter(function(key) { return key !== 'page_no' && self.selectedAttrs.indexOf(key) >= 0 })
           : []
         if (snap.pageMode === 'each' && !flow.length) {
           flow = this.selectedAttrs.filter(function(key) { return key === GOODS_KEY || isGoodsTableKey(key) })
@@ -2148,7 +2220,8 @@
           fontSize: (style.fontSize || 12) + 'px',
           fontWeight: style.fontWeight || 'normal',
           letterSpacing: (style.letterSpacing || 0) + 'px',
-          lineHeight: String(style.lineHeight || 1.3)
+          lineHeight: String(style.lineHeight || 1.3),
+          textAlign: style.textAlign === 'center' || style.textAlign === 'right' ? style.textAlign : 'left'
         }
         if (isGoodsTableKey(key)) {
           var table = this.goodsTableData
@@ -2157,8 +2230,9 @@
           result.whiteSpace = 'normal'
           return result
         }
-        // 与打印预览保持一致：未设置宽度时按「标签宽 - 左边距」折行
-        var wrapWidth = style.width > 0 ? style.width : Math.max(20, this.labelWidth - (style.x || 0))
+        // 与打印预览保持一致：折行宽度 = min(元素宽, 标签宽 - 左边距)，元素宽于标签时按标签边界折行
+        var labelLimit = Math.max(20, this.labelWidth - (style.x || 0))
+        var wrapWidth = style.width > 0 ? Math.min(style.width, labelLimit) : labelLimit
         result.width = wrapWidth + 'px'
         result.whiteSpace = 'pre-wrap'
         result.wordBreak = 'break-all'
@@ -2177,9 +2251,9 @@
       isGoodsTable(key) {
         return isGoodsTableKey(key)
       },
-      // 文字类元素：宽度可拖到文字自然宽度以下触发折行，高度由内容自动撑开
+      // 文字类元素：宽度可拖到文字自然宽度以下触发折行，高度由内容自动撑开（间隔符同属此类）
       isTextElem(key) {
-        return !this.isCode(key) && !this.isGoodsTable(key) && key !== 'dn_table'
+        return !this.isCodeElem(key) && !this.isGoodsTable(key) && key !== 'dn_table'
       },
       isGoodsKey(key) {
         return key === GOODS_KEY
@@ -2219,6 +2293,12 @@
         this.$set(this.attrStyles, key, { x: 10, y: 10 + idx * 30, width: 0, height: 0, fontSize: 12, fontWeight: 'normal', letterSpacing: 0, lineHeight: 1.2 })
         var attr = this.allAttrs.find(function(a) { return a.key === key })
         if (attr) this.$set(this.attrLabels, key, attr.label)
+        // 自定义码元素：默认正方形码区（文字类元素的自动宽高对码无意义）
+        if (attr && attr.isCodeElem) {
+          var codeStyle = this.attrStyles[key]
+          codeStyle.width = 80
+          codeStyle.height = 80
+        }
         this.selectedKeys = [key]
         this.currentAttrKey = key
         this.pushSnapshot()
@@ -2238,6 +2318,104 @@
         var attr = { key: key, label: '自定义', value: '自定义文本', isCustom: true, group: '自定义' }
         this.allAttrs.push(attr)
         this.addAttr(key)
+      },
+      // 间隔符元素：符号随字号、长度随宽度自动铺满
+      addSeparatorElement() {
+        this.customCounter = (this.customCounter || 0) + 1
+        var key = 'sep_' + this.customCounter + '_' + Date.now()
+        var attr = { key: key, label: '间隔符', value: '—', isCustom: true, isSeparator: true, group: '自定义' }
+        this.allAttrs.push(attr)
+        this.addAttr(key)
+        // 默认跨度 40px，可用角手柄拖宽，符号会自动铺满
+        var style = this.attrStyles[key]
+        if (style) {
+          style.width = 40
+        }
+        // 隐藏属性名前缀，只显示填充后的符号串
+        this.$set(this.attrLabels, key, '')
+      },
+      // 自定义码元素（code_ 前缀，区别于绑定属性的 code__ 前缀）：
+      // 类型（二维码/条码）与内容都挂在元素自身，可在属性面板自由切换与编辑
+      addCodeElement() {
+        this.customCounter = (this.customCounter || 0) + 1
+        var key = 'code_' + this.customCounter + '_' + Date.now()
+        var attr = { key: key, label: '二维码', value: '1234567890', isCustom: true, isCodeElem: true, codeType: 'qrcode', group: '自定义' }
+        this.allAttrs.push(attr)
+        this.addAttr(key)
+        // 默认正方形码区，可用角手柄拖宽拖高
+        var style = this.attrStyles[key]
+        if (style) {
+          style.width = 80
+          style.height = 80
+        }
+      },
+      // 自定义码元素判断：key 以 code_ 开头（非 code__）且带 isCodeElem 标记
+      isCustomCodeElem(key) {
+        if (!key || String(key).indexOf('code__') === 0) return false
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return !!(attr && attr.isCodeElem)
+      },
+      isCodeElem(key) {
+        return this.isCode(key) || this.isCustomCodeElem(key)
+      },
+      // 绑定属性的编码元素（code__）沿用原逻辑不可删除；自定义码元素可删除
+      canDeleteElem(key) {
+        if (this.currentAttrKey !== key) return false
+        return this.isCustomCodeElem(key) || !this.isCode(key)
+      },
+      currentCodeTypeOf(key) {
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return attr && attr.codeType === 'barcode' ? 'barcode' : 'qrcode'
+      },
+      /** 属性面板：切换自定义码元素类型（二维码 ↔ 条码） */
+      updateCurrentCodeType(e) {
+        var val = e && e.target ? e.target.value : e
+        var key = this.currentAttrKey
+        if (!key || (val !== 'qrcode' && val !== 'barcode')) return
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        if (!attr) return
+        var label = val === 'barcode' ? '条码' : '二维码'
+        attr.codeType = val
+        attr.label = label
+        this.$set(this.attrLabels, key, label)
+        this.pushSnapshot()
+      },
+      /** 属性面板：编辑自定义码元素内容 */
+      updateCurrentCodeContent(e) {
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var key = this.currentAttrKey
+        if (!key) return
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        if (!attr) return
+        attr.value = val == null ? '' : String(val)
+      },
+      // 自定义码元素预览图：值/类型/尺寸变化时由签名 watcher 重新生成
+      refreshCodeImages() {
+        var self = this
+        var alive = {}
+        this.selectedAttrs.forEach(function(key) {
+          if (!self.isCustomCodeElem(key)) return
+          var attr = self.allAttrs.find(function(a) { return a.key === key })
+          if (!attr) return
+          var style = self.attrStyles[key] || {}
+          var codeType = attr.codeType === 'barcode' ? 'barcode' : 'qrcode'
+          var value = attr.value == null ? '' : String(attr.value)
+          var width = Number(style.width) || 80
+          var height = Number(style.height) || 80
+          alive[key] = true
+          renderCodeDataUrl(codeType, value, width, height).then(function(url) {
+            self.$set(self.codeImages, key, url || '')
+          })
+        })
+        // 已删除的元素清理残留图片
+        Object.keys(self.codeImages).forEach(function(key) {
+          if (!alive[key] && self.isCustomCodeElem(key)) self.$delete(self.codeImages, key)
+        })
+      },
+      isSeparatorElem(key) {
+        if (!key || String(key).indexOf('sep_') !== 0) return false
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        return !(attr && attr.isSeparator === false)
       },
       isDetailColumn(key) {
         return ['dn_col_name', 'dn_col_spec', 'dn_col_qty', 'dn_col_price', 'dn_col_amount'].indexOf(key) > -1
@@ -2289,6 +2467,14 @@
       updateCurrentLabel(e) {
         var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
         if (this.currentAttrKey) this.$set(this.attrLabels, this.currentAttrKey, val)
+      },
+      /** 间隔符元素：属性面板直接编辑符号内容（存 attr.value，填充串自动重算） */
+      updateCurrentSymbol(e) {
+        var val = typeof e === 'string' ? e : (e && e.target ? e.target.value : e)
+        var key = this.currentAttrKey
+        if (!key) return
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        if (attr) attr.value = val
       },
       isAttrSelected(key) {
         return !!key && this.selectedAttrs.indexOf(key) > -1
@@ -2631,6 +2817,8 @@
           var s = this.attrStyles[keys[i]]
           if ((s ? s[field] : undefined) !== val) return null
         }
+        // 文字对齐未设置过时显示默认值居左
+        if (field === 'textAlign' && val === undefined) return 'left'
         return val === undefined ? null : val
       },
       // 模板事件桥接：避免模板内联箭头函数导致 Vue 2 编译报错
@@ -2847,16 +3035,16 @@
       },
       /**
        * 按预览区尺寸等比缩放标签（复用 label-scroll 的 computeFitScale）
-       * 默认放大到适应屏幕宽度，四周留白 20px；超高标签按高度收敛，避免超出可视区
-       * 缩放后由 setupLabelScroll 负责居中/滑动
+       * 编辑画布按标签实际物理尺寸展示（设计像素 = 96dpi）：默认 1:1，不放大，
+       * 仅当屏幕放不下时按宽/高等比缩小；用户可用缩放按钮手动放大
        */
       fitLabelToView() {
         var wrap = this.$refs.previewWrap
         if (!wrap || !this.labelWidth || !this.labelHeight) return
         var wrapW = wrap.clientWidth || window.innerWidth
         var wrapH = wrap.clientHeight || window.innerHeight
-        var scale = computeFitScale(this.labelWidth, this.labelHeight, wrapW, wrapH, LABEL_FIT_PADDING, LABEL_MAX_ZOOM)
-        this.zoom = Math.min(LABEL_MAX_ZOOM, Math.max(LABEL_MIN_ZOOM, Math.round(scale * 100) / 100))
+        var scale = computeFitScale(this.labelWidth, this.labelHeight, wrapW, wrapH, LABEL_FIT_PADDING, 1)
+        this.zoom = Math.min(1, Math.max(LABEL_MIN_ZOOM, Math.round(scale * 100) / 100))
       },
       // 模板加载完成后等一帧再适配，确保预览区已完成布局
       fitLabelAfterLoad() {
@@ -2869,7 +3057,7 @@
       startPointerDrag(key, e, mode) {
         this._labelDrag.startPointerDrag(key, e, mode)
       },
-      // 编辑区空白（含画布外的灰色区域）：长按进入多选并保留当前选中，单击空白退出多选
+      // 编辑区空白（含画布外的灰色区域）：长按切换多选，单击空白不改变选择
       startAreaPress(e) {
         var self = this
         if (this.$refs.labelCanvas && this.$refs.labelCanvas.contains(e.target)) return
@@ -2886,19 +3074,10 @@
           document.removeEventListener('pointercancel', onCancel)
         }
         var onMove = function(ev) {
-          // 移动超过阈值视为滚动，取消本次长按/单击判定
+          // 移动超过阈值视为滚动，取消本次长按判定
           if (Math.abs(ev.clientX - startX) > 8 || Math.abs(ev.clientY - startY) > 8) cleanup()
         }
         var onUp = function() {
-          if (timer) {
-            // 未达长按时长：按单击空白处理，清空选择并退出多选
-            cleanup()
-            self.selectedKeys = []
-            self.currentAttrKey = null
-            self.multiSelectMode = false
-            self.pushSnapshot()
-            return
-          }
           cleanup()
         }
         var onCancel = function() {
@@ -2906,8 +3085,11 @@
         }
         timer = setTimeout(function() {
           timer = null
-          // 只切换多选状态，以当前已选元素为基础，不再自动全选
-          self.multiSelectMode = true
+          self.multiSelectMode = !self.multiSelectMode
+          if (!self.multiSelectMode) {
+            self.selectedKeys = []
+            self.currentAttrKey = null
+          }
           self.pushSnapshot()
           if (navigator.vibrate) navigator.vibrate(10)
         }, 600)
@@ -2927,7 +3109,7 @@
           startY: (e.clientY - rect.top) / this.zoom,
           x: 0, y: 0, w: 0, h: 0
         }
-        // 长按画布空白：进入多选状态并保留当前选中，不再自动全选
+        // 长按画布空白：切换多选状态，退出时清空选择
         this._marqueeLongPressed = false
         this._marqueeTimer = setTimeout(function() {
           self._marqueeTimer = null
@@ -2935,7 +3117,11 @@
           // 放弃框选，只切换多选状态
           self.marquee.active = false
           self.marquee.visible = false
-          self.multiSelectMode = true
+          self.multiSelectMode = !self.multiSelectMode
+          if (!self.multiSelectMode) {
+            self.selectedKeys = []
+            self.currentAttrKey = null
+          }
           self.unbindMarqueeEvents()
           self.pushSnapshot()
           if (navigator.vibrate) navigator.vibrate(10)
@@ -2981,7 +3167,7 @@
         this._marqueeLongPressed = false
         var m = this.marquee
         if (longPressed) {
-          // 长按已全选，抬手不再按“点击空白”清空
+          // 长按已切换多选，抬手不再处理框选
           m.visible = false
           this.unbindMarqueeEvents()
           return
@@ -3005,14 +3191,9 @@
             })
             this.selectedKeys = hit
             this.currentAttrKey = hit.length ? hit[hit.length - 1] : null
-          } else {
-            // 未形成框选 = 点击空白，清空选择并退出多选
-            this.selectedKeys = []
-            this.currentAttrKey = null
-            this.multiSelectMode = false
+            this.pushSnapshot()
           }
           m.visible = false
-          this.pushSnapshot()
         }
         this.unbindMarqueeEvents()
       },
@@ -3140,57 +3321,6 @@
         }).catch(function() {
           return []
         })
-      },
-      /** 小票规格块对应的商品品类：单据或明细行上带的 categoryId */
-      /** 表单明细品类 ID（兼容调用）；规格并集以数据库内所有已配置规格的品类为准。 */
-      receiptCategoryIds() {
-        var record = this.record || {}
-        var rows = []
-        ;[record.goodsRows, record.detailRows, record.rows].forEach(function(list) {
-          if (Array.isArray(list)) rows = rows.concat(list)
-        })
-        var ids = []
-        rows.forEach(function(row) {
-          var id = row && (row.categoryId != null ? row.categoryId : (row.materialCategoryId != null ? row.materialCategoryId : row.category_id))
-          if (id != null && id !== '' && ids.map(String).indexOf(String(id)) < 0) ids.push(id)
-        })
-        if (!ids.length) {
-          var recordId = record.categoryId != null ? record.categoryId : (record.materialCategoryId != null ? record.materialCategoryId : record.category_id)
-          if (recordId != null && recordId !== '') ids.push(recordId)
-        }
-        return ids
-      },
-      /** 按 id 在类目树里找节点（保留 specConfig） */
-      findCategoryNode(categoryId) {
-        var target = String(categoryId)
-        function walk(nodes) {
-          if (!nodes) return null
-          for (var i = 0; i < nodes.length; i++) {
-            var node = nodes[i]
-            if (!node) continue
-            if (String(node.id) === target || String(node.value) === target) return node
-            var found = walk(node.children)
-            if (found) return found
-          }
-          return null
-        }
-        return walk(this.categoryTree)
-      },
-      /** 品类树索引：类目 id → { node, path }，path 从一级类开始 */
-      categoryIndex() {
-        var index = {}
-        function walk(nodes, path) {
-          if (!Array.isArray(nodes)) return
-          nodes.forEach(function(node) {
-            if (!node) return
-            var id = node.id != null ? node.id : node.value
-            var nextPath = path.concat([node])
-            if (id != null && id !== '') index[String(id)] = { node: node, path: nextPath }
-            walk(node.children, nextPath)
-          })
-        }
-        walk(this.categoryTree, [])
-        return index
       },
       /**
        * 编辑态品类规格定义：只认一级类目，一级类目上配置的规格被它下面所有二级类目共用。
@@ -3387,10 +3517,6 @@
       },
       handlePrint() {
         // 把当前编辑中的模板快照写入 sessionStorage，跳转打印页后恢复
-        var snapshotValues = {}
-        this.allAttrs.forEach(function(attr) {
-          if (attr.key) snapshotValues[attr.key] = attr.value == null ? '' : attr.value
-        })
         try {
           var cfgInfo = TYPE_CONFIG[this.templateType] || TYPE_CONFIG.label
           var currentId = this.selectedTemplateId
@@ -3399,12 +3525,16 @@
             : null
           // 快照与保存模板使用同一 v2 结构，预览按同一套规则还原，样式保持一致
           var snapshot = buildTemplateSnapshot(this, cfgInfo, (current && current.name) || cfgInfo.title.replace('编辑', '') + '模板')
-          snapshot.values = snapshotValues
-          // 小票：明细行跟着快照走，预览/打印时按同一规则重新拆成单品元素
-          if (this.templateType === 'receipt' && this.record && Array.isArray(this.record.goodsRows)) {
+          // 业务值提取统一走快照模块：字段值由字段清单转出
+          snapshot.values = valuesFromAttrs(this.allAttrs)
+          // 业务数据（number/values/rows）保留进编辑前的业务快照，模板结构以编辑页为准；
+          // 编辑页只持有模板结构，业务值/明细行在进入编辑前已被剥离
+          snapshot = mergeEditSnapshotForPrint(snapshot, this.templateType)
+          // 小票兜底：无业务快照明细时用编辑页品类行，预览/打印按同一规则拆成单品元素
+          if (this.templateType === 'receipt' && !snapshot.rows && this.record && Array.isArray(this.record.goodsRows)) {
             snapshot.rows = this.record.goodsRows
           }
-          sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify(snapshot))
+          saveLabelEditSnapshot(snapshot)
         } catch (e) { /* 忽略 */ }
         // 标签模板可能有多个：带上当前模板标识，打印弹层从统一模板存储读取对应模板
         var templateId = ''

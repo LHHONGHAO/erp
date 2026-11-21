@@ -157,9 +157,28 @@ public class MaterialController extends BaseController {
         String enabled = StringUtil.getInfo(search, "enabled");
         String remark = StringUtil.getInfo(search, "remark");
         String mpList = StringUtil.getInfo(search, "mpList");
+        String size = StringUtil.getInfo(search, "size");
         List<MaterialVo4Unit> list = materialService.selectSkuList(materialParam, standard, model, color, brand, mfrs, otherField1, otherField2,
-                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, mpList);
+                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, size, mpList);
         return getDataTable(list);
+    }
+
+    @GetMapping(value = "/listSkuAttributeValueStats")
+    @ApiOperation(value = "获取SKU规格属性去重值统计（移动端筛选卡槽）")
+    public BaseResponseInfo listSkuAttributeValueStats(@RequestParam("attributeName") String attributeName,
+                                                       HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        Map<String, Object> map = new HashMap<String, Object>();
+        try {
+            map.put("rows", materialService.getSkuAttributeValueStats(attributeName));
+            res.code = 200;
+            res.data = map;
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "查询失败";
+        }
+        return res;
     }
 
     @PostMapping(value = "/add")

@@ -26,6 +26,10 @@ public interface MaterialMapperEx {
     List<Map<String, Object>> selectCategorySkuValueStats(@Param("categoryId") Long categoryId,
                                                          @Param("tenantId") Long tenantId);
 
+    /** 全部商品的 SKU 规格属性去重值统计（如「尺寸」的 200/220），供移动端筛选卡槽使用 */
+    List<Map<String, Object>> selectSkuAttributeValueStats(@Param("attributeName") String attributeName,
+                                                           @Param("tenantId") Long tenantId);
+
     List<MaterialVo4Unit> selectByConditionMaterial(
             @Param("materialParam") String materialParam,
             @Param("standard") String standard,
@@ -71,7 +75,8 @@ public interface MaterialMapperEx {
             @Param("position") String position,
             @Param("enabled") String enabled,
             @Param("remark") String remark,
-            @Param("idList") List<Long> idList);
+            @Param("idList") List<Long> idList,
+            @Param("size") String size);
 
     Long insertSelectiveEx(Material record);
 

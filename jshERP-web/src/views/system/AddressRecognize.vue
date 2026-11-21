@@ -86,7 +86,8 @@
 import { saveMemberFromAddress } from '@/api/api'
 import { scrollBlankMixin } from '@/utils/scrollBlank'
 import { LabelPrintModal } from '@/views/material/labelPrint'
-import { ADDRESS_PANEL_FIELDS } from '@/views/material/labelPrint/utils/addressFormFields'
+import { ADDRESS_PANEL_FIELDS, extractAddressValues } from '@/views/material/labelPrint/utils/addressFormFields'
+import { saveLabelEditSnapshot, LABEL_EDIT_SNAPSHOT_DEFAULTS } from '@/views/material/labelPrint/utils/labelEditSnapshot'
 import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
 import MobileProductPicker from '@/components/mobile/MobileProductPicker'
 
@@ -368,26 +369,20 @@ export default {
       return value ? String(value).replace(/\n/g, '、') : '-'
     },
     printResult() {
-      var self = this
-      var values = {}
-      this.fields.forEach(function(prop) {
-        values[prop.field] = self.form[prop.field] || ''
+      // 表单数据统一由地址打印提取模块生成，快照统一由标签编辑快照模块写入
+      var values = extractAddressValues({
+        form: this.form,
+        goods: this.goodsValue(),
+        goodsRows: this.goodsRowList(),
+        platform: this.form.platform
       })
-      values.goods = this.goodsValue()
-      values.goodsRows = this.goodsRowList()
-      values.platform = this.form.platform || ''
-      try {
-        sessionStorage.setItem('jsh.labelEdit.snapshot', JSON.stringify({
-          labelWidth: 320,
-          labelHeight: 240,
-          selectedAttrs: [],
-          attrStyles: {},
-          attrLabels: {},
-          values: values,
-          // 商品明细行：标签编辑/打印按行数动态排版
-          rows: values.goodsRows
-        }))
-      } catch (e) { /* 忽略 */ }
+      saveLabelEditSnapshot(Object.assign({}, LABEL_EDIT_SNAPSHOT_DEFAULTS, {
+        // 快照身份：编辑页打印合并时按 type 隔离，避免带入其它单据数据
+        type: 'address',
+        values: values,
+        // 商品明细行：标签编辑/打印按行数动态排版
+        rows: values.goodsRows
+      }))
       // 创建/编辑地址打印模板时带回本页输入值，不绑定会员数据源
       this.$refs.labelPrintModal.openByType('address', { title: '地址打印', record: values })
     }

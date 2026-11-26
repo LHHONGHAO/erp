@@ -2,7 +2,7 @@ import { GOODS_TABLE_KEY } from './goodsLabelLayout'
 import { buildProductFormAttrs, mergeProductAttrValues } from './productFormFields'
 
 /** 地址打印表单字段（唯一数据源）：key 与地址识别页面表单字段一致 */
-export const ADDRESS_FIELD_DEFS = [
+const ADDRESS_FIELD_DEFS = [
   { key: 'contacts', label: '联系人', type: 'input' },
   { key: 'telephone', label: '电话', type: 'textarea' },
   { key: 'account', label: '账号', type: 'input' },

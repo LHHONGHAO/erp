@@ -8,11 +8,14 @@
     :auto-scan-close="false"
     title="商品信息"
     placeholder="搜索商品 / 条码"
+    :filter-visible.sync="filterDrawerVisible"
+    :filter-groups="mobileFilterGroups"
     @back="$router.back()"
     @search="mobileSearch"
     @scan-result="onProductScanResult"
     @camera="ocrVisible = true"
-    @filter="filterDrawerVisible = true">
+    @filter-change="onMobileFilterChange"
+    @filter-clear="resetMobileFilter">
       <template #actions>
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
@@ -25,46 +28,27 @@
       :reset-key="mobileFeedResetKey"
       selectable
       show-print
+      :swipe-edit="canMobileEdit"
       :selected-keys="feedPickedKeys"
       empty-text="暂无商品"
       @print="handleFeedPrint"
+      @edit="handleFeedEdit"
       @select="toggleFeedPick">
     </mobile-goods-feed>
 
-    <!-- 浮层：筛选抽屉、扫码、弹窗 -->
-    <template #overlay>
-    <!-- 条件筛选抽屉 -->
-    <a-drawer
-      :visible="filterDrawerVisible"
-      placement="right"
-      title="条件筛选"
-      width="280"
-      @close="filterDrawerVisible = false">
-      <div class="ml-filter-item">
-        <span class="ml-filter-label">显示方式</span>
-        <a-radio-group v-model="displayMode" @change="onDisplayModeChange">
-          <a-radio-button value="spu">单类</a-radio-button>
-          <a-radio-button value="sku">单品</a-radio-button>
-        </a-radio-group>
-      </div>
-      <div class="ml-filter-item">
-        <span class="ml-filter-label">商品类别</span>
+    <!-- 条件筛选：商品类别（统一筛选面板内） -->
+    <template #filter-extra>
+      <div class="msearch-filter__field">
+        <span class="msearch-filter__field-label">商品类别</span>
         <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
-          :treeData="categoryTree" v-model="queryParam.categoryId" placeholder="请选择类别">
+          :treeData="categoryTree" v-model="queryParam.categoryId" placeholder="请选择类别"
+          @change="onMobileCategoryChange">
         </a-tree-select>
       </div>
-      <div class="ml-filter-item">
-        <span class="ml-filter-label">状态</span>
-        <a-select style="width:100%" placeholder="请选择状态" v-model="queryParam.enabled">
-          <a-select-option value="1">启用</a-select-option>
-          <a-select-option value="0">禁用</a-select-option>
-        </a-select>
-      </div>
-      <div class="ml-filter-footer">
-        <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
-      </div>
-    </a-drawer>
+    </template>
 
+    <!-- 浮层：弹窗 -->
+    <template #overlay>
     <!-- 标准手机底边栏由 mobile-search-page 统一提供 -->
 
     <!-- 弹窗组件（手机端也复用） -->
@@ -432,6 +416,34 @@
       /** 手机端卡片已勾选的唯一键 */
       feedPickedKeys() {
         return this.mobileSelectedItems.map(sel => sel.key)
+      },
+      /** 手机端是否可编辑商品（由按钮权限控制） */
+      canMobileEdit() {
+        return this.btnEnableList.indexOf(1) > -1
+      },
+      /** 手机端统一筛选面板：显示方式 + 状态（商品类别在 filter-extra 插槽） */
+      mobileFilterGroups() {
+        return [
+          {
+            key: 'display',
+            label: '显示方式',
+            value: this.displayMode,
+            options: [
+              { text: '单类', value: 'spu' },
+              { text: '单品', value: 'sku' }
+            ]
+          },
+          {
+            key: 'enabled',
+            label: '状态',
+            value: this.queryParam.enabled,
+            options: [
+              { text: '全部', value: '' },
+              { text: '启用', value: '1' },
+              { text: '禁用', value: '0' }
+            ]
+          }
+        ]
       }
     },
     methods: {
@@ -573,6 +585,10 @@
       /** 卡片打印标签 */
       handleFeedPrint(item) {
         if (item && item.raw) this.handlePrintSkuLabel(item.raw)
+      },
+      /** 卡片右滑点编辑：进入商品编辑页，加载该商品完整信息 */
+      handleFeedEdit(item) {
+        if (item && item.raw) this.handleEdit(item.raw)
       },
       /** 查询条件/数据变化后重置商品流（回到顶部重新加载第 1 页） */
       bumpMobileFeed() {
@@ -870,10 +886,29 @@
         this.queryParam.materialParam = text
         if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
-      /** 筛选抽屉确定 */
-      applyMobileFilter() {
+      /** 统一筛选面板标签点击：立即应用并刷新商品流 */
+      onMobileFilterChange(key, opt) {
+        if (key === 'display') {
+          if (this.displayMode === opt.value) return
+          this.displayMode = opt.value
+          this.onDisplayModeChange()
+        } else if (key === 'enabled') {
+          this.queryParam.enabled = opt.value === '' ? undefined : opt.value
+          this.bumpMobileFeed()
+        }
+      },
+      /** 商品类别变化：立即刷新商品流 */
+      onMobileCategoryChange() {
+        this.bumpMobileFeed()
+      },
+      /** 全部关闭：清空筛选条件并关闭面板 */
+      resetMobileFilter() {
         this.filterDrawerVisible = false
-        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
+        this.displayMode = 'sku'
+        this.url.list = '/material/listSku'
+        this.queryParam.categoryId = undefined
+        this.queryParam.enabled = undefined
+        this.bumpMobileFeed()
       },
     }
   }
@@ -884,20 +919,6 @@
 <style>
   /* ==================== 手机端布局 ==================== */
   /* 顶栏右侧操作按钮：统一由 MobileHeaderActions 组件提供样式 */
-  /* 条件筛选抽屉样式 */
-  .ml-filter-item {
-    margin-bottom: 20px;
-  }
-  .ml-filter-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
-    color: #333;
-    font-weight: 500;
-  }
-  .ml-filter-footer {
-    margin-top: 24px;
-  }
 
   /* ==================== 主表 ==================== */
   .ant-table-thead > tr > th,

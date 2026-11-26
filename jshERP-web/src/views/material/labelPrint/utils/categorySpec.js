@@ -22,13 +22,13 @@ export const LABEL_SPEC_KEY = 'label_spec'
  * 例：四件套商品读取「颜色」「被套」两个规格值，
  *     打印到规格元素时输出「颜色值/被套值」。
  */
-export const CATEGORY_SPEC_MAP = {
+const CATEGORY_SPEC_MAP = {
   四件套: ['颜色', '被套'],
   三件套: ['颜色', '床单']
 }
 
 /** 取一级类目对应的规格名称列表，未配置返回空数组 */
-export function resolveCategorySpecNames(categoryName) {
+function resolveCategorySpecNames(categoryName) {
   const name = categoryName == null ? '' : String(categoryName).trim()
   if (!name || !Object.prototype.hasOwnProperty.call(CATEGORY_SPEC_MAP, name)) return []
   const list = CATEGORY_SPEC_MAP[name]
@@ -336,8 +336,9 @@ export function flattenSpecMapping(mapping) {
  */
 export function buildCategorySpecAttrs() {
   return [
-    { key: LABEL_CATEGORY_KEY, label: '类别', value: '类别', isCustom: false, group: '商品规格' },
-    { key: LABEL_SPEC_KEY, label: '规格', value: '规格', isCustom: false, group: '商品规格' }
+    // value 留空：没有数据时不能把元素名当值打印出去（预览由 LabelPaper 用浅灰占位显示）
+    { key: LABEL_CATEGORY_KEY, label: '类别', value: '', isCustom: false, group: '商品规格' },
+    { key: LABEL_SPEC_KEY, label: '规格', value: '', isCustom: false, group: '商品规格' }
   ]
 }
 

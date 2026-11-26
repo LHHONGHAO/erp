@@ -239,37 +239,26 @@
     <!-- 新增会员 -->
     <member-modal ref="memberModalForm" attach-to-body full-screen :z-index="1200" @ok="onMemberAdded"></member-modal>
 
-    <!-- 标准添加商品弹层（与打印弹层同一套样式，含近 7 天前 20 名） -->
-    <mobile-product-picker
+    <!-- 标准添加商品弹层：选择/数量/最近常选逻辑内聚于模块，页面只做回填同步 -->
+    <mobile-product-picker-v2
       :visible="productPickerVisible"
       title="添加商品"
       :initial-keyword="pickerKeyword"
       :initial-selected="pickerSelectedGoods"
-      recent-require-raw
       @confirm="onPickerConfirm"
       @close="productPickerVisible = false" />
 
     <!-- 结算成功：标准小票打印预览（80mm 小票纸） -->
     <label-print-modal ref="receiptPrintModal" />
-
-    <!-- 单据弹窗（复用零售出库业务逻辑） -->
-    <retail-out-modal ref="modalForm" @ok="modalFormOk" @close="modalFormClose"></retail-out-modal>
-    <bill-detail ref="modalDetail" @ok="modalFormOk" @close="modalFormClose"></bill-detail>
   </div>
 </template>
 
 <script>
-  import RetailOutModal from './modules/RetailOutModal'
-  import BillDetail from './dialog/BillDetail'
   import MemberModal from '@/views/system/modules/MemberModal'
-  import MobileProductPicker from '@/components/mobile/MobileProductPicker'
+  import MobileProductPickerV2 from '@/components/mobile/MobileProductPickerV2'
   import MobileBottomActions from '@/components/mobile/MobileBottomActions'
-  import { JeecgListMixin } from '@/mixins/JeecgListMixin'
-  import { BillListMixin } from './mixins/BillListMixin'
   import { getAction, postAction } from '@/api/manage'
   import { findBySelectRetail } from '@/api/api'
-  import { getFormatDate } from '@/utils/util'
-  import DataTable from '@/components/DataTable'
   import MobileBottomBar from '@/components/mobile/MobileBottomBar'
   import MobileScanPage from '@/components/mobile/MobileScanPage'
   import MobileInputPopup from '@/components/mobile/MobileInputPopup'
@@ -283,14 +272,10 @@
 
   export default {
     name: "RetailSaleOrderList",
-    mixins: [JeecgListMixin, BillListMixin],
     components: {
-      RetailOutModal,
-      BillDetail,
       MemberModal,
-      MobileProductPicker,
+      MobileProductPickerV2,
       MobileBottomActions,
-      DataTable,
       MobileBottomBar,
       MobileScanPage,
       MobileInputPopup,
@@ -298,36 +283,8 @@
     },
     data () {
       return {
-        queryParam: {
-          number: "",
-          materialParam: "",
-          type: "出库",
-          subType: "零售",
-          organId: undefined,
-          depotId: undefined,
-          creator: undefined,
-          accountId: undefined,
-          status: undefined,
-          remark: ""
-        },
+        // 单据编号前缀（后端序列生成用）
         prefixNo: 'LSCK',
-        urlPath: '/bill/retail_sale_order',
-        defDataIndex: ['action', 'organName', 'number', 'materialsList', 'operTimeStr', 'userName', 'materialCount', 'totalPrice', 'status'],
-        defColumns: [
-          { title: '操作', dataIndex: 'action', align: "center", width: 120, scopedSlots: { customRender: 'action' } },
-          { title: '单据编号', dataIndex: 'number', width: 140 },
-          { title: '商品信息', dataIndex: 'materialsList', width: 160, ellipsis: true },
-          { title: '单据日期', dataIndex: 'operTimeStr', width: 120 },
-          { title: '数量', dataIndex: 'materialCount', width: 60 },
-          { title: '金额合计', dataIndex: 'totalPrice', width: 80 },
-          { title: '状态', dataIndex: 'status', width: 70, align: "center", scopedSlots: { customRender: 'customRenderStatus' } }
-        ],
-        url: {
-          list: "/depotHead/list",
-          delete: "/depotHead/delete",
-          deleteBatch: "/depotHead/deleteBatch",
-          batchSetStatusUrl: "/depotHead/batchSetStatus"
-        },
         // 开单商品列表
         cartList: [],
         // 单据信息（与电脑端保持一致）
@@ -431,6 +388,7 @@
             name: item.name,
             spec: getSpecDisplay(item),
             imgUrl: getRowImgUrl(item),
+            qty: item.operNumber || 1,
             raw: raw
           }
         })
@@ -462,20 +420,12 @@
       }
     },
     created () {
-      this.initSystemConfig()
+      // 开单页只需要：单号/日期初始化 + 登录账号绑定的默认仓库；
+      // 列表页遗留的系统配置/用户/账户/快捷按钮等初始化已删除（打开页面不再白跑无用接口）
       this.initBillForm()
-      this.initRetail()
-      this.getDepotData()
-      this.initUser()
-      this.initAccount()
-      this.initQuickBtn()
       this.loadShopDepot()
     },
     mounted () {
-      const today = getFormatDate()
-      this.queryParam.beginTime = today
-      this.queryParam.endTime = today
-      this.queryParam.createTimeRange = [moment(today), moment(today)]
       // 顶栏「挂单」：查看未结算单据并继续结算；「关闭」：清空本页数据并退出
       this.loadHolds()
       this.registerMobileHeader()
@@ -706,7 +656,8 @@
           const key = String(raw.meId)
           keep[key] = true
           if (this.cartList.some(r => String(r.meId) === key)) return
-          this.cartList.push(this.buildCartItem(raw, 1))
+          // 新版弹层按数量回填：点击卡片累计的数量直接写入单据行
+          this.cartList.push(this.buildCartItem(raw, goods.qty || 1))
           added++
         })
         const before = this.cartList.length
@@ -1145,8 +1096,7 @@
         if (modal && typeof modal.openByType === 'function') {
           this.$nextTick(() => modal.openByType('receipt'))
         }
-      },
-      tableAddTotalRow () {}
+      }
     }
   }
 </script>
@@ -1172,15 +1122,6 @@
   padding: 2px 12px;
   background: #fff;
   border-radius: 12px;
-  .rso-billinfo-row {
-    display: flex;
-    align-items: center;
-    min-height: 40px;
-    border-bottom: 1px solid #f0f0f0;
-    &:last-child {
-      border-bottom: none;
-    }
-  }
   // 两列并排的单据字段：标题与组件同行并列，两条竖列等宽
   .rso-billinfo-grid-row {
     display: flex;
@@ -1242,36 +1183,12 @@
       flex: 1 1 0;
     }
     // 两列内空间有限：组件强制占满剩余宽度并允许收缩，缩小字号和内边距，保证单号、日期完整显示
-    /deep/ .ant-input,
-    /deep/ .ant-select,
-    /deep/ .ant-calendar-picker {
+    /deep/ .ant-input {
       flex: 1 1 0;
       width: auto;
       min-width: 0;
-    }
-    /deep/ .ant-calendar-picker {
-      flex: 1 1 0 !important;
-      width: 0 !important;
-      min-width: 0 !important;
-    }
-    /deep/ .ant-input {
       padding-left: 2px;
       padding-right: 2px;
-      font-size: 13px !important;
-    }
-    /deep/ .ant-calendar-picker-input {
-      width: 100%;
-      padding-right: 18px !important;
-      font-size: 13px !important;
-    }
-    /deep/ .ant-calendar-picker-icon {
-      right: 4px;
-    }
-    /deep/ .ant-select-selection__rendered {
-      margin-left: 2px;
-      margin-right: 2px;
-    }
-    /deep/ .ant-select-selection-selected-value {
       font-size: 13px !important;
     }
   }
@@ -1409,9 +1326,6 @@
   padding: 10px 12px;
   border-bottom: 1px solid #f5f5f5;
   cursor: pointer;
-  &.active {
-    background: #e6f7ff;
-  }
   .rso-member-item-main {
     display: flex;
     align-items: center;
@@ -1697,11 +1611,6 @@
     line-height: 18px;
     white-space: nowrap;
   }
-  .rso-goods-kv {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
   .rso-goods-kv-label {
     color: #40a9ff;
   }
@@ -1765,20 +1674,6 @@
     text-align: center;
     font-size: 14px;
     color: #1d2129;
-  }
-}
-.rso-history {
-  margin: 10px 12px;
-  background: #fff;
-  border-radius: 8px;
-  padding: 12px;
-  .rso-history-title {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 10px;
-  }
-  .rso-search {
-    margin-bottom: 10px;
   }
 }
 </style>

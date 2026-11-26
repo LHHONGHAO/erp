@@ -45,7 +45,9 @@ export function createLabelElementDrag(vm) {
   // 选中逻辑也在这里完成（彻底移除 click 事件避免时序冲突）
   function startPointerDrag(key, e, mode) {
     clearLongPressTimer()
-    longPressRequired = mode === 'move' && vm.isTextElem && vm.isTextElem(key)
+    // 已选中的文字可直接拖动；未选中的文字仍需先长按获取焦点，再跟随手指移动
+    var alreadySelected = vm.selectedKeys.indexOf(key) !== -1
+    longPressRequired = mode === 'move' && vm.isTextElem && vm.isTextElem(key) && !alreadySelected
     longPressReady = false
     pressCancelled = false
     // 记录 pointerdown 瞬间的快照，留到 pointerup 做 toggle 判断
@@ -143,6 +145,10 @@ export function createLabelElementDrag(vm) {
         minH = 12
       } else if (vm.isTextElem(key)) {
         // 文字类允许拖窄到文字自然宽度以下：由文字自动折行，高度随内容增长
+        minW = 12
+        minH = 12
+      } else if (vm.isCodeElem && vm.isCodeElem(key)) {
+        // 条码/二维码：手柄自由调节宽高，不再按图片自然尺寸限制最小值
         minW = 12
         minH = 12
       } else {

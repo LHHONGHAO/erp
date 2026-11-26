@@ -83,3 +83,30 @@ ALTER TABLE `jsh_spec_learn_log`
   ADD COLUMN `accepted` VARCHAR(1) DEFAULT '0' COMMENT '是否被采纳：0未采纳 1采纳' AFTER `corrected_value`,
   ADD COLUMN `source_image_idx` INT DEFAULT NULL COMMENT '来源图片序号，多图聚合时使用' AFTER `material_id`;
 
+-- 基础属性学习事件：确认与纠错都记录，按占比决定是否升级为标准值
+CREATE TABLE IF NOT EXISTS `jsh_spec_value_correction_event` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `tenant_id` BIGINT DEFAULT NULL,
+  `category_id` BIGINT DEFAULT NULL COMMENT '一级类目',
+  `attribute_id` BIGINT DEFAULT NULL,
+  `child_name` VARCHAR(64) DEFAULT '' COMMENT '子项，如被套/床单',
+  `raw_text` VARCHAR(500) DEFAULT NULL COMMENT '识别原文',
+  `raw_norm_key` VARCHAR(255) NOT NULL COMMENT '识别原文归一化键',
+  `auto_value` VARCHAR(500) DEFAULT NULL COMMENT '系统自动回填值',
+  `final_value` VARCHAR(500) DEFAULT NULL COMMENT '保存时最终值',
+  `final_norm_key` VARCHAR(255) NOT NULL COMMENT '最终值归一化键',
+  `modified` VARCHAR(1) DEFAULT '0' COMMENT '1=手动修改 0=沿用回填值',
+  `material_id` BIGINT DEFAULT NULL,
+  `user_id` BIGINT DEFAULT NULL,
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `delete_flag` VARCHAR(1) DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `idx_spec_correction_scope` (`tenant_id`,`category_id`,`attribute_id`,`child_name`,`raw_norm_key`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='基础属性识别学习事件';
+
+-- 清理历史误学的执行标准样本（$ 为 OCR 噪声，被旧版一次保存即学习的规则固化为标准值）
+DELETE a FROM `jsh_spec_value_alias` a
+  INNER JOIN `jsh_spec_value_sample` s ON s.id = a.sample_id
+  WHERE s.canonical_value = 'GB/T227$8-2021';
+DELETE FROM `jsh_spec_value_sample` WHERE canonical_value = 'GB/T227$8-2021';
+

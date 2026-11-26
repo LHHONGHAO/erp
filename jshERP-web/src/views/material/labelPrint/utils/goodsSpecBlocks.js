@@ -95,7 +95,7 @@ export function formatSpecName(name) {
 }
 
 /** 商品行 → 规格段列表 */
-export function splitSpecSegments(row) {
+function splitSpecSegments(row) {
   if (!row) return []
   const raw = []
   ;['spec1', 'spec2', 'spec3'].forEach(function(field) {
@@ -122,7 +122,7 @@ export function splitSpecSegments(row) {
  *   被套 200*230cm / 床单245*250 / 枕套 48×74cm / 被套 200x230CM → 被套 / 床单 / 枕套
  * 纯尺寸段（如 200*230cm）返回空串，由调用方丢弃。
  */
-export function stripSpecSize(text) {
+function stripSpecSize(text) {
   const value = text == null ? '' : String(text).trim()
   if (!value) return ''
   if (SIZE_ONLY_RE.test(value)) return ''
@@ -273,7 +273,7 @@ export function specBlocksFromRow(row) {
  *
  * 模板只保存属性名 / 属性值名，尺寸属于单据业务描述，不进入编辑数据。
  */
-export function stripSpecBlockSizes(blocks) {
+function stripSpecBlockSizes(blocks) {
   return normalizeSpecBlocks(blocks).map(function(block) {
     const item = {
       name: stripSpecSize(block.name),

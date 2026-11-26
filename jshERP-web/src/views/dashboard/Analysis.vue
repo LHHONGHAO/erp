@@ -1,34 +1,35 @@
 <template>
   <div>
-    <analysis-mobile v-if="isMobile()"></analysis-mobile>
-    <div v-else style="margin: 12px 12px 0px;">
-      <index-chart></index-chart>
+    <component v-if="homeComp && isMobile()" :is="homeComp"></component>
+    <div v-else-if="homeComp" style="margin: 12px 12px 0px;">
+      <component :is="homeComp"></component>
     </div>
   </div>
 </template>
 
 <script>
-  import IndexChart from './IndexChart'
-  import AnalysisMobile from './AnalysisMobile'
   import { mixinDevice } from '@/utils/mixin.js'
 
   export default {
     name: "Analysis",
-    components: {
-      IndexChart,
-      AnalysisMobile
-    },
     mixins: [mixinDevice],
     data() {
       return {
-
+        homeComp: null
       }
     },
     created() {
-
-    },
-    methods: {
-
+      var self = this
+      // 按设备只加载一个首页实现：移动端不再下载/解析桌面端图表代码（含 viser/G2）
+      if (this.isMobile()) {
+        import(/* webpackChunkName: "dashboard-mobile" */ './AnalysisMobile').then(function (mod) {
+          self.homeComp = mod.default
+        })
+      } else {
+        import(/* webpackChunkName: "dashboard" */ './IndexChart').then(function (mod) {
+          self.homeComp = mod.default
+        })
+      }
     }
   }
 </script>

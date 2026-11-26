@@ -6,9 +6,11 @@
       v-model="mobileKeyword"
       title="会员管理"
       placeholder="搜索姓名 / 电话"
+      :filter-visible.sync="filterDrawerVisible"
+      scroll-body
       @back="$router.back()"
       @search="mobileSearch"
-      @filter="filterDrawerVisible = true">
+      @filter-clear="resetMobileFilter">
       <template #actions>
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
@@ -46,30 +48,24 @@
           @change="onMobilePageChange" />
       </div>
 
+      <!-- 条件筛选：统一筛选面板内的输入项 -->
+      <template #filter-extra>
+        <div class="msearch-filter__field">
+          <span class="msearch-filter__field-label">会员卡号</span>
+          <a-input v-model="queryParam.supplier" placeholder="请输入会员卡号" allow-clear />
+        </div>
+        <div class="msearch-filter__field">
+          <span class="msearch-filter__field-label">联系人</span>
+          <a-input v-model="queryParam.contacts" placeholder="请输入联系人" allow-clear />
+        </div>
+        <div class="msearch-filter__field">
+          <span class="msearch-filter__field-label">电话</span>
+          <a-input v-model="queryParam.telephone" placeholder="请输入电话" allow-clear />
+        </div>
+        <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
+      </template>
+
       <template #overlay>
-        <!-- 条件筛选抽屉 -->
-        <a-drawer
-          :visible="filterDrawerVisible"
-          placement="right"
-          title="条件筛选"
-          width="280"
-          @close="filterDrawerVisible = false">
-          <div class="mb-filter-item">
-            <span class="mb-filter-label">会员卡号</span>
-            <a-input v-model="queryParam.supplier" placeholder="请输入会员卡号" allow-clear />
-          </div>
-          <div class="mb-filter-item">
-            <span class="mb-filter-label">联系人</span>
-            <a-input v-model="queryParam.contacts" placeholder="请输入联系人" allow-clear />
-          </div>
-          <div class="mb-filter-item">
-            <span class="mb-filter-label">电话</span>
-            <a-input v-model="queryParam.telephone" placeholder="请输入电话" allow-clear />
-          </div>
-          <div class="mb-filter-footer">
-            <a-button block type="primary" @click="applyMobileFilter">确定</a-button>
-          </div>
-        </a-drawer>
         <member-modal ref="modalForm" @ok="modalFormOk"></member-modal>
         <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
         <member-preview ref="memberPreview"></member-preview>
@@ -341,6 +337,14 @@
         this.filterDrawerVisible = false
         this.loadData(1)
       },
+      /** 全部关闭：清空筛选条件后重新查询 */
+      resetMobileFilter() {
+        this.filterDrawerVisible = false
+        this.queryParam.supplier = ''
+        this.queryParam.contacts = ''
+        this.queryParam.telephone = ''
+        this.loadData(1)
+      },
       searchReset() {
         this.queryParam = {
           type:'会员',
@@ -492,21 +496,5 @@
     display: flex;
     justify-content: center;
     padding: 6px 0 12px;
-  }
-</style>
-
-<style>
-  /* 筛选抽屉挂载到 document.body，需使用全局样式 */
-  .mb-filter-item {
-    margin-bottom: 16px;
-  }
-  .mb-filter-label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 13px;
-    color: #666;
-  }
-  .mb-filter-footer {
-    margin-top: 8px;
   }
 </style>

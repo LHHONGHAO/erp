@@ -13,7 +13,7 @@ import { pickMappedSpecValues, resolveCategorySpecText, pickSpecValuesFromDefs, 
 export const GOODS_TABLE_KEY = 'goods_table'
 export const GOODS_KEY = 'goods'
 /** 小票模板里的商品明细表字段（与 goods_table 同义） */
-export const RECEIPT_TABLE_KEY = 'rc_table'
+const RECEIPT_TABLE_KEY = 'rc_table'
 
 /** 是否为商品明细表元素（地址/商品标签用 goods_table，小票用 rc_table） */
 export function isGoodsTableKey(key) {
@@ -34,7 +34,7 @@ const COL_WEIGHTS = [3, 2, 2, 2]
 const CELL_PAD = 2
 
 /** 小票商品明细：每件商品拆成独立元素，字段顺序即显示顺序 */
-export const RECEIPT_ITEM_FIELDS = [
+const RECEIPT_ITEM_FIELDS = [
   { key: 'name', label: '商品名称', weight: 0.32 },
   { key: 'spec', label: '规格', weight: 0.26 },
   { key: 'qty', label: '数量', weight: 0.10 },
@@ -95,7 +95,7 @@ export function isReceiptItemHidden(hiddenKeys, key) {
 }
 
 /** 单个商品的字段值：规格优先用合并后的 spec，其次拼接 spec1/2/3；类别取行自带类别名 */
-export function receiptItemValue(row, key) {
+function receiptItemValue(row, key) {
   if (!row) return ''
   if (key === 'spec') {
     const spec = row.spec != null ? String(row.spec) : ''
@@ -121,7 +121,7 @@ export function receiptItemValue(row, key) {
  * @param {Object} options rows / paperWidth / x / y / fontSize / lineHeight / gap / specBlocks
  * @returns {{attrs:Array, styles:Object, keys:Array, height:number}}
  */
-export function buildReceiptItemElements(options) {
+function buildReceiptItemElements(options) {
   const opts = options || {}
   const rows = (opts.rows || []).filter(hasGoodsValue)
   // 编辑态传入模板保存的规格块（只含属性名），仅用于单行编辑占位；
@@ -681,7 +681,7 @@ export function replaceReceiptGoodsWithItems(options) {
  * 归一化组合字段：未配置（旧模板）时默认显示全部四项；
  * 已配置时按固定顺序取勾选项（允许为空，表示不显示值）
  */
-export function normalizeGoodsFields(fields) {
+function normalizeGoodsFields(fields) {
   if (!Array.isArray(fields)) return GOODS_FIELD_KEYS.slice()
   return GOODS_FIELD_KEYS.filter(function(key) { return fields.indexOf(key) > -1 })
 }
@@ -697,7 +697,7 @@ function measureCtx() {
 /**
  * 文本在指定宽度下折行后的行数（至少 1 行）
  */
-export function measureTextLines(text, width, fontSize, bold, letterSpacing) {
+function measureTextLines(text, width, fontSize, bold, letterSpacing) {
   const value = text == null ? '' : String(text)
   if (!value) return 1
   const lines = value.split('\n')
@@ -732,7 +732,7 @@ export function measureTextLines(text, width, fontSize, bold, letterSpacing) {
 }
 
 /** 单个商品的组合文案；fields 为空数组时返回空串，未传时默认全部字段 */
-export function goodsLine(row, fields) {
+function goodsLine(row, fields) {
   if (!row) return ''
   const keys = normalizeGoodsFields(fields)
   return keys
@@ -745,7 +745,7 @@ export function goodsLine(row, fields) {
  * 统一商品行数据：优先 values.goodsRows（地址识别页多行商品），
  * 兼容旧数据里 goods 为「名称(规格)、名称(规格)」或按行拼接的字符串
  */
-export function normalizeGoodsRows(values) {
+function normalizeGoodsRows(values) {
   const list = values && Array.isArray(values.goodsRows) ? values.goodsRows : []
   const rows = list.map(function(g) {
     const spec1 = g && g.spec1 != null ? String(g.spec1) : ''
@@ -781,7 +781,7 @@ function columnWidths(totalWidth) {
 /**
  * 商品明细表布局：列宽、表头高、每行高度与总高度
  */
-export function buildGoodsTable(rows, style, paperWidth) {
+function buildGoodsTable(rows, style, paperWidth) {
   const s = style || {}
   const fontSize = s.fontSize || 12
   const lineHeight = fontSize * (s.lineHeight || 1.2)
@@ -927,7 +927,7 @@ export function paginateGoodsRows(options) {
  * @param {Array}  options.goodsFields   商品组合的组成字段（缺省=全部）
  * @returns {{styles:Object, goodsRows:Array, goodsText:string, table:Object|null}}
  */
-export function resolveGoodsLayout(options) {
+function resolveGoodsLayout(options) {
   const opts = options || {}
   const attrStyles = opts.attrStyles || {}
   const selected = opts.selectedAttrs || []
@@ -973,10 +973,13 @@ export function resolveGoodsLayout(options) {
     // 商品表 / 商品组合同样按实际高度排版：多行下移，少行回缩上移
     const delta = Math.round(actualHeight - originalHeight)
     const sourceBottom = baseY + originalHeight
+    // 与 applyTextOverflow 一致：底部半行以内的下一行元素随行移动，同一行并排元素不动，
+    // 避免「品类」比商品行高一点时被漏掉、错行到上一行
+    const tolerance = Math.max(0.5, lineHeight * 0.5)
     Object.keys(styles).forEach(function(other) {
       if (other === key) return
       const otherY = attrStyles[other].y || 0
-      if (otherY >= sourceBottom - 0.5) styles[other].y = otherY + shift + delta
+      if (otherY >= sourceBottom - tolerance) styles[other].y = otherY + shift + delta
     })
     styles[key] = Object.assign({}, style, {
       y: baseY + shift,
@@ -995,7 +998,7 @@ export function resolveGoodsLayout(options) {
 }
 
 /** 单行文本超出宽度时裁切，末尾补省略号 */
-export function truncateText(text, width, fontSize, bold, letterSpacing) {
+function truncateText(text, width, fontSize, bold, letterSpacing) {
   const value = text == null ? '' : String(text)
   if (!value || !width || width <= 0) return value
   const ctx = measureCtx()
@@ -1031,7 +1034,7 @@ export function truncateText(text, width, fontSize, bold, letterSpacing) {
  * @param {string} options.mode        wrap | ellipsis
  * @returns {{styles:Object, texts:Object}}
  */
-export function applyTextOverflow(options) {
+function applyTextOverflow(options) {
   const opts = options || {}
   const mode = opts.mode === 'ellipsis' ? 'ellipsis' : 'wrap'
   const source = opts.styles || {}
@@ -1078,10 +1081,15 @@ export function applyTextOverflow(options) {
     }
     const delta = Math.round(actualHeight - originalHeight)
     if (delta !== 0) {
+      // 判定阈值取半个行高：与上方元素底部相差不足半行的按「同一行并排」保持不动，
+      // 相差超过半行（模板里略微高一点、实际属于下一行）的元素随整行下移。
+      // 例：地址打印模板中「品类」比「商品名称」高 0.53mm，地址换行时名称下移而品类不动，
+      // 导致第一页品类错行到上一行；按半行阈值两者会一起下移。
+      const tolerance = Math.max(0.5, lineHeight * 0.5)
       const bottom = (style.y || 0) + originalHeight
       Object.keys(styles).forEach(function(other) {
         if (other === key) return
-        if ((styles[other].y || 0) >= bottom - 0.5) styles[other].y = (styles[other].y || 0) + delta
+        if ((styles[other].y || 0) >= bottom - tolerance) styles[other].y = (styles[other].y || 0) + delta
       })
     }
     style.height = Math.round(actualHeight)
@@ -1262,7 +1270,7 @@ export function buildSpecValuesFromRows(rows, specBlocks, specMappingReady) {
 /**
  * 商品行涉及的品类 ID（去重）：用于打印时只输出本页商品所属品类的规格块
  */
-export function collectRowCategoryIds(rows) {
+function collectRowCategoryIds(rows) {
   const ids = []
   ;(Array.isArray(rows) ? rows : []).forEach(function(row) {
     if (!row) return
@@ -1285,9 +1293,10 @@ export function resolveLabelLayout(options) {
     goodsRows: sourceRows
   })
   const allKeys = opts.selectedAttrs || Object.keys(opts.attrStyles || {})
-  // 明细表由表格自身排版，不参与文字折行
+  // 明细表与码元素不参与文字折行，码区宽高始终按模板保存值使用
+  const codeKeys = opts.codeKeys || []
   const textKeys = allKeys.filter(function(key) {
-    return !isGoodsTableKey(key) && key !== 'dn_table' && key !== 'dn_table_total' && key.indexOf('code__') !== 0
+    return codeKeys.indexOf(key) === -1 && !isGoodsTableKey(key) && key !== 'dn_table' && key !== 'dn_table_total' && key.indexOf('code__') !== 0
   })
   const goods = resolveGoodsLayout({
     selectedAttrs: allKeys,

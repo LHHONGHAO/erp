@@ -11,7 +11,7 @@ import { buildProductFormAttrs, mergeProductAttrValues } from './productFormFiel
 import { appendCategorySpecAttrs } from './categorySpec'
 
 /** 销售开单表单字段定义（顺序即面板展示顺序） */
-export const RETAIL_SALE_FIELD_DEFS = [
+const RETAIL_SALE_FIELD_DEFS = [
   { key: 'rc_title', label: '小票标题', group: '单据头' },
   { key: 'rc_no', label: '单号', group: '单据头' },
   { key: 'rc_date', label: '日期', group: '单据头' },

@@ -6,9 +6,13 @@
       v-model="mobileKeyword"
       title="零售出库"
       placeholder="搜索单号 / 会员 / 商品"
+      :filter-visible.sync="filterDrawerVisible"
+      :filter-groups="mobileFilterGroups"
+      scroll-body
       @back="$router.back()"
       @search="mobileSearch"
-      @filter="filterDrawerVisible = true">
+      @filter-change="onMobileFilterChange"
+      @filter-clear="resetMobileFilter">
       <template #actions>
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
@@ -87,27 +91,6 @@
           </div>
         </div>
       </div>
-
-      <!-- 条件筛选抽屉（状态过滤，卡片数据实时过滤） -->
-      <template #overlay>
-        <a-drawer
-          :visible="filterDrawerVisible"
-          placement="right"
-          title="条件筛选"
-          width="280"
-          @close="filterDrawerVisible = false">
-          <div class="rol-filter-item">
-            <span class="rol-filter-label">单据状态</span>
-            <a-select style="width:100%" allow-clear placeholder="全部状态" v-model="mobileFilterStatus">
-              <a-select-option value="0">未审核</a-select-option>
-              <a-select-option value="1">已审核</a-select-option>
-            </a-select>
-          </div>
-          <div class="rol-filter-footer">
-            <a-button block type="primary" @click="filterDrawerVisible = false">确定</a-button>
-          </div>
-        </a-drawer>
-      </template>
     </mobile-search-page>
     <a-row v-else :gutter="24">
     <a-col :md="24">
@@ -450,6 +433,21 @@
             .filter(Boolean).join(' ').toLowerCase()
           return text.indexOf(kw) > -1
         })
+      },
+      /** 手机端统一筛选面板：单据状态 */
+      mobileFilterGroups() {
+        return [
+          {
+            key: 'status',
+            label: '单据状态',
+            value: this.mobileFilterStatus,
+            options: [
+              { text: '全部', value: '' },
+              { text: '未审核', value: '0' },
+              { text: '已审核', value: '1' }
+            ]
+          }
+        ]
       }
     },
     created () {
@@ -687,6 +685,17 @@
       mobileSearch (keyword) {
         this.mobileKeyword = (keyword || '').trim()
       },
+      /** 统一筛选面板标签点击：单据状态实时过滤卡片 */
+      onMobileFilterChange (key, opt) {
+        if (key === 'status') {
+          this.mobileFilterStatus = opt.value === '' ? undefined : opt.value
+        }
+      },
+      /** 全部关闭：清空筛选条件并关闭面板 */
+      resetMobileFilter () {
+        this.mobileFilterStatus = undefined
+        this.filterDrawerVisible = false
+      },
       // 手机端批量删除
       mobileBatchDel () {
         if (this.mobileSelectedIds.length === 0) {
@@ -750,18 +759,6 @@
     color: #999;
   }
   /* 手机端条件筛选抽屉 */
-  .rol-filter-item {
-    margin-bottom: 16px;
-  }
-  .rol-filter-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #666;
-  }
-  .rol-filter-footer {
-    margin-top: 24px;
-  }
   .rol-card {
     margin-bottom: 10px;
     padding: 12px;

@@ -76,7 +76,8 @@ public interface MaterialMapperEx {
             @Param("enabled") String enabled,
             @Param("remark") String remark,
             @Param("idList") List<Long> idList,
-            @Param("size") String size);
+            @Param("size") String size,
+            @Param("orderByCategory") boolean orderByCategory);
 
     Long insertSelectiveEx(Material record);
 

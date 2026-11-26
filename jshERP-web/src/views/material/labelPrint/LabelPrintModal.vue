@@ -68,6 +68,7 @@
                     :values="pg.values"
                     :rows="pg.rows"
                     :texts="pg.texts"
+                    :placeholders="previewPlaceholders"
                     :overflow-mode="overflowMode"
                     :scale="1" />
                   <template v-else>
@@ -108,6 +109,7 @@
                 :values="previewValues"
                 :rows="pageDetailRows"
                 :texts="previewTexts"
+                :placeholders="previewPlaceholders"
                 :overflow-mode="overflowMode"
                 :scale="1" />
               <template v-else>
@@ -604,6 +606,7 @@
                 :values="previewValues"
                 :rows="pageDetailRows"
                 :texts="previewTexts"
+                :placeholders="previewPlaceholders"
                 :overflow-mode="overflowMode"
                 :scale="1" />
               <template v-else>
@@ -810,7 +813,7 @@
 <script>
   import { printLabel } from './utils/labelPrint'
   import { fitCodeSize, renderCodeDataUrl, isCodeKey, codeSourceKey, migrateCodeStyles, CODE_KEY_PREFIX } from './utils/labelCode'
-  import { mmToPx, PX_PER_MM } from './utils/labelSchema'
+  import { mmToPx, PX_PER_MM, fillSeparatorText, resolveSeparatorWidth } from './utils/labelSchema'
   import { v2ToEditorState, v2ToSchemaView, isLabelTemplateV2, parseTemplateRaw, getCollectionPath, resolvePath, DEFAULT_ITEM_PATH } from './utils/labelTemplateV2'
   import { fetchTemplateList, resolveTemplate, deleteTemplate, applyReceiptRowsToState } from './utils/labelTemplateFlow'
   import { resolveTemplateData } from './utils/labelDataResolver'
@@ -1343,15 +1346,35 @@
         // 统一走布局结果：商品多行逐行带前缀，省略模式为截断后的文字
         return this.overflowLayout.texts
       },
+      /**
+       * 无数据占位名：属性名被设置为「不显示」且没有值的元素，预览用元素默认名浅灰显示。
+       * 只用于预览渲染，打印数据里不带这些占位文本。
+       */
+      previewPlaceholders() {
+        var map = {}
+        var labels = this.attrLabels || {}
+        var values = this.previewValues || {}
+        var attrs = this.allAttrs || []
+        for (var i = 0; i < attrs.length; i++) {
+          var attr = attrs[i]
+          if (!attr || !attr.key) continue
+          if (String(labels[attr.key] == null ? '' : labels[attr.key]) !== '') continue
+          if (String(values[attr.key] == null ? '' : values[attr.key]).replace(/[:：\s]/g, '') !== '') continue
+          var name = attr.label || attr.name || ''
+          if (name) map[attr.key] = name
+        }
+        return map
+      },
       goodsTableColumns() {
         return GOODS_TABLE_COLUMNS
       },
       renderItems() {
+        var self = this
         var items = []
         var styles = this.attrStyles
         this.selectedAttrList.forEach(function(attr) {
-          // 自定义码元素：样式与内容都挂在元素自身 key 上，不走文字渲染
-          if (attr.isCodeElem) {
+          // 自定义码元素或切换为码显示的文本：同一元素只输出码图，不再重复输出文字
+          if (attr.isCodeElem || self.textCodeTypeForKey(attr.key)) {
             items.push({ key: attr.key, attr: attr, isCode: true })
             return
           }
@@ -1367,7 +1390,7 @@
         var self = this
         return this.renderItems.filter(function(item) { return item.isCode }).map(function(item) {
           var s = self.attrStyles[item.key] || {}
-          return [item.key, s.codeType || item.attr.codeType || '', item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
+          return [item.key, self.codeTypeForKey(item.key), item.attr.value == null ? '' : item.attr.value, s.width || '', s.height || ''].join('|')
         }).join(';')
       }
     },
@@ -1434,24 +1457,38 @@
           self.previewScale = Math.min(scaleW, scaleH, 1)
         })
       },
+      // 普通文本的码类型以模板为准；业务数据刷新后字段对象会被替换，不能只挂在 attr 上
+      textCodeTypeForKey(key) {
+        var types = this.template && this.template.textCodeTypes ? this.template.textCodeTypes : {}
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        var type = types[key] || (attr && attr.textCodeType) || ''
+        return type === 'qrcode' || type === 'barcode' ? type : ''
+      },
+      codeTypeForKey(key) {
+        var style = this.attrStyles[key] || {}
+        if (style.codeType === 'qrcode' || style.codeType === 'barcode') return style.codeType
+        var attr = this.allAttrs.find(function(a) { return a.key === key })
+        if (attr && attr.isCodeElem) return attr.codeType === 'barcode' ? 'barcode' : 'qrcode'
+        return this.textCodeTypeForKey(key)
+      },
       // 编码元素的图形布局：尺寸取元素自身宽高，按打印机能力换算
       codeLayout(codeKey) {
         var s = this.attrStyles[codeKey] || {}
         var sourceKey = codeSourceKey(codeKey)
         var attr = this.allAttrs.find(function(a) { return a.key === sourceKey })
         if (!attr) {
-          // 自定义码元素：属性与样式共用元素自身 key
-          var selfAttr = this.allAttrs.find(function(a) { return a.key === codeKey })
-          if (selfAttr && selfAttr.isCodeElem) attr = selfAttr
+          // 自定义码元素与文本转码元素：属性与样式共用元素自身 key
+          attr = this.allAttrs.find(function(a) { return a.key === codeKey })
         }
         var value = attr && attr.value != null ? attr.value : ''
-        var codeType = s.codeType || (attr && attr.isCodeElem ? attr.codeType : '')
+        var codeType = this.codeTypeForKey(codeKey)
         var isQr = codeType === 'qrcode'
         var boxWidth = s.width || (isQr ? 80 : 160)
         var boxHeight = s.height || (isQr ? 80 : 50)
         var fitted = fitCodeSize(codeType, value, boxWidth, boxHeight)
         return {
           value: value,
+          codeType: codeType,
           imgWidth: fitted.width,
           imgHeight: fitted.height,
           // 硬件参数随布局一起下发：窄条宽度（条码）/ 单元宽度（二维码）
@@ -1473,7 +1510,7 @@
           if (!s) return
           alive[item.key] = true
           var layout = self.codeLayout(item.key)
-          renderCodeDataUrl(s.codeType, layout.value, layout.imgWidth, layout.imgHeight).then(function(url) {
+          renderCodeDataUrl(layout.codeType, layout.value, layout.imgWidth, layout.imgHeight).then(function(url) {
             self.$set(self.codeImages, item.key, url)
           })
         })
@@ -2468,6 +2505,8 @@
           attrStyles: styles,
           attrLabels: labels,
           customLabels: Array.isArray(base.customLabels) ? base.customLabels : [],
+          // 文本标签的二维码/条码显示方式，供硬件打印与兼容渲染使用
+          textCodeTypes: base.textCodeTypes || {},
           labelWidth: width || fallback[0],
           labelHeight: height || fallback[1],
           width: width || fallback[0],
@@ -2688,6 +2727,15 @@
         }
         this.receiptItemsApplied = true
       },
+      applyTextCodeTypesToAttrs(attrs) {
+        var self = this
+        var types = this.template && this.template.textCodeTypes ? this.template.textCodeTypes : {}
+        ;(attrs || []).forEach(function(attr) {
+          var type = types[attr.key]
+          if (type === 'qrcode' || type === 'barcode') self.$set(attr, 'textCodeType', type)
+          else if (attr.textCodeType) self.$delete(attr, 'textCodeType')
+        })
+      },
       applyTemplate(tpl, skipProvider) {
         var self = this
         this.template = tpl
@@ -2707,6 +2755,7 @@
             self.allAttrs.push(JSON.parse(JSON.stringify(custom)))
           })
         }
+        this.applyTextCodeTypesToAttrs(this.allAttrs)
         this.selectedAttrs = JSON.parse(JSON.stringify(tpl.selectedAttrs || []))
         this.selectedAttrs.forEach(function(key) {
           var style = tpl.attrStyles && tpl.attrStyles[key]
@@ -2776,6 +2825,7 @@
             if (attr.isCustom && !exists[attr.key]) attrs.push(attr)
           })
           self.allAttrs = attrs
+          self.applyTextCodeTypesToAttrs(attrs)
           // 明细数组：供新版模板 table 元素循环渲染
           self.detailRows = result.rows || []
           // 模板未显式设置标签名的字段，按数据源字段名补上
@@ -2790,6 +2840,7 @@
       },
       // 用指定商品行计算布局（不依赖当前预览页，供分页与打印复用）
       layoutWithRows(rows, values, pageIdx) {
+        var self = this
         var layoutValues = values || this.attrValues
         var groups = this.multiGoodsGroups(rows)
         if (groups) {
@@ -2815,6 +2866,7 @@
         var layout = resolveLabelLayout({
           selectedAttrs: contPlan ? contPlan.keys : this.selectedAttrs,
           attrStyles: contPlan ? contPlan.styles : this.attrStyles,
+          codeKeys: this.selectedAttrs.filter(function(key) { return !!self.codeTypeForKey(key) }),
           values: layoutValues,
           labels: this.attrLabels,
           goodsRows: rows,
@@ -2828,6 +2880,27 @@
           mode: this.overflowMode
         })
         if (Array.isArray(rows) && rows.length) layout.goodsRows = rows
+        // 间隔符：还原值只是原始符号，预览/打印统一按元素宽度重新生成填充串，
+        // 与编辑器 fillSeparatorText 同规则，保证所见即所得
+        this.allAttrs.forEach(function(attr) {
+          if (!attr || !attr.isSeparator) return
+          var key = attr.key
+          if (layout.texts[key] == null) return
+          var style = layout.styles[key] || self.attrStyles[key] || {}
+          // 间隔符固定铺满整个标签宽度：打印框从左边框到右边框，符号按真实字宽重排
+          if (layout.styles[key]) {
+            layout.styles[key].x = 0
+            layout.styles[key].width = resolveSeparatorWidth(self.labelWidth)
+          }
+          var width = resolveSeparatorWidth(self.labelWidth)
+          layout.texts[key] = fillSeparatorText(
+            String(attr.value == null ? '' : attr.value),
+            width,
+            style.fontSize || 12,
+            style.letterSpacing || 0,
+            style.fontWeight
+          )
+        })
         return layout
       },
       // 分页打印续页计划：第 2 页起仅排版勾选元素 + 分页标签，
@@ -3013,24 +3086,30 @@
           return Math.max(max, m.offsetY + h)
         }, 0)
         var belowFrom = baseY + groupHeight
-        // 组与组之间的间距：优先沿用模板里组内元素的间距（如名称到规格），
-        // 只有一个元素时才取行组下方元素与行组底部的距离。
-        // members 按 y 排序取第二个的偏移，避免 keys 顺序（名称/类别/规格）
-        // 与模板 y 顺序不一致时间距被放大成整行留白
+        // 组与组之间的间距：取行组上方最近元素的底部到行组第一行顶部的距离，
+        // 让商品与商品之间的留白与「第一行商品与上行元素」的间距保持一致
         var gap = 0
-        if (members.length > 1) {
-          var sorted = members.slice().sort(function(a, b) { return a.offsetY - b.offsetY })
-          gap = sorted[1].offsetY
-        } else {
-          Object.keys(styles).forEach(function(key) {
-            if (keys.indexOf(key) > -1) return
-            var style = styles[key]
-            if (!style) return
-            var y = style.y || 0
-            if (y < belowFrom - 0.5) return
-            var d = y - belowFrom
-            if (!gap || d < gap) gap = d
-          })
+        var upperBottom = -Infinity
+        Object.keys(styles).forEach(function(key) {
+          if (keys.indexOf(key) > -1 || hidden.indexOf(key) > -1) return
+          var style = styles[key]
+          if (!style) return
+          var y = Number(style.y) || 0
+          if (y >= baseY - 0.5) return
+          var fontSize = Number(style.fontSize) || 12
+          var bottom = y + (Number(style.height) || fontSize * (Number(style.lineHeight) || 1.2))
+          if (bottom > upperBottom) upperBottom = bottom
+        })
+        if (upperBottom > -Infinity) gap = Math.max(0, baseY - upperBottom)
+        // 找不到上行元素时，退回沿用组内元素间距（取第二个不同行的偏移）
+        if (!gap && members.length > 1) {
+          var offsets = members.map(function(m) { return m.offsetY }).sort(function(a, b) { return a - b })
+          for (var i = 1; i < offsets.length; i++) {
+            if (offsets[i] > offsets[0] + 0.5) {
+              gap = offsets[i] - offsets[0]
+              break
+            }
+          }
         }
         var stride = groupHeight + gap
         return {
@@ -3342,10 +3421,11 @@
         // 商品明细表/商品组合按商品行数动态变高，使用重排后的坐标
         // layoutOpt 传入时使用指定页的布局（堆叠预览逐页调用）
         var layout = layoutOpt || this.overflowLayout
-        var s = layout.styles[key] || (layoutOpt ? null : this.goodsLayout.styles[key]) || this.attrStyles[key]
+        var codeType = this.codeTypeForKey(key)
+        var s = codeType ? this.attrStyles[key] : (layout.styles[key] || (layoutOpt ? null : this.goodsLayout.styles[key]) || this.attrStyles[key])
         if (!s) return {}
-        // 独立编码元素：宽高即图形实际可打印尺寸
-        if (isCodeKey(key)) {
+        // 编码元素：宽高即图形实际可打印尺寸，不参与文字折行
+        if (codeType) {
           var codeSize = this.codeLayout(key)
           return {
             left: (s.x || 0) + 'px',
@@ -3824,7 +3904,7 @@
               : item.key
             if (contPlan.keys.indexOf(contKey) === -1) return
           }
-          var style = resolved[item.key] || self.attrStyles[item.key]
+          var style = item.isCode ? self.attrStyles[item.key] : (resolved[item.key] || self.attrStyles[item.key])
           if (!style) return
           // 续页顺移：布局未覆盖的编码项跟随其属性键上移
           if (contPlan && contPlan.shift > 0 && !resolved[item.key]) {
@@ -3882,7 +3962,7 @@
               y: style.y || 0,
               width: code.imgWidth,
               height: code.imgHeight,
-              codeType: style.codeType || (item.attr.isCodeElem ? item.attr.codeType : ''),
+              codeType: code.codeType,
               codeText: code.value,
               // 硬件取整参数：后端直接使用，不能自行按宽度重算
               narrow: code.narrow,
@@ -4164,8 +4244,17 @@
             ctx.rect(item.x || 0, item.y || 0, item.width || 1e5, item.height || 1e5)
             ctx.clip()
           }
+          // 文字对齐：位图核对框宽做居左/居中/居右平移，与预览和指令打印保持一致
+          var align = item.textAlign === 'center' || item.textAlign === 'right' ? item.textAlign : 'left'
+          var boxX = item.x || 0
+          var boxW = item.width || 0
           for (var i = 0; i < Math.min(lines.length, maxLines); i++) {
-            ctx.fillText(lines[i], item.x || 0, (item.y || 0) + i * lh + (lh - item.fontSize) / 2)
+            var drawX = boxX
+            if (align !== 'left' && boxW > 0) {
+              var lineW = ctx.measureText(lines[i]).width
+              drawX = align === 'center' ? boxX + (boxW - lineW) / 2 : boxX + (boxW - lineW)
+            }
+            ctx.fillText(lines[i], drawX, (item.y || 0) + i * lh + (lh - item.fontSize) / 2)
           }
           if (item.width || item.height) ctx.restore()
           return Promise.resolve()

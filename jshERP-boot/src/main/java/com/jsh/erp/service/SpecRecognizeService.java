@@ -33,7 +33,7 @@ public class SpecRecognizeService {
     /** 基础属性的输出顺序 */
     private static final String[] BASE_FIELD_ORDER = {
             "name", "brand", "unit", "mfrs", "fabric", "safetyCategory",
-            "executiveStandard", "grade", "inspection", "filler", "weight"
+            "executiveStandard", "grade", "inspection", "filler", "weight", "barCode"
     };
 
     private static final Map<String, String> FIELD_LABELS = new LinkedHashMap<>();
@@ -50,6 +50,7 @@ public class SpecRecognizeService {
         FIELD_LABELS.put("inspection", "检验");
         FIELD_LABELS.put("filler", "填充物");
         FIELD_LABELS.put("weight", "填充物重量");
+        FIELD_LABELS.put("barCode", "条码");
     }
 
     /** 尺寸类写法：200x230、200*230cm、1.5×2m */
@@ -909,6 +910,10 @@ public class SpecRecognizeService {
      */
     private String normalizeBaseValue(String field, String value, Long categoryId, JSONObject profile) {
         if (!StringUtil.isNotEmpty(value)) {
+            return value;
+        }
+        // 条码为数字串，原样保存，不参与样本归一化
+        if ("barCode".equals(field)) {
             return value;
         }
         try {

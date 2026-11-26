@@ -42,7 +42,7 @@ function normalizeSkuDeep(sku) {
  * @param {Array} rows 业务明细行（depotItem / 购物车行均可），自动解析行内 sku JSON
  * @returns {Object} { key: value } 仅含非空值
  */
-export function extractProductAttrValues(rows) {
+function extractProductAttrValues(rows) {
   var values = {}
   var normalized = (Array.isArray(rows) ? rows : []).map(function(row) {
     if (!row) return null

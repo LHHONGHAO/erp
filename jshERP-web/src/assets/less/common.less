@@ -328,3 +328,458 @@
 .mm-sheet-close:active {
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* ============================================================
+   手机端标准搜索布局（components/mobile/MobileSearchLayout.vue）
+   内容区 + 悬浮搜索胶囊 + 右侧悬浮筛选面板 + 底部弹层。
+   所有需要搜索的手机端页面统一使用这套样式，业务页面不再自建。
+   ============================================================ */
+.msearch-layout {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 8px 12px 0;
+  /* 布局不再自带底色：跟随页面底色（各页面均已统一纯白），避免盖住页面白色 */
+  background: transparent;
+  /* 右侧筛选卡片宽度：收窄至原来的约 2/3 */
+  --msearch-side-w: 100px;
+}
+@media (max-width: 360px) {
+  .msearch-layout {
+    --msearch-side-w: 92px;
+  }
+}
+/* 内容区：默认由内部商品流滚动 */
+.msearch-layout__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 卡片列表页面：由内容区滚动，底部留出悬浮胶囊高度 */
+.msearch-layout.has-scroll-body .msearch-layout__body {
+  display: block;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+/* 商品流底部留白：最后一张卡片可滚动到悬浮胶囊上方 */
+.msearch-layout .vw {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 悬浮搜索胶囊 */
+.msearch-floatbar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+/* 胶囊内的搜索框与筛选按钮改为浅灰内胆，与外层白色胶囊区分 */
+.msearch-layout .msearch-floatbar .msb-search-box {
+  height: 40px;
+  border-radius: 20px;
+  background: #f2f3f5;
+  box-shadow: none;
+}
+.msearch-layout .msearch-floatbar .msb-display {
+  height: 40px;
+}
+.msearch-layout .msearch-floatbar .msb-filter-btn {
+  height: 40px;
+  margin-right: 0;
+  /* 筛选按钮收窄：减小左右内边距，把空间让给已选按钮 */
+  padding: 0 8px;
+  border: 0;
+  border-radius: 20px;
+  background: #f2f3f5;
+}
+
+/* 胶囊右侧附加按钮（如已选件数）：加宽内边距便于点击 */
+.msearch-entry {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  margin-left: 6px;
+  padding: 0 16px;
+  border-radius: 20px;
+  background: #f2f3f5;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+}
+.msearch-entry__badge {
+  box-sizing: border-box;
+  min-width: 24px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #1890ff;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 有已选商品时按钮整体变蓝，数字徽标反白 */
+.msearch-entry.is-active {
+  background: #1890ff;
+  color: #fff;
+}
+.msearch-entry.is-active .msearch-entry__badge {
+  background: #fff;
+  color: #1890ff;
+}
+
+/* 右侧悬浮筛选面板 */
+.msearch-filter {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  /* 12px 卡片底部间距 + 8px 间隙 + 52px 悬浮胶囊高度（含安全区） */
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  width: var(--msearch-side-w);
+  z-index: 30;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  animation: msearch-filter-in 0.2s ease-out;
+}
+@keyframes msearch-filter-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes msearch-filter-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.msearch-filter__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+.msearch-filter__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+.msearch-filter__close {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  color: #1890ff;
+  padding: 6px 2px;
+  white-space: nowrap;
+}
+.msearch-filter__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px;
+}
+.msearch-filter__item {
+  margin-bottom: 18px;
+}
+.msearch-filter__label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #666;
+}
+/* 标签按钮：单列排版，选中高亮 */
+.msearch-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.msearch-chip {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: #f2f3f5;
+  color: #333;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+}
+.msearch-chip.is-active {
+  background: #e6f4ff;
+  border-color: #1890ff;
+  color: #1890ff;
+}
+.msearch-chips__empty {
+  font-size: 12px;
+  line-height: 22px;
+  color: #999;
+}
+/* 自定义筛选表单项（下拉、输入框等） */
+.msearch-filter__field {
+  margin-bottom: 14px;
+}
+.msearch-filter__field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #666;
+}
+.msearch-filter .ant-select {
+  width: 100%;
+}
+.msearch-filter .ant-input,
+.msearch-filter .ant-select-selection {
+  background: #f2f3f5 !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+.msearch-filter .ant-input {
+  padding: 6px 10px;
+  font-size: 14px !important;
+}
+.msearch-filter .ant-select-selection {
+  height: 32px;
+}
+.msearch-filter .ant-select-selection__rendered {
+  line-height: 32px;
+}
+/* 左右手切换（面板底部） */
+.msearch-filter__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.msearch-filter__foot-label {
+  flex: none;
+  margin-right: 6px;
+  font-size: 12px;
+  color: #666;
+}
+.msearch-hand-switch {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  padding: 2px;
+  border-radius: 12px;
+  background: #eceff3;
+}
+.msearch-hand-switch__item {
+  flex: 1;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 10px;
+  color: #4e5969;
+  cursor: pointer;
+  user-select: none;
+}
+.msearch-hand-switch__item.is-active {
+  background: #1890ff;
+  color: #fff;
+}
+
+/* 已选商品清单弹层：面板顶部位于屏幕 1/3 高度处 */
+.msearch-sheet__mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2999;
+  background: rgba(0, 0, 0, 0.45);
+}
+.msearch-sheet__panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 33vh;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  /* 高度随商品数量自适应，超出屏幕剩余空间时列表内部滚动 */
+  max-height: calc(67vh - 12px);
+  background: #fff;
+  border-radius: 16px;
+}
+.msearch-sheet__head {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.msearch-sheet__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
+}
+.msearch-sheet__count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+.msearch-sheet__close {
+  margin-left: auto;
+  font-size: 20px;
+  line-height: 20px;
+  color: #8c8c8c;
+  cursor: pointer;
+}
+.msearch-sheet__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px;
+}
+.msearch-sheet__row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.msearch-sheet__thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-right: 8px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f5f7fa;
+}
+.msearch-sheet__thumb--empty {
+  background: #f2f3f5;
+}
+.msearch-sheet__info {
+  flex: 1;
+  min-width: 0;
+}
+.msearch-sheet__name {
+  font-size: 14px;
+  color: #262626;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.msearch-sheet__spec {
+  font-size: 12px;
+  color: #8c8c8c;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.msearch-sheet__price {
+  font-size: 13px;
+  color: #f5222d;
+}
+.msearch-sheet__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid #f0f0f0;
+}
+
+/* 左手模式：整页布局水平镜像（文字仍从左向右阅读） */
+.msearch-layout.is-left-hand .msearch-floatbar {
+  flex-direction: row-reverse;
+}
+.msearch-layout.is-left-hand .msearch-entry {
+  margin-left: 0;
+  margin-right: 6px;
+}
+.msearch-layout.is-left-hand .msb-wrap {
+  flex-direction: row-reverse;
+}
+.msearch-layout.is-left-hand .msb-search-box {
+  flex-direction: row-reverse;
+}
+.msearch-layout.is-left-hand .msb-scan {
+  margin-left: 0;
+  margin-right: 8px;
+}
+.msearch-layout.is-left-hand .msb-camera {
+  margin-right: 0;
+  margin-left: 6px;
+}
+.msearch-layout.is-left-hand .msb-ai-tag {
+  right: auto;
+  left: -6px;
+}
+.msearch-layout.is-left-hand .msb-filter-btn {
+  margin-left: 8px;
+  margin-right: 8px;
+}
+/* 商品卡片镜像：图片移到右侧，勾选圆点同步镜像到图片右上角 */
+.msearch-layout.is-left-hand .mpc-card {
+  flex-direction: row-reverse;
+  padding: 8px 8px 8px 12px;
+}
+.msearch-layout.is-left-hand .mpc-card__thumb {
+  margin-right: 0;
+  margin-left: 12px;
+}
+.msearch-layout.is-left-hand .mpc-card__meta {
+  flex-direction: row-reverse;
+}
+.msearch-layout.is-left-hand .mpc-card__name {
+  justify-content: flex-end;
+  text-align: right;
+}
+.msearch-layout.is-left-hand .mpc-card__spec {
+  justify-content: flex-end;
+  text-align: right;
+}
+.msearch-layout.is-left-hand .mpc-card__spec-value {
+  flex: 0 1 auto;
+  text-align: right;
+}
+.msearch-layout.is-left-hand .mpc-card__kv-value {
+  text-align: left;
+}
+.msearch-layout.is-left-hand .mgf-pick {
+  left: auto;
+  right: 5px;
+}
+/* 筛选面板同步镜像到左侧 */
+.msearch-layout.is-left-hand .msearch-filter {
+  right: auto;
+  left: 12px;
+  animation-name: msearch-filter-in-left;
+}

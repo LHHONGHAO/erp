@@ -69,8 +69,8 @@
                              @change="onParentChange">
               </a-tree-select>
             </a-form-item>
-            <!-- 单位：仅子类目维护，一级类目无单位属性 -->
-            <a-form-item label="单位" v-if="!isTopLevelCategory">
+            <!-- 单位：一级类目与子类目都可维护，商品录入时自动带出 -->
+            <a-form-item label="单位">
               <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="['unit']"/>
             </a-form-item>
             <a-form-item label="排序">
@@ -193,7 +193,7 @@
             </a-tree-select>
           </a-form-item>
           <!-- 单位：仅子类目维护，一级类目无单位属性 -->
-          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位" v-if="!isTopLevelCategory">
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位">
             <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="[ 'unit' ]"/>
           </a-form-item>
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="排序">
@@ -539,19 +539,14 @@ export default {
     // 触发onSelect事件时,为类别树右侧的form表单赋值
     setValuesToForm(record) {
       this.$nextTick(() => {
-        this.form.setFieldsValue(pick(record, 'name','serialNo', 'parentId', 'sort', 'remark'))
-        // 子类目才回填单位（一级类目无单位属性，输入框不渲染）
-        if (!this.isTopLevelCategory) {
-          this.form.setFieldsValue({ unit: record.unit || '' })
-        }
+        this.form.setFieldsValue(pick(record, 'name','serialNo', 'parentId', 'sort', 'remark', 'unit'))
+        // 一级类目也维护单位，避免切换节点后残留上一个类目的单位
+        this.form.setFieldsValue({ unit: record.unit || '' })
       })
     },
-    // 改变上级目录：切换一级/子类目时同步单位输入框
+    // 改变上级目录：同步表单的 parentId
     onParentChange(value) {
       this.formParentId = value === undefined || value === '' ? null : value
-      if (this.isTopLevelCategory) {
-        this.form.setFieldsValue({ unit: '' })
-      }
     },
     getCurrSelectedTitle() {
       return !this.currSelected.title ? '' : this.currSelected.title
@@ -582,10 +577,6 @@ export default {
             return
           }
           let formData = Object.assign(this.currSelected, values)
-          // 一级类目无单位属性：保存时清空单位
-          if (this.isTopLevelCategory) {
-            formData.unit = null
-          }
           // 一级类目无规格值：不校验规格，也不覆盖已有规格配置
           if (!this.isTopLevelCategory) {
             const configuredModules = this.specModules.map(item => ({

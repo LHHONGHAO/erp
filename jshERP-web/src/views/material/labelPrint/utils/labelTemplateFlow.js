@@ -11,7 +11,7 @@ import { fetchDeliveryTemplate, saveDeliveryTemplate } from './deliveryNoteTempl
 import { normalizeEditorData } from './templateEditDataModel'
 
 /** 元素数据（属性面板结构）：保存模板、还原面板共用同一份结构 */
-export function buildEditorData(attrs, title, specBlocks) {
+function buildEditorData(attrs, title, specBlocks) {
   return normalizeEditorData({ fields: attrs, title: title, specBlocks: specBlocks })
 }
 

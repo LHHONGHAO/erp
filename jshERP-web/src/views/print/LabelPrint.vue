@@ -5,11 +5,12 @@
     v-model="keyword"
     title="标签打印"
     placeholder="搜索商品 / 条码"
+    :filter-visible.sync="filterDrawerVisible"
     @back="$router.back()"
     @search="onSearch"
     @scan-result="onScanResult"
     @camera="ocrVisible = true"
-    @filter="filterDrawerVisible = true">
+    @filter-clear="onFilterClear">
     <!-- 商品流：与商品信息页共用标准卡片与分页刷新，点击卡片直接打开标签打印 -->
     <mobile-goods-feed
       ref="feed"
@@ -19,25 +20,18 @@
       empty-text="暂无商品，搜索或扫码后点击商品打印标签"
       @item-click="onPrintItem" />
 
-    <template #overlay>
-      <!-- 条件筛选 -->
-      <a-drawer
-        :visible="filterDrawerVisible"
-        placement="right"
-        title="条件筛选"
-        width="280"
-        @close="filterDrawerVisible = false">
-        <div class="lp-filter-item">
-          <span class="lp-filter-label">商品类别</span>
-          <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
-            :treeData="categoryTree" v-model="categoryId" placeholder="请选择类别">
-          </a-tree-select>
-        </div>
-        <div class="lp-filter-footer">
-          <a-button block type="primary" @click="applyFilter">确定</a-button>
-        </div>
-      </a-drawer>
+    <!-- 条件筛选：商品类别（统一筛选面板内） -->
+    <template #filter-extra>
+      <div class="msearch-filter__field">
+        <span class="msearch-filter__field-label">商品类别</span>
+        <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
+          :treeData="categoryTree" v-model="categoryId" placeholder="请选择类别"
+          @change="onCategoryChange">
+        </a-tree-select>
+      </div>
+    </template>
 
+    <template #overlay>
       <!-- 拍照识别：识别出的商品名称作为搜索词 -->
       <ocr-recognize-modal
         :visible="ocrVisible"
@@ -46,7 +40,7 @@
         @cancel="ocrVisible = false" />
 
       <!-- 标签打印预览 + 标签编辑 -->
-      <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+      <label-print-modal ref="labelPrintModal" @edit="handleEditLabel" @print-success="onPrintSuccess"></label-print-modal>
       <label-edit-modal-page ref="labelEditor" />
     </template>
   </mobile-search-page>
@@ -92,7 +86,9 @@
         filterDrawerVisible: false,
         categoryId: undefined,
         categoryTree: [],
-        ocrVisible: false
+        ocrVisible: false,
+        // 打印成功后清空页面数据：保持空列表，直到下一次搜索/扫码
+        cleared: false
       }
     },
     created() {
@@ -110,6 +106,8 @@
       },
       /** 标准商品流加载器：按关键字/类别分页查询 SKU */
       loadFeed({ page, pageSize }) {
+        // 打印成功后的清空态：不自动回填默认商品，等待下一次搜索或扫码
+        if (this.cleared) return Promise.resolve({ list: [], total: 0 })
         const params = {
           search: JSON.stringify({
             materialParam: this.keyword,
@@ -129,13 +127,22 @@
           return { list: [], total: 0 }
         })
       },
+      /** 打印成功：清空页面数据（关键字、类别筛选与商品列表），便于直接扫描下一件商品 */
+      onPrintSuccess() {
+        this.cleared = true
+        this.keyword = ''
+        this.categoryId = undefined
+        this.resetKey += 1
+      },
       onSearch() {
+        this.cleared = false
         this.resetKey += 1
       },
       /** 扫码结果：直接用识别文本作为关键字重新查询 */
       onScanResult(payload) {
         const text = ((payload && payload.text) || '').trim()
         if (!text) return
+        this.cleared = false
         this.keyword = text
         this.resetKey += 1
       },
@@ -147,10 +154,19 @@
           this.$message.warning('未识别到有效商品信息')
           return
         }
+        this.cleared = false
         this.keyword = text
         this.resetKey += 1
       },
-      applyFilter() {
+      /** 选择商品类别：立即重新查询 */
+      onCategoryChange() {
+        this.cleared = false
+        this.resetKey += 1
+      },
+      /** 全部关闭：清空筛选条件 */
+      onFilterClear() {
+        this.cleared = false
+        this.categoryId = undefined
         this.filterDrawerVisible = false
         this.resetKey += 1
       },
@@ -192,18 +208,6 @@
 </script>
 
 <style scoped>
-  .lp-filter-item {
-    margin-bottom: 18px;
-  }
-  .lp-filter-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: #666;
-  }
-  .lp-filter-footer {
-    margin-top: 24px;
-  }
   .lp-desktop {
     padding: 48px 24px;
     text-align: center;

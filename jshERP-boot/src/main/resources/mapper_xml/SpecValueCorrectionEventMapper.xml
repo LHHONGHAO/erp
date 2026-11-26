@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.erp.datasource.mappers.SpecValueCorrectionEventMapper">
+
+  <insert id="insertSelective" parameterType="com.jsh.erp.datasource.entities.SpecValueCorrectionEvent"
+          useGeneratedKeys="true" keyProperty="id">
+    insert into jsh_spec_value_correction_event
+    <trim prefix="(" suffix=")" suffixOverrides=",">
+      <if test="tenantId != null">tenant_id,</if>
+      <if test="categoryId != null">category_id,</if>
+      <if test="attributeId != null">attribute_id,</if>
+      <if test="childName != null">child_name,</if>
+      <if test="rawText != null">raw_text,</if>
+      <if test="rawNormKey != null">raw_norm_key,</if>
+      <if test="autoValue != null">auto_value,</if>
+      <if test="finalValue != null">final_value,</if>
+      <if test="finalNormKey != null">final_norm_key,</if>
+      <if test="modified != null">modified,</if>
+      <if test="materialId != null">material_id,</if>
+      <if test="userId != null">user_id,</if>
+      <if test="deleteFlag != null">delete_flag,</if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides=",">
+      <if test="tenantId != null">#{tenantId,jdbcType=BIGINT},</if>
+      <if test="categoryId != null">#{categoryId,jdbcType=BIGINT},</if>
+      <if test="attributeId != null">#{attributeId,jdbcType=BIGINT},</if>
+      <if test="childName != null">#{childName,jdbcType=VARCHAR},</if>
+      <if test="rawText != null">#{rawText,jdbcType=VARCHAR},</if>
+      <if test="rawNormKey != null">#{rawNormKey,jdbcType=VARCHAR},</if>
+      <if test="autoValue != null">#{autoValue,jdbcType=VARCHAR},</if>
+      <if test="finalValue != null">#{finalValue,jdbcType=VARCHAR},</if>
+      <if test="finalNormKey != null">#{finalNormKey,jdbcType=VARCHAR},</if>
+      <if test="modified != null">#{modified,jdbcType=VARCHAR},</if>
+      <if test="materialId != null">#{materialId,jdbcType=BIGINT},</if>
+      <if test="userId != null">#{userId,jdbcType=BIGINT},</if>
+      <if test="deleteFlag != null">#{deleteFlag,jdbcType=VARCHAR},</if>
+    </trim>
+  </insert>
+
+  <select id="statByRaw" resultType="com.jsh.erp.datasource.entities.SpecValueCorrectionStat">
+    select final_value as finalValue,
+           final_norm_key as finalNormKey,
+           count(*) as total
+    from jsh_spec_value_correction_event
+    where delete_flag &lt;&gt; '1'
+      and IFNULL(tenant_id,0) = IFNULL(#{tenantId,jdbcType=BIGINT},0)
+      and IFNULL(category_id,0) = IFNULL(#{categoryId,jdbcType=BIGINT},0)
+      and IFNULL(attribute_id,0) = IFNULL(#{attributeId,jdbcType=BIGINT},0)
+      and IFNULL(child_name,'') = IFNULL(#{childName,jdbcType=VARCHAR},'')
+      and raw_norm_key = #{rawNormKey,jdbcType=VARCHAR}
+      and create_time &gt;= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+    group by final_norm_key, final_value
+    order by total desc, final_value asc
+  </select>
+</mapper>

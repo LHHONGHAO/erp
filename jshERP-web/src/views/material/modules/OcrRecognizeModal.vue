@@ -71,6 +71,8 @@
       @gallery="triggerGallery"
       @clear="clearText"
       @smart="extractOnly ? copyRawText() : smartRecognize()"
+      @paste="onPaste"
+      @paste-fail="onPasteFail"
       @preview="previewVisible = true" />
     <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onPickImage" />
     <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onPickImage" />
@@ -682,6 +684,22 @@ export default {
         if (value) return value
       }
       return ''
+    },
+    /** 粘贴识别：按钮手势里读剪贴板，填入后走与智能识别相同的解析 */
+    onPaste(text) {
+      if (!text) {
+        this.$message.info('剪贴板为空')
+        return
+      }
+      this.ocrFields.rawText = text
+      if (this.extractOnly) {
+        this.copyRawText()
+      } else {
+        this.smartRecognize()
+      }
+    },
+    onPasteFail() {
+      this.$message.warning('剪贴板读取失败，请长按文本框手动粘贴')
     },
     copyRawText() {
       this.copyText(this.ocrFields.rawText || '')

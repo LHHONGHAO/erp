@@ -15,4 +15,7 @@ public interface SpecValueAliasMapper {
                                    @Param("tenantId") Long tenantId);
 
     int increaseHitCount(@Param("id") Long id);
+
+    /** 别名改指向新的标准样本 */
+    int updateSampleId(@Param("id") Long id, @Param("sampleId") Long sampleId);
 }

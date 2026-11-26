@@ -50,7 +50,8 @@ $caP12File = Join-Path $CfgDir 'jsh-ca.p12'
 $rootCrt   = Join-Path $CfgDir 'jsh-root-ca.crt'
 $storePass = 'changeit'
 $caValidDays     = 3650
-$serverValidDays = 1825
+# iOS/macOS 要求服务端证书有效期不超过 825 天，否则即使根证书受信任也会判为不安全
+$serverValidDays = 825
 
 function Find-Keytool([string]$Hint) {
     $candidates = @()

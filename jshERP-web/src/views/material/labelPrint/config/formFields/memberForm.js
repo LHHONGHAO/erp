@@ -3,7 +3,7 @@
  * key 与会员信息表 jsh_supplier 的列名保持一致，recordKey 为业务对象上的取值字段。
  */
 
-export const MEMBER_FORM_TITLE = '会员标签'
+const MEMBER_FORM_TITLE = '会员标签'
 
 const MEMBER_FIELDS = [
   { key: 'contacts', label: '联系人', recordKey: 'contacts' },

@@ -6,7 +6,7 @@
 import { buildProductFormAttrs, mergeProductAttrValues } from '@/views/material/labelPrint/utils/productFormFields'
 import { appendCategorySpecAttrs } from '@/views/material/labelPrint/utils/categorySpec'
 
-export const DELIVERY_FORM_TITLE = '发货单'
+const DELIVERY_FORM_TITLE = '发货单'
 
 const DELIVERY_STATUS_MAP = { '0': '未审核', '1': '已审核', '2': '已完成', '3': '已关闭' }
 

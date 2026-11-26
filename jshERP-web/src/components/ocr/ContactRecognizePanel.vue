@@ -14,6 +14,8 @@
         @gallery="triggerGallery"
         @clear="clearAll"
         @smart="parsePastedText"
+        @paste="onPaste"
+        @paste-fail="onPasteFail"
         @preview="previewVisible = true" />
       <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="addr-file-input" @change="onPick" />
       <input ref="galleryInput" type="file" accept="image/*" class="addr-file-input" @change="onPick" />
@@ -25,7 +27,8 @@
         <span>{{ title }}</span>
         <div class="addr-card__head-right">
           <span v-if="showStatus" class="addr-status" :class="{ 'is-done': hasResult }">{{ hasResult ? '已识别' : '待识别' }}</span>
-          <span v-if="copyable" class="addr-copy-btn" @click="copyContact">复制地址</span>
+          <span v-if="copyable" class="addr-copy-btn" @click="openWechat">微信</span>
+          <span v-if="copyable" class="addr-copy-btn" @click="shareContact">分享</span>
         </div>
       </div>
       <div class="addr-row" v-for="prop in fields" :key="prop.field">
@@ -135,7 +138,7 @@ export default {
       type: String,
       default: '识别结果'
     },
-    // 是否显示「复制地址」
+    // 是否显示「分享」（复制地址 + 系统分享）
     copyable: {
       type: Boolean,
       default: false
@@ -196,16 +199,19 @@ export default {
     getPlaceholder(label) {
       return this.ocrLoading ? '识别中...' : ('请输入' + label)
     },
-    // ===== 复制地址 =====
-    /** 待复制内容：只保留联系人、电话、地址 */
+    // ===== 分享地址（复制到剪贴板 + 系统分享） =====
+    /** 待复制内容：联系人、电话、地址、备注 */
     buildCopyText() {
       var parts = []
       var contacts = String(this.form.contacts || '').trim()
       var telephone = String(this.form.telephone || '').trim()
       var address = this.joinAddressParts(this.form.address)
+      var remark = String(this.form.remark || '').trim()
       if (contacts) parts.push('联系人：' + contacts)
       if (telephone) parts.push('电话：' + telephone)
       if (address) parts.push('地址：' + address)
+      // 地址识别页的备注随地址一起复制（无备注时不输出空行）
+      if (remark) parts.push('备注：' + remark)
       return parts.join('\n')
     },
     /** 把识别出的地址按 省/市/区县/乡镇街道 拆开，再用 / 拼成整体 */
@@ -230,19 +236,73 @@ export default {
       if (text) parts.push(text)
       return parts.join('/')
     },
-    copyContact() {
+    /** 分享：先复制地址到剪贴板，支持系统分享时同时调起系统分享面板 */
+    shareContact() {
       var text = this.buildCopyText()
       if (!text) {
         this.$message.warning('请先填写地址信息')
         return
       }
+      var that = this
       this.copyToClipboard(text)
+      // 微信分享扩展只接收图片/文件/链接，纯文本会被拒绝，因此优先以 txt 文件分享
+      var file = null
+      try {
+        if (typeof File !== 'undefined' && navigator.canShare) {
+          var f = new File([text], '地址信息.txt', { type: 'text/plain' })
+          if (navigator.canShare({ files: [f] })) file = f
+        }
+      } catch (e) {
+        file = null
+      }
+      if (navigator.share) {
+        // 系统分享需在点击手势内同步调用，与复制保持同一手势激活
+        var payload = file ? { files: [file], title: '地址信息' } : { title: '地址信息', text: text }
+        navigator.share(payload).catch(function(err) {
+          // 用户主动取消分享不提示
+          if (err && err.name === 'AbortError') return
+          // 其它失败给出原因，地址已复制可手动粘贴分享
+          that.$message.warning('系统分享未能调起：' + ((err && err.message) || '未知原因') + '，地址已复制，可手动粘贴分享')
+        })
+      } else if (/MicroMessenger/i.test(navigator.userAgent)) {
+        // 微信内置浏览器不支持 Web Share，引导用 Safari 打开或手动粘贴
+        this.$message.info('微信内不支持系统分享，地址已复制，可直接粘贴给好友；需要系统分享请点右上角用 Safari 打开')
+      } else {
+        this.$message.info('当前浏览器不支持系统分享，地址已复制，可粘贴到微信等应用分享')
+      }
     },
-    copyToClipboard(text) {
+    /** 打开微信：同步复制地址后立即跳转微信，选好友长按粘贴发送（微信分享扩展不接收纯文本） */
+    openWechat() {
+      var text = this.buildCopyText()
+      if (!text) {
+        this.$message.warning('请先填写地址信息')
+        return
+      }
+      // 微信内置浏览器无法再跳回微信，直接提示粘贴
+      if (/MicroMessenger/i.test(navigator.userAgent)) {
+        this.copyToClipboard(text, true)
+        this.$message.info('地址已复制，长按聊天输入框粘贴即可发送')
+        return
+      }
+      // 同步复制，避免页面跳转中断异步剪贴板写入
+      var copied = this.copyByTextarea(text, true)
+      if (!copied) this.copyToClipboard(text, true)
+      this.$message.success(copied ? '地址已复制，正在打开微信' : '正在打开微信，请到聊天框粘贴地址')
+      // 必须在点击手势内同步跳转，否则 iOS 会忽略自定义协议
+      window.location.href = 'weixin://'
+      // 兜底：2 秒后仍在本页说明跳转被拦截
+      var that = this
+      setTimeout(function() {
+        if (!document.hidden) {
+          that.$message.warning('未能跳转微信，地址已复制，请手动切换到微信粘贴发送')
+        }
+      }, 2000)
+    },
+    copyToClipboard(text, silent) {
       var that = this
       if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(function() {
-          that.$message.success('地址信息已复制')
+          if (!silent) that.$message.success('地址信息已复制')
         }).catch(function() {
           that.copyByTextarea(text)
         })
@@ -250,8 +310,8 @@ export default {
         that.copyByTextarea(text)
       }
     },
-    /** 非安全上下文（http）下的兜底复制方案 */
-    copyByTextarea(text) {
+    /** 非安全上下文（http）下的兜底复制方案，返回是否复制成功 */
+    copyByTextarea(text, silent) {
       var textarea = document.createElement('textarea')
       textarea.value = text
       textarea.setAttribute('readonly', '')
@@ -266,8 +326,11 @@ export default {
         copied = false
       }
       document.body.removeChild(textarea)
-      if (copied) this.$message.success('地址信息已复制')
-      else this.$message.error('复制失败，请长按输入框手动复制')
+      if (!silent) {
+        if (copied) this.$message.success('地址信息已复制')
+        else this.$message.error('复制失败，请长按输入框手动复制')
+      }
+      return copied
     },
     // ===== 地址簿 =====
     openAddressBook() {
@@ -457,6 +520,18 @@ export default {
         img.src = url
       })
     },
+    /** 粘贴识别：按钮手势里读剪贴板，填入后走与智能识别相同的解析（iOS 无需询问层） */
+    onPaste(text) {
+      if (!text) {
+        this.$message.info('剪贴板为空')
+        return
+      }
+      this.pasteText = text
+      this.parsePastedText()
+    },
+    onPasteFail() {
+      this.$message.warning('剪贴板读取失败，请长按文本框手动粘贴')
+    },
     parsePastedText() {
       var text = this.pasteText.trim()
       if (!text) {
@@ -574,6 +649,7 @@ export default {
   background: #e6f4ff;
 }
 .addr-copy-btn {
+  margin-left: 8px;
   padding: 2px 10px;
   font-size: 12px;
   font-weight: 400;

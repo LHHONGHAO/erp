@@ -61,6 +61,7 @@
       :img-url="resolveImg(row)"
       :specs="mobileSpecLines(row)"
       :items="mobileInfoItems(row)"
+      :price="row.commodityDecimal"
       :alt="rowIndex % 2 === 1">
       <template #nameExtra>
         <a-tag v-if="row.enableSerialNumber == 1" color="orange">序</a-tag>
@@ -389,10 +390,9 @@
         })
         return lines
       },
-      /** 标准卡片信息行：零售价 在前、库存 在后 */
+      /** 标准卡片信息行：库存（零售价已移到名称行右侧） */
       mobileInfoItems(record) {
         return [
-          { label: '零售价', value: record.commodityDecimal == null ? '-' : record.commodityDecimal },
           { label: '库存', value: record.stock == null ? '-' : record.stock }
         ]
       },

@@ -12,7 +12,9 @@
       </span>
       <a-icon type="scan" class="msb-scan" @click="openScanPage" />
     </div>
-    <a-button class="msb-filter-btn" icon="filter" @click="$emit('filter')">筛选</a-button>
+    <!-- 筛选按钮前的附加操作（如已选件数），保证在筛选左侧 -->
+    <slot name="before-filter"></slot>
+    <a-button v-if="showFilter" class="msb-filter-btn" icon="filter" @click="$emit('filter')">筛选</a-button>
 
     <!-- 标准输入弹层：输入内容后点按钮才触发搜索 -->
     <mobile-input-popup
@@ -52,6 +54,11 @@ export default {
     },
     /** 识别到内容后是否自动关闭扫码页，false 时由调用页决定关闭时机 */
     autoScanClose: {
+      type: Boolean,
+      default: true
+    },
+    /** 是否显示右侧筛选按钮（调用页自带筛选入口时置 false） */
+    showFilter: {
       type: Boolean,
       default: true
     }

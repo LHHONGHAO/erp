@@ -43,8 +43,8 @@
                  @change="onParentChange">
             </a-tree-select>
           </a-form-item>
-          <!-- 单位：仅子类目维护，一级类目无单位属性 -->
-          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位" v-if="parentId">
+          <!-- 单位：一级类目与子类目都可维护，商品录入时自动带出 -->
+          <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="单位">
             <a-input placeholder="请输入默认单位（商品录入时自动带出）" v-decorator="[ 'unit' ]"/>
           </a-form-item>
           <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" label="排序">
@@ -190,10 +190,7 @@
           if (!err) {
             that.confirmLoading = true;
             let formData = Object.assign(this.model, values);
-            // 一级类目无单位、无规格值
-            if (!this.parentId) {
-              formData.unit = null
-            }
+            // 一级类目同样维护默认单位，直接沿用表单值
             const configuredModules = this.specModules.map(item => ({
               name: (item.name || '').trim(),
               enableImage: !!item.enableImage,

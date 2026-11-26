@@ -67,7 +67,7 @@ export default {
   name: 'MobileLogin',
   data () {
     return {
-      systemTitle: window.SYS_TITLE || '管伊佳ERP',
+      systemTitle: window.SYS_TITLE || '好家纺收银',
       form: { loginName: '', password: '', code: '' },
       uuid: '',
       captchaImage: '',

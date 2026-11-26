@@ -1,9 +1,10 @@
 <template>
-  <div class="addr-page">
+  <div ref="page" class="addr-page">
     <div class="addr-body">
       <!-- 标准联系人信息提取面板：识别框 + 信息卡片（字段行随业务增减） -->
       <div ref="scrollBlankFirst">
         <contact-recognize-panel
+          ref="panel"
           :form="form"
           :fields="fields"
           title="识别结果"
@@ -46,8 +47,8 @@
       <a-button type="primary" block class="addr-print-btn" @click="printResult">打印</a-button>
     </div>
 
-    <!-- 商品选择：标准整页弹层（蓝底顶栏 + 标题左对齐 + 右侧关闭），复用后可跨页面使用 -->
-    <mobile-product-picker
+    <!-- 商品选择：新版整页弹层（左侧二级类目导航 + 点卡片加数量） -->
+    <mobile-product-picker-v2
       :visible="goodsPickerVisible"
       title="添加商品"
       @confirm="handleConfirmGoods"
@@ -79,6 +80,18 @@
       <a-button type="primary" block @click="createNewMember">不更新，新建会员</a-button>
       <a-button block class="addr-match-cancel" @click="matchVisible = false">暂不保存</a-button>
     </a-modal>
+    <!-- 打印成功：询问是否把地址分享到微信（层级需高于整页打印弹层） -->
+    <a-modal
+      :visible="shareVisible"
+      title="分享到微信"
+      :footer="null"
+      :maskClosable="false"
+      :z-index="3100"
+      @cancel="cancelShareToWechat">
+      <div class="addr-match-tip">打印成功，是否将地址复制并打开微信发送？</div>
+      <a-button block class="addr-match-cancel" @click="cancelShareToWechat">取消</a-button>
+      <a-button type="primary" block class="addr-share-ok" @click="shareToWechat">分享</a-button>
+    </a-modal>
   </div>
 </template>
 
@@ -89,7 +102,7 @@ import { LabelPrintModal } from '@/views/material/labelPrint'
 import { ADDRESS_PANEL_FIELDS, extractAddressValues } from '@/views/material/labelPrint/utils/addressFormFields'
 import { saveLabelEditSnapshot, LABEL_EDIT_SNAPSHOT_DEFAULTS } from '@/views/material/labelPrint/utils/labelEditSnapshot'
 import ContactRecognizePanel from '@/components/ocr/ContactRecognizePanel'
-import MobileProductPicker from '@/components/mobile/MobileProductPicker'
+import MobileProductPickerV2 from '@/components/mobile/MobileProductPickerV2'
 
 /**
  * 地址识别独立页面：使用标准联系人信息提取面板（ContactRecognizePanel），
@@ -98,7 +111,7 @@ import MobileProductPicker from '@/components/mobile/MobileProductPicker'
 export default {
   name: 'AddressRecognize',
   mixins: [scrollBlankMixin],
-  components: { LabelPrintModal, ContactRecognizePanel, MobileProductPicker },
+  components: { LabelPrintModal, ContactRecognizePanel, MobileProductPickerV2 },
   data() {
     return {
       form: {
@@ -119,12 +132,118 @@ export default {
       goodsPickerVisible: false,
       // 会员保存：打印成功后自动比对保存，多个候选时弹层确认
       memberSaving: false,
+      // 打印成功时的表单快照：页面清空后会员比对/保存仍用打印前的数据
+      memberFormSnapshot: null,
       matchVisible: false,
       matchCandidates: [],
-      matchMatchedBy: ''
+      matchMatchedBy: '',
+      // 打印成功后的分享询问层
+      shareVisible: false
     }
   },
+  mounted() {
+    // 打开地址页：询问是否填入剪贴板内容并自动识别
+    this.askClipboardFill()
+    // 电脑端按可视区剩余高度撑满页面，保证底部打印按钮始终可见
+    this.fitPageHeight()
+    this._fitPageHandler = this.fitPageHeight.bind(this)
+    window.addEventListener('resize', this._fitPageHandler)
+  },
+  activated() {
+    // keep-alive 缓存下再次进入页面也算打开地址页
+    this.askClipboardFill()
+    this.fitPageHeight()
+  },
+  beforeDestroy() {
+    if (this._fitPageHandler) window.removeEventListener('resize', this._fitPageHandler)
+  },
   methods: {
+    /**
+     * 电脑端页面高度：页签下剩余可视高度
+     * 内容区（.addr-body）内部滚动，打印栏留在页面底部，输入信息后也无需滚动即可看到打印按钮；
+     * 手机端由固定底栏方案处理，不写入高度
+     */
+    fitPageHeight() {
+      var page = this.$refs.page
+      if (!page) return
+      if (window.innerWidth <= 768) {
+        page.style.height = ''
+        return
+      }
+      var top = page.getBoundingClientRect().top +
+        (window.pageYOffset || document.documentElement.scrollTop || 0)
+      page.style.height = Math.max(320, window.innerHeight - top) + 'px'
+    },
+    /**
+     * 打开地址页：询问是否将剪贴板内容填入文本框并自动识别
+     * 仅当前文本框为空时询问；桌面/安卓可直接读剪贴板，有内容才弹询问；
+     * iOS 不允许无手势读剪贴板，改为先询问、在「确定」点击手势里再读取
+     */
+    askClipboardFill() {
+      // 手机端不自动询问：iOS 不允许无手势读剪贴板，自动询问必然弹确认框，
+      // 会挡在进入的页面前（表现为要点两下才进页面）。手机端粘贴由识别框的
+      // 「粘贴识别」按钮承担——按钮点击即用户手势，可直接读取剪贴板，无需询问层。
+      if (window.innerWidth <= 768) return
+      if (this._clipboardAsking) return
+      var panel = this.$refs.panel
+      if (!panel) return
+      // 文本框已有内容时不打扰
+      if (String(panel.pasteText || '').trim()) return
+      if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.readText) return
+      this._clipboardAsking = true
+      var self = this
+      var done = function() { self._clipboardAsking = false }
+      navigator.clipboard.readText().then(function(text) {
+        text = String(text || '').trim()
+        // 剪贴板为空时不弹询问
+        if (!text) {
+          done()
+          return
+        }
+        self.confirmClipboardFill(panel, text, done)
+      }).catch(function() {
+        // iOS 等平台要求用户手势才能读剪贴板：先询问，确定时再读取
+        self.$confirm({
+          title: '粘贴剪贴板内容',
+          content: '是否读取剪贴板内容填入文本框并自动识别？',
+          okText: '确定',
+          cancelText: '取消',
+          zIndex: 2200,
+          onOk() {
+            navigator.clipboard.readText().then(function(text) {
+              text = String(text || '').trim()
+              if (!text) {
+                self.$message.info('剪贴板为空，请手动粘贴')
+                return
+              }
+              panel.pasteText = text
+              // 确定后立即自动识别
+              panel.parsePastedText()
+            }).catch(function() {
+              self.$message.warning('剪贴板读取失败，请长按文本框手动粘贴')
+            }).finally(done)
+          },
+          onCancel() { done() }
+        })
+      })
+    },
+    /** 已读到剪贴板内容时的询问：确定则填入并自动识别 */
+    confirmClipboardFill(panel, text, done) {
+      this.$confirm({
+        title: '检测到剪贴板内容',
+        content: '是否将剪贴板内容填入文本框并自动识别？',
+        okText: '确定',
+        cancelText: '取消',
+        zIndex: 2200,
+        onOk() {
+          panel.pasteText = text
+          // 确定后立即自动识别
+          panel.parsePastedText()
+          done()
+        },
+        onCancel() { done() }
+      })
+    },
     /** 识别完成：内容高度可能变化，重算页面高度 */
     onRecognized() {
       this.syncPageHeight()
@@ -308,11 +427,15 @@ export default {
       this.syncPageHeight()
     },
     // ===== 打印成功后生成会员信息 =====
-    /** 打印成功回调：先与已有会员比对，命中则补充更新，未命中则新增 */
+    /** 打印成功回调：快照表单用于会员比对保存，并询问是否把地址分享到微信 */
     onPrintSuccess() {
       var that = this
-      var hasInfo = String(this.form.contacts || '').trim() || String(this.form.telephone || '').trim()
-        || String(this.form.account || '').trim()
+      // 打印成功：先快照表单（分享与会员保存都用打印前的数据）
+      this.memberFormSnapshot = Object.assign({}, this.form)
+      // 弹出分享询问层；页面清空改为用户点「分享」后执行
+      this.shareVisible = true
+      var hasInfo = String(this.memberFormSnapshot.contacts || '').trim() || String(this.memberFormSnapshot.telephone || '').trim()
+        || String(this.memberFormSnapshot.account || '').trim()
       if (!hasInfo) return
       // 防止打印机回调重复触发导致重复保存
       if (this.memberSaving) return
@@ -321,16 +444,53 @@ export default {
         that.memberSaving = false
       })
     },
-    /** 保存会员：extra 用于确认弹层选择（decision=update/create + supplierId） */
+    /** 取消分享：仅关闭询问层，保留打印预览与页面数据 */
+    cancelShareToWechat() {
+      this.shareVisible = false
+    },
+    /** 分享到微信：复制地址 → 关闭分享层与打印层 → 清空页面数据 → 打开微信 */
+    shareToWechat() {
+      var panel = this.$refs.panel
+      var text = panel ? panel.buildCopyText() : ''
+      if (!text) {
+        this.shareVisible = false
+        this.$message.warning('请先填写地址信息')
+        return
+      }
+      this.shareVisible = false
+      // 关闭整页打印弹层
+      if (this.$refs.labelPrintModal) this.$refs.labelPrintModal.handleCancel()
+      // 同步复制，避免跳转微信中断异步剪贴板写入
+      var copied = panel.copyByTextarea(text, true)
+      if (!copied) panel.copyToClipboard(text, true)
+      // 清空识别文本、图片、表单字段与商品行
+      panel.clearAll()
+      // 微信内置浏览器无法再跳回微信，提示手动粘贴
+      if (/MicroMessenger/i.test(navigator.userAgent)) {
+        this.$message.info('地址已复制，长按聊天输入框粘贴即可发送')
+        return
+      }
+      this.$message.success(copied ? '地址已复制，正在打开微信' : '正在打开微信，请到聊天框粘贴地址')
+      window.location.href = 'weixin://'
+      // 兜底：2 秒后仍在本页说明跳转被拦截
+      var that = this
+      setTimeout(function() {
+        if (!document.hidden) {
+          that.$message.warning('未能跳转微信，地址已复制，请手动切换到微信粘贴发送')
+        }
+      }, 2000)
+    },
+    /** 保存会员：extra 用于确认弹层选择（decision=update/create + supplierId）；打印后页面已清空，取打印前快照 */
     saveMember(extra) {
       var that = this
+      var source = this.memberFormSnapshot || this.form
       var payload = Object.assign({
-        contacts: this.form.contacts,
-        telephone: this.form.telephone,
-        address: this.form.address,
-        account: this.form.account,
-        platform: this.form.platform,
-        remark: this.form.remark
+        contacts: source.contacts,
+        telephone: source.telephone,
+        address: source.address,
+        account: source.account,
+        platform: source.platform,
+        remark: source.remark
       }, extra || {})
       return saveMemberFromAddress(payload).then(function(res) {
         if (!(res && res.code === 200 && res.data)) {
@@ -549,6 +709,9 @@ export default {
 .addr-match-cancel {
   margin-top: 8px;
 }
+.addr-share-ok {
+  margin-top: 8px;
+}
 @media (max-width: 768px) {
   /* 顶栏 49px 已由全局布局占位；内容区自己滚动，
      打印弹层、选择弹层等固定层都在内容区外部，不会被滚动容器裁剪 */
@@ -585,6 +748,23 @@ export default {
 @media (min-width: 769px) {
   .addr-bottom-space {
     height: calc(12px + env(safe-area-inset-bottom));
+  }
+  /* 电脑端：页面高度由脚本按「页签下剩余可视高度」写入，内容区内部滚动，
+     打印按钮固定在页面底部，输入信息后内容变长也无需滚动即可看到打印按钮 */
+  .addr-page {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .addr-body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  /* 打印栏与内容区同宽居中，避免在电脑端拉满整屏 */
+  .addr-actions {
+    width: 100%;
+    max-width: 860px;
+    margin: 16px auto 0;
+    padding: 0 12px 12px;
   }
 }
 </style>

@@ -163,7 +163,7 @@ public class MaterialService {
     public List<MaterialVo4Unit> selectSkuList(String materialParam, String standard, String model, String color, String brand, String mfrs,
                                                String otherField1, String otherField2, String otherField3, String otherField4, String otherField5, String otherField6, String otherField7, String weight, String expiryNum, String enableSerialNumber,
                                                String enableBatchNumber, String position, String enabled, String remark, String categoryId,
-                                               String size, String mpList)
+                                               String size, String mpList, boolean orderByCategory)
             throws Exception{
         String[] mpArr = new String[]{};
         if(StringUtil.isNotEmpty(mpList)){
@@ -178,7 +178,7 @@ public class MaterialService {
             PageUtils.startPage();
             list = materialMapperEx.selectSkuListByConditionMaterial(materialParam, standard, model, color, brand, mfrs,
                     otherField1, otherField2, otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum,
-                    enableSerialNumber, enableBatchNumber, position, enabled, remark, idList, size);
+                    enableSerialNumber, enableBatchNumber, position, enabled, remark, idList, size, orderByCategory);
             if (null != list && list.size()>0) {
                 for (MaterialVo4Unit m : list) {
                     if(fileUploadType == 2) {
@@ -209,6 +209,21 @@ public class MaterialService {
             User currentUser = userService.getCurrentUser();
             Long tenantId = currentUser == null ? null : currentUser.getTenantId();
             list = materialMapperEx.selectSkuAttributeValueStats(attributeName, tenantId);
+        } catch (Exception e) {
+            JshException.readFail(logger, e);
+        }
+        return list;
+    }
+
+    /**
+     * 按类目统计 SKU 规格属性值频次（含直接子类目，SQL 内展开），供移动端「常用规格」卡按品类取 Top4
+     */
+    public List<Map<String, Object>> getCategorySkuValueStats(Long categoryId) throws Exception {
+        List<Map<String, Object>> list = new ArrayList<>();
+        try {
+            User currentUser = userService.getCurrentUser();
+            Long tenantId = currentUser == null ? null : currentUser.getTenantId();
+            list = materialMapperEx.selectCategorySkuValueStats(categoryId, tenantId);
         } catch (Exception e) {
             JshException.readFail(logger, e);
         }

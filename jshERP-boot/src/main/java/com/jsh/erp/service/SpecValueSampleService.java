@@ -4,9 +4,12 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.jsh.erp.datasource.entities.SpecLearnLog;
 import com.jsh.erp.datasource.entities.SpecValueAlias;
+import com.jsh.erp.datasource.entities.SpecValueCorrectionEvent;
+import com.jsh.erp.datasource.entities.SpecValueCorrectionStat;
 import com.jsh.erp.datasource.entities.SpecValueSample;
 import com.jsh.erp.datasource.mappers.SpecLearnLogMapper;
 import com.jsh.erp.datasource.mappers.SpecValueAliasMapper;
+import com.jsh.erp.datasource.mappers.SpecValueCorrectionEventMapper;
 import com.jsh.erp.datasource.mappers.SpecValueSampleMapper;
 import com.jsh.erp.utils.SpecValueNormalizer;
 import com.jsh.erp.utils.StringUtil;
@@ -39,6 +42,15 @@ public class SpecValueSampleService {
 
     @Resource
     private SpecValueAliasMapper specValueAliasMapper;
+
+    @Resource
+    private SpecValueCorrectionEventMapper specValueCorrectionEventMapper;
+
+    /** 基础属性学习门槛：同一识别原文下，某最终值至少出现 3 次且占比不低于 60% 才生效 */
+    private static final int CORRECTION_MIN_COUNT = 3;
+    private static final double CORRECTION_MIN_RATIO = 0.6D;
+    /** 只统计最近 90 天的保存记录，避免历史习惯永久锁死 */
+    private static final int CORRECTION_WINDOW_DAYS = 90;
 
     @Resource
     private SpecLearnLogMapper specLearnLogMapper;
@@ -84,6 +96,11 @@ public class SpecValueSampleService {
                 if (alias != null) {
                     sample = specValueSampleMapper.selectByPrimaryKey(alias.getSampleId());
                     matchType = "alias";
+                    // 已被判定为错误并停用的样本不再参与回填
+                    if (sample != null && (!"0".equals(sample.getStatus()) || "1".equals(sample.getDeleteFlag()))) {
+                        sample = null;
+                        alias = null;
+                    }
                     if (sample != null && categoryId != null && sample.getCategoryId() != null
                             && sample.getCategoryId() != 0L && !categoryId.equals(sample.getCategoryId())) {
                         sample = null;
@@ -428,6 +445,8 @@ public class SpecValueSampleService {
         if (items == null || items.isEmpty()) {
             return result;
         }
+        // 基础属性统一按一级类目统计
+        final Long rootCategoryId = materialCategoryService.resolveRootCategoryId(categoryId);
         final TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         for (int i = 0; i < items.size(); i++) {
@@ -435,26 +454,37 @@ public class SpecValueSampleService {
             if (item == null) {
                 continue;
             }
+            // 带 autoValue/finalValue 的是基础属性：先记录事件，占比达标才升级为标准值
+            // 其余为规格值：沿用原有即时学习口径
+            final boolean gated = item.containsKey("finalValue") || item.containsKey("autoValue");
             final String rawText = item.getString("rawText");
-            final String correctedValue = item.getString("correctedValue");
+            final String correctedValue = gated ? item.getString("finalValue") : item.getString("correctedValue");
             if (!StringUtil.isNotEmpty(rawText) || !StringUtil.isNotEmpty(correctedValue)) {
                 continue;
             }
-            if (SpecValueNormalizer.normKey(rawText).equals(SpecValueNormalizer.normKey(correctedValue))) {
-                // 归一化后一致，无需沉淀别名
+            if (!gated && SpecValueNormalizer.normKey(rawText).equals(SpecValueNormalizer.normKey(correctedValue))) {
+                // 规格值归一化后一致，无需沉淀别名
                 continue;
             }
             final Long attributeId = item.getLong("attributeId");
             final String childName = item.getString("childName");
+            final String autoValue = item.getString("autoValue");
+            final boolean modified = item.getBooleanValue("modified");
             try {
-                template.execute(new TransactionCallback<Object>() {
+                Boolean promoted = template.execute(new TransactionCallback<Boolean>() {
                     @Override
-                    public Object doInTransaction(org.springframework.transaction.TransactionStatus status) {
+                    public Boolean doInTransaction(org.springframework.transaction.TransactionStatus status) {
+                        if (gated) {
+                            return recordBaseCorrection(rawText, correctedValue, autoValue, modified,
+                                    rootCategoryId, attributeId, childName, materialId, userId);
+                        }
                         learn(rawText, correctedValue, categoryId, attributeId, childName, materialId, userId);
-                        return null;
+                        return Boolean.TRUE;
                     }
                 });
-                count++;
+                if (Boolean.TRUE.equals(promoted)) {
+                    count++;
+                }
             } catch (Exception e) {
                 logger.warn("批量学习规格值失败：{}", e.getMessage());
                 JSONObject fail = new JSONObject();
@@ -466,6 +496,98 @@ public class SpecValueSampleService {
         }
         result.put("count", count);
         return result;
+    }
+
+    /**
+     * 记录一次基础属性学习事件，并判断是否达到升级门槛
+     * 1. 确认（未修改）与纠错（手动修改）都计入各自最终值
+     * 2. 同一识别原文下某最终值出现 >= 3 次且占比 >= 60%，才写为标准值
+     * 3. 达标时修正别名指向，并停用原文精确命中的旧错误样本
+     *
+     * @return 本次是否产生了标准值升级
+     */
+    private boolean recordBaseCorrection(String rawText, String finalValue, String autoValue, boolean modified,
+                                         Long categoryId, Long attributeId, String childName,
+                                         Long materialId, Long userId) {
+        String raw = cut(rawText.trim(), 500);
+        String finalText = cut(finalValue.trim(), 500);
+        String rawKey = cut(SpecValueNormalizer.normKey(raw), 255);
+        String finalKey = cut(SpecValueNormalizer.normKey(finalText), 255);
+        if (rawKey.isEmpty() || finalKey.isEmpty()) {
+            return false;
+        }
+        Long attrId = attributeId == null ? 0L : attributeId;
+        Long catId = categoryId == null ? 0L : categoryId;
+        String scopeChild = cut(childName == null ? "" : childName.trim(), 64);
+        Long tenantId = currentTenantId();
+
+        SpecValueCorrectionEvent event = new SpecValueCorrectionEvent();
+        event.setTenantId(tenantId == null ? 0L : tenantId);
+        event.setCategoryId(catId);
+        event.setAttributeId(attrId);
+        event.setChildName(scopeChild);
+        event.setRawText(raw);
+        event.setRawNormKey(rawKey);
+        event.setAutoValue(cut(autoValue == null ? "" : autoValue.trim(), 500));
+        event.setFinalValue(finalText);
+        event.setFinalNormKey(finalKey);
+        event.setModified(modified ? "1" : "0");
+        event.setMaterialId(materialId);
+        event.setUserId(resolveUserId(userId));
+        event.setDeleteFlag("0");
+        specValueCorrectionEventMapper.insertSelective(event);
+
+        List<SpecValueCorrectionStat> stats = specValueCorrectionEventMapper
+                .statByRaw(tenantId, catId, attrId, scopeChild, rawKey, CORRECTION_WINDOW_DAYS);
+        long total = 0L;
+        SpecValueCorrectionStat top = null;
+        for (SpecValueCorrectionStat stat : stats) {
+            long cnt = stat.getTotal() == null ? 0L : stat.getTotal();
+            total += cnt;
+            if (top == null || cnt > (top.getTotal() == null ? 0L : top.getTotal())) {
+                top = stat;
+            }
+        }
+        if (top == null || total <= 0L || top.getTotal() < CORRECTION_MIN_COUNT) {
+            return false;
+        }
+        if ((double) top.getTotal() / total < CORRECTION_MIN_RATIO) {
+            return false;
+        }
+
+        String winner = top.getFinalValue();
+        String winnerKey = top.getFinalNormKey();
+        if (!StringUtil.isNotEmpty(winner) || !StringUtil.isNotEmpty(winnerKey)) {
+            return false;
+        }
+
+        // 已经绑定到该标准值则无需重复学习
+        SpecValueSample winnerSample = specValueSampleMapper.selectByNormKey(winnerKey, attrId, catId, scopeChild, tenantId);
+        SpecValueAlias alias = specValueAliasMapper.selectByNormKey(rawKey, attrId, catId, scopeChild, tenantId);
+        boolean bound = winnerSample != null && (alias != null
+                ? winnerSample.getId().equals(alias.getSampleId())
+                : rawKey.equals(winnerKey));
+        if (bound) {
+            return false;
+        }
+
+        learn(raw, winner, catId, attrId, scopeChild, materialId, userId);
+        winnerSample = specValueSampleMapper.selectByNormKey(winnerKey, attrId, catId, scopeChild, tenantId);
+        // 历史别名可能指向旧的错误样本，达标后改指向新的标准值
+        if (winnerSample != null && alias != null && !winnerSample.getId().equals(alias.getSampleId())) {
+            specValueAliasMapper.updateSampleId(alias.getId(), winnerSample.getId());
+        }
+        // 原文本身能精确命中另一条样本时停用，避免错误值继续直接回填
+        if (!rawKey.equals(winnerKey)) {
+            SpecValueSample exact = specValueSampleMapper.selectByNormKey(rawKey, attrId, catId, scopeChild, tenantId);
+            if (exact != null && !"1".equals(exact.getStatus())) {
+                SpecValueSample disabled = new SpecValueSample();
+                disabled.setId(exact.getId());
+                disabled.setStatus("1");
+                specValueSampleMapper.updateByPrimaryKeySelective(disabled);
+            }
+        }
+        return true;
     }
 
     /**

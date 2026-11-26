@@ -253,8 +253,10 @@ public class SystemConfigController extends BaseController {
                 conn.setConnectTimeout(5 * 1000);
                 inputStream = conn.getInputStream();// 通过输入流获取图片数据
             }
+            // 原图响应强缓存一年：上传文件名自带时间戳，同路径内容不变；此前无缓存头导致浏览器每次滚动/回看都重新下载整张原图
+            response.setHeader("Cache-Control", "max-age=31536000, public");
             outputStream = response.getOutputStream();
-            byte[] buf = new byte[1024];
+            byte[] buf = new byte[8192];
             int len;
             while ((len = inputStream.read(buf)) > 0) {
                 outputStream.write(buf, 0, len);
@@ -317,11 +319,34 @@ public class SystemConfigController extends BaseController {
                 conn.setConnectTimeout(5 * 1000);
                 inputStream = conn.getInputStream();// 通过输入流获取图片数据
             }
-            int index = fileUrl.lastIndexOf(".");
-            String ext = fileUrl.substring(index + 1);
-            BufferedImage image = systemConfigService.getImageMini(inputStream, 80);
-            outputStream = response.getOutputStream();
-            ImageIO.write(image, ext, outputStream);
+            // 缩略图响应强缓存一年：上传文件名自带时间戳，同路径内容不变
+            response.setHeader("Cache-Control", "max-age=31536000, public");
+            if(fileUploadType == 1) {
+                // 本地存储：缩略图落盘缓存，命中直接回缓存文件，省去每次请求读原图+缩放
+                File thumbFile = new File(filePath + File.separator + ".thumbs" + File.separator + imgPath.replace("/", "_").replace("\\", "_") + ".jpg");
+                if (!thumbFile.exists() || thumbFile.lastModified() < new File(fileUrl).lastModified()) {
+                    BufferedImage image = systemConfigService.getImageMini(inputStream, 200);
+                    File thumbDir = thumbFile.getParentFile();
+                    if (!thumbDir.exists() && !thumbDir.mkdirs()) {
+                        throw new IOException("创建缩略图缓存目录失败");
+                    }
+                    ImageIO.write(image, "jpg", thumbFile);
+                }
+                inputStream.close();
+                inputStream = new BufferedInputStream(new FileInputStream(thumbFile));
+                outputStream = response.getOutputStream();
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = inputStream.read(buf)) > 0) {
+                    outputStream.write(buf, 0, len);
+                }
+            } else {
+                int index = fileUrl.lastIndexOf(".");
+                String ext = fileUrl.substring(index + 1);
+                BufferedImage image = systemConfigService.getImageMini(inputStream, 200);
+                outputStream = response.getOutputStream();
+                ImageIO.write(image, ext, outputStream);
+            }
             response.flushBuffer();
         } catch (Exception e) {
             response.setStatus(404);

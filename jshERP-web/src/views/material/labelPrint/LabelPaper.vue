@@ -5,7 +5,7 @@
       v-for="el in textElems"
       :key="el.id"
       class="lpp-text"
-      :class="{ 'is-multiline': el.multiline }"
+      :class="{ 'is-multiline': el.multiline, 'is-placeholder': el.placeholder }"
       :style="el.style"
     >{{ el.display }}</div>
 
@@ -72,6 +72,8 @@
       rows:            { type: Array,  default: function() { return [] } },
       // 处理后的文本（省略号裁切模式）：元素 key → 最终文本
       texts:           { type: Object, default: null },
+      // 空数据占位名：元素 key → 默认名称（仅预览浅灰显示，不参与打印）
+      placeholders:    { type: Object, default: null },
       // 打印设置「文本超出」：wrap = 超宽一律折行；ellipsis = 超宽以省略号截断
       overflowMode:    { type: String, default: 'wrap' },
       scale:           { type: Number, default: null },
@@ -126,9 +128,31 @@
           var display = (el.label && el.field !== 'page_no') ? el.label + ': ' + value : value
           var key = el.field || el.id
           if (self.texts && self.texts[key] != null) display = self.texts[key]
+          // 属性名留空且没有数据：显示元素默认名浅灰占位（仅预览，不参与打印）
+          var placeholder = false
+          if (!String(display == null ? '' : display).replace(/[:：\s]/g, '')) {
+            var ph = self.placeholders && self.placeholders[key]
+            if (ph) {
+              display = ph
+              placeholder = true
+            }
+          }
           var style = self.baseStyle(el)
           // 文字对齐：模板元素级设置，未设置时默认居左
           style.textAlign = el.textAlign === 'center' || el.textAlign === 'right' ? el.textAlign : 'left'
+          // 间隔符：固定铺满整个标签宽度（左边缘到右边缘），单行不折行，超宽裁剪
+          if (el.separator) {
+            style.width = self.paperW + 'px'
+            style.whiteSpace = 'nowrap'
+            style.overflow = 'hidden'
+            return {
+              id: el.id,
+              display: display,
+              placeholder: placeholder,
+              multiline: false,
+              style: style
+            }
+          }
           // 折行宽度 = min(框宽, 标签右边可用宽)：文本框超过标签右边时按标签右边缘处理
           var limit = Math.max(20, self.paperW - mmToPx(el.x || 0))
           var widthPx = el.width ? mmToPx(el.width) : 0
@@ -149,6 +173,7 @@
           return {
             id: el.id,
             display: display,
+            placeholder: placeholder,
             multiline: value.indexOf('\n') > -1,
             style: style
           }
@@ -251,13 +276,20 @@
         }
         if (el.width) style.width = mmToPx(el.width) + 'px'
         if (el.height) style.height = mmToPx(el.height) + 'px'
+        // 间隔符固定铺满整个标签宽度：从左边框到右边框，单行不折行，超宽裁剪
+        if (el.separator) {
+          style.left = '0px'
+          style.width = mmToPx(this.paperW) + 'px'
+          style.whiteSpace = 'nowrap'
+          style.overflow = 'hidden'
+        }
         return style
       },
       refreshCodeImages() {
         var self = this
         this.codeElems.forEach(function(el) {
           renderCodeDataUrl(el.type, el.text, el.width, el.height).then(function(url) {
-            if (url) self.$set(self.codeImages, el.id, url)
+            self.$set(self.codeImages, el.id, url || '')
           })
         })
       }
@@ -291,6 +323,10 @@
   }
   .lpp-text.is-multiline {
     white-space: pre-wrap;
+  }
+  /* 无数据时的浅灰占位：只用于预览，打印链路不带占位文本 */
+  .lpp-text.is-placeholder {
+    color: #bfbfbf;
   }
   .lpp-code {
     position: absolute;

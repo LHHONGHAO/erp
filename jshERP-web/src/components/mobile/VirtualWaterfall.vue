@@ -59,6 +59,8 @@ export default {
     columns: { type: Number, default: 2 },
     /** 固定卡片高度（>0 时忽略图片宽高比，用于单列等高卡片；0 表示按图片比例计算） */
     fixedItemHeight: { type: Number, default: 0 },
+    /** 每项高度函数 (item) => number：提供时优先于 fixedItemHeight（如按文字总高计算的单列卡片） */
+    itemHeightOf: { type: Function, default: null },
     /** 双列间距、上下间距 */
     gap: { type: Number, default: 8 },
     /** 卡片文字区固定高度（标题 2 行 + 规格 1 行 + 价格行） */
@@ -81,9 +83,7 @@ export default {
       list: [],
       /** 置顶数据（已冻结），排在列表最前面并跟随滚动 */
       prependList: [],
-      /** 实际参与排布的数据：置顶数据 + 列表数据（去重） */
-      renderList: [],
-      /** 卡片坐标（已冻结） */
+      /** 卡片坐标 + 预生成样式（已冻结） */
       cells: [],
       /** 按 top 升序排列的下标（二分查找可视区起点） */
       order: [],
@@ -106,7 +106,7 @@ export default {
     }
   },
   computed: {
-    /** 可视区 + 缓冲区的卡片 */
+    /** 可视区 + 缓冲区的卡片：坐标/样式已在排布时冻结，这里只做二分裁剪，零对象分配 */
     visibleCells() {
       const total = this.cells.length
       if (total === 0) return []
@@ -130,20 +130,10 @@ export default {
       }
       const result = []
       for (let i = start; i < this.order.length; i++) {
-        const index = this.order[i]
-        const cell = this.cells[index]
+        const cell = this.cells[this.order[i]]
         if (cell.top > maxTop) break
         if (cell.top + cell.height < viewTop - margin) continue
-        result.push({
-          index: cell.itemIndex,
-          item: this.renderList[cell.itemIndex],
-          imageHeight: cell.imageHeight,
-          style: {
-            width: cell.width + 'px',
-            height: cell.height + 'px',
-            transform: 'translate3d(' + cell.left + 'px,' + cell.top + 'px,0)'
-          }
-        })
+        result.push(cell)
       }
       return result
     }
@@ -176,6 +166,10 @@ export default {
       immediate: true
     }
   },
+  created() {
+    // 非响应式：记录上一次通知父级的首个可见项键，键不变不重复 emit
+    this._lastSpyKey = undefined
+  },
   mounted() {
     const saved = this.readFeedState()
     this.reload(true)
@@ -185,6 +179,7 @@ export default {
         this.$refs.scroller.scrollTop = saved.scrollTop
         this.scrollTop = this.$refs.scroller.scrollTop
         this.measure()
+        this.notifyFirstVisible()
       })
     }
     this.onResize = () => this.measure()
@@ -202,6 +197,7 @@ export default {
       this.$refs.scroller.scrollTop = saved.scrollTop
       this.scrollTop = this.$refs.scroller.scrollTop
       this.measure()
+      this.notifyFirstVisible()
     }
   },
   deactivated() {
@@ -277,12 +273,45 @@ export default {
       if (width !== this.listWidth) this.listWidth = width
       this.recalcLayout()
     },
+    /** 仅回到顶部（不重新加载，滚动事件会触发联动通知） */
+    scrollToTop() {
+      const el = this.$refs.scroller
+      if (el) el.scrollTop = 0
+    },
+    /**
+     * 规格标签锚点：滚动到首个满足 matchFn 的卡片并带到视口顶部，返回 Promise<boolean>。
+     * 已加载范围找不到时按页继续加载查找（最多再找 30 页），仍找不到返回 false
+     */
+    scrollToItem(matchFn) {
+      const self = this
+      function findInCells() {
+        for (let i = 0; i < self.order.length; i++) {
+          const cell = self.cells[self.order[i]]
+          if (cell && matchFn(cell.item)) return cell
+        }
+        return null
+      }
+      function run(remain) {
+        const cell = findInCells()
+        if (cell) {
+          const el = self.$refs.scroller
+          if (el) el.scrollTop = cell.top
+          return Promise.resolve(true)
+        }
+        if (!self.hasMore || self.loading || remain <= 0) return Promise.resolve(false)
+        return self.loadPage().then(() => run(remain - 1))
+      }
+      return run(30)
+    },
     /** 置顶数据变化：重新冻结并排布，不重新请求 */
     rebuildPrepend() {
       this.prependList = (this.prependItems || []).map(row => this.normalizeItem(row))
       this.recalcLayout()
     },
-    /** 双列贪心排布：卡片高度 = 图片高度（等比换算）+ 文字区固定高度；固定高度时直接使用 fixedItemHeight */
+    /**
+     * 双列贪心排布：卡片高度 = 图片高度（等比换算）+ 文字区固定高度；固定高度时直接使用 fixedItemHeight
+     * 坐标与样式在此一次性算好并冻结，滚动帧里的可视区裁剪不再做任何字符串拼接
+     */
     recalcLayout() {
       const width = this.listWidth
       if (!width) return
@@ -308,13 +337,14 @@ export default {
         if (excluded[item._key] || prependKeys[item._key]) continue
         items.push(item)
       }
-      this.renderList = items
       let maxCellHeight = 0
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
         const ratio = this.ratioOf(item)
         const imageHeight = Math.round(colWidth / ratio)
-        const height = this.fixedItemHeight > 0 ? this.fixedItemHeight : imageHeight + this.textHeight
+        const height = this.itemHeightOf
+          ? this.itemHeightOf(item)
+          : (this.fixedItemHeight > 0 ? this.fixedItemHeight : imageHeight + this.textHeight)
         // 贪心：放进当前最矮的一列
         let col = 0
         for (let c = 1; c < count; c++) {
@@ -324,7 +354,21 @@ export default {
         const top = heights[col]
         heights[col] = top + height + gap
         if (height > maxCellHeight) maxCellHeight = height
-        cells.push({ itemIndex: i, left: left, top: top, width: colWidth, height: height, imageHeight: imageHeight })
+        cells.push({
+          index: i,
+          item: item,
+          left: left,
+          top: top,
+          width: colWidth,
+          height: height,
+          imageHeight: imageHeight,
+          // 样式与坐标同生命周期：只在排布时生成一次
+          style: Object.freeze({
+            width: colWidth + 'px',
+            height: height + 'px',
+            transform: 'translate3d(' + left + 'px,' + top + 'px,0)'
+          })
+        })
       }
       const order = cells.map((cell, index) => index).sort((a, b) => cells[a].top - cells[b].top)
       this.colHeights = heights
@@ -363,6 +407,7 @@ export default {
           this.hasMore = items.length > 0 && this.list.length < this.total
           this.$nextTick(() => {
             this.measure()
+            this.notifyFirstVisible()
           })
         })
         .catch(() => {})
@@ -395,6 +440,7 @@ export default {
           this.$refs.scroller.scrollTop = 0
           this.scrollTop = 0
         }
+        this.notifyFirstVisible()
       })
     },
     /** 数据不足一屏时继续补载，避免出现无法滚动的「半屏」 */
@@ -404,6 +450,28 @@ export default {
       if (!el) return
       const distance = this.totalHeight - (el.scrollTop + el.clientHeight)
       if (distance < el.clientHeight * 2) this.loadPage()
+    },
+    /**
+     * 通知父级视口顶部的首个可见商品（scroll-spy）：
+     * 取按 top 升序里第一个底边越过视口顶部的卡片，键变化才 emit，滚动帧里近乎零开销
+     */
+    notifyFirstVisible() {
+      const cells = this.cells
+      const order = this.order
+      const viewTop = this.scrollTop
+      let key = ''
+      let item = null
+      for (let i = 0; i < order.length; i++) {
+        const cell = cells[order[i]]
+        if (cell.top + cell.height > viewTop) {
+          item = cell.item
+          key = item._key
+          break
+        }
+      }
+      if (key === this._lastSpyKey) return
+      this._lastSpyKey = key
+      this.$emit('first-visible', item)
     },
     onScroll() {
       if (this.rafPending) return
@@ -415,6 +483,7 @@ export default {
         const top = el.scrollTop
         const delta = Math.abs(top - this.scrollTop)
         this.scrollTop = top
+        this.notifyFirstVisible()
         // 快速猛滑期间暂停图片渲染，停止后再恢复，避免并发请求阻塞
         if (delta > this.fastScrollThreshold) {
           this.deferImages = true

@@ -5,7 +5,7 @@
  */
 import { buildRetailSaleAttrs } from '@/views/material/labelPrint/utils/retailSaleFormFields'
 
-export const RECEIPT_FORM_TITLE = '小票'
+const RECEIPT_FORM_TITLE = '小票'
 
 export default {
   type: 'receipt',

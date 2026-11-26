@@ -31,16 +31,16 @@
  *   meta: { type, materialId, categoryId, categoryName, kind }
  * }
  */
-import { pxToMm, mmToPx, CODE_KEY_PREFIX, fillSeparatorText } from './labelSchema'
+import { pxToMm, mmToPx, CODE_KEY_PREFIX, fillSeparatorText, resolveSeparatorWidth } from './labelSchema'
 import { GOODS_KEY, GOODS_TABLE_KEY } from './goodsLabelLayout'
 import { normalizeSpecBlocks, isSpecNameKey } from './goodsSpecBlocks'
 import { normalizeSpecMapping, flattenSpecMapping } from './categorySpec'
 import { normalizeEditorData } from './templateEditDataModel'
 
-export var TEMPLATE_SCHEMA_VERSION = 2
+var TEMPLATE_SCHEMA_VERSION = 2
 // 渲染代次：规格块「名称锚点 + 占位」改版后升到 3；低于该值的模板一律按旧模板处理（提示删除，不加载）
 export var TEMPLATE_RENDER_VERSION = 3
-export var TEMPLATE_VERSION_FIELD = 'schemaVersion'
+var TEMPLATE_VERSION_FIELD = 'schemaVersion'
 // 明细集合在业务记录对象里的默认路径（地址/发货单均把商品行放在 goodsRows）
 export var DEFAULT_ITEM_PATH = 'goodsRows'
 
@@ -147,11 +147,15 @@ export function editorStateToV2(state, meta) {
         element.field = 'page_no'
         element.prefixLabel = false
       } else if (attr && attr.isSeparator) {
-        // 间隔符：保存原始符号，导出文本按元素宽度与字号自动铺满
+        // 间隔符：固定铺满整个标签宽度（x=0 到右边框），符号按真实字宽重复填满，
+        // 编辑/预览/打印共用同一规则
         element.separator = true
         element.symbol = attr.value == null ? '' : String(attr.value)
         var sepStyle = styles[key] || {}
-        element.text = fillSeparatorText(element.symbol, Number(sepStyle.width) || 40, sepStyle.fontSize || 12)
+        var sepWidth = resolveSeparatorWidth(src.labelWidth)
+        element.x = 0
+        element.width = pxToMm(sepWidth)
+        element.text = fillSeparatorText(element.symbol, sepWidth, sepStyle.fontSize || 12, sepStyle.letterSpacing || 0, sepStyle.fontWeight)
       } else if (attr && attr.isCodeElem) {
         // 自定义码元素：类型（barcode/qrcode）与内容都挂在元素自身，不绑定业务字段
         element.type = attr.codeType === 'barcode' ? 'barcode' : 'qrcode'
@@ -390,11 +394,36 @@ export function v2ToEditorState(raw) {
     }
     if (element.custom) {
       var isSeparator = !!element.separator
+      var customLabel = isSeparator ? (element.label || '间隔符') : (element.label || '')
+      var customValue = isSeparator && element.symbol != null
+        ? String(element.symbol)
+        : (element.text == null ? '' : element.text)
+      // 旧版导出不带 separator 标记：内容为「同一符号重复」（如 '-'、'——'、'***'）的 custom 文本
+      // 就是旧间隔符。不识别的话还原后丢 isSeparator，预览/打印永远只剩单个符号，
+      // 且重新保存也无法自愈（还原丢标记 → 保存仍按普通文本导出），这里按内容特征修复
+      if (!isSeparator && element.type !== 'qrcode' && element.type !== 'barcode' && customValue &&
+          /^([^\w\u4e00-\u9fa5\s])\1*$/.test(customValue)) {
+        isSeparator = true
+        customLabel = ''
+        attrLabels[key] = ''
+      }
+      // 旧版自定义文本会把输入内容存成属性名、默认值「自定义文本」当内容：
+      // 加载时纠正为「内容=输入文字、无前缀」，否则预览/打印多出「：自定义文本」
+      // 文本转码元素（type 为二维码/条码）内容另有语义，不做纠正
+      if (!isSeparator && element.type !== 'qrcode' && element.type !== 'barcode' &&
+          customLabel && customValue === '自定义文本') {
+        customValue = customLabel
+        customLabel = ''
+        attrLabels[key] = ''
+      }
+      if (isSeparator) {
+        // 间隔符固定铺满整个标签宽度：显示起点强制回到左边框
+        style.x = 0
+      }
       customLabels.push({
         key: key,
-        label: isSeparator ? (element.label || '间隔符') : (element.label || ''),
-        // 间隔符还原为原始符号（填充串在导出/打印时按宽度重新生成）
-        value: isSeparator && element.symbol != null ? String(element.symbol) : (element.text == null ? '' : element.text),
+        label: customLabel,
+        value: customValue,
         isCustom: true,
         isSeparator: isSeparator,
         group: '自定义'
@@ -508,6 +537,8 @@ export function v2ToSchemaView(raw) {
       field: el.key,
       label: el.label || '',
       text: el.text,
+      // 间隔符标记随视图传递：LabelPaper 按它整宽裁剪、单行不折行
+      separator: !!el.separator,
       x: el.x,
       y: el.y,
       width: el.width,

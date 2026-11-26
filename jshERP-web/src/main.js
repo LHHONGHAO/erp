@@ -7,7 +7,6 @@ import store from './store/'
 import { VueAxios } from "@/utils/request"
 
 import Antd from 'ant-design-vue'
-import Viser from 'viser-vue'
 import 'ant-design-vue/dist/antd.less';  // or 'ant-design-vue/dist/antd.less'
 import '@/assets/less/common.less' // 全局通用样式（含移动端表单无边框统一风格）
 
@@ -17,7 +16,6 @@ import Print from 'vue-print-nb-jeecg'
 /*import '@babel/polyfill'*/
 import preview from 'vue-photo-preview'
 import 'vue-photo-preview/dist/skin.css'
-import 'intro.js/introjs.css'
 
 import {
   ACCESS_TOKEN,
@@ -51,7 +49,6 @@ Vue.component('DictTag', DictTag)
 Vue.use(Storage, config.storageOptions)
 Vue.use(Antd)
 Vue.use(VueAxios, router)
-Vue.use(Viser)
 Vue.use(hasPermission)
 Vue.use(Print)
 Vue.use(preview)

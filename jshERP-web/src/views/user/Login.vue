@@ -64,8 +64,7 @@
       <div class="login-copyright" v-if="device === 'mobile'">
         <a-row>
           <a-col>
-            © 2015-2030 Powered By
-            <a style="color:#00458a;" :href="systemUrl" target="_blank">官方网站</a>
+            © 2015-2030 {{ systemTitle }}
           </a-col>
         </a-row>
       </div>
@@ -97,7 +96,6 @@
       return {
         customActiveKey: "tab1",
         systemTitle: window.SYS_TITLE,
-        systemUrl: window.SYS_URL,
         loginBtn: false,
         // login type: 0 email, 1 username, 2 telephone
         loginType: 0,

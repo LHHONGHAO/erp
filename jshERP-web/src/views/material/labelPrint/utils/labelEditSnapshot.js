@@ -8,7 +8,7 @@
  * 业务字段（type / number / values / rows / hiddenItemKeys 等）由调用方透传。
  */
 
-export const LABEL_EDIT_SNAPSHOT_KEY = 'jsh.labelEdit.snapshot'
+const LABEL_EDIT_SNAPSHOT_KEY = 'jsh.labelEdit.snapshot'
 
 /** 标准快照骨架：地址/会员等固定小标签页在写入时显式展开，避免写入函数静默注入 */
 export const LABEL_EDIT_SNAPSHOT_DEFAULTS = {

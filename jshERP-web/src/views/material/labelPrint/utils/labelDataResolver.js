@@ -15,7 +15,7 @@ function toText(value) {
 }
 
 /** 数组明细行统一键名（name/quantity/spec/price/amount） */
-export function normalizeRows(items) {
+function normalizeRows(items) {
   if (!items || !items.length) return []
   return items.map(function(item) {
     var row = item || {}

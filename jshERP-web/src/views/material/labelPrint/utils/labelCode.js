@@ -25,7 +25,7 @@ export function codeSourceKey(key) {
 }
 
 // 编码元素显示的属性名 + 属性值（属性名留空时只显示值）
-export function codeTextOf(attr, labels) {
+function codeTextOf(attr, labels) {
   if (!attr) return ''
   var label = labels && Object.prototype.hasOwnProperty.call(labels, attr.key) ? labels[attr.key] : (attr.label || '')
   var value = attr.value == null ? '' : String(attr.value)
@@ -77,7 +77,7 @@ export function migrateCodeStyles(styles, allAttrs, labels) {
 }
 
 // 标签打印机 203dpi（8 点/mm），96dpi 像素与打印点的换算比例，需与后端 LabelPrinterService 保持一致
-export var PX_TO_DOT = (8 * 25.4) / 96
+var PX_TO_DOT = (8 * 25.4) / 96
 var BARCODE_MAX_NARROW = 4
 var QR_MAX_CELL = 10
 

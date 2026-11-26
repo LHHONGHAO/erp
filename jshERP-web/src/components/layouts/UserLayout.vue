@@ -100,47 +100,10 @@
       </div>
     </div>
     <div class="footer" v-if="device === 'desktop'">
-      <div class="third-party-platform" v-if="isShowRight">
-        <div class="platform-info" @click="openAndroid()">
-          <img :src="baseUrl + 'static/Android.png'" style="height:30px" >
-          <span>安卓版</span>
-        </div>
-        <div style="width:50px"></div>
-        <div class="platform-info" @click="openIPhone()">
-          <img :src="baseUrl + 'static/iPhone.png'" style="height:30px" >
-          <span>iPhone版</span>
-        </div>
-        <div style="width:50px"></div>
-        <div class="platform-info" @click="openMiniProgram()">
-          <img :src="baseUrl + 'static/mini-program.png'" style="height:30px" >
-          <span>小程序版</span>
-        </div>
-      </div>
       <p>
-        <span v-if="this.isShowRight">管伊佳科技</span>
         © 2015-2030 {{systemTitle}} - All Right Reserved 版权所有
-        <a style="color:#00458a; padding-right: 10px" :href="systemUrl" target="_blank">官方网站</a>
-        <span v-if="this.isShowRight"><a href="http://beian.miit.gov.cn/" target="_blank">苏ICP备2021042833号</a></span>
       </p>
     </div>
-    <a-modal v-model="isAndroidShow" title="微信扫一扫下载安卓版" width="200" centered>
-      <template slot="footer">
-        <a-button key="back" @click="handleAndroidCancel">取消</a-button>
-      </template>
-      <div class="platform-modal"><img :src="baseUrl + 'static/android-code.png'" style="width:200px" /></div>
-    </a-modal>
-    <a-modal v-model="isIphoneShow" title="微信扫一扫下载iPhone版" width="200" centered>
-      <template slot="footer">
-        <a-button key="back" @click="handleIphoneCancel">取消</a-button>
-      </template>
-      <div class="platform-modal"><img :src="baseUrl + 'static/iphone-code.png'" style="width:200px" /></div>
-    </a-modal>
-    <a-modal v-model="isMiniProgramShow" title="微信扫一扫使用小程序版" width="200" centered>
-      <template slot="footer">
-        <a-button key="back" @click="handleMiniProgramCancel">取消</a-button>
-      </template>
-      <div class="platform-modal"><img :src="baseUrl + 'static/weixin-code.png'" style="width:200px;" /></div>
-    </a-modal>
   </div>
 </template>
 
@@ -155,13 +118,8 @@
     data () {
       return {
         systemTitle: window.SYS_TITLE,
-        systemUrl: window.SYS_URL,
         // 静态资源前缀，兼容本地开发(/)与后端同源部署(/jshERP-boot/)
         baseUrl: process.env.BASE_URL,
-        isShowRight: false,
-        isAndroidShow: false,
-        isIphoneShow: false,
-        isMiniProgramShow: false,
         currentLang: '',
       }
     },
@@ -173,32 +131,8 @@
     },
     created () {
       this.currentLang = translate.language.getCurrent()
-      let host = window.location.host
-      if(host === 'cloud.gyjerp.com') {
-        this.isShowRight = true
-      } else {
-        this.isShowRight = false
-      }
     },
     methods: {
-      handleAndroidCancel() {
-        this.isAndroidShow = false
-      },
-      handleIphoneCancel() {
-        this.isIphoneShow = false
-      },
-      handleMiniProgramCancel() {
-        this.isMiniProgramShow = false
-      },
-      openAndroid() {
-        this.isAndroidShow = true
-      },
-      openIPhone() {
-        this.isIphoneShow = true
-      },
-      openMiniProgram() {
-        this.isMiniProgramShow = true
-      },
       handleChangeLang(value) {
         translate.changeLanguage(value)
         this.currentLang = translate.language.getCurrent()
@@ -239,25 +173,6 @@
     left: 6%;
     top: 10%;
     margin-left: 0px;
-  }
-  .third-party-platform {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    margin-bottom:15px;
-    opacity:0.7
-  }
-  .third-party-platform .platform-info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    cursor: pointer;
-    color:#1890ff
-  }
-  .platform-modal {
-    padding:20px;
-    margin:20px 50px;
-    border:1px solid #eee;
   }
 </style>
 <style lang="less" scoped>

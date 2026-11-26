@@ -158,8 +158,10 @@ public class MaterialController extends BaseController {
         String remark = StringUtil.getInfo(search, "remark");
         String mpList = StringUtil.getInfo(search, "mpList");
         String size = StringUtil.getInfo(search, "size");
+        // 移动端「最近常选」：无关键字时商品按左侧类目树顺序排列（sort 为空回退 id，与导航顺序一致）
+        String orderByCategory = StringUtil.getInfo(search, "orderByCategory");
         List<MaterialVo4Unit> list = materialService.selectSkuList(materialParam, standard, model, color, brand, mfrs, otherField1, otherField2,
-                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, size, mpList);
+                otherField3, otherField4, otherField5, otherField6, otherField7, weight, expiryNum, enableSerialNumber, enableBatchNumber, position, enabled, remark, categoryId, size, mpList, "1".equals(orderByCategory));
         return getDataTable(list);
     }
 
@@ -171,6 +173,24 @@ public class MaterialController extends BaseController {
         Map<String, Object> map = new HashMap<String, Object>();
         try {
             map.put("rows", materialService.getSkuAttributeValueStats(attributeName));
+            res.code = 200;
+            res.data = map;
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            res.code = 500;
+            res.data = "查询失败";
+        }
+        return res;
+    }
+
+    @GetMapping(value = "/listCategorySkuValueStats")
+    @ApiOperation(value = "按类目统计SKU规格属性值频次（含直接子类目，移动端常用规格卡）")
+    public BaseResponseInfo listCategorySkuValueStats(@RequestParam("categoryId") Long categoryId,
+                                                      HttpServletRequest request) throws Exception {
+        BaseResponseInfo res = new BaseResponseInfo();
+        Map<String, Object> map = new HashMap<String, Object>();
+        try {
+            map.put("rows", materialService.getCategorySkuValueStats(categoryId));
             res.code = 200;
             res.data = map;
         } catch (Exception e) {

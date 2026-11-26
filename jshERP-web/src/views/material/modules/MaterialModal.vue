@@ -1,13 +1,12 @@
 <template>
   <component
-    :is="inline ? 'div' : 'JModal'"
-    v-bind="inline ? {} : modalProps"
-    :class="[inline ? 'mm-inline-form' : '', aiMode ? 'mm-ai-page' : '']"
+    is="JModal"
+    v-bind="modalProps"
     @input.capture="markDirty"
     @change.capture="markDirty"
     @cancel="handleCancel"
-    :style="inline ? '' : modalStyle">
-    <template v-if="!inline" slot="footer">
+    :style="modalStyle">
+    <template slot="footer">
       <a-button key="back" @click="handleCancel">取消</a-button>
       <a-button type="primary" v-if="showOkFlag" :loading="confirmLoading" @click="handleOk">保存（Ctrl+S）</a-button>
     </template>
@@ -26,7 +25,7 @@
             <div class="mm-pages" :class="{ 'is-mobile': isMobileView }" ref="mmPages" @scroll="onPagesScroll">
             <!-- 第 1 页：基本信息 -->
             <div class="mm-page">
-            <div v-if="!inline" style="margin-bottom: 8px; text-align: right;">
+            <div style="margin-bottom: 8px; text-align: right;">
               <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
             </div>
             <template v-for="(row, rowIndex) in basePropertyRows">
@@ -518,7 +517,7 @@
                          @focus="handleAggPropFocus(prop.field)" @change="markAggPropEdited(prop.field, $event.target.value)" />
                 <div v-if="baseOcrRawMap[prop.field] && normalizeSpecValueKey(baseOcrRawMap[prop.field]) !== normalizeSpecValueKey(specAggregateResult.commonProps[prop.field])"
                      class="agg-recognition-review">
-                  识别原文：{{ baseOcrRawMap[prop.field] }}；保存商品后会学习这次修正。
+                  识别原文：{{ baseOcrRawMap[prop.field] }}；保存商品后会累计学习「原文 → 当前值」。
                 </div>
                 <a-button v-if="stablePropertyProfile(prop.field) && !specAggregateResult.commonProps[prop.field]"
                           size="small" type="link" class="agg-profile-suggestion"
@@ -778,58 +777,6 @@
     </a-modal>
     <!-- 识别结果页：规格值图片选择（直接打开相册） -->
     <input ref="aggSpecImageInput" type="file" accept="image/*" class="agg-spec-image-input" @change="onAggSpecImageChange" />
-    <!-- 商品已存在：展示已有商品信息，供用户选择更新规格或添加规格 -->
-    <a-modal
-      :visible="existMaterialVisible"
-      :width="isMobileView ? '100%' : 480"
-      :zIndex="1170"
-      :maskClosable="false"
-      :wrapClassName="isMobileView ? 'mm-sheet-modal agg-sheet-modal' : ''"
-      @cancel="closeExistMaterialDialog">
-      <template slot="title">
-        <div v-if="isMobileView" class="mm-sheet-header">
-          <div class="mm-sheet-title-block">
-            <div class="mm-sheet-title">商品已存在</div>
-          </div>
-          <a-icon type="close" class="mm-sheet-close" @click="closeExistMaterialDialog" />
-        </div>
-        <span v-else>商品已存在</span>
-      </template>
-      <a-spin :spinning="existMaterialLoading">
-        <div class="exist-dialog">
-          <div class="exist-dialog__desc">识别到的商品名称与已有商品重复，请选择后续处理方式。</div>
-          <div v-if="existMaterial" class="exist-box">
-            <div class="exist-name">
-              <span class="exist-name__text">{{ existMaterial.name }}</span>
-              <em class="exist-name__tag">已有商品</em>
-            </div>
-            <div v-if="existMaterialPropRows.length" class="exist-specs">
-              <div v-for="row in existMaterialPropRows" :key="row.field" class="exist-spec-row">
-                <span class="exist-spec-row__label">{{ row.label }}</span>
-                <span class="exist-spec-row__value">{{ row.value }}</span>
-              </div>
-            </div>
-            <div v-if="existMaterialSpecRows.length" class="exist-specs exist-specs--spec">
-              <div v-for="row in existMaterialSpecRows" :key="'spec-' + row.name" class="exist-spec-row">
-                <span class="exist-spec-row__label">{{ row.name }}</span>
-                <span class="exist-spec-row__value">{{ row.valuesText }}</span>
-              </div>
-            </div>
-            <div v-else class="exist-empty">暂无规格</div>
-          </div>
-          <div class="exist-hint">
-            「添加规格」：把识别结果与已有商品属性合并（缺的补上、同名的用识别值替换），继续编辑后保存；<br />
-            「更新规格」：关闭本提示，返回识别结果页，不写入任何数据。
-          </div>
-        </div>
-      </a-spin>
-      <template slot="footer">
-        <div class="exist-footer">
-          <a-button @click="closeExistMaterialDialog">更新规格</a-button>
-          <a-button type="primary" :disabled="existMaterialLoading || !existMaterial" @click="mergeExistMaterial">添加规格</a-button>
-        </div>
-      </template>
-    </a-modal>
   </component>
 </template>
 <script>
@@ -844,13 +791,9 @@
   import JImageUpload from '@/components/jeecg/JImageUpload'
   import JDate from '@/components/jeecg/JDate'
   import JModal from '@/components/jeecg/JModal'
-  import { enableKeyboardInputOverlay, disableKeyboardInputOverlay } from '@/utils/keyboardInputOverlay'
   import Vue from 'vue'
   import { axios as uploadHttp } from '@/utils/request'
   import { compressImageFile } from '@/utils/imageCompress'
-
-  // AI添加商品页与识别结果弹层：其中的输入框使用键盘输入弹层（其余页面默认不接管）
-  const AI_OVERLAY_SELECTORS = ['.mm-ai-page', '.agg-sheet-modal']
 
   export default {
     name: "MaterialModal",
@@ -864,18 +807,6 @@
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
-      }
-    },
-    props: {
-      // 嵌入模式：不使用弹窗，直接把表单渲染为页面内容
-      inline: {
-        type: Boolean,
-        default: false
-      },
-      // AI添加模式：识别结果页标题显示为「AI添加商品」
-      aiMode: {
-        type: Boolean,
-        default: false
       }
     },
     data () {
@@ -915,11 +846,6 @@
         specAggregateVisible: false,
         // 价格填写弹层（识别结果页之上）
         priceSheetVisible: false,
-        // 商品已存在提示弹层（识别结果页之上）
-        existMaterialVisible: false,
-        existMaterialLoading: false,
-        // 已有商品详情（名称、基础属性、attribute 规格 JSON）
-        existMaterial: null,
         // 识别结果页正在添加图片的规格维度（复用规格图片识别弹层）
         pendingAggImageDim: null,
         // 价格弹层规格设置中正在添加图片的规格值
@@ -940,6 +866,8 @@
         specJudgements: [],
         // 识别到的基础属性原始值：属性字段 -> 识别原文，保存时用于归一化学习
         baseOcrRawMap: {},
+        // 识别完成时的自动回填基线：保存时用于区分「沿用回填」与「手动修改」
+        baseAutoFillMap: {},
         // 识别到的属性名别名（如 检测员 -> inspection），保存在本机并同步样本库
         aggLabelAliases: {},
         // 识别到的规格子项别名（如 铭套 -> 枕套）
@@ -1184,48 +1112,14 @@
       },
       // 所有基础属性（按属性设置中的别名显示，名称右对齐输出）
       aggBindableProps() {
-        let skip = ['categoryId', 'id', 'mnemonic', 'enableSerialNumber', 'barCode']
+        let skip = ['categoryId', 'id', 'mnemonic', 'enableSerialNumber']
         return (this.basePropertyList || [])
           .filter(p => this.basePropertyFields.includes(p.field) && skip.indexOf(p.field) < 0 && p.visible !== false)
           .map(p => ({ field: p.field, label: p.anotherName || p.nativeName, nativeName: p.nativeName || '' }))
       },
-      // 识别结果页标题：AI添加模式下为标准弹层标题「识别结果」
+      // 识别结果页标题
       aggregateModalTitle() {
-        return this.aiMode ? '识别结果' : '识别结果确认'
-      },
-      // 已有商品基础属性（有值才展示）
-      existMaterialPropRows() {
-        const exist = this.existMaterial
-        if (!exist) return []
-        const fields = ['unit', 'brand', 'mfrs', 'fabric', 'safetyCategory', 'executiveStandard', 'grade', 'inspection', 'filler', 'weight', 'otherField1', 'otherField2', 'otherField3', 'otherField4', 'otherField5', 'otherField6', 'otherField7']
-        const fallbackLabels = { unit: '单位', brand: '品牌', mfrs: '制造商', fabric: '面料', safetyCategory: '安全类别', executiveStandard: '执行标准', grade: '等级', inspection: '检验', filler: '填充物', weight: '填充物重量' }
-        return fields.map(field => {
-          const value = exist[field] === null || exist[field] === undefined ? '' : String(exist[field]).trim()
-          const label = this.aggPropLabel(field) || fallbackLabels[field] || field
-          return { field: field, label: label, value: value }
-        }).filter(row => !!row.value)
-      },
-      // 已有商品规格属性（来自 attribute 中的 specModules）
-      existMaterialSpecRows() {
-        const exist = this.existMaterial
-        if (!exist || !exist.attribute) return []
-        let attr = null
-        try {
-          attr = typeof exist.attribute === 'string' ? JSON.parse(exist.attribute) : exist.attribute
-        } catch (e) {
-          return []
-        }
-        const modules = (attr && Array.isArray(attr.specModules)) ? attr.specModules : []
-        return modules.map(module => {
-          const childNames = Array.isArray(module.childNames) ? module.childNames : []
-          const values = (module.values || []).map(value => {
-            if (childNames.length) {
-              return childNames.map(name => ((value.subValues || {})[name] || '').trim()).filter(Boolean).join('/')
-            }
-            return (value.text || '').trim()
-          }).filter(Boolean)
-          return { name: module.name || '规格', valuesText: values.join(' / '), values: values }
-        }).filter(row => row.values.length > 0)
+        return '识别结果确认'
       },
       // 识别到的全部内容标签（如 200*230），点击可填入当前聚焦的输入框
       allOcrTags() {
@@ -1425,15 +1319,13 @@
       this.width = realScreenWidth<1500?'1200px':'1400px'
     },
     mounted() {
-      // 内联模式（商品AI添加页）没有 #material 容器，需判空，否则后续键盘弹层注册不会执行
+      // 容器可能尚未挂载，需判空，否则键盘事件注册会报错
       const hostEl = document.getElementById(this.prefixNo)
       if (hostEl) hostEl.addEventListener('keydown', this.handleOkKey)
       window.addEventListener('resize', this.onWindowResize)
       window.addEventListener('resize', this.onSheetViewportResize)
       window.addEventListener('orientationchange', this.onSheetViewportResize)
       window.addEventListener('beforeunload', this.handleBeforeUnload)
-      // AI添加商品页与识别结果弹层注册键盘输入弹层
-      if (this.aiMode) enableKeyboardInputOverlay(...AI_OVERLAY_SELECTORS)
       this.aggLabelAliases = Vue.ls.get('material_ocr_label_alias') || {}
       this.aggChildAliases = Vue.ls.get('material_ocr_child_alias') || {}
       // iOS 无法拦截系统级刷新，定期自动保存草稿，刷新后可恢复
@@ -1448,7 +1340,6 @@
       window.removeEventListener('resize', this.onSheetViewportResize)
       window.removeEventListener('orientationchange', this.onSheetViewportResize)
       window.removeEventListener('beforeunload', this.handleBeforeUnload)
-      disableKeyboardInputOverlay(...AI_OVERLAY_SELECTORS)
       if (this.draftWatchTimer) clearInterval(this.draftWatchTimer)
       if (this.draftTimer) clearTimeout(this.draftTimer)
     },
@@ -2219,21 +2110,6 @@
       },
       /** 执行商品保存（校验名称重复 + 调用接口） */
       doSaveMaterial(formData) {
-        // AI 识别保存：先按商品名称判断是否已存在，存在则展示已有商品信息
-        if (this.aiMode && !this.existMaterialVisible) {
-          const name = String(this.model.name || '').trim()
-          if (name) {
-            getAction('/material/checkIsNameExist', { id: this.model.id || 0, name: name }).then(res => {
-              const status = res && res.data && (res.data.status === true || res.data.status === 'true')
-              if (status) {
-                this.openExistMaterialDialog()
-              } else {
-                this.doSaveMaterialByCheck(formData)
-              }
-            }).catch(() => this.doSaveMaterialByCheck(formData))
-            return
-          }
-        }
         this.doSaveMaterialByCheck(formData)
       },
       doSaveMaterialByCheck(formData) {
@@ -2261,11 +2137,6 @@
         checkMaterial(param).then((res)=>{
           if(res && res.code===200) {
             if(res.data.status){
-              // AI 识别保存：展示已有商品信息，由用户选择「更新规格」或「添加规格」
-              if (this.aiMode) {
-                this.openExistMaterialDialog()
-                return
-              }
               this.$message.warning('抱歉，该商品已存在！');
               this.aggSaving = false
               this.showAggSaveHint('抱歉，该商品已存在！', true)
@@ -2336,18 +2207,8 @@
                   that.aggSaving = false
                   that.priceSheetVisible = false
                   that.specAggregateVisible = false
-                  if (that.aiMode) {
-                    // AI 商品页：数据已直接入库，关闭识别结果弹层并清空页面数据，不进入商品添加页
-                    that.specAggregateResult = null
-                    that.aggSpecApplied = false
-                    that.aggFieldErrors = {}
-                    that.aggSaveHint = ''
-                    that.clearAiPageData()
-                    that.$emit('ok')
-                  } else {
-                    that.$emit('ok');
-                    that.close();
-                  }
+                  that.$emit('ok');
+                  that.close();
                 }else{
                   // res.data 可能是字符串或对象，兼容多种后端错误返回结构
                   let errMsg = '保存失败'
@@ -2396,24 +2257,6 @@
           this.aggSaving = false
           this.showAggSaveHint('商品校验失败，请检查网络或重新登录后重试', true)
         })
-      },
-      /** AI 保存成功后清空页面数据，避免下次进入残留上一次的批量值 */
-      clearAiPageData() {
-        this.batchColumn = undefined
-        this.batchColumnValue = ''
-        this.batchPurchasePrice = ''
-        this.batchCommodityPrice = ''
-        this.batchStock = ''
-        this.batchLowSafeStock = ''
-        this.batchHighSafeStock = ''
-        this.batchMarketPrice = ''
-        this.batchDepotId = undefined
-        this.batchStore = undefined
-        this.batchSpecFilters = {}
-        this.aggSaving = false
-        this.priceSheetVisible = false
-        this.aggSaveHint = ''
-        this.aggSaveHintError = false
       },
       parseParam(param) {
         return param ? param: ""
@@ -2767,6 +2610,7 @@
           }
         })
         this.specAggregateResult = null
+        this.baseAutoFillMap = {}
         this.aggSpecApplied = false
         this.aggFieldErrors = {}
         this.aggManuallyEditedFields = {}
@@ -2801,6 +2645,8 @@
           this.prepareAggregateProps()
           this.applyCategoryUnitToAggregate()
           this.autoNormalizeUnmatchedProps()
+          // 记录自动回填结果：归一化后的值只要用户不改，也算一次正确确认
+          this.baseAutoFillMap = Object.assign({}, res.data.commonProps || {})
           this.aggFocus = null
         }).catch(() => {
           this.specAggregateLoading = false
@@ -3134,153 +2980,11 @@
         this.aggSaving = false
         this.aggSaveHint = ''
         this.aggSaveHintError = false
-        // AI添加：关闭识别结果弹层后回到新增商品入口页
-        if (this.aiMode) {
-          this.$emit('agg-close')
-        }
       },
       /** 识别结果页底部保存提示（弹层内可见，避免提示被弹层遮挡） */
       showAggSaveHint(text, isError) {
         this.aggSaveHint = text || ''
         this.aggSaveHintError = !!isError
-      },
-      /** 名称重复：查询已有商品并打开提示弹层 */
-      openExistMaterialDialog() {
-        const name = String(this.model.name || '').trim()
-        this.priceSheetVisible = false
-        this.existMaterial = null
-        this.existMaterialVisible = true
-        this.existMaterialLoading = true
-        const fallback = () => {
-          this.existMaterialLoading = false
-          this.existMaterialVisible = false
-          this.existMaterial = null
-          this.aggSaving = false
-          this.$message.warning('抱歉，该商品已存在！')
-          this.showAggSaveHint('抱歉，该商品已存在！', true)
-        }
-        if (!name) {
-          fallback()
-          return
-        }
-        getAction('/material/list', {
-          search: JSON.stringify({ materialParam: name }),
-          pageNo: 1,
-          pageSize: 20
-        }).then(res => {
-          const rows = (res && (res.rows || (res.data && res.data.rows))) || []
-          const target = rows.find(item => String(item.name || '').trim().toLowerCase() === name.toLowerCase())
-          if (!target) {
-            fallback()
-            return
-          }
-          this.existMaterial = target
-          this.existMaterialLoading = false
-        }).catch(() => fallback())
-      },
-      /** 更新规格：仅关闭弹层，不写入任何数据 */
-      closeExistMaterialDialog() {
-        this.existMaterialVisible = false
-        this.existMaterial = null
-        this.existMaterialLoading = false
-        this.aggSaving = false
-        this.showAggSaveHint('', false)
-      },
-      /** 添加规格：把已有商品属性合并进识别结果，继续编辑后保存 */
-      mergeExistMaterial() {
-        const exist = this.existMaterial
-        if (!exist) {
-          this.closeExistMaterialDialog()
-          return
-        }
-        const result = this.specAggregateResult
-        if (result) {
-          if (!result.commonProps) this.$set(result, 'commonProps', {})
-          const fields = ['unit', 'brand', 'mfrs', 'fabric', 'safetyCategory', 'executiveStandard', 'grade', 'inspection', 'filler', 'weight', 'otherField1', 'otherField2', 'otherField3', 'otherField4', 'otherField5', 'otherField6', 'otherField7']
-          fields.forEach(field => {
-            const current = result.commonProps[field] === null || result.commonProps[field] === undefined ? '' : String(result.commonProps[field]).trim()
-            const existValue = exist[field] === null || exist[field] === undefined ? '' : String(exist[field]).trim()
-            if (!current && existValue) {
-              this.$set(result.commonProps, field, existValue)
-            }
-          })
-          this.mergeExistSpecModules(exist, result)
-        }
-        // 合并后按更新已有商品保存，避免再次触发名称重复
-        this.model.id = exist.id
-        this.existMaterialVisible = false
-        this.existMaterial = null
-        this.existMaterialLoading = false
-        this.aggSaving = false
-        this.showAggSaveHint('已合并已有商品属性，请确认后保存', false)
-      },
-      /** 合并已有商品规格：缺维度补维度、缺值补值，同名规格值以识别值为准 */
-      mergeExistSpecModules(exist, result) {
-        let attr = null
-        try {
-          attr = typeof exist.attribute === 'string' ? JSON.parse(exist.attribute) : exist.attribute
-        } catch (e) {
-          return
-        }
-        const modules = (attr && Array.isArray(attr.specModules)) ? attr.specModules : []
-        if (!modules.length) return
-        if (!result.dimensions) this.$set(result, 'dimensions', [])
-        modules.forEach(module => {
-          const name = module.name || ''
-          if (!name) return
-          const childNames = Array.isArray(module.childNames) ? module.childNames : []
-          const existValues = (module.values || []).map(value => ({
-            text: (value.text || '').trim(),
-            subValues: Object.assign({}, value.subValues || {})
-          })).filter(value => value.text || childNames.some(c => ((value.subValues[c]) || '').trim()))
-          if (!existValues.length) return
-          existValues.forEach(existValue => {
-            const dimsOfName = (result.dimensions || []).filter(dim => dim.name === name)
-            const same = dimsOfName.find(dim => {
-              if (childNames.length) {
-                const filled = childNames.some(c => ((dim.subValues || {})[c] || '').trim())
-                if (!filled) return false
-                return childNames.every(c => (((dim.subValues || {})[c]) || '').trim() === ((existValue.subValues[c]) || '').trim())
-              }
-              return this.normalizeSpecValueKey(dim.value) === this.normalizeSpecValueKey(existValue.text)
-            })
-            if (same) {
-              // 同名规格值：识别值优先，仅补齐缺失的子规格
-              if (!same.subValues) this.$set(same, 'subValues', {})
-              childNames.forEach(c => {
-                if (!((same.subValues[c] || '').trim()) && (existValue.subValues[c] || '').trim()) {
-                  this.$set(same.subValues, c, existValue.subValues[c])
-                }
-              })
-              return
-            }
-            // 空的同规格维度直接填充，避免重复行
-            const emptyDim = dimsOfName.find(dim => {
-              if (childNames.length) return childNames.every(c => !((dim.subValues || {})[c] || '').trim())
-              return !((dim.value || '').trim())
-            })
-            if (emptyDim) {
-              this.$set(emptyDim, 'value', existValue.text)
-              this.$set(emptyDim, 'subValues', Object.assign({}, existValue.subValues))
-              dimsOfName.push(emptyDim)
-              return
-            }
-            const newDim = {
-              name: name,
-              value: existValue.text,
-              subValues: Object.assign({}, existValue.subValues),
-              childNames: childNames.slice(),
-              rawText: '',
-              rawSubValues: {},
-              needConfirm: false,
-              enableImage: !!module.enableImage,
-              image: ''
-            }
-            dimsOfName.push(newDim)
-            result.dimensions.push(newDim)
-          })
-        })
-        this.prepareAggregateSpecGroups()
       },
       aggPropLabel(field) {
         let target = (this.aggBindableProps || []).find(item => item.field === field)
@@ -3952,18 +3656,32 @@
       /** 保存成功后把基础属性的「识别原文 -> 最终值」沉淀为学习样本 */
       learnRecognizedBaseProps() {
         let rawMap = this.baseOcrRawMap || {}
+        let autoMap = this.baseAutoFillMap || {}
+        let commonProps = (this.specAggregateResult && this.specAggregateResult.commonProps) || {}
         let items = []
         let categoryId = this.form.getFieldValue('categoryId') || this.model.categoryId
         Object.keys(rawMap).forEach(field => {
           let rawText = (rawMap[field] || '').trim()
-          let finalValue = this.form.getFieldValue(field)
+          let finalValue = commonProps[field]
+          if (finalValue === undefined || finalValue === null) {
+            finalValue = this.form.getFieldValue(field)
+          }
           if (!rawText || finalValue === undefined || finalValue === null) return
           finalValue = String(finalValue).trim()
+          // 清空的项视为放弃识别，不参与学习统计
           if (!finalValue) return
-          if (this.normalizeSpecValueKey(rawText) === this.normalizeSpecValueKey(finalValue)) return
-          items.push({ rawText: rawText, correctedValue: finalValue, attributeId: this.baseFieldSampleId(field) })
+          let autoValue = autoMap[field] === undefined || autoMap[field] === null ? '' : String(autoMap[field]).trim()
+          items.push({
+            rawText: rawText,
+            finalValue: finalValue,
+            autoValue: autoValue,
+            // 手动修改过才是纠错；未修改则为一次确认
+            modified: !!this.aggManuallyEditedFields[field],
+            attributeId: this.baseFieldSampleId(field)
+          })
         })
         this.baseOcrRawMap = {}
+        this.baseAutoFillMap = {}
         if (!items.length) return Promise.resolve({ count: 0, failed: [] })
         return postAction('/spec/sample/learnBatch', {
           items: items,
@@ -4702,10 +4420,6 @@
   }
 </script>
 <style scoped>
-  /* 嵌入模式（页面内展示）时占满内容区 */
-  .mm-inline-form {
-    width: 100%;
-  }
   /* 非全屏弹窗时，内容区域超出视口可滚动 */
   /deep/ .ant-modal-body {
     max-height: calc(100vh - 180px);
@@ -5453,14 +5167,6 @@
     overflow-x: hidden;
     overflow-y: auto;
     scroll-snap-align: start;
-  }
-  /* 独立页面模式（非弹窗）：手机端取消内层固定高度与内部滚动，内容随页面整体滚动到底 */
-  .mm-inline-form .mm-pages.is-mobile {
-    height: auto;
-  }
-  .mm-inline-form .mm-pages.is-mobile > .mm-page {
-    height: auto;
-    overflow-y: visible;
   }
   /* 手机端：收紧弹窗内容区留白，避免三页左侧留白过多 */
   @media (max-width: 768px) {
@@ -6309,88 +6015,6 @@
     height: 100%;
     object-fit: cover;
     display: block;
-  }
-}
-/* 商品已存在提示弹层 */
-.exist-dialog {
-  padding: 2px 0 4px;
-  &__desc {
-    font-size: 12.5px;
-    color: #6b7785;
-    line-height: 1.6;
-    margin-bottom: 10px;
-  }
-}
-.exist-box {
-  background: #f7f9fc;
-  border-radius: 12px;
-  padding: 12px;
-}
-.exist-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2733;
-  &__text {
-    flex: 1;
-    min-width: 0;
-    word-break: break-all;
-  }
-  &__tag {
-    flex: none;
-    font-style: normal;
-    font-size: 11px;
-    color: #1890ff;
-    background: #eaf4ff;
-    border-radius: 999px;
-    padding: 2px 8px;
-  }
-}
-.exist-specs {
-  margin-top: 10px;
-  &--spec {
-    border-top: 1px dashed #e4e9f2;
-    padding-top: 8px;
-  }
-}
-.exist-spec-row {
-  display: flex;
-  gap: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 3px 0;
-  &__label {
-    flex: 0 0 84px;
-    color: #5b6b82;
-    text-align: right;
-  }
-  &__value {
-    flex: 1;
-    color: #1f2733;
-    word-break: break-all;
-  }
-}
-.exist-empty {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #98a2b3;
-}
-.exist-hint {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: #f2f8ff;
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #5b6b82;
-}
-.exist-footer {
-  display: flex;
-  gap: 10px;
-  .ant-btn {
-    flex: 1;
   }
 }
 </style>

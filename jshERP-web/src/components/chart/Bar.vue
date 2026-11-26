@@ -13,6 +13,7 @@
   import { triggerWindowResizeEvent } from '@/utils/util'
   import { DEFAULT_COLOR } from "@/store/mutation-types"
   import Vue from 'vue'
+  import './installViser' // viser/G2 按需注册，从 main.js 全局注册改为图表组件内部加载
 
   export default {
     name: 'Bar',

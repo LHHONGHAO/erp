@@ -68,4 +68,11 @@
     set hit_count = hit_count + 1
     where id = #{id,jdbcType=BIGINT}
   </update>
+
+  <!-- 学习口径变化后，别名可能指向旧的错误样本，达标时改指向新的标准样本 -->
+  <update id="updateSampleId">
+    update jsh_spec_value_alias
+    set sample_id = #{sampleId,jdbcType=BIGINT}
+    where id = #{id,jdbcType=BIGINT}
+  </update>
 </mapper>

@@ -1,11 +1,5 @@
 <template>
   <div class="user-wrapper" :class="theme">
-    <span class="action" v-if="showAd">
-      <a v-if="theme==='light'" class="ad_title" target="_blank" :href="payFeeUrl">
-        <a-icon type="cloud" theme="filled" style="color: yellow; font-size: 16px; line-height: 16px; padding-right: 5px" />
-        <span>管伊佳ERP网络版198元1年</span>
-      </a>
-    </span>
     <!-- update_begin author:zhaoxin date:20191129 for: 做头部菜单栏导航 -->
     <!-- update-begin author:sunjianlei date:20191@20 for: 解决全局样式冲突的问题 -->
     <span class="action" @click="showClick">
@@ -32,14 +26,6 @@
     <!-- update-end author:sunjianlei date:20200219 for: 菜单搜索改为动态组件，在手机端呈现出弹出框 -->
     <!-- update-end author:sunjianlei date:20191220 for: 解决全局样式冲突的问题 -->
     <!-- update_end  author:zhaoxin date:20191129 for: 做头部菜单栏导航 -->
-    <span class="action">
-      <a-tooltip>
-        <template slot="title">官方网站</template>
-        <a target="_blank" :href="systemUrl">
-          <a-icon type="bank" style="font-size: 16px;" />
-        </a>
-      </a-tooltip>
-    </span>
     <header-notice class="action"/>
     <a-dropdown>
       <span v-if="isDesktop()" class="action ant-dropdown-link user-dropdown-menu">
@@ -76,8 +62,6 @@
   import DepartSelect from './DepartSelect'
   import { mapActions, mapGetters,mapState } from 'vuex'
   import { mixinDevice } from '@/utils/mixin.js'
-  import { getFileAccessHttpUrl,getAction } from "@/api/manage"
-  import { getPlatformConfigByKey } from '@/api/api'
 
   export default {
     name: "UserMenu",
@@ -87,10 +71,7 @@
         // update-begin author:sunjianlei date:20200219 for: 头部菜单搜索规范命名 --------------
         searchMenuOptions:[],
         searchMenuComp: 'span',
-        searchMenuVisible: false,
-        systemUrl: window.SYS_URL,
-        showAd: false,
-        payFeeUrl: ''
+        searchMenuVisible: false
         // update-begin author:sunjianlei date:20200219 for: 头部菜单搜索规范命名 --------------
       }
     },
@@ -112,7 +93,6 @@
       let lists = []
       this.searchMenus(lists,this.permissionMenuList)
       this.searchMenuOptions=[...lists]
-      this.isShowAd()
     },
     computed: {
       ...mapState({
@@ -199,28 +179,6 @@
       },
       // update_end author:sunjianlei date:20191230 for: 解决外部链接打开失败的问题
       /*update_end author:zhaoxin date:20191129 for: 做头部菜单栏导航*/
-      isShowAd() {
-        //只有配置了租户续费地址和试用租户才显示广告
-        getPlatformConfigByKey({"platformKey": "pay_fee_url"}).then((res)=> {
-          if (res && res.code === 200) {
-            let payFeeUrl = res.data.platformValue
-            if(payFeeUrl) {
-              getAction("/user/infoWithTenant",{}).then(res=> {
-                if (res && res.code === 200) {
-                  let tenant = res.data
-                  if(tenant && tenant.type === '0') {
-                    if(!this.isMobile()) {
-                      //pc端才显示
-                      this.showAd = true
-                      this.payFeeUrl = payFeeUrl
-                    }
-                  }
-                }
-              })
-            }
-          }
-        })
-      }
     }
   }
 </script>
@@ -246,10 +204,6 @@
 </style>
 
 <style scoped>
-  .ad_title {
-    color: yellow;
-    text-decoration: none;
-  }
   .logout_title {
     color: inherit;
     text-decoration: none;

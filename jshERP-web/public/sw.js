@@ -1,8 +1,8 @@
 // PWA 最小 Service Worker：仅用于满足「添加到主屏幕」的安装条件。
 // 不缓存任何资源，也不拦截请求；否则网络层失败（如证书未受信任）会被包装成
 // “FetchEvent.respondWith received an error”，掩盖真实错误。
-// SW_VER 20261120c：内容变更触发线上旧 SW 更新，旧图标缓存随新 SW 失效。
-const SW_VERSION = '20261120c';
+// SW_VER 20261123：内容变更触发线上旧 SW 更新，旧图标缓存随新 SW 失效。
+const SW_VERSION = '20261123';
 self.addEventListener('install', function () {
   self.skipWaiting();
 });

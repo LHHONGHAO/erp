@@ -241,7 +241,8 @@ export default {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  background: #f2f4f7;
+  /* 默认底色即纯白，与筛选面板一致，不再依赖外部覆盖 */
+  background: #fff;
   z-index: 2900;
   /* 弹层页内滑动不向浏览器传递，避免触发左右翻页/回退手势 */
   overscroll-behavior: contain;

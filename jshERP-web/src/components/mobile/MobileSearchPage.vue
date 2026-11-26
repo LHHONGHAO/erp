@@ -7,42 +7,53 @@
       </template>
     </mobile-top-bar>
 
-    <!-- 信息列表区：滚动，底部预留标准底边栏高度 -->
-    <div class="msp-body">
+    <!-- 统一搜索布局：内容区 + 悬浮搜索胶囊 + 右侧悬浮筛选面板 -->
+    <mobile-search-layout
+      ref="layout"
+      :value="value"
+      :placeholder="placeholder"
+      :auto-scan-close="autoScanClose"
+      :filter-visible="filterVisible"
+      :filter-groups="filterGroups"
+      :left-hand="leftHand"
+      :show-hand-switch="showHandSwitch"
+      :scroll-body="scrollBody"
+      @input="$emit('input', $event)"
+      @search="$emit('search', $event)"
+      @camera="$emit('camera')"
+      @scan-result="$emit('scan-result', $event)"
+      @filter-change="onFilterChange"
+      @filter-clear="$emit('filter-clear')"
+      @update:filterVisible="$emit('update:filterVisible', $event)"
+      @update:leftHand="$emit('update:leftHand', $event)">
+      <!-- 信息列表区 -->
       <slot></slot>
-    </div>
-
-    <!-- 标准底边栏：拍照 + 搜索框 + 扫码 + 筛选（复用标准搜索底栏组件） -->
-    <mobile-bottom-bar left-auto>
-      <mobile-search-bar
-        ref="searchBar"
-        :value="value"
-        :placeholder="placeholder"
-        :auto-scan-close="autoScanClose"
-        @input="$emit('input', $event)"
-        @search="$emit('search', $event)"
-        @camera="$emit('camera')"
-        @filter="$emit('filter')"
-        @scan-result="$emit('scan-result', $event)" />
-    </mobile-bottom-bar>
-
-    <!-- 浮层（抽屉、扫码全屏、弹窗等） -->
-    <slot name="overlay"></slot>
+      <template #filter-extra>
+        <slot name="filter-extra"></slot>
+      </template>
+      <template #float-extra>
+        <slot name="float-extra"></slot>
+      </template>
+      <!-- 浮层（扫码全屏、弹窗等） -->
+      <template #sheet>
+        <slot name="overlay"></slot>
+      </template>
+    </mobile-search-layout>
   </div>
 </template>
 
 <script>
 import MobileTopBar from './MobileTopBar'
-import MobileBottomBar from './MobileBottomBar'
-import MobileSearchBar from './MobileSearchBar'
+import MobileSearchLayout from './MobileSearchLayout'
 
 /**
  * 手机端标准「信息搜索页面」模板
- * 顶栏（返回/标题/操作）+ 可滚动信息列表 + 底部搜索栏（拍照/输入/扫码/筛选）
+ * 顶栏（返回/标题/操作）+ 统一搜索布局（内容区 + 悬浮搜索胶囊 + 右侧悬浮筛选面板）。
+ * 筛选条件通过 filterGroups 配置标签组，复杂表单放 #filter-extra 插槽。
  */
 export default {
   name: 'MobileSearchPage',
-  components: { MobileTopBar, MobileBottomBar, MobileSearchBar },
+  components: { MobileTopBar, MobileSearchLayout },
   props: {
     title: {
       type: String,
@@ -61,16 +72,45 @@ export default {
     autoScanClose: {
       type: Boolean,
       default: true
+    },
+    /** 筛选面板是否可见，支持 .sync */
+    filterVisible: {
+      type: Boolean,
+      default: false
+    },
+    /** 筛选标签组：[{ key, label, value, options: [{ text, value }], emptyText }] */
+    filterGroups: {
+      type: Array,
+      default: () => []
+    },
+    /** 左右手布局，支持 .sync */
+    leftHand: {
+      type: Boolean,
+      default: false
+    },
+    /** 是否显示筛选面板底部的左右手切换 */
+    showHandSwitch: {
+      type: Boolean,
+      default: false
+    },
+    /** 内容区是否由布局滚动（卡片列表页面用；商品流自带滚动时保持 false） */
+    scrollBody: {
+      type: Boolean,
+      default: false
     }
   },
   methods: {
     // 供调用页主动关闭标准扫码页
     closeScanPage() {
-      if (this.$refs.searchBar) this.$refs.searchBar.closeScanPage()
+      if (this.$refs.layout) this.$refs.layout.closeScanPage()
     },
     // 供调用页在扫码页内显示提示（如未命中商品）
     setScanTip(text, isError) {
-      if (this.$refs.searchBar) this.$refs.searchBar.setScanTip(text, isError)
+      if (this.$refs.layout) this.$refs.layout.setScanTip(text, isError)
+    },
+    // 筛选标签点击：透传给调用页处理
+    onFilterChange(key, opt) {
+      this.$emit('filter-change', key, opt)
     }
   }
 }
@@ -85,17 +125,9 @@ export default {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  background: #f5f6f7;
+  /* 页面底色纯白（商品卡片已无底色，靠间距分隔） */
+  background: #fff;
   overflow: hidden;
   z-index: 10;
-}
-/* 信息列表区 */
-.msp-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  padding-bottom: calc(66px + env(safe-area-inset-bottom));
-  box-sizing: border-box;
-  -webkit-overflow-scrolling: touch;
 }
 </style>

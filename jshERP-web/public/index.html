@@ -8,17 +8,17 @@
   <meta name="description" content="基于SpringBoot框架，立志为中小企业提供开源好用的ERP软件，目前专注进销存+财务功能。主要模块有零售管理、采购管理、销售管理、仓库管理、财务管理、报表查询、基础数据、系统管理等。" />
   <meta name="keywords" content="erp,erp系统,进销存,进销存系统" />
   <!-- PWA：添加到主屏幕后以独立窗口运行，隐藏浏览器地址栏与底部工具栏 -->
-  <link rel="manifest" href="<%= BASE_URL %>manifest.json?v=20261120c">
+  <link rel="manifest" href="<%= BASE_URL %>manifest.json?v=20261123">
   <meta name="theme-color" content="#1890ff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="管伊佳 ERP">
+  <meta name="apple-mobile-web-app-title" content="好家纺收银">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <!-- iOS 主屏幕图标：v5 为全新文件名路径，v4 及更早历史图标文件已全部删除 -->
-  <link rel="apple-touch-icon" href="<%= BASE_URL %>apple-touch-icon-v5.png?v=20261120c">
-  <link rel="apple-touch-icon" sizes="180x180" href="<%= BASE_URL %>apple-touch-icon-v5.png?v=20261120c">
-  <link rel="apple-touch-icon-precomposed" href="<%= BASE_URL %>apple-touch-icon-v5.png?v=20261120c">
-  <link rel="icon" type="image/x-icon" href="<%= BASE_URL %>static/favicon.ico?v=20261120c">
+  <!-- iOS 主屏幕图标：v6 为全新文件名路径，v5 及更早历史图标文件（含未加版本号的 apple-touch-icon.png / apple-touch-icon-precomposed.png）已全部删除，避免 iOS 按约定路径自动请求并命中旧缓存 -->
+  <link rel="apple-touch-icon" href="<%= BASE_URL %>apple-touch-icon-v6.png?v=20261123">
+  <link rel="apple-touch-icon" sizes="180x180" href="<%= BASE_URL %>apple-touch-icon-v6.png?v=20261123">
+  <link rel="apple-touch-icon-precomposed" href="<%= BASE_URL %>apple-touch-icon-v6.png?v=20261123">
+  <link rel="icon" type="image/x-icon" href="<%= BASE_URL %>static/favicon.ico?v=20261123">
   <style>
     html,
     body,
@@ -304,7 +304,7 @@
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
       // 带版本号注册，便于更换 sw.js 实现后强制更新（旧 SW 不会被长时间复用）
-      navigator.serviceWorker.register('<%= BASE_URL %>sw.js?v=2').catch(function () {});
+      navigator.serviceWorker.register('<%= BASE_URL %>sw.js?v=3').catch(function () {});
     });
   }
 </script>
@@ -320,9 +320,6 @@ window.addEventListener('load', function () {
     //设置本地语种（当前网页的语种）。如果不设置，默认就是 'chinese_simplified' 简体中文
     translate.language.setLocal('chinese_simplified');
     translate.service.use('client.edge');
-    //翻译自定义
-    translate.nomenclature.append('chinese_simplified','english','\n管伊佳ERP=GuanYiJia\n');
-    translate.nomenclature.append('chinese_simplified','vietnamese','\n管伊佳ERP=ỐngYijia\n');
     //开启html页面变化的监控，对变化部分会进行自动翻译
     translate.listener.start();
     //不显示语言选择标签

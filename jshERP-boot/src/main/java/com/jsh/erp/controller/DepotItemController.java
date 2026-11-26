@@ -40,7 +40,7 @@ import java.util.Map;
 import static com.jsh.erp.utils.ResponseJsonUtil.returnJson;
 
 /**
- * @author ji-sheng-hua 管伊佳erp
+ * @author ji-sheng-hua
  */
 @RestController
 @RequestMapping(value = "/depotItem")

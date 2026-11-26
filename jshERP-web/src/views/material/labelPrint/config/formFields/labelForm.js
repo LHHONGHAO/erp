@@ -6,7 +6,7 @@
 import { buildLabelAttrs } from '@/views/material/utils/materialDisplay'
 import { buildCategorySpecAttrs } from '@/views/material/labelPrint/utils/categorySpec'
 
-export const LABEL_FORM_TITLE = '商品标签'
+const LABEL_FORM_TITLE = '商品标签'
 
 /** 合并商品字段与标准「类别 / 规格」元素，同 key 以商品字段为准 */
 function withCategorySpecAttrs(list) {

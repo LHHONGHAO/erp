@@ -20,7 +20,7 @@ const FORM_CONFIGS = {
 }
 
 /** 按模板类型取表单配置，未知类型回退商品标签 */
-export function getFormFieldConfig(type) {
+function getFormFieldConfig(type) {
   return FORM_CONFIGS[type] || FORM_CONFIGS.label
 }
 

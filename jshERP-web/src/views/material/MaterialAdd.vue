@@ -19,6 +19,7 @@
 
 <script>
   import MaterialModal from './modules/MaterialModal'
+  import { getAction } from '@/api/manage'
   import { mixinDevice } from '@/utils/mixin.js'
   import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
 
@@ -89,7 +90,7 @@
             const record = JSON.parse(recordStr)
             sessionStorage.removeItem('materialEditRecord')
             this.isEdit = true
-            this.openEditForm(record)
+            this.loadFullRecord(record)
           } catch (e) {
             this.openForm()
           }
@@ -115,6 +116,20 @@
         form.disableSubmit = false
         form.showOkFlag = true
         form.add()
+      },
+      // 编辑模式：先按 id 拉取商品完整信息（列表行只含部分字段），再加载表单
+      loadFullRecord (record) {
+        if (!record || !record.id) {
+          this.openEditForm(record || {})
+          return
+        }
+        getAction('/material/info', { id: record.id }).then(res => {
+          const info = res && res.code === 200 && res.data && res.data.info
+          // 以列表行为准（保留 SKU 维度字段），缺失的商品主表字段由完整信息补齐
+          this.openEditForm(info ? Object.assign({}, info, record) : record)
+        }).catch(() => {
+          this.openEditForm(record)
+        })
       },
       // 编辑模式：加载商品数据及其所有SKU
       openEditForm (record) {

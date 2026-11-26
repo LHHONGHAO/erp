@@ -327,6 +327,12 @@
         left join sku s on s.spu_id = jm.id and s.sku_code = jme.sku_code and s.deleted_at is null
         
         left join jsh_material_category mc on jm.category_id = mc.id and ifnull(mc.delete_flag,'0') !='1'
+        <!-- 类目排序：c1=商品类目，c2=父级，c3=祖父级（仅「按标题品类排列」时启用） -->
+        <if test="orderByCategory">
+            left join jsh_material_category c1 on jm.category_id = c1.id and ifnull(c1.delete_flag,'0') !='1'
+            left join jsh_material_category c2 on c1.parent_id = c2.id and ifnull(c2.delete_flag,'0') !='1'
+            left join jsh_material_category c3 on c2.parent_id = c3.id and ifnull(c3.delete_flag,'0') !='1'
+        </if>
         where 1=1
         <if test="materialParam != null and materialParam !=''">
             <bind name="bindKey" value="'%'+materialParam+'%'"/>
@@ -335,13 +341,8 @@
             or jme.spec_summary like #{bindKey})
         </if>
         <if test="size != null and size !=''">
-            and exists (
-                select 1 from json_table(jme.spec_json, '$[*]' columns(
-                    attr_name varchar(100) path '$.name',
-                    attr_value varchar(255) path '$.value'
-                )) st
-                where st.attr_name = '尺寸' and st.attr_value = #{size}
-            )
+            <!-- 规格尺寸：忽略规格值中的普通空格与不可见空白字符后按包含匹配，兼容「尺寸」「规格」两类属性 -->
+            and replace(replace(jme.spec_json, ' ', ''), char(0xE2, 0x80, 0x86), '') like concat('%', #{size}, '%')
         </if>
 
 
@@ -407,7 +408,38 @@
             </foreach>
         </if>
         and ifnull(jm.delete_flag,'0') !='1'
-        order by jm.id desc, jme.default_flag desc, jme.id asc
+        <choose>
+            <when test="orderByCategory">
+                <!-- 按左侧导航的类目树顺序排列（层级用父链判断，不依赖 category_level，兼容老数据 level 为空的类目）：
+                     c1=商品类目；c2 有父为空 → c1 是二级（c2 是一级）；c3 存在 → c1 是三级（c3 一级 / c2 二级）。
+                     sort 为空按 0 排最前，与树查询 order by sort asc 的 NULL 优先一致；同值按 id 决定先后 -->
+                order by
+                case when c2.id is not null and c2.parent_id is null then ifnull(c2.sort, 0)
+                     when c3.id is not null then ifnull(c3.sort, 0)
+                     else 999999999 end asc,
+                case when c2.id is not null and c2.parent_id is null then c2.id
+                     when c3.id is not null then c3.id
+                     else 0 end asc,
+                case when c2.id is not null and c2.parent_id is null then ifnull(c1.sort, 0)
+                     when c3.id is not null then ifnull(c2.sort, 0)
+                     else 999999999 end asc,
+                case when c2.id is not null and c2.parent_id is null then c1.id
+                     when c3.id is not null then c2.id
+                     else 0 end asc,
+                case when c3.id is not null then ifnull(c1.sort, 0) else 0 end asc,
+                case when c3.id is not null then c1.id else 0 end asc,
+                <!-- 类目内按规格属性值聚合排序（取 尺寸/规格 属性首段值并去空白）：同规格商品相邻，配合规格标签锚点滚动 -->
+                replace(replace(substring_index(coalesce(
+                case when json_unquote(json_extract(jme.spec_json,'$[0].name')) in ('尺寸','规格') then json_unquote(json_extract(jme.spec_json,'$[0].value')) end,
+                case when json_unquote(json_extract(jme.spec_json,'$[1].name')) in ('尺寸','规格') then json_unquote(json_extract(jme.spec_json,'$[1].value')) end,
+                case when json_unquote(json_extract(jme.spec_json,'$[2].name')) in ('尺寸','规格') then json_unquote(json_extract(jme.spec_json,'$[2].value')) end,
+                ''), '/', 1), ' ', ''), char(0xE2,0x80,0x86), '') asc,
+                jm.id desc, jme.default_flag desc, jme.id asc
+            </when>
+            <otherwise>
+                order by jm.id desc, jme.default_flag desc, jme.id asc
+            </otherwise>
+        </choose>
     </select>
 
     <insert id="insertSelectiveEx" parameterType="com.jsh.erp.datasource.entities.Material" useGeneratedKeys="true" keyProperty="id">

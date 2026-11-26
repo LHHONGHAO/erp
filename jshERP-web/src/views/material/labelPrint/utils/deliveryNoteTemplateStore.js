@@ -11,8 +11,8 @@
 import { listPrintTemplates, savePrintTemplate } from './labelProviderApi'
 import { isLabelTemplateV2, parseTemplateRaw } from './labelTemplateV2'
 
-export const DELIVERY_BUSINESS_TYPE = 'shipping.delivery'
-export const DELIVERY_TEMPLATE_NAME = '发货单模板'
+const DELIVERY_BUSINESS_TYPE = 'shipping.delivery'
+const DELIVERY_TEMPLATE_NAME = '发货单模板'
 
 const META_KIND = 'delivery-note'
 

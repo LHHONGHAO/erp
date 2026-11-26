@@ -31,7 +31,7 @@ function fontFamily() {
 }
 
 /** 文本宽度（px）；无 canvas 时按字宽估算，保证 SSR/测试环境可运行 */
-export function measureSpecTextWidth(text, fontSize, fontWeight, letterSpacing) {
+function measureSpecTextWidth(text, fontSize, fontWeight, letterSpacing) {
   const value = text == null ? '' : String(text)
   if (!value) return 0
   const size = fontSize || 12
@@ -44,7 +44,7 @@ export function measureSpecTextWidth(text, fontSize, fontWeight, letterSpacing) 
 }
 
 /** 名称与值之间的分隔宽度：按当前字号下的空格宽度取值 */
-export function measureSpecGap(fontSize, fontWeight, letterSpacing) {
+function measureSpecGap(fontSize, fontWeight, letterSpacing) {
   return Math.max(3, measureSpecTextWidth(' ', fontSize, fontWeight, letterSpacing))
 }
 

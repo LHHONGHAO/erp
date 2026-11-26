@@ -28,6 +28,7 @@
     </div>
     <div class="ir-box__toolbar">
       <div class="ir-box__toolbar-left">
+        <a @click="onPaste"><a-icon type="copy" />粘贴识别</a>
         <a @click="$emit('camera')"><a-icon type="camera" />拍照识别</a>
         <a @click="$emit('gallery')"><a-icon type="picture" />图片识别</a>
         <a class="ir-box__clear" :class="{ 'is-disabled': clearDisabled }" @click="onClear">清除</a>
@@ -118,6 +119,19 @@ export default {
     onClear() {
       if (this.clearDisabled) return
       this.$emit('clear')
+    },
+    /** 粘贴识别：按钮点击即用户手势，iOS 允许在手势里直接读剪贴板；结果交由页面处理 */
+    onPaste() {
+      var self = this
+      if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.readText) {
+        this.$emit('paste-fail')
+        return
+      }
+      navigator.clipboard.readText().then(function(text) {
+        self.$emit('paste', String(text || '').trim())
+      }).catch(function() {
+        self.$emit('paste-fail')
+      })
     }
   }
 }

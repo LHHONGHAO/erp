@@ -92,6 +92,12 @@ public class TenantConfig {
                     return true;
                 } else if ("com.jsh.erp.datasource.mappers.SysDictDataMapper.selectDictDataList".equals(ms.getId())) {
                     return true;
+                } else if ("com.jsh.erp.datasource.mappers.MaterialMapperEx.selectCategorySkuValueStats".equals(ms.getId())) {
+                    // JSON_TABLE 语句旧版 JSqlParser 解析失败会抛「Failed to process」，
+                    // 且 SQL 内已按 #{tenantId} 手动过滤租户，跳过租户解析
+                    return true;
+                } else if ("com.jsh.erp.datasource.mappers.MaterialMapperEx.selectSkuAttributeValueStats".equals(ms.getId())) {
+                    return true;
                 }
                 return false;
             }

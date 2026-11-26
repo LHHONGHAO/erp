@@ -39,18 +39,40 @@ public class PrintAgentPairController {
     @GetMapping(value = "/models")
     public BaseResponseInfo models(HttpServletRequest request) {
         BaseResponseInfo res = new BaseResponseInfo();
-        String deviceId = trim(request.getHeader("X-Device-Id"));
-        String authorization = trim(request.getHeader("Authorization"));
-        String token = authorization != null && authorization.startsWith("Bearer ")
-                ? trim(authorization.substring("Bearer ".length())) : null;
-        JSONObject agent = deviceId == null ? null : store.findByDeviceId(deviceId);
-        if (agent == null || token == null || !token.equals(agent.getString("token"))) {
+        JSONObject agent = authorizedAgent(request);
+        if (agent == null) {
             res.code = 401;
             res.data = "设备未授权，请重新配对";
             return res;
         }
         res.code = 200;
-        res.data = printerStore.listEnabled();
+        // 设置页需要看到停用型号才能重新启用，打印时仍只取启用型号
+        res.data = printerStore.listAll();
+        return res;
+    }
+
+    /**
+     * 型号维护：代理设置页用设备 Token 新增或修改型号，主机只保存指令模板
+     */
+    @PostMapping(value = "/models/save")
+    public BaseResponseInfo saveModel(@RequestBody(required = false) JSONObject body, HttpServletRequest request) {
+        BaseResponseInfo res = new BaseResponseInfo();
+        if (authorizedAgent(request) == null) {
+            res.code = 401;
+            res.data = "设备未授权，请重新配对";
+            return res;
+        }
+        try {
+            res.code = 200;
+            res.data = printerStore.save(body == null ? new JSONObject() : body);
+        } catch (IllegalArgumentException e) {
+            res.code = 400;
+            res.data = e.getMessage();
+        } catch (Exception e) {
+            logger.error("代理保存打印机型号失败: " + e.getMessage(), e);
+            res.code = 500;
+            res.data = "保存失败：" + e.getMessage();
+        }
         return res;
     }
 
@@ -88,6 +110,21 @@ public class PrintAgentPairController {
             res.data = "配对失败：" + e.getMessage();
         }
         return res;
+    }
+
+    /**
+     * 设备 Token 鉴权：X-Device-Id 与 Bearer Token 必须与已配对设备一致
+     */
+    private JSONObject authorizedAgent(HttpServletRequest request) {
+        String deviceId = trim(request.getHeader("X-Device-Id"));
+        String authorization = trim(request.getHeader("Authorization"));
+        String token = authorization != null && authorization.startsWith("Bearer ")
+                ? trim(authorization.substring("Bearer ".length())) : null;
+        JSONObject agent = deviceId == null ? null : store.findByDeviceId(deviceId);
+        if (agent == null || token == null || !token.equals(agent.getString("token"))) {
+            return null;
+        }
+        return agent;
     }
 
     /**

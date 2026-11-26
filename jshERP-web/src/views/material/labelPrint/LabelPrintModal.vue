@@ -264,14 +264,14 @@
                 <div class="lmpl-item-left">
                   <a-icon type="printer" class="lmpl-item-icon" />
                   <div class="lmpl-item-text">
-                    <div class="lmpl-item-title">{{ p.printerName }}</div>
+                    <div class="lmpl-item-title">{{ p.printerDisplayName }}</div>
                     <div class="lmpl-item-sub">
-                      {{ p.deviceName }} · {{ p.cmdSet || 'TSPL' }}<template v-if="p.host"> · {{ p.host }}:{{ p.port }}</template>
+                      {{ p.deviceName }} · {{ p.model || '未配置型号' }}<template v-if="p.host"> · {{ p.host }}:{{ p.port }}</template>
                     </div>
                   </div>
                 </div>
                 <span class="lmpl-status" :class="p.online ? 'online' : 'offline'">{{ p.online ? '在线' : '离线' }}</span>
-                <a class="lmpl-edit" @click.stop="openPrinterEdit(p)">编辑</a>
+                <a class="lmpl-edit" @click.stop="openPrinterEdit(p)">详情</a>
                 <a-icon v-if="printerType === 'backend' && selectedPrinter === p.key" type="check-circle" theme="filled" class="lmpl-check" />
               </div>
             </template>
@@ -558,14 +558,13 @@
       </template>
     </mobile-modal-page>
 
-    <!-- 页面 5：编辑设备（打印机设备 / 打印机 / 品牌与指令集） -->
+    <!-- 页面 5：打印机信息（只读，打印机与型号由代理上报） -->
     <printer-device-config
       :visible="visible && showPrinterSheet && printerEditVisible"
       :devices="agentDevices"
       :device-id="printerEditDeviceId"
       :printer-id="printerEditPrinterId"
-      @close="printerEditVisible = false"
-      @saved="handlePrinterSaved" />
+      @close="printerEditVisible = false" />
   </template>
 
   <!-- 桌面端：保留原有 modal 布局 -->
@@ -573,7 +572,7 @@
     v-if="!isMobile"
     :title="printTitle || '打印标签'"
     :width="modalWidth"
-    :visible="visible"
+    :visible="visible && !pcPreviewVisible"
     :maskClosable="false"
     :footer="null"
     :zIndex="2900"
@@ -807,6 +806,289 @@
   </a-modal>
     <!-- 标签编辑：统一走标准复用弹层页面 -->
     <label-edit-modal-page ref="labelEditor" @close="handleEditorClosed" />
+
+  <!-- 桌面端：设备列表弹层（按手机页面 390×844 比例、以屏幕高度换算尺寸） -->
+  <div v-if="!isMobile && pcDeviceVisible" class="lp-pc-mask lp-pc-mask--side" @click.self="pcDeviceVisible = false">
+    <div class="lp-pc-dialog">
+      <div class="lp-pc-hd">
+        <span>设备列表</span>
+        <a-icon type="close" class="lp-pc-close" @click="pcDeviceVisible = false" />
+      </div>
+      <div class="lp-pc-bd">
+        <a-spin :spinning="loadingPrinters || loadingAgents">
+          <template v-if="pcDeviceTab === 'cloud'">
+            <div
+              v-for="p in agentPrinterItems"
+              :key="p.key"
+              class="lp-pc-item"
+              :class="{ active: printerType === 'backend' && selectedPrinter === p.key }"
+              @click="pcSelectCloud(p)">
+              <div class="lp-pc-item-main">
+                <div class="lp-pc-item-name">{{ p.printerDisplayName }}</div>
+                <div class="lp-pc-item-sub">{{ p.deviceName }} · {{ p.model || '未配置型号' }}<template v-if="p.host"> · {{ p.host }}:{{ p.port }}</template></div>
+              </div>
+              <span class="lp-pc-status" :class="{ off: !p.online }">{{ p.online ? '在线' : '离线' }}</span>
+            </div>
+            <div v-if="agentPrinterItems.length === 0 && !loadingAgents" class="lp-pc-empty">
+              <div class="lp-pc-empty-title">暂无云打印设备</div>
+              <div class="lp-pc-empty-sub">需先在打印助手端新增设备并完成配对</div>
+            </div>
+          </template>
+          <template v-else-if="pcDeviceTab === 'network'">
+            <div
+              v-for="p in wifiPrinters"
+              :key="p.id"
+              class="lp-pc-item"
+              :class="{ active: printerType === 'wifi' && activeWifiId === p.id }"
+              @click="pcSelectWifi(p)">
+              <div class="lp-pc-item-main">
+                <div class="lp-pc-item-name">{{ p.name }}</div>
+                <div class="lp-pc-item-sub">{{ p.ip }}:{{ p.port }} · {{ p.cmdSet || 'TSPL' }}</div>
+              </div>
+              <span v-if="activeWifiId === p.id" class="lp-pc-status" :class="{ off: !wifiStatus[p.id] }">{{ wifiStatus[p.id] ? '已连接' : '未连接' }}</span>
+            </div>
+            <div v-if="wifiPrinters.length === 0" class="lp-pc-empty">
+              <div class="lp-pc-empty-title">未添加网络打印机</div>
+              <div class="lp-pc-empty-sub">点击下方「添加网络打印机」填写 IP 与端口</div>
+            </div>
+          </template>
+          <template v-else>
+            <div v-if="printers.length" class="lp-pc-section">本机打印机</div>
+            <div
+              v-for="p in printers"
+              :key="p.name"
+              class="lp-pc-item"
+              :class="{ active: printerType === 'backend' && selectedPrinter === p.name }"
+              @click="pcSelectLocal(p)">
+              <div class="lp-pc-item-main">
+                <div class="lp-pc-item-name">{{ p.name }}</div>
+                <div v-if="p.isDefault" class="lp-pc-item-sub">默认打印机</div>
+              </div>
+            </div>
+            <template v-if="btDevice">
+              <div class="lp-pc-section">蓝牙打印机</div>
+              <div class="lp-pc-item" :class="{ active: printerType === 'bluetooth' && selectedPrinter === btDevice.id }" @click="pcSelectBluetooth">
+                <div class="lp-pc-item-main">
+                  <div class="lp-pc-item-name">{{ btDevice.name }}</div>
+                  <div class="lp-pc-item-sub">已连接</div>
+                </div>
+              </div>
+            </template>
+            <div v-if="printers.length === 0 && !btDevice" class="lp-pc-empty">
+              <div class="lp-pc-empty-title">暂无本地打印机</div>
+              <div class="lp-pc-empty-sub">可添加本机打印机或搜索蓝牙打印机</div>
+            </div>
+          </template>
+        </a-spin>
+      </div>
+      <div class="lp-pc-ft">
+        <a-button v-if="pcDeviceTab === 'network'" type="primary" ghost block icon="plus" @click="openPcNetworkConfig">添加网络打印机</a-button>
+        <template v-else-if="pcDeviceTab === 'local'">
+          <a-button v-if="printerCaps.bluetooth" type="primary" ghost block icon="bluetooth" :loading="btSearching" @click="handleAddBluetooth">添加蓝牙打印机</a-button>
+        </template>
+        <div class="lp-pc-tabs">
+          <span
+            v-for="t in printerTabList"
+            :key="t.key"
+            :class="{ on: pcDeviceTab === t.key }"
+            @click="switchPcDeviceTab(t.key)">{{ t.label }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 桌面端：网络打印配置弹层 -->
+  <div v-if="!isMobile && pcConfigVisible" class="lp-pc-mask lp-pc-mask--side" @click.self="closePcNetworkConfig">
+    <div class="lp-pc-dialog">
+      <div class="lp-pc-hd">
+        <span>网络打印配置</span>
+        <a-icon type="close" class="lp-pc-close" @click="closePcNetworkConfig" />
+      </div>
+      <div class="lp-pc-bd">
+        <div class="lp-pc-row">
+          <span class="k">品牌</span>
+          <span class="v lp-pc-link" @click="pcBrandVisible = true">{{ selectedWifiBrand ? selectedWifiBrand.name : '请选择品牌' }}</span>
+        </div>
+        <div class="lp-pc-row">
+          <span class="k">传输格式</span>
+          <span class="v">{{ selectedWifiBrand ? selectedWifiBrand.cmd : '—' }}</span>
+        </div>
+        <div class="lp-pc-row">
+          <span class="k">名称</span>
+          <a-input v-model="addWifiForm.name" size="small" style="flex:1" placeholder="如 汉印 D45" />
+        </div>
+        <div class="lp-pc-row">
+          <span class="k">IP 地址</span>
+          <a-input v-model="addWifiForm.ip" size="small" style="flex:1" placeholder="如 192.168.10.10" />
+        </div>
+        <div class="lp-pc-row">
+          <span class="k">端口号</span>
+          <a-input-number v-model="addWifiForm.port" size="small" :min="1" :max="65535" style="flex:1" />
+        </div>
+        <div class="lp-pc-tip">端口默认 9100（原始打印端口），请确保后端所在电脑能访问该地址。</div>
+      </div>
+      <div class="lp-pc-ft">
+        <a-button type="primary" block @click="savePcWifiPrinter">保存</a-button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 桌面端：选择品牌弹层（点击配置页品牌输入框唤起） -->
+  <div v-if="!isMobile && pcBrandVisible" class="lp-pc-mask lp-pc-mask--brand" @click.self="pcBrandVisible = false">
+    <div class="lp-pc-brand">
+      <div class="lp-pc-hd">
+        <span>选择品牌</span>
+        <a-icon type="close" class="lp-pc-close" @click="pcBrandVisible = false" />
+      </div>
+      <div class="lp-pc-brand-body">
+        <div v-for="b in wifiBrandList" :key="b.key" class="lp-pc-brand-row" @click="choosePcBrand(b)">
+          <span class="lp-pc-brand-name">{{ b.name }}</span>
+          <select class="lp-pc-brand-cmd" :value="b.cmd" @click.stop @change="b.cmd = $event.target.value">
+            <option v-for="c in wifiCmdOptions" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 桌面端：打印预览弹层（复建手机端预览页，按手机页面比例缩放） -->
+  <div v-if="!isMobile && pcPreviewVisible" class="lp-pc-mask" @click.self="handleCancel">
+    <div class="lp-pc-dialog">
+      <div class="lp-pc-hd">
+        <span>{{ mobileTitle }}</span>
+        <div class="lp-pc-hd-actions">
+          <a-icon v-if="template || directEntry" type="edit" class="lp-pc-hd-icon" title="编辑模板" @click="handleEdit" />
+          <a-icon type="close" class="lp-pc-close" @click="handleCancel" />
+        </div>
+      </div>
+      <div class="lp-pc-bd lp-pc-preview-bd">
+        <template v-if="!template">
+          <div v-if="templateLoading" class="lmp-loading">
+            <a-spin size="small" />
+            <span class="lmp-loading-text">正在读取模板…</span>
+          </div>
+          <template v-else>
+            <a-alert type="info" show-icon :message="emptyMessage" />
+            <a-button
+              v-if="(type === 'member' || type === 'address') && !templateLoadError"
+              type="primary"
+              size="large"
+              class="lmp-empty-create"
+              icon="plus"
+              @click="handleCreateTemplate">{{ type === 'address' ? '创建地址打印模板' : '创建会员标签模板' }}</a-button>
+          </template>
+        </template>
+        <template v-else>
+          <div class="lmp-preview-area" ref="previewArea">
+            <span v-if="pageCount > 1" class="lmp-page-badge">{{ previewPage + 1 }} / {{ pageCount }}</span>
+            <div class="lmp-preview" :style="previewStyle">
+              <label-paper
+                v-if="templateSchema"
+                :schema="previewSchema"
+                :values="previewValues"
+                :rows="pageDetailRows"
+                :texts="previewTexts"
+                :placeholders="previewPlaceholders"
+                :overflow-mode="overflowMode"
+                :scale="1" />
+              <template v-else>
+                <div
+                  v-for="item in renderItems"
+                  :key="item.key"
+                  class="lp-item"
+                  :class="{ 'is-multiline': !item.isCode && item.attr.value != null && String(item.attr.value).indexOf('\n') > -1, 'is-code': item.isCode }"
+                  :style="itemStyle(item.key)"
+                >
+                  <template v-if="item.isCode">
+                    <img v-if="codeImages[item.key]" :src="codeImages[item.key]" class="lp-code-img" :style="codeImgStyle(item.key)" />
+                  </template>
+                  <template v-else>
+                    {{ displayText(item) }}
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="lmp-overflow-tip" v-if="overflowPixels">
+            内容超出标签底部 {{ overflowPixels }}px，已按标签边界裁切
+          </div>
+
+          <div class="lmp-pager" v-if="pageCount > 1">
+            <a-button size="small" icon="left" :disabled="previewPage <= 0" @click="previewPage--">上一页</a-button>
+            <span class="lmp-pager-text">第 {{ previewPage + 1 }} / {{ pageCount }} 张</span>
+            <a-button size="small" :disabled="previewPage >= pageCount - 1" @click="previewPage++">下一页<a-icon type="right" /></a-button>
+          </div>
+
+          <div class="lmp-template-more" v-if="templateChoices.length > 1">
+            <div class="lmp-template-more-head">
+              <span>更多模板</span>
+              <span class="lmp-template-more-count">共 {{ templateChoices.length }} 个</span>
+            </div>
+            <div class="lmp-template-cards">
+              <div
+                v-for="t in templateChoices"
+                :key="t.id"
+                class="lmp-template-card"
+                :class="{ active: String(currentTemplateId) === String(t.serverId || t.id) }"
+                @click="switchTemplate(t)">
+                <span class="lmp-template-card-name">{{ t.name }}</span>
+                <span class="lmp-template-card-meta">{{ t.type === 'default' ? (t.categoryName || '通用模板') : '普通模板' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="lmp-bottom-wrap">
+            <div class="lmp-control-row" @click="openPcDeviceList">
+              <div class="lmp-control-label">设备状态</div>
+              <div class="lmp-control-value lmp-control-value-center">
+                <span v-if="mobileDeviceLabel" class="lmp-device-name" :class="{ online: mobileDeviceOnline }">{{ mobileDeviceLabel }}</span>
+                <span v-else class="lmp-device-name offline">设备未连接</span>
+              </div>
+              <a-icon type="right" class="lmp-row-arrow" />
+            </div>
+            <div class="lmp-control-row">
+              <div class="lmp-control-label">打印方向</div>
+              <div class="lmp-control-value">
+                <div class="lmp-rotation-tabs">
+                  <div
+                    v-for="r in rotationOptions"
+                    :key="r.value"
+                    class="lmp-rot-tab"
+                    :class="{ active: printRotation === r.value }"
+                    @click="printRotation = r.value">{{ r.label }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="lmp-control-row">
+              <div class="lmp-control-label">打印份数</div>
+              <div class="lmp-control-value">
+                <div class="lmp-qty">
+                  <span class="lmp-qty-btn" :class="{ disabled: copies <= 1 }" @click="copies = Math.max(1, copies - 1)">
+                    <a-icon type="minus" />
+                  </span>
+                  <span class="lmp-qty-num">{{ copies }} 份</span>
+                  <span class="lmp-qty-btn" @click="copies = Math.min(99, copies + 1)">
+                    <a-icon type="plus" />
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <div class="lp-pc-ft">
+        <div v-if="printHint && template" class="lmp-print-hint">{{ printHint }}</div>
+        <a-button
+          type="primary"
+          block
+          size="large"
+          :disabled="!template"
+          :loading="printing"
+          @click="handlePrint">打印</a-button>
+      </div>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -957,6 +1239,13 @@
         showPrinterSheet: false,
         // 桌面端：打印机设置弹层
         printerSettingsVisible: false,
+        // 桌面端：设备列表弹层 / 网络打印配置弹层 / 选择品牌弹层（按手机页面比例缩放）
+        pcDeviceVisible: false,
+        pcConfigVisible: false,
+        pcBrandVisible: false,
+        pcDeviceTab: 'network',
+        // 桌面端：打印预览弹层（复建手机端预览页）
+        pcPreviewVisible: false,
         // 手机端：预览标签缩放因子（让标签填满空白区域）
         previewScale: 1
       }
@@ -981,17 +1270,21 @@
           }
           if (!printers || !printers.length) return
           printers.forEach(function(p) {
+            var storeName = dev.storeName || ''
             list.push({
               key: 'agent:' + dev.deviceId + ':' + p.id,
               deviceRowId: dev.id,
               deviceId: dev.deviceId,
               deviceName: dev.name || dev.deviceId,
+              storeName: storeName,
               printerId: p.id,
               printerName: p.name || p.id,
+              // 设备列表展示名：门店名称-打印机名称
+              printerDisplayName: (storeName ? storeName + '-' : '') + (p.name || p.id),
               host: p.host || '',
               port: p.port || '',
               brand: p.brand || '',
-              cmdSet: p.cmdSet || 'TSPL',
+              model: p.model || '',
               online: !!dev.online
             })
           })
@@ -1404,7 +1697,16 @@
       },
       // 模板异步加载完成后重新计算缩放
       template() {
-        if (this.isMobile && this.visible) this.updatePreviewScale()
+        if (this.visible) this.updatePreviewScale()
+      },
+      // 桌面端：打开时以手机比例预览弹层承载，不再显示宽版弹窗
+      visible(val) {
+        if (this.isMobile) return
+        this.pcPreviewVisible = !!val
+        if (val) {
+          var self = this
+          this.$nextTick(function() { self.updatePreviewScale() })
+        }
       }
     },
     created() {
@@ -1667,6 +1969,7 @@
       // fallbackToBackend：无历史记录时是否强制回到后端打印机（open 场景需要，openByType 保持现状）
       restoreLastPrinterState(fallbackToBackend) {
         var self = this
+        this._pcFallbackApplied = false
         var last = null
         try { last = JSON.parse(localStorage.getItem('jsh.lastLabelPrinter') || 'null') } catch (e) { last = null }
         if (last && last.type) {
@@ -1680,11 +1983,41 @@
         }
         this.loadPrinters()
         this.loadWifiPrinters()
+        // 桌面端：优先使用上次选择的打印机；不可用时按 云打印 > 本机 > 浏览器打印 兜底
+        if (!this.isMobile) {
+          this.applyPcDefaultPrinter()
+          this.loadAgentPrinters().then(function() {
+            self.applyPcDefaultPrinter()
+          })
+        }
         // 手机端：打开后计算预览缩放（等 DOM 渲染完；模板可能异步加载，延迟再算一次）
         if (this.isMobile) {
           this.$nextTick(function() { self.updatePreviewScale() })
           setTimeout(function() { self.updatePreviewScale() }, 300)
         }
+      },
+      // 桌面端：设备状态默认值（上次选择不可用时兜底，保证不是「设备未连接」）
+      applyPcDefaultPrinter() {
+        if (this.isMobile) return
+        // 已有有效选择且不是上一轮兜底结果时保留用户选择
+        if (this.mobileDeviceLabel && !this._pcFallbackApplied) return
+        var agent = this.agentPrinterItems.length ? this.agentPrinterItems[0] : null
+        if (agent) {
+          this.printerType = 'backend'
+          this.selectedPrinter = agent.key
+          this._pcFallbackApplied = false
+        } else if (this.printers && this.printers.length) {
+          this.printerType = 'backend'
+          this.selectedPrinter = this.printers[0].name
+          this._pcFallbackApplied = false
+        } else {
+          this.printerType = 'backend'
+          this.selectedPrinter = '__browser__'
+          this._pcFallbackApplied = true
+        }
+        this.activeWifiId = null
+        this.discoveredPrinter = null
+        this.persistLastPrinter()
       },
       // 保存当前打印机选择到 localStorage
       persistLastPrinter() {
@@ -1693,16 +2026,85 @@
         else if (this.printerType === 'wifi') payload.name = this.activeWifiId || this.selectedPrinter || null
         try { localStorage.setItem('jsh.lastLabelPrinter', JSON.stringify(payload)) } catch (e) {}
       },
-      // 打开打印机设置：移动端走全屏页，桌面走弹层（同一套数据）
+      // 打开打印机设置：移动端走全屏页，桌面端走按手机比例缩放的弹层
       openPrinterSettings() {
         if (this.isMobile) {
           this.showMobilePrinterSheet()
           return
         }
-        this.wifiAddStep = ''
-        this.printerSettingsVisible = true
+        this.openPcDeviceList()
+      },
+      // 桌面端：打开设备列表弹层
+      openPcDeviceList() {
+        this.pcConfigVisible = false
+        this.pcBrandVisible = false
+        this.pcDeviceTab = 'cloud'
+        this.pcDeviceVisible = true
         this.loadPrinters()
         this.loadWifiPrinters()
+        this.loadAgentPrinters()
+      },
+      // 桌面端：切换设备分类
+      switchPcDeviceTab(tab) {
+        this.pcDeviceTab = tab
+        if (tab === 'network') this.loadWifiPrinters()
+        if (tab === 'cloud') this.loadAgentPrinters()
+      },
+      // 桌面端：选中云打印设备下的打印机
+      pcSelectCloud(p) {
+        this.printerType = 'backend'
+        this.selectedPrinter = p.key
+        this.discoveredPrinter = null
+        this.persistLastPrinter()
+        this.pcDeviceVisible = false
+      },
+      // 桌面端：选中网络打印机
+      pcSelectWifi(p) {
+        this.printerType = 'wifi'
+        this.selectWifiPrinter(p)
+        this.persistLastPrinter()
+        this.pcDeviceVisible = false
+      },
+      // 桌面端：选中本机打印机
+      pcSelectLocal(p) {
+        this.printerType = 'backend'
+        this.selectedPrinter = p.name
+        this.discoveredPrinter = null
+        this.persistLastPrinter()
+        this.pcDeviceVisible = false
+      },
+      // 桌面端：选中蓝牙打印机
+      pcSelectBluetooth() {
+        if (!this.btDevice) return
+        this.printerType = 'bluetooth'
+        this.selectedPrinter = this.btDevice.id
+        this.discoveredPrinter = this.btDevice
+        this.persistLastPrinter()
+        this.pcDeviceVisible = false
+      },
+      // 桌面端：打开网络打印配置弹层（保留设备列表，关闭后返回列表）
+      openPcNetworkConfig() {
+        this.pcBrandVisible = false
+        this.selectedWifiBrand = null
+        this.addWifiForm = { name: '', ip: '', port: DEFAULT_PRINTER_PORT }
+        this.pcConfigVisible = true
+      },
+      closePcNetworkConfig() {
+        this.pcConfigVisible = false
+        this.pcBrandVisible = false
+      },
+      // 桌面端：选择品牌
+      choosePcBrand(brand) {
+        this.selectedWifiBrand = brand
+        if (!this.addWifiForm.name) this.addWifiForm.name = brand.name
+        this.pcBrandVisible = false
+      },
+      // 桌面端：保存网络打印配置
+      savePcWifiPrinter() {
+        if (this.handleSaveWifiPrinter() === false) return
+        this.pcConfigVisible = false
+        this.pcBrandVisible = false
+        if (!this.pcDeviceVisible) this.pcDeviceVisible = true
       },
       closePrinterSettings() {
         this.printerSettingsVisible = false
@@ -2074,11 +2476,6 @@
         this.printerEditPrinterId = p.printerId
         this.printerEditVisible = true
       },
-      // 配置页保存成功后刷新远程打印机列表
-      handlePrinterSaved() {
-        this.printerEditVisible = false
-        this.loadAgentPrinters()
-      },
       // 蓝牙打印机搜索
       handleBluetoothSearch() {
         var self = this
@@ -2132,7 +2529,7 @@
           this.cmdSheetBrand = null
           this.wifiAddStep = 'brand'
         } else {
-          this.startAddNetwork()
+          this.openPcNetworkConfig()
         }
       },
       // 选择品牌页：打开信号传输格式底部弹层
@@ -2175,7 +2572,7 @@
         var ip = String(form.ip || '').trim()
         if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
           this.$message.warning('请输入正确的 IP 地址，如 192.168.10.10')
-          return
+          return false
         }
         var port = Number(form.port) || DEFAULT_PRINTER_PORT
         var brand = this.selectedWifiBrand
@@ -2197,6 +2594,7 @@
           this.persistLastPrinter()
         }
         this.$message.success('打印机已保存')
+        return true
       },
       // 删除一台 Wi-Fi 打印机
       handleRemoveWifiPrinter(printer) {
@@ -5345,5 +5743,216 @@
   .lp-modal-mobile .ant-modal-content {
     border-radius: 0;
     min-height: 100vh;
+  }
+  /* ===== 桌面端设备列表 / 网络打印配置弹层（按手机 390×844 比例缩放） ===== */
+  .lp-pc-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: 2950;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lp-pc-mask--side {
+    z-index: 2960;
+  }
+  .lp-pc-mask--brand {
+    z-index: 2970;
+  }
+  .lp-pc-hd-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .lp-pc-hd-icon {
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .lp-pc-preview-bd {
+    padding: 8px 12px;
+  }
+  .lp-pc-dialog {
+    height: clamp(620px, 85vh, 880px);
+    width: calc(clamp(620px, 85vh, 880px) * 390 / 844);
+    background: #fff;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  }
+  .lp-pc-hd {
+    flex: none;
+    height: 44px;
+    padding: 0 12px;
+    background: #1890ff;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .lp-pc-close {
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .lp-pc-bd {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lp-pc-ft {
+    flex: none;
+    padding: 8px 12px 12px;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lp-pc-item {
+    border: 1px solid #e5e6eb;
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .lp-pc-item.active {
+    border-color: #1890ff;
+    background: #f0f7ff;
+  }
+  .lp-pc-item-main {
+    min-width: 0;
+  }
+  .lp-pc-item-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1d2129;
+    word-break: break-all;
+  }
+  .lp-pc-item-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #86909c;
+    word-break: break-all;
+  }
+  .lp-pc-status {
+    flex: none;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 6px;
+    border-radius: 999px;
+    color: #00b42a;
+    border: 1px solid #b7eb8f;
+  }
+  .lp-pc-status.off {
+    color: #86909c;
+    border-color: #e5e6eb;
+  }
+  .lp-pc-empty {
+    padding: 32px 8px;
+    text-align: center;
+  }
+  .lp-pc-empty-title {
+    font-size: 13px;
+    color: #1d2129;
+  }
+  .lp-pc-empty-sub {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #86909c;
+    line-height: 16px;
+  }
+  .lp-pc-section {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #86909c;
+  }
+  .lp-pc-tabs {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 4px;
+    font-size: 12px;
+    color: #86909c;
+  }
+  .lp-pc-tabs span {
+    cursor: pointer;
+  }
+  .lp-pc-tabs .on {
+    color: #1890ff;
+    font-weight: 600;
+  }
+  .lp-pc-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px dashed #f0f0f0;
+    font-size: 12px;
+  }
+  .lp-pc-row .k {
+    flex: none;
+    width: 56px;
+    color: #86909c;
+  }
+  .lp-pc-row .v {
+    flex: 1;
+    text-align: right;
+    color: #1d2129;
+  }
+  .lp-pc-link {
+    color: #1890ff !important;
+    cursor: pointer;
+  }
+  .lp-pc-tip {
+    font-size: 11px;
+    color: #86909c;
+    line-height: 16px;
+  }
+  .lp-pc-brand {
+    width: 320px;
+    max-height: 70vh;
+    background: #fff;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  }
+  .lp-pc-brand-body {
+    overflow-y: auto;
+  }
+  .lp-pc-brand-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f5f5f5;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1d2129;
+  }
+  .lp-pc-brand-row:hover {
+    background: #f7f8fa;
+  }
+  .lp-pc-brand-cmd {
+    height: 26px;
+    border: 1px solid #e5e6eb;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 12px;
+    color: #1d2129;
   }
 </style>

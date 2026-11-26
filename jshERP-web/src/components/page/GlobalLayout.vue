@@ -13,7 +13,7 @@
 
     <a-layout
       :class="[layoutMode, `content-width-${contentWidth}`]"
-      :style="{ paddingLeft: fixSiderbar && isDesktop() ? `${sidebarOpened ? 150 : 80}px` : '0' }">
+      :style="{ paddingLeft: fixSiderbar && isDesktop() ? `${sidebarOpened ? 200 : 80}px` : '0' }">
       <!-- layout header -->
       <global-header
         :mode="layoutMode"
@@ -113,7 +113,7 @@
     created() {
       //--update-begin----author:scott---date:20190320------for:根据后台菜单配置，判断是否路由菜单字段，动态选择是否生成路由（为了支持参数URL菜单）------
       //this.menus = this.mainRouters.find((item) => item.path === '/').children;
-      this.menus = this.injectLocalMenus(this.permissionMenuList)
+      this.menus = this.filterHiddenMenus(this.permissionMenuList)
       // 根据后台配置菜单，重新排序加载路由信息
       //console.log('----加载菜单逻辑----')
       //console.log(this.mainRouters)
@@ -126,23 +126,22 @@
     },
     methods: {
       ...mapActions(['setSidebar']),
-      // 内置页面菜单：后台菜单表未配置时也能在侧边栏看到「打印管理」
-      injectLocalMenus(menus) {
-        const list = Array.isArray(menus) ? menus.slice() : []
-        const exists = list.some(item => item.url === '/print/agent')
-        if (!exists) {
-          list.push({
-            id: 'print-agent',
-            text: '打印管理',
-            icon: 'printer',
-            url: '/print/agent',
-            path: '/print/agent',
-            name: 'PrintAgent',
-            route: '0',
-            component: '/print/agent/PrintAgentList'
-          })
+      // PC 侧边栏不展示的菜单项（移动端专用页面，避免占用桌面菜单）
+      filterHiddenMenus(menus) {
+        const hiddenUrls = ['/system/remote-print']
+        if (!Array.isArray(menus)) {
+          return []
         }
-        return list
+        return menus
+          .filter(item => hiddenUrls.indexOf((item.url || '').replace(/\/$/, '')) === -1)
+          .map(item => {
+            if (!Array.isArray(item.children)) {
+              return item
+            }
+            const children = this.filterHiddenMenus(item.children)
+            // 空数组会被菜单渲染成可展开项，这里置为 null 保持普通菜单
+            return Object.assign({}, item, { children: children.length ? children : null })
+          })
       },
       toggle() {
         this.collapsed = !this.collapsed
@@ -351,7 +350,7 @@
         transition: width .2s;
 
         &.ant-header-side-opened {
-          width: calc(100% - 150px)
+          width: calc(100% - 200px)
         }
 
         &.ant-header-side-closed {

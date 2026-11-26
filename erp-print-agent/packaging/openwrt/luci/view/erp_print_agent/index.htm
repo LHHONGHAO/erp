@@ -22,73 +22,234 @@ end
 
 <style type="text/css">
 .pa-page { max-width: 820px; }
+:root { --pap: #2563eb; --pap-soft: #eff6ff; --pap-border: #93c5fd; --padanger: #b91c1c; --padanger-soft: #fef2f2; --paok: #15803d; --paok-soft: #f0fdf4; --pawarn: #b45309; --paborder: #e5e7eb; --paborder-strong: #d1d5db; --patext: #111827; --patext2: #374151; --patext3: #6b7280; --patext4: #9ca3af; }
 .pa-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .pa-title { font-size: 18px; font-weight: 600; line-height: 26px; }
-.pa-sub { margin-top: 4px; font-size: 12px; line-height: 18px; color: #6b7280; }
+.pa-sub { margin-top: 4px; font-size: 12px; line-height: 18px; color: var(--patext3, #6b7280); }
 .pa-pill {
 	display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px;
-	border: 1px solid #e5e7eb; border-radius: 999px; background: #fff;
-	font-size: 12px; font-weight: 500; color: #b45309; white-space: nowrap;
+	border: 1px solid var(--paborder, #e5e7eb); border-radius: 999px; background: #fff;
+	font-size: 12px; font-weight: 500; color: var(--pawarn, #b45309); white-space: nowrap;
 }
-.pa-pill.ok { color: #15803d; border-color: #86efac; }
+.pa-pill.ok { color: var(--paok, #15803d); border-color: #86efac; background: var(--paok-soft, #f0fdf4); }
 .pa-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pa-card {
-	border: 1px solid #e5e7eb; border-radius: 10px; background: #fff;
+	border: 1px solid var(--paborder, #e5e7eb); border-radius: 10px; background: #fff;
 	padding: 16px; margin-bottom: 16px;
+	box-shadow: 0 1px 2px rgba(17,24,39,.04), 0 1px 3px rgba(17,24,39,.06);
 }
-.pa-card-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.pa-card-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--patext2, #374151); }
 .pa-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; align-items: center; margin-bottom: 10px; }
 .pa-row:last-child { margin-bottom: 0; }
-.pa-label { font-size: 12px; color: #6b7280; }
+.pa-label { font-size: 12px; color: var(--patext3, #6b7280); }
 .pa-input {
 	width: 100%; box-sizing: border-box; padding: 7px 10px;
-	border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
-	font-size: 13px; color: #111827;
+	border: 1px solid var(--paborder-strong, #d1d5db); border-radius: 6px; background: #fff;
+	font-size: 13px; color: var(--patext, #111827); font-family: inherit;
 }
-.pa-input:focus { outline: none; border-color: #2563eb; }
-.pa-input[readonly] { background: #f9fafb; color: #6b7280; cursor: default; }
+.pa-input:focus { outline: none; border-color: var(--pap, #2563eb); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
 .pa-input.mono { font-family: Consolas, Monaco, monospace; }
 .pa-input.code { letter-spacing: 0.35em; text-align: center; }
 .pa-inline { display: flex; gap: 8px; align-items: center; }
 .pa-inline .pa-input.code { width: 170px; flex: 0 0 170px; }
-.pa-hint { margin-top: 6px; font-size: 12px; line-height: 18px; color: #6b7280; }
+.pa-hint { margin-top: 6px; font-size: 12px; line-height: 18px; color: var(--patext3, #6b7280); }
 .pa-device {
 	display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 12px;
-	border: 1px solid #86efac; border-radius: 6px; font-size: 12px; color: #6b7280;
+	border: 1px solid #86efac; border-radius: 6px; font-size: 12px; color: var(--patext3, #6b7280);
+	background: var(--paok-soft, #f0fdf4);
 }
-.pa-device b { color: #111827; font-family: Consolas, Monaco, monospace; }
-.pa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pa-device b { color: var(--patext, #111827); font-family: Consolas, Monaco, monospace; }
+.pa-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pa-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.pa-prow {
-	display: grid; grid-template-columns: 88px 1fr 1fr 1fr 68px auto auto auto;
-	gap: 8px; align-items: center; margin-bottom: 8px;
-}
-.pa-prow .pa-input { padding: 6px 8px; }
-.pa-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #6b7280; white-space: nowrap; }
-.pa-test {
-	border: 1px solid #bfdbfe; background: #fff; color: #2563eb;
-	border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
-}
-.pa-test:hover { border-color: #93c5fd; background: #eff6ff; }
-.pa-remove {
-	border: 1px solid #e5e7eb; background: #fff; color: #b91c1c;
-	border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer;
-}
-.pa-remove:hover { border-color: #fca5a5; }
+.pa-footer .pa-hint { margin: 0; }
 .pa-btn {
 	border: none; border-radius: 999px; padding: 8px 16px; cursor: pointer;
-	font-size: 13px; font-weight: 500; background: #2563eb; color: #fff;
-	white-space: nowrap; flex: 0 0 auto;
+	font-size: 13px; font-weight: 500; background: var(--pap, #2563eb); color: #fff;
+	white-space: nowrap; flex: 0 0 auto; font-family: inherit; transition: background .15s;
 }
-.pa-btn.ghost { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-.pa-btn.small { padding: 5px 12px; font-size: 12px; }
+.pa-btn:hover { background: #1d4ed8; }
+.pa-btn.ghost { background: #fff; color: var(--patext2, #374151); border: 1px solid var(--paborder-strong, #d1d5db); }
+.pa-btn.ghost:hover { background: #f9fafb; border-color: var(--paborder, #e5e7eb); }
+.pa-btn.small { padding: 5px 12px; font-size: 12px; border-radius: 6px; }
+.pa-btn.primary-block { border-radius: 6px; padding: 9px 18px; font-size: 13px; }
+.pa-btn.primary-block:hover { background: #1d4ed8; }
+.pa-btn.cancel { background: #fff; color: var(--patext2, #374151); border: 1px solid var(--paborder-strong, #d1d5db); border-radius: 6px; padding: 9px 18px; font-size: 13px; }
+.pa-btn.cancel:hover { background: #f9fafb; }
 .pa-msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
 .pa-msg.ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
 .pa-msg.err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
-.pa-service { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #6b7280; }
-@media (max-width: 640px) {
+.pa-service { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--patext3, #6b7280); }
+.pa-plist { margin-top: 4px; }
+/* ===== 打印机卡片 · 紧凑一行 ===== */
+.pa-pitem {
+	display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+	border: 1px solid var(--paborder, #e5e7eb); border-radius: 10px; background: #fff;
+	margin-bottom: 8px;
+	box-shadow: 0 1px 2px rgba(17,24,39,.04), 0 1px 3px rgba(17,24,39,.06);
+}
+.pa-pitem:hover { border-color: var(--paborder-strong, #d1d5db); }
+.pa-pitem-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.pa-pitem-icon {
+	width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0;
+	background: var(--pap-soft, #eff6ff); color: var(--pap, #2563eb);
+	display: flex; align-items: center; justify-content: center;
+}
+.pa-pitem-icon svg { width: 20px; height: 20px; }
+.pa-pitem-info { flex: 1; min-width: 0; }
+.pa-pitem-name { font-size: 14px; font-weight: 600; color: var(--patext, #111827); display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.pa-name-input {
+	flex: 0 1 auto; min-width: 60px; max-width: 220px; width: 100%; box-sizing: border-box;
+	padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent;
+	font-size: 14px; font-weight: 600; color: var(--patext, #111827); font-family: inherit;
+}
+.pa-name-input:hover { border-color: var(--paborder-strong, #d1d5db); }
+.pa-name-input:focus { outline: none; border-color: var(--pap, #2563eb); background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.pa-pitem-meta { margin-top: 2px; font-size: 12px; color: var(--patext3, #6b7280); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pa-pitem-meta .sep { color: var(--patext4, #9ca3af); margin: 0 6px; }
+.pa-pitem-meta .m-model { color: var(--patext2, #374151); font-weight: 500; }
+.pa-pitem-meta .m-cmd { color: var(--pap, #2563eb); font-weight: 500; }
+.pa-pitem-meta .m-none { color: var(--padanger, #b91c1c); }
+.pa-pitem-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.pa-btn.config, .pa-btn.test {
+	background: #fff; color: var(--pap, #2563eb); border: 1px solid var(--pap-border, #93c5fd);
+	border-radius: 6px; padding: 5px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.pa-btn.config:hover, .pa-btn.test:hover { background: var(--pap-soft, #eff6ff); }
+.pa-btn.del {
+	background: #fff; color: var(--padanger, #b91c1c); border: 1px solid #fecaca;
+	border-radius: 6px; padding: 5px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.pa-btn.del:hover { background: var(--padanger-soft, #fef2f2); border-color: #fca5a5; }
+.pa-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--patext2, #374151); white-space: nowrap; cursor: pointer; user-select: none; }
+.pa-check input { width: 14px; height: 14px; cursor: pointer; accent-color: var(--pap, #2563eb); }
+.pa-pitem-state { font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 9px; color: var(--patext3, #6b7280); background: #f3f4f6; white-space: nowrap; }
+.pa-pitem-state.ok { color: var(--paok, #15803d); background: var(--paok-soft, #f0fdf4); }
+.pa-pitem-state.off { color: var(--patext4, #9ca3af); background: #f9fafb; }
+.pa-plist-footer {
+	display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+	border: 1px dashed var(--paborder, #e5e7eb); border-radius: 10px; background: #fafbfc;
+	cursor: pointer; transition: background .15s;
+}
+.pa-plist-footer:hover { background: #f3f4f6; }
+.pa-plist-footer .plus {
+	width: 22px; height: 22px; border-radius: 50%; background: #fff;
+	border: 1px solid var(--paborder, #e5e7eb); color: var(--patext3, #6b7280);
+	display: flex; align-items: center; justify-content: center; font-size: 14px; flex: 0 0 auto;
+}
+.pa-plist-footer .text { font-size: 13px; color: var(--patext2, #374151); font-weight: 500; }
+.pa-plist-footer .ft-hint { margin-left: auto; font-size: 12px; color: var(--patext3, #6b7280); }
+.pa-pempty { padding: 18px 0 6px; text-align: center; font-size: 12px; color: var(--patext4, #9ca3af); }
+/* ===== 弹层（居中对话框） ===== */
+.pa-pmask {
+	position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1000;
+	background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;
+}
+.pa-psheet {
+	width: 560px; max-width: calc(100vw - 32px); max-height: 82vh; overflow-y: auto;
+	background: #fff; border-radius: 12px;
+	box-shadow: 0 12px 32px rgba(17,24,39,.18);
+	animation: paPop .18s ease-out;
+}
+@keyframes paPop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.pa-psheet-title {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 16px 20px; border-bottom: 1px solid var(--paborder, #e5e7eb);
+	font-size: 15px; font-weight: 500; color: #1f2329;
+}
+.pa-modal-close {
+	width: 28px; height: 28px; border: none; background: none; color: var(--patext4, #9ca3af);
+	font-size: 20px; cursor: pointer; border-radius: 50%;
+	display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.pa-modal-close:hover { background: #f3f4f6; color: var(--patext2, #374151); }
+.pa-modal-body { padding: 20px; }
+.pa-modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--paborder, #e5e7eb); }
+.pa-pitem-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+.pa-pitem-row:last-child { border-bottom: none; }
+.pa-pitem-row.off { opacity: 0.55; cursor: not-allowed; }
+.pa-pitem-text { flex: 1; min-width: 0; }
+.pa-pitem-rowname { font-size: 13px; color: var(--patext, #111827); }
+.pa-pitem-sub { margin-top: 2px; font-size: 12px; color: var(--patext3, #6b7280); }
+/* ===== 弹层 A：选择品牌 ===== */
+.pa-psheet.brand-modal { width: 713px; }
+.brand-grid {
+	display: grid; grid-template-columns: repeat(3, 1fr);
+	column-gap: 48px; row-gap: 44px;
+	padding: 34px 44px 66px; background: #fff;
+}
+.brand-cell {
+	border: none; background: transparent; padding: 6px 4px;
+	cursor: pointer; text-align: center; font-family: inherit;
+	display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+	transition: opacity .15s;
+}
+.brand-cell:hover { opacity: .72; }
+.brand-en { font-size: 20px; font-weight: 700; line-height: 1.15; letter-spacing: .2px; }
+.brand-cn { margin-top: 9px; font-size: 13px; color: #666; line-height: 1.2; }
+.brand-cmd {
+	margin-top: 13px; min-width: 90px; height: 26px; padding: 0 12px;
+	display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+	background: #fff; border: 1px solid #4a9df5; color: #2b7bd6;
+	border-radius: 13px; font-size: 12px; line-height: 1;
+	cursor: pointer; font-family: inherit;
+	transition: background .15s, color .15s;
+}
+.brand-cmd:hover { background: #eaf4ff; }
+.brand-cmd svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 2.2; transition: transform .15s; }
+.brand-cmd.open svg { transform: rotate(180deg); }
+/* 指令内联下拉：挂在胶囊下方，不弹新弹层 */
+.brand-cmd-wrap { position: relative; }
+.cmd-pop {
+	position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+	background: #fff; border: 1px solid var(--paborder, #e5e7eb); border-radius: 8px;
+	box-shadow: 0 4px 16px rgba(17,24,39,.14); padding: 4px; z-index: 20; min-width: 112px;
+}
+.cmd-pop-item {
+	display: block; width: 100%; border: none; background: none;
+	padding: 7px 14px; font-size: 13px; text-align: center; cursor: pointer;
+	font-family: inherit; color: var(--patext2, #374151); border-radius: 6px;
+}
+.cmd-pop-item:hover { background: var(--pap-soft, #eff6ff); color: var(--pap, #2563eb); }
+.cmd-pop-item.active { color: var(--pap, #2563eb); font-weight: 600; }
+.brand-chiteng .brand-en { color: #1d39c4; }
+.brand-gainscha .brand-en { color: #1890ff; }
+.brand-sprt .brand-en { color: #1d39c4; }
+.brand-hprt .brand-en { color: #cf1322; }
+.brand-clabel .brand-en { color: #1890ff; }
+.brand-kuaimai .brand-en { color: #fa541c; }
+.brand-qirui .brand-en { color: #1890ff; }
+.brand-tsc .brand-en { color: #003a8c; }
+.brand-urprtcn .brand-en { color: #fa8c16; }
+/* ===== 弹层 B：型号编辑 ===== */
+.pa-mform-row { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center; margin-bottom: 16px; }
+.pa-mform-row:last-child { margin-bottom: 0; }
+.pa-mform-row .pa-label { font-size: 13px; color: #333; }
+.pa-mform-row .pa-input { height: 34px; border-color: #d9d9d9; padding: 0 10px; }
+.pa-existing-tag {
+	display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+	color: var(--patext3, #6b7280); padding: 2px 8px; background: #f3f4f6;
+	border-radius: 999px; margin-left: 8px; font-weight: normal;
+}
+.pa-existing-tag.ok { color: var(--paok, #15803d); background: var(--paok-soft, #f0fdf4); }
+.pa-existing-models { margin-bottom: 16px; }
+.pa-em-title { font-size: 12px; color: var(--patext3, #6b7280); margin-bottom: 8px; }
+.pa-em-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pa-em-chip {
+	border: 1px solid var(--paborder-strong, #d1d5db); background: #fff; color: var(--patext2, #374151);
+	border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.pa-em-chip:hover { border-color: var(--pap-border, #93c5fd); background: var(--pap-soft, #eff6ff); }
+.pa-em-chip.active { border-color: var(--pap, #2563eb); color: var(--pap, #2563eb); background: var(--pap-soft, #eff6ff); }
+.pa-tip {
+	font-size: 12px; color: var(--patext3, #6b7280); margin-top: 2px;
+	padding: 8px 12px; background: #f9fafb; border-radius: 6px; border: 1px dashed var(--paborder, #e5e7eb);
+}
+@media (max-width: 680px) {
 	.pa-row { grid-template-columns: 1fr; gap: 4px; }
-	.pa-prow { grid-template-columns: 1fr 1fr; }
+	.pa-pitem { flex-wrap: wrap; }
+	.pa-pitem-right { width: 100%; margin-top: 8px; justify-content: flex-end; flex-wrap: wrap; }
+	.brand-grid { grid-template-columns: repeat(2, 1fr); column-gap: 24px; row-gap: 32px; padding: 24px 24px 40px; }
+	.pa-psheet.brand-modal { width: calc(100vw - 32px); }
 }
 </style>
 
@@ -109,6 +270,8 @@ end
 		<div class="pa-msg ok">配对成功，代理正在重启并连接主机。</div>
 	<% elseif msg == "tested" then %>
 		<div class="pa-msg ok">测试标签已发送到打印机。</div>
+	<% elseif msg == "model" then %>
+		<div class="pa-msg ok">打印机型号已保存到主机。</div>
 	<% elseif msg == "service" then %>
 		<div class="pa-msg ok">服务操作已执行。</div>
 	<% elseif msg == "unknown" then %>
@@ -173,17 +336,91 @@ end
 				<span class="pa-label">门店名称</span>
 				<input class="pa-input" type="text" name="storeName" value="<%=pcdata(cfg.storeName or '')%>" placeholder="如 杭州西湖店" />
 			</div>
-			<div id="printerRows"></div>
-			<div style="margin-top:4px">
-				<button class="pa-btn ghost small" type="button" id="addPrinter">+ 添加打印机</button>
-				<span class="pa-hint">型号从主机「打印管理 → 添加打印机」下发，选择型号后主机按该型号的指令方式驱动本地打印机。</span>
+			<div id="printerList" class="pa-plist"></div>
+			<div id="printerEmpty" class="pa-pempty">还没有选择打印机，点击下方按钮自动读取本机打印机</div>
+			<div class="pa-plist-footer" id="pickPrinter" style="margin-top:4px">
+				<div class="plus">+</div>
+				<div class="text">选择打印机</div>
+				<div class="ft-hint">自动读取本机 p910nd 队列与 USB 打印设备，选中的打印机作为远程打印机</div>
 			</div>
 		</div>
 
-		<div class="pa-footer">
-			<span class="pa-hint" id="saveHint">保存后代理会自动重连，无需重启路由器。</span>
-			<div class="pa-actions">
-				<button class="pa-btn" type="submit">保存并应用</button>
+		<div class="pa-card" style="background:#fafbfc;border-style:dashed">
+			<div class="pa-footer">
+				<span class="pa-hint" id="saveHint">保存后代理会自动重连，无需重启路由器。</span>
+				<div class="pa-actions">
+					<button class="pa-btn primary-block" type="submit">保存并应用</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- 选择打印机：本机 p910nd 队列与 USB 设备 -->
+		<div class="pa-pmask" id="pickMask" style="display:none">
+			<div class="pa-psheet">
+				<div class="pa-psheet-title">选择本机打印机
+					<button class="pa-modal-close" type="button" id="pickClose">×</button>
+				</div>
+				<div class="pa-modal-body">
+					<div id="pickList"></div>
+					<div class="pa-pempty" id="pickEmpty" style="display:none">没有可添加的打印机，请先在 p910nd 中启用</div>
+					<div class="pa-actions" style="margin-top:12px;justify-content:flex-end">
+						<button class="pa-btn ghost small" type="button" id="pickRefresh">刷新本机列表</button>
+						<button class="pa-btn cancel" type="button" id="pickCancel">取消</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- 弹层 A：选择品牌 -->
+		<div class="pa-pmask" id="brandMask" style="display:none">
+			<div class="pa-psheet brand-modal">
+				<div class="pa-psheet-title">选择品牌
+					<button class="pa-modal-close" type="button" id="brandClose">×</button>
+				</div>
+				<div class="brand-grid" id="brandGrid"></div>
+			</div>
+		</div>
+
+		<!-- 弹层 B：型号编辑（选品牌后自动进入） -->
+		<div class="pa-pmask" id="modelMask" style="display:none">
+			<div class="pa-psheet">
+				<div class="pa-psheet-title">配置打印机型号 · <span id="modelTarget"></span>
+					<span class="pa-existing-tag ok" id="modelExistingTag" style="display:none">已存在 · 编辑</span>
+					<button class="pa-modal-close" type="button" id="modelClose">×</button>
+				</div>
+				<div class="pa-modal-body">
+					<div class="pa-existing-models" id="existingModels" style="display:none">
+						<div class="pa-em-title">主机型号库中该品牌已有的型号，点击可直接使用</div>
+						<div class="pa-em-list" id="existingModelList"></div>
+					</div>
+					<input type="hidden" name="modelId" id="modelId" value="" />
+					<div class="pa-mform-row">
+						<span class="pa-label">品牌</span>
+						<input class="pa-input" type="text" name="modelBrand" id="modelBrand" placeholder="如 汉印" />
+					</div>
+					<div class="pa-mform-row">
+						<span class="pa-label">型号</span>
+						<input class="pa-input" type="text" name="modelName" id="modelName" placeholder="如 汉印D45" />
+					</div>
+					<div class="pa-mform-row">
+						<span class="pa-label">指令方式</span>
+						<select class="pa-input" name="modelCmd" id="modelCmd">
+							<option value="TSPL">TSPL</option>
+							<option value="CPCL">CPCL</option>
+							<option value="DDPL">DDPL</option>
+							<option value="ESC/POS">ESC/POS</option>
+						</select>
+					</div>
+					<div class="pa-mform-row">
+						<span class="pa-label">状态</span>
+						<label class="pa-check"><input type="checkbox" name="modelEnabled" id="modelEnabled" value="1" checked /> 启用</label>
+					</div>
+					<div class="pa-tip">点选品牌后已自动回填。保存时主机型号库已存在该型号则更新，不存在则新增；保存成功后该型号会立即绑定到当前打印机。</div>
+				</div>
+				<div class="pa-modal-foot">
+					<button class="pa-btn cancel" type="button" id="modelCancel">取消</button>
+					<button class="pa-btn primary-block" type="submit" formaction="<%=action_url%>/printer-model" id="btnSaveModel">保存型号到主机</button>
+				</div>
 			</div>
 		</div>
 	</form>
@@ -191,180 +428,477 @@ end
 
 <script type="application/json" id="modelsSeed"><%=models_json%></script>
 <script type="application/json" id="printersSeed"><%=printers_json%></script>
+<script type="application/json" id="localPrintersSeed"><%=local_printers_json%></script>
 <script type="text/javascript">
 (function () {
-	var seed = [];
-	try {
-		seed = JSON.parse(document.getElementById('printersSeed').textContent || '[]') || [];
-	} catch (e) {
-		seed = [];
-	}
-	var models = [];
-	try {
-		models = JSON.parse(document.getElementById('modelsSeed').textContent || '[]') || [];
-	} catch (e) {
-		models = [];
-	}
-	if (!seed.length) {
-		seed = [{ id: 'default', name: '标签打印机', model: '', host: '127.0.0.1', port: 9100, enabled: true }];
+	function readJSON(id) {
+		try {
+			return JSON.parse(document.getElementById(id).textContent || '[]') || [];
+		} catch (e) {
+			return [];
+		}
 	}
 
-	var container = document.getElementById('printerRows');
-	var actionTest = '<%=action_url%>/test';
+	var models = readJSON('modelsSeed');
+	var localPrinters = readJSON('localPrintersSeed');
+	var state = readJSON('printersSeed').map(function (p) {
+		return {
+			id: p.id || '',
+			name: p.name || p.id || '打印机',
+			model: p.model || '',
+			brand: p.brand || '',
+			cmd: p.cmd || '',
+			device: p.device || '',
+			host: p.host || '127.0.0.1',
+			port: p.port || 0,
+			enabled: p.enabled !== false,
+			online: false
+		};
+	});
+
+	var PRINTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>';
+	var CHEVRON = '<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>';
+
+	var brands = [
+		{ en: '驰腾', cn: '驰腾', brand: '驰腾', cmd: 'TSPL', cls: 'brand-chiteng' },
+		{ en: 'Gainscha', cn: '佳博', brand: '佳博', cmd: 'TSPL', cls: 'brand-gainscha' },
+		{ en: 'SPRT', cn: '思普瑞特', brand: '思普瑞特', cmd: 'TSPL', cls: 'brand-sprt' },
+		{ en: '汉印 HPRT', cn: '汉印', brand: '汉印', cmd: 'CPCL', cls: 'brand-hprt' },
+		{ en: 'Clabel', cn: 'Clabel', brand: 'Clabel', cmd: 'TSPL', cls: 'brand-clabel' },
+		{ en: '快麦', cn: '快麦', brand: '快麦', cmd: 'TSPL', cls: 'brand-kuaimai' },
+		{ en: '启锐', cn: '启锐', brand: '启锐', cmd: 'TSPL', cls: 'brand-qirui' },
+		{ en: 'TSC', cn: 'TSC', brand: 'TSC', cmd: 'TSPL', cls: 'brand-tsc' },
+		{ en: 'URPRTCN', cn: '优迩', brand: '优迩', cmd: 'TSPL', cls: 'brand-urprtcn' }
+	];
+
+	var listBox = document.getElementById('printerList');
+	var emptyBox = document.getElementById('printerEmpty');
+	var pickMask = document.getElementById('pickMask');
+	var pickList = document.getElementById('pickList');
+	var pickEmpty = document.getElementById('pickEmpty');
+	var brandMask = document.getElementById('brandMask');
+	var brandGrid = document.getElementById('brandGrid');
+	var modelMask = document.getElementById('modelMask');
+	var existingBox = document.getElementById('existingModels');
+	var existingList = document.getElementById('existingModelList');
+	var existingTag = document.getElementById('modelExistingTag');
+	var modelTarget = document.getElementById('modelTarget');
+	var currentPrinter = -1;
+
+	function el(tag, cls, text) {
+		var node = document.createElement(tag);
+		if (cls) {
+			node.className = cls;
+		}
+		if (text != null) {
+			node.textContent = text;
+		}
+		return node;
+	}
+
+	function findModel(name) {
+		for (var i = 0; i < models.length; i++) {
+			if (models[i] && models[i].model === name) {
+				return models[i];
+			}
+		}
+		return null;
+	}
+
+	// 品牌（含英文别名）是否与型号库品牌匹配
+	function brandMatch(modelBrand, brandKey) {
+		if (!modelBrand || !brandKey) {
+			return false;
+		}
+		var a = String(modelBrand).toLowerCase();
+		var b = String(brandKey).toLowerCase();
+		return a === b || a.indexOf(b) >= 0 || b.indexOf(a) >= 0;
+	}
+
+	function renderList() {
+		listBox.innerHTML = '';
+		emptyBox.style.display = state.length ? 'none' : 'block';
+		state.forEach(function (p, index) {
+			var card = el('div', 'pa-pitem');
+			var left = el('div', 'pa-pitem-left');
+			var icon = el('div', 'pa-pitem-icon');
+			icon.innerHTML = PRINTER_ICON;
+			left.appendChild(icon);
+
+			var info = el('div', 'pa-pitem-info');
+			var nameRow = el('div', 'pa-pitem-name');
+			var nameInput = document.createElement('input');
+			nameInput.className = 'pa-name-input';
+			nameInput.type = 'text';
+			nameInput.maxLength = 40;
+			nameInput.value = p.name;
+			nameInput.title = '点击可编辑打印机名称';
+			nameInput.setAttribute('aria-label', '打印机名称');
+			nameInput.addEventListener('input', function () {
+				p.name = nameInput.value;
+			});
+			nameRow.appendChild(nameInput);
+			if (p.model) {
+				var tag = el('span', 'pa-existing-tag ok', '已选型号');
+				nameRow.appendChild(tag);
+			}
+			info.appendChild(nameRow);
+
+			var meta = el('div', 'pa-pitem-meta');
+			var driver = findModel(p.model);
+			if (p.model) {
+				var mModel = el('span', 'm-model', p.model);
+				meta.appendChild(mModel);
+				var brandText = (driver && driver.brand) || p.brand;
+				if (brandText) {
+					meta.appendChild(el('span', 'sep', '·'));
+					meta.appendChild(el('span', null, brandText));
+				}
+				var cmdText = (driver && driver.cmdSet) || p.cmd;
+				if (cmdText) {
+					meta.appendChild(el('span', 'sep', '·'));
+					meta.appendChild(el('span', 'm-cmd', cmdText));
+				}
+			} else {
+				meta.appendChild(el('span', 'm-none', '未配置型号（将无法打印）'));
+				// 品牌选择页回填的品牌与指令
+				if (p.brand) {
+					meta.appendChild(el('span', 'sep', '·'));
+					meta.appendChild(el('span', null, p.brand));
+				}
+				if (p.cmd) {
+					meta.appendChild(el('span', 'sep', '·'));
+					meta.appendChild(el('span', 'm-cmd', p.cmd));
+				}
+			}
+			meta.appendChild(el('span', 'sep', '·'));
+			meta.appendChild(document.createTextNode(p.host + ':' + (p.port || 9100)));
+			if (p.device) {
+				meta.appendChild(el('span', 'sep', '·'));
+				meta.appendChild(document.createTextNode(p.device));
+			}
+			info.appendChild(meta);
+			left.appendChild(info);
+			card.appendChild(left);
+
+			var right = el('div', 'pa-pitem-right');
+
+			var modelBtn = el('button', 'pa-btn config', '配置打印机型号');
+			modelBtn.type = 'button';
+			modelBtn.addEventListener('click', function () {
+				openBrands(index);
+			});
+			right.appendChild(modelBtn);
+
+			var check = el('label', 'pa-check');
+			var enabled = document.createElement('input');
+			enabled.type = 'checkbox';
+			enabled.checked = p.enabled !== false;
+			enabled.addEventListener('change', function () {
+				p.enabled = enabled.checked;
+			});
+			check.appendChild(enabled);
+			check.appendChild(document.createTextNode(' 启用'));
+			right.appendChild(check);
+
+			var test = el('button', 'pa-btn test', '测试');
+			test.type = 'submit';
+			test.setAttribute('formaction', '<%=action_url%>/test');
+			test.addEventListener('click', function () {
+				document.getElementById('printerId').value = p.id;
+			});
+			right.appendChild(test);
+
+			var remove = el('button', 'pa-btn del', '删除');
+			remove.type = 'button';
+			remove.addEventListener('click', function () {
+				state.splice(index, 1);
+				renderList();
+			});
+			right.appendChild(remove);
+
+			right.appendChild(el('span', 'pa-pitem-state ' + (p.online ? 'ok' : 'off'), p.online ? '在线' : '未连接'));
+
+			card.appendChild(right);
+			listBox.appendChild(card);
+		});
+	}
 
 	function usedIds() {
-		var used = {};
-		var inputs = container.querySelectorAll('input[data-field="id"]');
-		for (var i = 0; i < inputs.length; i++) {
-			used[inputs[i].value] = true;
-		}
-		return used;
-	}
-
-	function nextId() {
-		var used = usedIds();
-		if (!used['default']) {
-			return 'default';
-		}
-		var index = 2;
-		while (used['printer' + index]) {
-			index++;
-		}
-		return 'printer' + index;
-	}
-
-	// 型号改为下拉：选项由主机下发；当前配置的型号不在列表时保留为「当前」
-	function buildModelSelect(value) {
-		var select = document.createElement('select');
-		select.className = 'pa-input';
-		select.setAttribute('data-field', 'model');
-		var blank = document.createElement('option');
-		blank.value = '';
-		blank.textContent = models.length ? '选择型号' : '未下发型号';
-		select.appendChild(blank);
-		var found = false;
-		for (var i = 0; i < models.length; i++) {
-			var item = models[i] || {};
-			var name = item.model || '';
-			if (!name) {
-				continue;
-			}
-			var option = document.createElement('option');
-			option.value = name;
-			option.textContent = item.brand ? (name + '（' + item.brand + '）') : name;
-			select.appendChild(option);
-			if (name === value) {
-				found = true;
-			}
-		}
-		if (value && !found) {
-			var current = document.createElement('option');
-			current.value = value;
-			current.textContent = value + '（当前）';
-			select.appendChild(current);
-		}
-		select.value = value || '';
-		return select;
-	}
-
-	function addRow(printer) {
-		var row = document.createElement('div');
-		row.className = 'pa-prow';
-
-		var id = document.createElement('input');
-		id.className = 'pa-input mono';
-		id.setAttribute('data-field', 'id');
-		id.readOnly = true;
-		id.value = printer.id || nextId();
-
-		var name = document.createElement('input');
-		name.className = 'pa-input';
-		name.setAttribute('data-field', 'name');
-		name.placeholder = '打印机名称';
-		name.value = printer.name || '';
-
-		var model = buildModelSelect(printer.model || '');
-
-		var host = document.createElement('input');
-		host.className = 'pa-input';
-		host.setAttribute('data-field', 'host');
-		host.placeholder = '127.0.0.1';
-		host.value = printer.host || '127.0.0.1';
-
-		var port = document.createElement('input');
-		port.className = 'pa-input mono';
-		port.setAttribute('data-field', 'port');
-		port.value = printer.port || 9100;
-
-		var check = document.createElement('label');
-		check.className = 'pa-check';
-		var enabled = document.createElement('input');
-		enabled.type = 'checkbox';
-		enabled.setAttribute('data-field', 'enabled');
-		enabled.checked = printer.enabled !== false;
-		check.appendChild(enabled);
-		check.appendChild(document.createTextNode('启用'));
-
-		// 测试打印：只测试当前这一台打印机
-		var test = document.createElement('button');
-		test.type = 'submit';
-		test.className = 'pa-test';
-		test.setAttribute('formaction', actionTest);
-		test.textContent = '测试';
-		test.addEventListener('click', function () {
-			document.getElementById('printerId').value = id.value;
+		var map = {};
+		state.forEach(function (p) {
+			map[p.id] = true;
 		});
+		return map;
+	}
 
-		var remove = document.createElement('button');
-		remove.type = 'button';
-		remove.className = 'pa-remove';
-		remove.textContent = '删除';
-		remove.addEventListener('click', function () {
-			if (container.querySelectorAll('.pa-prow').length <= 1) {
+	function renderPicker() {
+		pickList.innerHTML = '';
+		var used = usedIds();
+		var available = 0;
+		localPrinters.forEach(function (lp) {
+			var disabled = !lp.port || used[lp.id];
+			var item = el('div', 'pa-pitem-row' + (disabled ? ' off' : ''));
+			var text = el('div', 'pa-pitem-text');
+			text.appendChild(el('div', 'pa-pitem-rowname', lp.name || lp.id));
+			text.appendChild(el('div', 'pa-pitem-sub',
+				(lp.device || '') + (lp.port ? ' · 127.0.0.1:' + lp.port : ' · 未加入 p910nd')));
+			item.appendChild(text);
+			item.appendChild(el('span', 'pa-pitem-state ' + (lp.online ? 'ok' : 'off'),
+				lp.online ? '在线' : (lp.port ? '未连接' : '未启用')));
+			if (!disabled) {
+				available++;
+				item.addEventListener('click', function () {
+					state.push({
+						id: lp.id,
+						name: lp.name || lp.id,
+						model: '',
+						device: lp.device || '',
+						host: lp.host || '127.0.0.1',
+						port: lp.port || 9100,
+						enabled: true,
+						online: !!lp.online
+					});
+					pickMask.style.display = 'none';
+					renderList();
+				});
+			}
+			pickList.appendChild(item);
+		});
+		if (!localPrinters.length) {
+			var tip = el('div', 'pa-pitem-row off');
+			var tipText = el('div', 'pa-pitem-text');
+			tipText.appendChild(el('div', 'pa-pitem-rowname', '未读取到本机打印机'));
+			tipText.appendChild(el('div', 'pa-pitem-sub', '请确认 p910nd 已启用或 USB 打印机已识别'));
+			tip.appendChild(tipText);
+			pickList.appendChild(tip);
+		}
+		pickEmpty.style.display = (localPrinters.length && !available) ? 'block' : 'none';
+	}
+
+	var cmdPop = null; // 当前打开的指令下拉
+
+	function closeCmdPop() {
+		if (cmdPop) {
+			var wrap = cmdPop.parentNode;
+			if (wrap) {
+				wrap.removeChild(cmdPop);
+			}
+			cmdPop = null;
+			document.querySelectorAll('.brand-cmd.open').forEach(function (c) {
+				c.className = 'brand-cmd';
+			});
+		}
+	}
+
+	// 指令胶囊点击：原位弹出指令选择，选中后直接回填进入配置弹层
+	function toggleCmdPop(brand, chip, wrap) {
+		if (cmdPop) {
+			var same = cmdPop.parentNode === wrap;
+			closeCmdPop();
+			if (same) {
 				return;
 			}
-			container.removeChild(row);
+		}
+		var pop = el('div', 'cmd-pop');
+		var cmds = ['TSPL', 'CPCL', 'DDPL', 'ESC/POS'];
+		cmds.forEach(function (c) {
+			var opt = el('button', 'cmd-pop-item' + (c === brand.cmd ? ' active' : ''), c);
+			opt.type = 'button';
+			opt.addEventListener('click', function (ev) {
+				ev.stopPropagation();
+				brand.cmd = c;
+				chip.firstChild.textContent = c + ' ';
+				closeCmdPop();
+				// 不再弹出配置打印机型号弹层，直接把品牌与指令回填到打印机卡片
+				var printer = state[currentPrinter];
+				if (printer) {
+					printer.brand = brand.brand;
+					printer.cmd = c;
+					if (printer.model) {
+						// 已配置型号时仅回填展示，型号与主机库为准
+						var driver = findModel(printer.model);
+						if (driver && driver.brand && !brandMatch(driver.brand, brand.brand)) {
+							printer.model = '';
+						}
+					}
+				}
+				brandMask.style.display = 'none';
+				renderList();
+			});
+			pop.appendChild(opt);
 		});
+		wrap.appendChild(pop);
+		cmdPop = pop;
+		chip.className = 'brand-cmd open';
+	}
 
-		row.appendChild(id);
-		row.appendChild(name);
-		row.appendChild(model);
-		row.appendChild(host);
-		row.appendChild(port);
-		row.appendChild(check);
-		row.appendChild(test);
-		row.appendChild(remove);
-		container.appendChild(row);
+	function renderBrands() {
+		brandGrid.innerHTML = '';
+		brands.forEach(function (b) {
+			var cell = el('button', 'brand-cell ' + b.cls);
+			cell.type = 'button';
+			cell.appendChild(el('div', 'brand-en', b.en));
+			cell.appendChild(el('div', 'brand-cn', b.cn));
+			var wrap = el('span', 'brand-cmd-wrap');
+			var cmd = el('span', 'brand-cmd', b.cmd + ' ');
+			var chev = document.createElement('span');
+			chev.innerHTML = CHEVRON;
+			cmd.appendChild(chev);
+			// 胶囊单独响应：弹出指令下拉，不触发品牌默认进入
+			cmd.addEventListener('click', function (ev) {
+				ev.stopPropagation();
+				toggleCmdPop(b, cmd, wrap);
+			});
+			wrap.appendChild(cmd);
+			cell.appendChild(wrap);
+			cell.addEventListener('click', function () {
+				closeCmdPop();
+				openModelEditor(b);
+			});
+			brandGrid.appendChild(cell);
+		});
+	}
+
+	function fillModelForm(m) {
+		document.getElementById('modelId').value = m.id || '';
+		document.getElementById('modelBrand').value = m.brand || '';
+		document.getElementById('modelName').value = m.model || '';
+		document.getElementById('modelCmd').value = m.cmdSet || 'TSPL';
+		document.getElementById('modelEnabled').checked = m.enabled !== '0';
+	}
+
+	function resetModelForm() {
+		fillModelForm({ brand: '', model: '', cmdSet: 'TSPL', enabled: '1' });
+		existingTag.style.display = 'none';
+	}
+
+	function renderExistingModels(brandKey) {
+		existingList.innerHTML = '';
+		var list = [];
+		models.forEach(function (m) {
+			if (m && m.model && brandMatch(m.brand, brandKey)) {
+				list.push(m);
+			}
+		});
+		existingBox.style.display = list.length ? 'block' : 'none';
+		list.forEach(function (m) {
+			var chip = el('button', 'pa-em-chip',
+				m.model + (m.cmdSet ? ' · ' + m.cmdSet : '') + (m.enabled === '0' ? '（已停用）' : ''));
+			chip.type = 'button';
+			chip.addEventListener('click', function () {
+				fillModelForm(m);
+				existingTag.style.display = 'inline-flex';
+				var all = existingList.querySelectorAll('.pa-em-chip');
+				for (var i = 0; i < all.length; i++) {
+					all[i].className = 'pa-em-chip';
+				}
+				chip.className = 'pa-em-chip active';
+				document.getElementById('modelName').focus();
+			});
+			existingList.appendChild(chip);
+		});
+	}
+
+	function openBrands(index) {
+		currentPrinter = index;
+		closeCmdPop();
+		brandMask.style.display = 'flex';
+	}
+
+	function openModelEditor(brand) {
+		var printer = state[currentPrinter];
+		brandMask.style.display = 'none';
+		modelTarget.textContent = printer ? printer.name : '';
+		resetModelForm();
+		// 点选品牌后自动回填品牌、默认指令，型号默认品牌名让用户补后缀
+		document.getElementById('modelBrand').value = brand.brand;
+		// 打印机卡片已回填指令且品牌一致时优先使用
+		var preCmd = brand.cmd;
+		if (printer && printer.cmd && brandMatch(printer.brand, brand.brand)) {
+			preCmd = printer.cmd;
+		}
+		document.getElementById('modelCmd').value = preCmd;
+		document.getElementById('modelName').value = brand.brand;
+		renderExistingModels(brand.brand);
+		// 若当前打印机型号已属于该品牌，直接带入该型号并标记已存在
+		if (printer && printer.model) {
+			var driver = findModel(printer.model);
+			if (driver && brandMatch(driver.brand, brand.brand)) {
+				fillModelForm(driver);
+				existingTag.style.display = 'inline-flex';
+			}
+		}
+		modelMask.style.display = 'flex';
+		setTimeout(function () {
+			document.getElementById('modelName').focus();
+		}, 80);
 	}
 
 	function collect() {
-		var rows = container.querySelectorAll('.pa-prow');
-		var list = [];
-		for (var i = 0; i < rows.length; i++) {
-			var row = rows[i];
-			list.push({
-				id: row.querySelector('input[data-field="id"]').value,
-				name: row.querySelector('input[data-field="name"]').value,
-				model: row.querySelector('[data-field="model"]').value,
-				host: row.querySelector('input[data-field="host"]').value,
-				port: parseInt(row.querySelector('input[data-field="port"]').value, 10) || 9100,
-				enabled: row.querySelector('input[data-field="enabled"]').checked
-			});
-		}
-		return list;
+		return state.map(function (p) {
+			return {
+				id: p.id,
+				name: p.name,
+				model: p.model,
+				brand: p.brand || '',
+				cmd: p.cmd || '',
+				device: p.device,
+				host: p.host || '127.0.0.1',
+				port: p.port || 9100,
+				enabled: p.enabled !== false
+			};
+		});
 	}
 
-	document.getElementById('addPrinter').addEventListener('click', function () {
-		addRow({ id: nextId(), name: '新打印机', host: '127.0.0.1', port: 9100, enabled: true });
+	document.getElementById('pickPrinter').addEventListener('click', function () {
+		renderPicker();
+		pickMask.style.display = 'flex';
 	});
-
+	document.getElementById('pickCancel').addEventListener('click', function () {
+		pickMask.style.display = 'none';
+	});
+	document.getElementById('pickClose').addEventListener('click', function () {
+		pickMask.style.display = 'none';
+	});
+	document.getElementById('pickRefresh').addEventListener('click', function () {
+		window.location.reload();
+	});
+	document.getElementById('brandClose').addEventListener('click', function () {
+		closeCmdPop();
+		brandMask.style.display = 'none';
+	});
+	document.addEventListener('click', function (ev) {
+		if (cmdPop && !cmdPop.parentNode.contains(ev.target)) {
+			closeCmdPop();
+		}
+	});
+	document.getElementById('modelClose').addEventListener('click', function () {
+		modelMask.style.display = 'none';
+	});
+	document.getElementById('modelCancel').addEventListener('click', function () {
+		modelMask.style.display = 'none';
+	});
+	// 保存型号：型号与当前打印机绑定；主机库已有同名型号时带上其 id 走更新
+	document.getElementById('btnSaveModel').addEventListener('click', function () {
+		var modelName = document.getElementById('modelName').value.replace(/^\s+|\s+$/g, '');
+		if (modelName === '') {
+			return;
+		}
+		var exist = findModel(modelName);
+		if (exist && exist.id) {
+			document.getElementById('modelId').value = exist.id;
+		}
+		if (currentPrinter >= 0 && state[currentPrinter]) {
+			state[currentPrinter].model = modelName;
+		}
+	});
 	document.getElementById('paForm').addEventListener('submit', function () {
 		document.getElementById('printersJson').value = JSON.stringify(collect());
 	});
 
-	for (var i = 0; i < seed.length; i++) {
-		addRow(seed[i]);
-	}
+	renderBrands();
+	renderList();
 })();
 </script>
 

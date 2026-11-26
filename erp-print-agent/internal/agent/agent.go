@@ -37,6 +37,7 @@ type Agent struct {
 	queues  map[string]*printer.Queue
 	order   []string
 	names   map[string]string
+	configs map[string]config.Printer
 	results chan printer.Result
 
 	mu         sync.Mutex
@@ -56,6 +57,7 @@ func New(cfg *config.Config, log *logx.Logger, version string) *Agent {
 		started: time.Now(),
 		queues:  make(map[string]*printer.Queue),
 		names:   make(map[string]string),
+		configs: make(map[string]config.Printer),
 		results: make(chan printer.Result, 64),
 	}
 	for _, p := range cfg.Printers {
@@ -66,6 +68,7 @@ func New(cfg *config.Config, log *logx.Logger, version string) *Agent {
 		a.queues[p.ID] = q
 		a.order = append(a.order, p.ID)
 		a.names[p.ID] = p.Name
+		a.configs[p.ID] = p
 	}
 
 	a.ws = wsclient.New(cfg, version, log, wsclient.Handlers{
@@ -352,6 +355,12 @@ func (a *Agent) statusSnapshot() protocol.AgentStatusData {
 			Online:    healthy,
 			Printing:  printing,
 			LastError: lastErr,
+		}
+		if p, ok := a.configs[id]; ok {
+			ps.Model = p.Model
+			ps.Device = p.Device
+			ps.Host = p.Host
+			ps.Port = p.Port
 		}
 		if !lastAt.IsZero() {
 			ps.LastTaskAt = lastAt.UnixMilli()

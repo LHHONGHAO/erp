@@ -77,6 +77,14 @@
     <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="ocr-file-input" @change="onPickImage" />
     <input ref="galleryInput" type="file" accept="image/*" class="ocr-file-input" @change="onPickImage" />
 
+    <!-- 商品图片添加前裁剪：按商品卡片 1:1 比例，拖动确定位置后压缩到 500KB 以内 -->
+    <crop-image-modal
+      :visible="cropVisible"
+      :file="cropFile"
+      @confirm="onCropConfirm"
+      @cancel="onCropCancel"
+      @error="onCropError" />
+
     <!-- 图片放大预览 -->
     <a-modal
       :visible="previewVisible"
@@ -151,6 +159,7 @@ import Vue from 'vue'
 import { postAction, getAction } from '@/api/manage'
 import { axios as uploadHttp } from '@/utils/request'
 import ImageRecognizeBox from '@/components/ocr/ImageRecognizeBox'
+import CropImageModal from '@/components/mobile/CropImageModal'
 import { recognizeTextFromImage, parseProductText } from '@/views/material/utils/productTextScan'
 
 // 基础属性列表：与商品新增页「基础属性设置」的可选项保持一致
@@ -183,7 +192,8 @@ var BASE_PROPERTIES = [
 export default {
   name: 'OcrRecognizeModal',
   components: {
-    ImageRecognizeBox
+    ImageRecognizeBox,
+    CropImageModal
   },
   props: {
     visible: {
@@ -225,6 +235,9 @@ export default {
       specImagePath: '',
       // 多图模式：每张图的预览、上传路径与识别文字
       multiImages: [],
+      // 商品图片裁剪弹层
+      cropVisible: false,
+      cropFile: null,
       activeImageIndex: -1,
       multiSeq: 0,
       cameraVisible: false,
@@ -460,7 +473,7 @@ export default {
         var file = new File([blob], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' })
         that.closeCamera()
         if (that.multi) {
-          that.addMultiImage(file)
+          that.openCrop(file)
           return
         }
         if (that.extractOnly) {
@@ -479,7 +492,7 @@ export default {
       input.value = ''
       if (file) {
         if (this.multi) {
-          this.addMultiImage(file)
+          this.openCrop(file)
           return
         }
         // 规格图取字模式：图片在提取框内加载，同时上传供规格值使用
@@ -492,6 +505,25 @@ export default {
     resetMultiImages() {
       this.multiImages = []
       this.activeImageIndex = -1
+    },
+    /** 商品图片先裁剪（1:1，压缩到 500KB 内）再加入多图列表 */
+    openCrop(file) {
+      this.cropFile = file
+      this.cropVisible = true
+    },
+    onCropConfirm(file) {
+      this.cropVisible = false
+      this.cropFile = null
+      if (file) this.addMultiImage(file)
+    },
+    onCropCancel() {
+      this.cropVisible = false
+      this.cropFile = null
+    },
+    onCropError() {
+      this.cropVisible = false
+      this.cropFile = null
+      this.$message.error('图片裁剪失败，请重试')
     },
     addMultiImage(file) {
       if (this.multiImages.length >= this.maxImages) {

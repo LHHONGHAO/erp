@@ -80,7 +80,7 @@ import MobileModalPage from './MobileModalPage'
 import MobileSearchLayout from './MobileSearchLayout'
 import MobileGoodsFeed from './MobileGoodsFeed'
 import OcrRecognizeModal from '@/views/material/modules/OcrRecognizeModal'
-import { recordGoodsUsage, getRecentGoods } from './goodsUsage'
+import { recordGoodsUsage, getRecentGoods, fetchRecentGoods, clearLocalGoodsUsage } from './goodsUsage'
 
 /**
  * 标准商品选择/添加弹层（唯一复用模块）：所有需要「添加商品」的页面统一复用本组件，
@@ -183,11 +183,14 @@ export default {
           return normalized
         }, this)
         this.qtyMap = qtyMap
-        this.recentList = getRecentGoods({
+        var recentOpts = {
           days: this.recentDays,
           limit: this.recentLimit,
           requireRaw: this.recentRequireRaw
-        })
+        }
+        // 打开时只刷新一次商品流：等最近常选（店铺共享，失败回退本地）确定后再重建，
+        // 避免本地列表与服务端列表各触发一次重载导致的空白/不可滚动
+        this.loadSharedRecent(recentOpts)
         // 每次打开都回到默认状态：展示全部商品（类目树里存在无商品的废弃类目，不默认选中任何类目）
         this.filterCategoryId = undefined
         this.favSpecs = []
@@ -202,7 +205,6 @@ export default {
         if (this.$store && this.$store.commit) {
           this.$store.commit('goodsFeed/CLEAR_FEED_STATE', 'goods_picker_v2')
         }
-        this.resetFeed()
       }
     }
   },
@@ -534,6 +536,29 @@ export default {
     /** 条件变化：商品流回到顶部重新加载第 1 页 */
     resetFeed() {
       this.pickerResetKey += 1
+    },
+    /**
+     * 打开时先确定最近常选，再用它重建一次商品流（服务端为空也照样重建，展示全部商品按类目排序）。
+     * 接口超时/失败时回退本地记录，保证离线也能打开。
+     */
+    loadSharedRecent(opts) {
+      var self = this
+      var settled = false
+      var timer = setTimeout(function() {
+        if (settled) return
+        settled = true
+        self.recentList = getRecentGoods(opts)
+        self.resetFeed()
+      }, 2500)
+      fetchRecentGoods(opts).then(function(res) {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (!self.visible || !res || !res.list) return
+        if (res.fromServer) clearLocalGoodsUsage()
+        self.recentList = res.list
+        self.resetFeed()
+      })
     },
     filterActive() {
       return !!this.filterCategoryId

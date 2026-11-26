@@ -29,6 +29,10 @@ function index()
 	test.leaf = true
 	test.post = true
 
+	local model = entry({"admin", "services", "erp_print_agent", "printer-model"}, call("action_printer_model"))
+	model.leaf = true
+	model.post = true
+
 	local svc = entry({"admin", "services", "erp_print_agent", "service"}, call("action_service"))
 	svc.leaf = true
 	svc.post = true
@@ -74,6 +78,18 @@ local function load_models()
 	return list
 end
 
+-- 本机可用打印机：读 p910nd 队列与 USB 设备节点，供设置页选择
+local function load_local_printers()
+	local raw = trim(sys.exec(BIN .. " printers 2>/dev/null"))
+	if raw ~= "" then
+		local ok, list = pcall(jsonc.parse, raw)
+		if ok and type(list) == "table" then
+			return jsonc.stringify(list)
+		end
+	end
+	return "[]"
+end
+
 -- 注意：LuCI 模板环境的查找顺序是 viewns(含 _G 与 ucode 桥接 L) 优先于 scope，
 -- 因此像 config / error / version 这类与全局同名的变量名会被全局值覆盖，必须换名。
 local function render(opts)
@@ -90,6 +106,7 @@ local function render(opts)
 	-- 嵌入 script 前转义 "<"，避免打印机名称中出现 </script> 截断页面
 	opts.printers_json = (jsonc.stringify(printers):gsub("<", "\\u003c"))
 	opts.models_json = (jsonc.stringify(load_models()):gsub("<", "\\u003c"))
+	opts.local_printers_json = (load_local_printers():gsub("<", "\\u003c"))
 	tpl.render("erp_print_agent/index", opts)
 end
 
@@ -123,6 +140,10 @@ local function collect_printers()
 			id = id,
 			name = trim(item.name),
 			model = trim(item.model),
+			-- 品牌选择页回填的品牌与指令，供展示与型号预填
+			brand = trim(item.brand),
+			cmd = trim(item.cmd),
+			device = trim(item.device),
 			host = trim(item.host),
 			port = port,
 			connectTimeoutMs = tonumber(item.connectTimeoutMs) or 3000,
@@ -232,6 +253,49 @@ function action_test()
 		return
 	end
 	back("tested")
+end
+
+-- 打印机型号维护：型号库保存在主机，代理页选择或新增后按型号的指令方式打印
+function action_printer_model()
+	local cfg, err = persist_form()
+	if not cfg then
+		render({ errtext = err })
+		return
+	end
+
+	local modelName = trim(http.formvalue("modelName"))
+	if modelName == "" then
+		render({ errtext = "打印机型号不能为空" })
+		return
+	end
+
+	local body = {
+		brand = trim(http.formvalue("modelBrand")),
+		model = modelName,
+		cmdSet = trim(http.formvalue("modelCmd")),
+		enabled = (http.formvalue("modelEnabled") == "1") and "1" or "0"
+	}
+	local modelId = tonumber(http.formvalue("modelId"))
+	if modelId and modelId > 0 then
+		body.id = modelId
+	end
+
+	local tmp = "/tmp/erp-print-model.json"
+	local ok, werr = pcall(function()
+		fs.writefile(tmp, jsonc.stringify(body) .. "\n")
+	end)
+	if not ok then
+		render({ errtext = "写入型号参数失败: " .. tostring(werr) })
+		return
+	end
+
+	local out = sys.exec(BIN .. " models -config " .. CONFIG .. " -save -file " .. tmp .. " 2>&1") or ""
+	sys.exec("rm -f " .. tmp)
+	if not out:find("型号已保存", 1, true) then
+		render({ errtext = "保存型号失败：" .. trim(out) })
+		return
+	end
+	back("model")
 end
 
 function action_service()

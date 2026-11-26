@@ -12,7 +12,7 @@
       <div v-if="devices.length === 0 && !loading" class="rpc-empty">
         <a-icon type="printer" class="rpc-empty-icon" />
         <div class="rpc-empty-text">暂无远程打印设备</div>
-        <div class="rpc-empty-sub">请先在电脑端「打印管理」新增打印代理设备与打印机</div>
+        <div class="rpc-empty-sub">请先在电脑端「打印管理」新增设备并完成配对，代理会自动上报本机打印机</div>
       </div>
 
       <div v-for="dev in devices" :key="dev.deviceId" class="rpc-device">
@@ -31,12 +31,12 @@
           <a-icon type="printer" class="rpc-printer-icon" />
           <div class="rpc-printer-text">
             <div class="rpc-printer-name">{{ p.name || p.id }}</div>
-            <div class="rpc-printer-sub">{{ hostText(p) }} · {{ brandText(p) }} · {{ p.cmdSet || 'TSPL' }}</div>
+            <div class="rpc-printer-sub">{{ hostText(p) }} · {{ p.model || '未配置型号' }}</div>
           </div>
-          <span class="rpc-printer-edit">编辑</span>
+          <span class="rpc-printer-edit">详情</span>
         </div>
 
-        <div v-if="printersOf(dev).length === 0" class="rpc-no-printer">该设备未配置打印机</div>
+        <div v-if="printersOf(dev).length === 0" class="rpc-no-printer">代理未上报打印机</div>
       </div>
     </a-spin>
 
@@ -45,8 +45,7 @@
       :devices="devices"
       :device-id="configDeviceId"
       :printer-id="configPrinterId"
-      @close="configVisible = false"
-      @saved="handleSaved" />
+      @close="configVisible = false" />
   </div>
 </template>
 
@@ -123,28 +122,10 @@
         if (!p.host) return '未配置地址'
         return p.host + ':' + (p.port || 9100)
       },
-      brandText(p) {
-        var map = {
-          chiteng: '驰腾',
-          gainscha: '佳博',
-          sprt: '思普瑞特',
-          hprt: '汉印',
-          clabel: 'Clabel',
-          kuaimai: '快麦',
-          qirui: '启锐',
-          tsc: 'TSC',
-          urprtcn: '优悠'
-        }
-        return map[p.brand] || '未选品牌'
-      },
       openConfig(device, printer) {
         this.configDeviceId = device.deviceId
         this.configPrinterId = printer.id
         this.configVisible = true
-      },
-      handleSaved() {
-        this.configVisible = false
-        this.loadDevices()
       }
     }
   }

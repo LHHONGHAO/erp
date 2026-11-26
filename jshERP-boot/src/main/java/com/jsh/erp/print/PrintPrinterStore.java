@@ -76,21 +76,22 @@ public class PrintPrinterStore {
     }
 
     /**
-     * 代理侧可选型号：只返回启用项
+     * 按主键取型号（编辑时用于保留未提交的字段）
      */
-    public List<JSONObject> listEnabled() {
-        List<JSONObject> list = new ArrayList<>();
-        String sql = "SELECT * FROM print_printer WHERE enabled = '1' ORDER BY brand ASC, model ASC";
+    public JSONObject findById(long id) {
+        String sql = "SELECT * FROM print_printer WHERE id = ? LIMIT 1";
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                list.add(read(rs));
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return read(rs);
+                }
             }
         } catch (Exception e) {
-            logger.error("查询打印机型号失败: " + e.getMessage(), e);
+            logger.error("按主键查询打印机型号失败: " + e.getMessage(), e);
         }
-        return list;
+        return null;
     }
 
     /**
@@ -116,7 +117,8 @@ public class PrintPrinterStore {
     }
 
     /**
-     * 新增或修改型号；型号唯一
+     * 新增或修改型号；型号唯一。
+     * 代理设置页只提交品牌/型号/指令方式/状态，未提交的字段保留原值，避免编辑型号时清空标签尺寸等参数。
      */
     public Long save(JSONObject body) throws Exception {
         Long id = body.getLong("id");
@@ -124,18 +126,28 @@ public class PrintPrinterStore {
         if (model == null) {
             throw new IllegalArgumentException("打印机型号不能为空");
         }
-        String brand = trim(body.getString("brand"));
-        String cmdSet = trim(body.getString("cmdSet"));
+        JSONObject existing = id != null && id > 0 ? findById(id) : null;
+        String brand = body.containsKey("brand") ? trim(body.getString("brand"))
+                : (existing == null ? null : trim(existing.getString("brand")));
+        String cmdSet = body.containsKey("cmdSet") ? trim(body.getString("cmdSet"))
+                : (existing == null ? null : trim(existing.getString("cmdSet")));
         if (cmdSet == null) {
             cmdSet = "TSPL";
         }
-        int widthMm = clamp(body.getIntValue("widthMm"), 0, 300);
-        int heightMm = clamp(body.getIntValue("heightMm"), 0, 300);
-        int copies = clamp(body.getIntValue("copies"), 1, 99);
-        int density = clamp(body.getIntValue("density"), 0, 15);
-        int speed = clamp(body.getIntValue("speed"), 0, 6);
-        String enabled = "0".equals(body.getString("enabled")) ? "0" : "1";
-        String remark = trim(body.getString("remark"));
+        int widthMm = body.containsKey("widthMm") ? clamp(body.getIntValue("widthMm"), 0, 300)
+                : (existing == null ? 0 : existing.getIntValue("widthMm"));
+        int heightMm = body.containsKey("heightMm") ? clamp(body.getIntValue("heightMm"), 0, 300)
+                : (existing == null ? 0 : existing.getIntValue("heightMm"));
+        int copies = body.containsKey("copies") ? clamp(body.getIntValue("copies"), 1, 99)
+                : (existing == null ? 1 : existing.getIntValue("copies"));
+        int density = body.containsKey("density") ? clamp(body.getIntValue("density"), 0, 15)
+                : (existing == null ? 0 : existing.getIntValue("density"));
+        int speed = body.containsKey("speed") ? clamp(body.getIntValue("speed"), 0, 6)
+                : (existing == null ? 0 : existing.getIntValue("speed"));
+        String enabled = body.containsKey("enabled") ? ("0".equals(body.getString("enabled")) ? "0" : "1")
+                : (existing == null ? "1" : existing.getString("enabled"));
+        String remark = body.containsKey("remark") ? trim(body.getString("remark"))
+                : (existing == null ? null : trim(existing.getString("remark")));
         try (Connection conn = dataSource.getConnection()) {
             if (id != null && id > 0) {
                 if (modelExists(conn, model, id)) {

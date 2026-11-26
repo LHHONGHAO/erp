@@ -1,120 +1,47 @@
 <template>
-  <!-- 远程打印机配置页：打印机设备 / 打印机 / 远程连接 / 当前指令 + 品牌与指令集选择 -->
-  <mobile-modal-page :visible="visible" title="编辑设备" @close="$emit('close')">
-    <div class="pdc-info">
+  <!-- 打印机信息（只读）：打印机清单由打印代理配对后自动上报，主机不再下发设备配置 -->
+  <mobile-modal-page :visible="visible" title="打印机信息" @close="$emit('close')">
+    <div class="pdc-body">
       <div class="pdc-card">
-        <div class="pdc-row" @click="openDeviceSheet">
-          <div class="pdc-label">打印机设备</div>
-          <div class="pdc-value" :class="{ muted: !form.deviceName }">{{ form.deviceName || '请选择设备' }}</div>
-          <a-icon type="right" class="pdc-arrow" />
+        <div class="pdc-row">
+          <div class="pdc-label">门店</div>
+          <div class="pdc-value">{{ form.deviceName || '-' }}</div>
         </div>
-        <div class="pdc-row" @click="openPrinterSheet">
+        <div class="pdc-row">
+          <div class="pdc-label">设备编号</div>
+          <div class="pdc-value mono">{{ form.deviceId || '-' }}</div>
+        </div>
+        <div class="pdc-row">
+          <div class="pdc-label">在线状态</div>
+          <div class="pdc-value" :class="{ ok: deviceOnline }">{{ deviceOnline ? '在线' : '离线' }}</div>
+        </div>
+        <div class="pdc-row">
           <div class="pdc-label">打印机</div>
-          <div class="pdc-value" :class="{ muted: !form.printerName }">{{ form.printerName || '请选择打印机' }}</div>
-          <a-icon type="right" class="pdc-arrow" />
+          <div class="pdc-value">{{ form.printerName || '-' }}</div>
         </div>
         <div class="pdc-row">
-          <div class="pdc-label">IP 地址</div>
-          <input v-model.trim="form.host" class="pdc-input" placeholder="如 192.168.10.10" />
+          <div class="pdc-label">型号</div>
+          <div class="pdc-value" :class="{ muted: !form.model }">{{ form.model || '未配置型号' }}</div>
         </div>
         <div class="pdc-row">
-          <div class="pdc-label">端口</div>
-          <input v-model.number="form.port" type="number" class="pdc-input" placeholder="9100" />
-        </div>
-        <div class="pdc-row">
-          <div class="pdc-label">当前指令</div>
-          <div class="pdc-value">{{ form.cmdSet || 'TSPL' }}</div>
+          <div class="pdc-label">地址</div>
+          <div class="pdc-value mono">{{ form.host || '-' }}:{{ form.port || 9100 }}</div>
         </div>
       </div>
-      <div class="pdc-section">选择打印机品牌</div>
-    </div>
-
-    <div class="pdc-grid">
-      <div
-        v-for="b in brands"
-        :key="b.key"
-        class="pdc-cell"
-        :class="{ active: form.brand === b.key }"
-        @click="chooseBrand(b)">
-        <div class="pdc-logo" :style="{ color: b.color }">{{ b.name }}</div>
-        <div class="pdc-name">{{ b.sub || b.name }}</div>
-        <div class="pdc-cmd" @click.stop="cmdSheet = true">
-          <span>{{ form.cmdSet }}</span>
-          <a-icon type="down" />
-        </div>
+      <div class="pdc-tip">
+        打印机与型号由打印代理配对后自动上报；型号在代理设置页「配置打印机型号」中维护，主机按该型号的指令方式打印。
       </div>
     </div>
 
     <template #footer>
       <div class="pdc-footer">
-        <a-button
-          type="primary"
-          block
-          size="large"
-          class="pdc-save"
-          :disabled="!form.deviceId || !form.printerId"
-          :loading="saving"
-          @click="save">保存</a-button>
+        <a-button type="primary" block size="large" class="pdc-btn" @click="$emit('close')">关闭</a-button>
       </div>
     </template>
-
-    <!-- 打印机设备选择 -->
-    <div v-if="deviceSheet" class="pdc-sheet-mask" @click="deviceSheet = false">
-      <div class="pdc-sheet" @click.stop>
-        <div class="pdc-sheet-group">
-          <div
-            v-for="d in devices"
-            :key="d.deviceId"
-            class="pdc-sheet-item"
-            :class="{ active: form.deviceId === d.deviceId }"
-            @click="chooseDevice(d)">
-            <span>{{ d.name || d.deviceId }}</span>
-            <span class="pdc-sheet-sub">{{ d.deviceId }} · {{ d.online ? '在线' : '离线' }}</span>
-          </div>
-          <div v-if="!devices || devices.length === 0" class="pdc-sheet-empty">暂无远程打印设备</div>
-        </div>
-        <div class="pdc-sheet-cancel" @click="deviceSheet = false">取消</div>
-      </div>
-    </div>
-
-    <!-- 打印机选择 -->
-    <div v-if="printerSheet" class="pdc-sheet-mask" @click="printerSheet = false">
-      <div class="pdc-sheet" @click.stop>
-        <div class="pdc-sheet-group">
-          <div
-            v-for="p in devicePrinters"
-            :key="p.id"
-            class="pdc-sheet-item"
-            :class="{ active: form.printerId === p.id }"
-            @click="choosePrinter(p)">
-            <span>{{ p.name || p.id }}</span>
-            <span class="pdc-sheet-sub">{{ p.host }}:{{ p.port }}</span>
-          </div>
-          <div v-if="devicePrinters.length === 0" class="pdc-sheet-empty">该设备未配置打印机</div>
-        </div>
-        <div class="pdc-sheet-cancel" @click="printerSheet = false">取消</div>
-      </div>
-    </div>
-
-    <!-- 指令集选择 -->
-    <div v-if="cmdSheet" class="pdc-sheet-mask" @click="cmdSheet = false">
-      <div class="pdc-sheet" @click.stop>
-        <div class="pdc-sheet-group">
-          <div
-            v-for="c in cmdSets"
-            :key="c"
-            class="pdc-sheet-item"
-            :class="{ active: form.cmdSet === c }"
-            @click="form.cmdSet = c; cmdSheet = false">{{ c }}</div>
-        </div>
-        <div class="pdc-sheet-cancel" @click="cmdSheet = false">取消</div>
-      </div>
-    </div>
   </mobile-modal-page>
 </template>
 
 <script>
-  import { savePrintAgent } from '@/api/printAgent'
   import MobileModalPage from '@/components/mobile/MobileModalPage'
 
   export default {
@@ -136,31 +63,14 @@
           printerName: '',
           host: '',
           port: 9100,
-          brand: '',
-          cmdSet: 'TSPL'
-        },
-        saving: false,
-        deviceSheet: false,
-        printerSheet: false,
-        cmdSheet: false,
-        cmdSets: ['TSPL', 'CPCL', 'DDPL', 'ESC/POS'],
-        brands: [
-          { key: 'chiteng', name: '驰腾', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'gainscha', name: 'Gainscha', sub: '佳博', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'sprt', name: 'SPRT', sub: '思普瑞特', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'hprt', name: '汉印 HPRT', sub: '汉印', cmdSet: 'CPCL', color: '#cf1322' },
-          { key: 'clabel', name: 'Clabel', sub: 'Clabel', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'kuaimai', name: '快麦', sub: '快麦', cmdSet: 'TSPL', color: '#fa541c' },
-          { key: 'qirui', name: '启锐', sub: '启锐', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'tsc', name: 'TSC', sub: 'TSC', cmdSet: 'TSPL', color: '#2f54eb' },
-          { key: 'urprtcn', name: 'URPRTCN', sub: '优悠', cmdSet: 'TSPL', color: '#fa8c16' }
-        ]
+          model: ''
+        }
       }
     },
     computed: {
-      devicePrinters() {
-        var dev = this.findDevice(this.form.deviceId)
-        return this.printersOf(dev)
+      deviceOnline() {
+        var device = this.findDevice(this.form.deviceId)
+        return !!(device && device.online)
       }
     },
     watch: {
@@ -195,113 +105,23 @@
         }
         this.form = {
           deviceId: device ? device.deviceId : '',
-          deviceName: device ? (device.name || device.deviceId) : '',
+          deviceName: device ? (device.name || device.storeName || device.deviceId) : '',
           printerId: printer ? printer.id : '',
           printerName: printer ? (printer.name || printer.id) : '',
           host: (printer && printer.host) || '',
           port: (printer && printer.port) || 9100,
-          brand: (printer && printer.brand) || '',
-          cmdSet: (printer && printer.cmdSet) || 'TSPL'
+          model: (printer && printer.model) || ''
         }
-        this.deviceSheet = false
-        this.printerSheet = false
-        this.cmdSheet = false
-      },
-      openDeviceSheet() {
-        if (!this.devices || this.devices.length === 0) {
-          this.$message.info('暂无远程打印设备，请先在电脑端「打印管理」新增设备')
-          return
-        }
-        this.deviceSheet = true
-      },
-      openPrinterSheet() {
-        if (!this.form.deviceId) {
-          this.$message.info('请先选择打印机设备')
-          return
-        }
-        if (this.devicePrinters.length === 0) {
-          this.$message.info('该设备未配置打印机，请先在电脑端「打印管理」添加')
-          return
-        }
-        this.printerSheet = true
-      },
-      chooseDevice(device) {
-        var printers = this.printersOf(device)
-        var printer = printers[0] || null
-        this.form.deviceId = device.deviceId
-        this.form.deviceName = device.name || device.deviceId
-        this.form.printerId = printer ? printer.id : ''
-        this.form.printerName = printer ? (printer.name || printer.id) : ''
-        this.form.host = (printer && printer.host) || ''
-        this.form.port = (printer && printer.port) || 9100
-        this.form.brand = (printer && printer.brand) || ''
-        this.form.cmdSet = (printer && printer.cmdSet) || 'TSPL'
-        this.deviceSheet = false
-      },
-      choosePrinter(printer) {
-        this.form.printerId = printer.id
-        this.form.printerName = printer.name || printer.id
-        this.form.host = printer.host || ''
-        this.form.port = printer.port || 9100
-        this.form.brand = printer.brand || ''
-        this.form.cmdSet = printer.cmdSet || 'TSPL'
-        this.printerSheet = false
-      },
-      chooseBrand(brand) {
-        this.form.brand = brand.key
-        this.form.cmdSet = brand.cmdSet
-      },
-      save() {
-        var self = this
-        var form = this.form
-        var device = this.findDevice(form.deviceId)
-        if (!device) {
-          this.$message.error('设备不存在，请刷新后重试')
-          return
-        }
-        var host = String(form.host || '').trim()
-        if (!host) {
-          this.$message.warning('请输入打印机 IP 地址')
-          return
-        }
-        var port = Number(form.port)
-        if (!port || port < 1 || port > 65535) {
-          this.$message.warning('端口号需在 1-65535 之间')
-          return
-        }
-        var printers = this.printersOf(device).map(function(p) {
-          if (p.id !== form.printerId) return p
-          return Object.assign({}, p, { host: host, port: port, brand: form.brand, cmdSet: form.cmdSet })
-        })
-        this.saving = true
-        savePrintAgent({
-          id: device.id,
-          deviceId: device.deviceId,
-          name: device.name,
-          enabled: device.enabled,
-          printers: printers
-        }).then(function(res) {
-          self.saving = false
-          if (res && res.code === 200) {
-            self.$message.success('已保存，后续打印将使用 ' + form.cmdSet + ' 指令')
-            self.$emit('saved', { deviceId: form.deviceId, printerId: form.printerId })
-            self.$emit('close')
-          } else {
-            self.$message.error((res && res.data) || '保存失败')
-          }
-        }).catch(function(err) {
-          self.saving = false
-          self.$message.error((err && err.message) || '保存失败')
-        })
       }
     }
   }
 </script>
 
 <style scoped>
-  .pdc-info {
-    flex: none;
-    padding: 10px 10px 0;
+  .pdc-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 10px 16px;
   }
   .pdc-card {
     background: #fff;
@@ -314,7 +134,6 @@
     align-items: center;
     min-height: 48px;
     border-bottom: 1px solid #f5f5f5;
-    cursor: pointer;
   }
   .pdc-row:last-child {
     border-bottom: none;
@@ -327,164 +146,42 @@
   }
   .pdc-value {
     flex: 1;
+    min-width: 0;
     font-size: 14px;
     color: #666;
     text-align: right;
-    padding-right: 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .pdc-value.mono {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 13px;
+  }
+  .pdc-value.ok {
+    color: #389e0d;
+  }
   .pdc-value.muted {
     color: #bbb;
   }
-  .pdc-input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14px;
-    color: #333;
-    text-align: right;
-    padding: 0;
-  }
-  .pdc-input::placeholder {
-    color: #bbb;
-  }
-  .pdc-arrow {
-    flex: none;
-    color: #ccc;
+  .pdc-tip {
+    margin-top: 12px;
+    padding: 0 4px;
     font-size: 12px;
-  }
-  .pdc-section {
-    padding: 14px 4px 6px;
-    font-size: 13px;
-    color: #8c8c8c;
-  }
-  .pdc-grid {
-    flex: 1;
-    overflow-y: auto;
-    background: #fff;
-    padding: 12px 6px 12px;
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-  }
-  .pdc-cell {
-    width: 33.33%;
-    padding: 16px 8px 12px;
-    text-align: center;
-    cursor: pointer;
-    border-radius: 10px;
-  }
-  .pdc-cell.active {
-    background: #e6f7ff;
-  }
-  .pdc-logo {
-    height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 19px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .pdc-name {
-    margin-top: 8px;
-    font-size: 14px;
-    color: #333;
-  }
-  .pdc-cmd {
-    margin: 8px auto 0;
-    width: 88px;
-    height: 26px;
-    border: 1px solid #1890ff;
-    border-radius: 13px;
-    color: #1890ff;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-  }
-  .pdc-cmd .anticon {
-    font-size: 10px;
+    line-height: 18px;
+    color: #999;
   }
   .pdc-footer {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     background: #fff;
     border-top: 1px solid #eee;
   }
-  .pdc-save {
+  .pdc-btn {
     height: 46px;
     font-size: 16px;
     border-radius: 23px;
     background: #1890ff;
     border-color: #1890ff;
     font-weight: 500;
-  }
-  .pdc-sheet-mask {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.45);
-    z-index: 3102;
-  }
-  .pdc-sheet {
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom));
-  }
-  .pdc-sheet-group {
-    background: #fff;
-    border-radius: 12px;
-    overflow: hidden;
-    max-height: 60vh;
-    overflow-y: auto;
-  }
-  .pdc-sheet-item {
-    padding: 14px 16px;
-    font-size: 15px;
-    color: #333;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .pdc-sheet-item:last-child {
-    border-bottom: none;
-  }
-  .pdc-sheet-item.active {
-    color: #1890ff;
-    font-weight: 600;
-    background: #f0f8ff;
-  }
-  .pdc-sheet-sub {
-    font-size: 12px;
-    color: #999;
-    font-weight: 400;
-  }
-  .pdc-sheet-empty {
-    padding: 22px 0;
-    text-align: center;
-    font-size: 14px;
-    color: #999;
-  }
-  .pdc-sheet-cancel {
-    margin-top: 8px;
-    background: #fff;
-    border-radius: 12px;
-    padding: 15px 0;
-    text-align: center;
-    font-size: 16px;
-    color: #1890ff;
-    cursor: pointer;
   }
 </style>

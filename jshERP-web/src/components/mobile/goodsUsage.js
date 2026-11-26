@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import { USER_INFO } from '@/store/mutation-types'
+import { getAction, postAction } from '@/api/manage'
 
 /**
  * 商品使用记录数据模型（按登录账号隔离）
@@ -84,6 +85,20 @@ export function recordGoodsUsage(goods) {
     raw: compactRaw(goods.raw)
   })
   writeRecords(records)
+  // 同步写入店铺共享记录（同店铺所有用户可见）；失败时仅保留本地记录
+  try {
+    var raw = goods.raw || {}
+    if (!raw.meId) return
+    postAction('/goodsUsage/record', {
+      skuId: raw.meId,
+      materialId: raw.id,
+      name: goods.name,
+      spec: goods.spec || '',
+      snapshot: JSON.stringify(compactRaw(raw))
+    }).catch(function () {})
+  } catch (e) {
+    /* 网络异常时忽略，本地记录仍然可用 */
+  }
 }
 
 /**
@@ -117,4 +132,63 @@ export function getRecentGoods(options) {
   }).sort(function(a, b) {
     return b.count - a.count || b.last - a.last
   }).slice(0, limit)
+}
+
+/** 接口行 → 最近常选记录（与本地记录同结构，raw 为选择时的商品快照） */
+function mapServerRecent(row) {
+  var raw = null
+  if (row && row.snapshot) {
+    try { raw = JSON.parse(row.snapshot) } catch (e) { raw = null }
+  }
+  var name = (row && row.name) || (raw && raw.name) || ''
+  var spec = (row && row.spec) || ''
+  var key = raw && raw.id !== undefined && raw.id !== null
+    ? String(raw.id) + '_' + (raw.meId || 0)
+    : (name + '_' + spec)
+  var time = 0
+  if (row && row.lastPickTime) {
+    var parsed = new Date(String(row.lastPickTime).replace(/-/g, '/')).getTime()
+    if (!isNaN(parsed)) time = parsed
+  }
+  return {
+    key: key,
+    name: name,
+    spec: spec,
+    count: Number(row && row.count) || 0,
+    last: time,
+    raw: raw
+  }
+}
+
+/**
+ * 读取店铺共享的最近常选（同店铺所有用户、所有设备一致）；
+ * 接口不可用时回退到本地记录，保证离线仍可用。
+ * @param {{days?: number, limit?: number, requireRaw?: boolean}} options
+ * @returns {Promise<{list: Array, fromServer: boolean}>}
+ */
+export function fetchRecentGoods(options) {
+  var opts = options || {}
+  var limit = opts.limit || 20
+  return getAction('/goodsUsage/recent', { limit: limit }).then(function(res) {
+    if (!res || res.code !== 200 || !res.data || !Array.isArray(res.data.rows)) {
+      throw new Error('recent goods unavailable')
+    }
+    var list = res.data.rows.map(mapServerRecent).filter(function(item) {
+      if (!item.name) return false
+      if (opts.requireRaw && !item.raw) return false
+      return true
+    })
+    return { list: list, fromServer: true }
+  }).catch(function() {
+    return { list: getRecentGoods(opts), fromServer: false }
+  })
+}
+
+/** 服务端同步成功后清空本机缓存，避免清除后的旧数据再次回显 */
+export function clearLocalGoodsUsage() {
+  try {
+    Vue.ls.remove(storageKey())
+  } catch (e) {
+    /* 本地存储不可用时忽略 */
+  }
 }

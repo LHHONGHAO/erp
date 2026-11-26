@@ -92,6 +92,7 @@ export default {
   position: relative;
   display: flex;
   align-items: flex-start;
+  min-height: 80px;
   padding: 0 12px 0 0;
   margin-bottom: 8px;
   background: transparent;
@@ -134,12 +135,12 @@ export default {
 .mpc-card.is-clickable {
   cursor: pointer;
 }
-/* 缩略图：贴边正方形（高度跟随卡片高度，宽度=高度），四边圆角独立呈现 */
+/* 缩略图：固定 80×80 正方形，图片铺满裁切 */
 .mpc-card__thumb {
   flex: none;
-  align-self: stretch;
-  width: auto;
-  aspect-ratio: 1 / 1;
+  align-self: center;
+  width: 80px;
+  height: 80px;
   position: relative;
   margin-right: 12px;
   display: flex;
@@ -149,7 +150,7 @@ export default {
   border-radius: 12px;
   background: #edf3fb;
 }
-/* 图片铺满正方形区域，超出部分按顶部居中裁掉 */
+/* 图片铺满正方形区域，超出部分按顶部居中裁掉（新增图片时已按该比例裁剪） */
 .mpc-card__thumb img {
   display: block;
   position: absolute;
@@ -173,6 +174,7 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  height: 80px;
   padding: 0;
 }
 .mpc-card__name {
@@ -181,7 +183,7 @@ export default {
   flex-wrap: wrap;
   font-size: 17px;
   font-weight: 400;
-  line-height: 22px;
+  line-height: 20px;
   color: #111827;
 }
 .mpc-card__name-text {
@@ -193,7 +195,7 @@ export default {
   left: 0;
   bottom: 0;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 20px;
   font-weight: 400;
   color: #FA2C19;
   white-space: nowrap;
@@ -219,9 +221,9 @@ export default {
 .mpc-card__spec {
   display: flex;
   align-items: flex-start;
-  margin-top: 4px;
+  margin-top: 0;
   font-size: 15px;
-  line-height: 18px;
+  line-height: 20px;
   color: #999999;
   text-align: left;
   word-break: break-all;
@@ -237,8 +239,8 @@ export default {
 /* 信息行：与规格行保持同样行距，四行内容（名称/花色/规格/价格）垂直间距均匀；
    空信息行（仅零售价模式）也须占住 18px 行高，否则高度塌陷会让贴底价格与规格行重叠 */
 .mpc-card__meta {
-  min-height: 18px;
-  margin-top: 4px;
+  min-height: 20px;
+  margin-top: 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -246,7 +248,7 @@ export default {
   padding-left: 50%;
   gap: 16px;
   font-size: 14px;
-  line-height: 18px;
+  line-height: 20px;
   color: #999999;
   text-align: left;
 }

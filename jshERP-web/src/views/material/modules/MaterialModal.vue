@@ -794,6 +794,10 @@
   import Vue from 'vue'
   import { axios as uploadHttp } from '@/utils/request'
   import { compressImageFile } from '@/utils/imageCompress'
+  import { enableKeyboardInputOverlay, disableKeyboardInputOverlay } from '@/utils/keyboardInputOverlay'
+
+  // 识别结果页输入框：聚焦时在键盘上方弹出文本输入弹层（价格设置弹层已显式关闭接管）
+  const AGG_KEYBOARD_INPUT_SELECTOR = '.agg-sheet-modal:not(.price-sheet-modal) .ant-modal-body input, .agg-sheet-modal:not(.price-sheet-modal) .ant-modal-body textarea'
 
   export default {
     name: "MaterialModal",
@@ -1322,6 +1326,8 @@
       // 容器可能尚未挂载，需判空，否则键盘事件注册会报错
       const hostEl = document.getElementById(this.prefixNo)
       if (hostEl) hostEl.addEventListener('keydown', this.handleOkKey)
+      // 识别页属性/规格输入框：键盘弹起时在键盘上方弹出文本输入弹层
+      enableKeyboardInputOverlay(AGG_KEYBOARD_INPUT_SELECTOR)
       window.addEventListener('resize', this.onWindowResize)
       window.addEventListener('resize', this.onSheetViewportResize)
       window.addEventListener('orientationchange', this.onSheetViewportResize)
@@ -1336,6 +1342,7 @@
     beforeDestroy() {
       const hostEl = document.getElementById(this.prefixNo)
       if (hostEl) hostEl.removeEventListener('keydown', this.handleOkKey)
+      disableKeyboardInputOverlay(AGG_KEYBOARD_INPUT_SELECTOR)
       window.removeEventListener('resize', this.onWindowResize)
       window.removeEventListener('resize', this.onSheetViewportResize)
       window.removeEventListener('orientationchange', this.onSheetViewportResize)
@@ -4559,13 +4566,14 @@
     color: #8c8c8c;
     cursor: pointer;
   }
-  /* 顶栏独立卡片：识别到的文字（按实际宽度显示，空白够放时并排两张） */
+  /* 顶栏独立卡片：识别到的文字（按实际宽度显示，空白够放时并排两张）
+     吸顶悬浮：始终四角圆角，下方属性卡片从卡片下方滚过 */
   .agg-ocr-card {
     position: -webkit-sticky;
     position: sticky;
-    top: 0;
-    z-index: 10;
-    margin-bottom: 4px;
+    top: 8px;
+    z-index: 20;
+    margin-bottom: 8px;
     padding: 6px 8px;
     background: #fff;
     border-radius: 12px;
@@ -4600,12 +4608,6 @@
     color: #1890ff;
     background: #e6f7ff;
     border-color: #91d5ff;
-  }
-  /* 手机端：吸顶卡片贴附在顶栏下方 */
-  @media (max-width: 768px) {
-    .agg-ocr-card {
-      border-radius: 0 0 12px 12px;
-    }
   }
   /* 弹层最下方：价格设置卡片 */
   .agg-price-card {

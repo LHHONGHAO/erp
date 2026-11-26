@@ -75,6 +75,10 @@ public class TenantConfig {
             @Override
             public boolean doFilter(MetaObject metaObject) {
                 MappedStatement ms = SqlParserHelper.getMappedStatement(metaObject);
+                // 最近常选：SQL 内已显式带 tenant_id，跳过租户解析避免重复追加条件
+                if (ms.getId() != null && ms.getId().startsWith("com.jsh.erp.datasource.mappers.GoodsUsageDailyMapper.")) {
+                    return true;
+                }
                 // 过滤自定义查询此时无租户信息约束出现
                 if ("com.jsh.erp.datasource.mappers.UserMapperEx.getUserByWeixinOpenId".equals(ms.getId())) {
                     return true;

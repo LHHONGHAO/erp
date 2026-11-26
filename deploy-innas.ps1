@@ -133,7 +133,7 @@ Write-Host '==> [0/6] 建立 SSH 会话 ...'
 Ensure-Tools
 
 # 解析可连接地址：本机 DNS 被代理 fake-ip 劫持时回退 DoH，拿到真实 IPv6 字面量直连
-$addr = Resolve-InnasAddress -Server $Server
+$addr = Resolve-InnasAddress -Server $Server -IPv6:$IPv6
 if (-not $addr) {
     $hint = Get-InnasAddressHint -Server $Server
     $msg = "无法解析 $Server 的可连接地址（IPv6=$([bool]$IPv6)）。"
@@ -208,7 +208,7 @@ echo "stage ready"
 '@
         $stage = $stage -replace '__DIR__', $RemoteDir
         Invoke-InnasScript -Script $stage | Out-Null
-        Copy-ToInnasDir -LocalDir $distDir -RemotePath "$RemoteDir/dist-upload"
+        Copy-ToInnas -Path $distDir -RemotePath "$RemoteDir/dist-upload" -Recurse
 
         # 容器把 ./frontend-dist 挂到 /app/frontend-dist，必须解包到该目录
         # pscp -r 传目录本身，远端暂存结构为 dist-upload/dist/<files>

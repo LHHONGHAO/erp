@@ -260,7 +260,8 @@ public class PrintAgentStore {
     }
 
     /**
-     * 更新设备最近连接信息（认证成功、状态上报时调用）
+     * 更新设备最近连接信息（认证成功、状态上报时调用）。
+     * 打印机清单以代理上报为准，主机不再回写型号/指令集，避免与代理配置互相覆盖。
      */
     public void updateRuntime(String deviceId, String version, String clientIp, String printers) {
         StringBuilder sql = new StringBuilder("UPDATE print_agent SET last_seen = NOW(), updated_at = NOW()");
@@ -275,7 +276,7 @@ public class PrintAgentStore {
         }
         if (printers != null && !printers.isEmpty()) {
             sql.append(", printers = ?");
-            params.add(mergePrinterConfig(deviceId, printers));
+            params.add(printers);
         }
         sql.append(" WHERE device_id = ?");
         params.add(deviceId);
@@ -287,48 +288,6 @@ public class PrintAgentStore {
             ps.executeUpdate();
         } catch (Exception e) {
             logger.error("更新打印代理在线信息失败: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * 代理上线时会上报自身打印机列表，这里把 ERP 侧维护的指令集/品牌合并回去，
-     * 避免每次重连都覆盖掉用户设置的打印指令。
-     */
-    private String mergePrinterConfig(String deviceId, String incoming) {
-        JSONObject agent = findByDeviceId(deviceId);
-        if (agent == null) {
-            return incoming;
-        }
-        JSONArray saved = agent.getJSONArray("printers");
-        if (saved == null || saved.isEmpty()) {
-            return incoming;
-        }
-        try {
-            JSONArray runtime = JSONArray.parseArray(incoming);
-            java.util.Map<String, JSONObject> savedMap = new java.util.HashMap<>();
-            for (int i = 0; i < saved.size(); i++) {
-                JSONObject item = saved.getJSONObject(i);
-                String id = item.getString("id");
-                if (id != null) {
-                    savedMap.put(id, item);
-                }
-            }
-            for (int i = 0; i < runtime.size(); i++) {
-                JSONObject item = runtime.getJSONObject(i);
-                JSONObject old = savedMap.get(item.getString("id"));
-                if (old != null) {
-                    if (old.getString("cmdSet") != null) {
-                        item.put("cmdSet", old.getString("cmdSet"));
-                    }
-                    if (old.getString("brand") != null) {
-                        item.put("brand", old.getString("brand"));
-                    }
-                }
-            }
-            return runtime.toJSONString();
-        } catch (Exception e) {
-            logger.error("合并打印机配置失败: " + e.getMessage());
-            return incoming;
         }
     }
 

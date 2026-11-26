@@ -130,6 +130,10 @@ type PrintResultData struct {
 type PrinterStatus struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Model      string `json:"model,omitempty"`
+	Device     string `json:"device,omitempty"`
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
 	Online     bool   `json:"online"`
 	Printing   bool   `json:"printing"`
 	LastError  string `json:"lastError,omitempty"`

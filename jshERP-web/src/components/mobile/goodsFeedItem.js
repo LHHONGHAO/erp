@@ -71,13 +71,11 @@ export function buildInfoItems(record) {
 }
 
 /**
- * 卡片高度：按文字总高计算（与 MobileProductCard 样式一一对应）
- * 上下留白 6px×2 + 名称行 22px + 规格行×N 与信息行各 22px（18px 行高 + 4px 均匀行距）
- * 名称/规格/信息行在卡片内垂直间距均匀分布，图片为正方形跟随该高度
+ * 卡片高度：与缩略图保持一致固定 80px
+ * 名称/花色/规格/价格四行在 80px 内均匀分布（名称顶边对齐图片顶边，价格底边对齐图片底边）
  */
 export function cardHeightOf(item) {
-  const specLines = (item && item.specs && item.specs.length) || 0
-  return 56 + 22 * specLines
+  return 80
 }
 
 /** 接口行 → 已选商品标准对象（卡片点击回填 / 最近使用 / 初始选中共用同一结构） */

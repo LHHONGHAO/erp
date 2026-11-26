@@ -24,6 +24,18 @@ export default {
       type: Boolean,
       required: false,
       default: false
+    },
+    // 常用页面编辑态：菜单项右侧显示 +/−
+    editing: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    // 已加入常用的页面 url 列表
+    favorites: {
+      type: Array,
+      required: false,
+      default: () => []
     }
   },
   data () {
@@ -125,9 +137,41 @@ export default {
           <tag {...{ props, attrs }} title={menu.text}>
             {this.renderIcon(menu.icon)}
             <span>{menu.text}</span>
+            {this.renderFavToggle(menu)}
           </tag>
         </Item>
       )
+    },
+    // 编辑态下给可打开的页面加 +/− 图标
+    renderFavToggle (menu) {
+      if (!this.editing || !this.isOpenable(menu)) {
+        return null
+      }
+      const isFav = this.favorites.indexOf(menu.url) > -1
+      const props = { type: isFav ? 'minus-circle' : 'plus-circle' }
+      // 绝对定位到菜单项右侧并垂直居中，避免 float 导致图标贴顶
+      const style = { position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', color: isFav ? '#f5222d' : '#1890ff' }
+      const on = {
+        click: e => {
+          // 阻止 router-link 跳转，只做常用增删
+          e.preventDefault()
+          e.stopPropagation()
+          this.$emit('toggle-favorite', { url: menu.url, text: menu.text })
+        }
+      }
+      return (
+        <Icon {...{ props, style, on }} />
+      )
+    },
+    // 可加入常用的页面（排除目录容器与首页）
+    isOpenable (menu) {
+      if (!menu || !menu.url || !menu.component) {
+        return false
+      }
+      if (menu.url === '/dashboard/analysis' || menu.url === '/') {
+        return false
+      }
+      return menu.component !== '/layouts/TabLayout' && menu.component !== '/layouts/RouteView'
     },
     renderSubMenu (menu) {
       const itemArr = []

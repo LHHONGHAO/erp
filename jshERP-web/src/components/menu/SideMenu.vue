@@ -1,19 +1,40 @@
 <template>
   <a-layout-sider
     :class="['sider', isDesktop() ? null : 'shadow', theme, fixSiderbar ? 'ant-fixed-sidemenu' : null ]"
-    width="150px"
+    width="200px"
     :collapsible="collapsible"
     v-model="collapsed"
     :trigger="null">
     <logo />
-    <s-menu
-      :collapsed="collapsed"
-      :menu="menus"
-      :theme="theme"
-      @select="onSelect"
-      :mode="mode"
-      :style="smenuStyle">
-    </s-menu>
+    <div class="sider-body" :style="bodyStyle">
+      <!-- 常用栏：编辑态下菜单项右侧出现 +/−，点击把页面标题加入/移出常用 -->
+      <div v-if="!collapsed" class="fav-panel">
+        <div class="fav-head">
+          <span class="fav-title">常用</span>
+          <a-icon class="fav-action" :type="editing ? 'check-circle' : 'plus-circle'"
+                  :title="editing ? '完成' : '添加常用页面'" @click="toggleEdit" />
+        </div>
+        <div class="fav-list">
+          <div v-for="item in favorites" :key="item.url" class="fav-item" :title="item.text"
+               @click="openFavorite(item)">
+            <span class="fav-item__text">{{ item.text }}</span>
+            <a-icon v-if="editing" class="fav-item__del" type="minus-circle" @click.stop="removeFavorite(item)" />
+          </div>
+          <div v-if="!favorites.length" class="fav-empty">{{ editing ? '点击菜单项右侧 + 添加' : '暂无常用' }}</div>
+        </div>
+      </div>
+      <s-menu
+        :collapsed="collapsed"
+        :menu="menus"
+        :theme="theme"
+        :editing="editing"
+        :favorites="favoriteUrls"
+        @select="onSelect"
+        @toggle-favorite="onToggleFavorite"
+        :mode="mode"
+        :style="smenuStyle">
+      </s-menu>
+    </div>
   </a-layout-sider>
 
 </template>
@@ -22,7 +43,12 @@
   import ALayoutSider from "ant-design-vue/es/layout/Sider"
   import Logo from '../tools/Logo'
   import SMenu from './index'
+  import Vue from 'vue'
+  import { USER_ID } from '@/store/mutation-types'
   import { mixin, mixinDevice } from '@/utils/mixin.js'
+
+  // 常用页面本地缓存前缀，按用户隔离
+  const FAVORITES_PREFIX = 'pc_sidebar_favorites_'
 
   export default {
     name: "SideMenu",
@@ -54,20 +80,81 @@
         required: true
       }
     },
+    data () {
+      return {
+        // 常用页面编辑态：开启后菜单项右侧显示 +/−
+        editing: false,
+        // 常用页面 [{ url, text }]
+        favorites: []
+      }
+    },
     computed:{
       smenuStyle() {
-        let style = { 'padding': '0' }
+        return { 'padding': '0' }
+      },
+      // 固定侧边栏时，常用栏与菜单共用同一滚动区域
+      bodyStyle() {
         if (this.fixSiderbar) {
-          style['height'] = 'calc(100% - 59px)'
-          style['overflow'] = 'auto'
-          style['overflow-x'] = 'hidden'
+          return { 'height': 'calc(100% - 59px)', 'overflow': 'auto', 'overflow-x': 'hidden' }
         }
-        return style
+        return null
+      },
+      favoriteUrls() {
+        return this.favorites.map(item => item.url)
+      },
+      storageKey() {
+        return FAVORITES_PREFIX + (Vue.ls.get(USER_ID) || 'anonymous')
+      }
+    },
+    created() {
+      const saved = Vue.ls.get(this.storageKey)
+      const list = Array.isArray(saved) ? saved : []
+      // 「远程打印配置」为移动端页面，PC 常用栏不再保留该入口
+      this.favorites = list.filter(item => (item.url || '').replace(/\/$/, '') !== '/system/remote-print')
+      if (this.favorites.length !== list.length) {
+        this.saveFavorites()
+      }
+    },
+    watch: {
+      collapsed(val) {
+        // 侧边栏收起时不保留编辑态
+        if (val) {
+          this.editing = false
+        }
       }
     },
     methods: {
       onSelect (obj) {
         this.$emit('menuSelect', obj)
+      },
+      toggleEdit() {
+        this.editing = !this.editing
+      },
+      // 菜单项点击 +/− 时触发
+      onToggleFavorite(menu) {
+        if (this.favoriteUrls.indexOf(menu.url) > -1) {
+          this.favorites = this.favorites.filter(item => item.url !== menu.url)
+        } else {
+          this.favorites = this.favorites.concat([{ url: menu.url, text: menu.text }])
+        }
+        this.saveFavorites()
+      },
+      removeFavorite(item) {
+        this.favorites = this.favorites.filter(fav => fav.url !== item.url)
+        this.saveFavorites()
+      },
+      saveFavorites() {
+        Vue.ls.set(this.storageKey, this.favorites)
+      },
+      openFavorite(item) {
+        if (this.editing || !item || !item.url) {
+          return
+        }
+        if (item.url.indexOf('http') === 0) {
+          window.open(item.url)
+          return
+        }
+        this.$router.push(item.url).catch(() => {})
       }
     }
   }
@@ -141,6 +228,95 @@
   }
 
   /* update_end author:sunjianlei date:20190509 for: 修改侧边导航栏滚动条的样式 */
+
+  /* 常用栏 */
+  .fav-panel {
+    padding: 6px 8px 8px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+
+    .fav-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .fav-title {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.45);
+    }
+
+    .fav-action {
+      cursor: pointer;
+      font-size: 14px;
+      color: rgba(0, 0, 0, 0.45);
+
+      &:hover {
+        color: @primary-color;
+      }
+    }
+
+    .fav-list {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    .fav-item {
+      width: 50%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 2px;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.65);
+      cursor: pointer;
+
+      &:hover {
+        color: @primary-color;
+      }
+    }
+
+    .fav-item__text {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .fav-item__del {
+      flex: none;
+      margin-left: 2px;
+      color: #f5222d;
+    }
+
+    .fav-empty {
+      padding: 2px 0;
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  /* 暗色主题 */
+  .sider.dark .fav-panel {
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+
+    .fav-title,
+    .fav-action {
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .fav-item {
+      color: rgba(255, 255, 255, 0.65);
+
+      &:hover {
+        color: #fff;
+      }
+    }
+
+    .fav-empty {
+      color: rgba(255, 255, 255, 0.35);
+    }
+  }
 
 </style>
 

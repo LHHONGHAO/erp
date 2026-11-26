@@ -41,6 +41,8 @@
   import { mixin, mixinDevice } from '@/utils/mixin.js'
   import { triggerWindowResizeEvent } from '@/utils/util'
   const indexKey = '/dashboard/analysis'
+  // 不显示在顶部标签栏的页面：仅在内容区展示，从菜单进入后不占用标签位
+  const HIDDEN_TAB_PATHS = ['/system/remote-print']
   import Vue from 'vue'
   import { CACHE_INCLUDED_ROUTES } from "@/store/mutation-types"
   import store from '../../store'
@@ -112,16 +114,26 @@
       if (routeTitle) {
         this.$route.meta.title = routeTitle
       }
-      this.pageList.push(this.$route)
-      this.linkList.push(this.$route.fullPath)
       this.activePage = this.$route.fullPath
+      if (HIDDEN_TAB_PATHS.indexOf(this.$route.path) === -1) {
+        this.pageList.push(this.$route)
+        this.linkList.push(this.$route.fullPath)
+      }
+      // 清理已存在的隐藏页面标签（兼容旧会话残留）
+      this.pruneHiddenTabs()
     },
     mounted() {
+      this.pruneHiddenTabs()
     },
     watch: {
       '$route': function(newRoute) {
         // console.log("新的路由",newRoute)
         this.activePage = newRoute.fullPath
+        // 不显示标签的页面：不加入标签栏，并清理该页面已存在的标签
+        if (HIDDEN_TAB_PATHS.indexOf(newRoute.path) > -1) {
+          this.pruneHiddenTabs()
+          return
+        }
         if (!this.multipage) {
           this.linkList = [newRoute.fullPath]
           this.pageList = [Object.assign({},newRoute)]
@@ -139,6 +151,10 @@
       'activePage': function(key) {
         let index = this.linkList.lastIndexOf(key)
         let waitRouter = this.pageList[index]
+        // 无对应标签（不在标签栏显示的页面）时，路由已跳转，无需再次 push
+        if (!waitRouter) {
+          return
+        }
         this.$router.push(Object.assign({},waitRouter));
         this.changeTitle(waitRouter.meta.title)
       },
@@ -160,6 +176,22 @@
       }
     },
     methods: {
+      // 移除不在标签栏显示的页面标签（pageList 与 linkList 按索引一一对应）
+      pruneHiddenTabs() {
+        if (!HIDDEN_TAB_PATHS.length) {
+          return
+        }
+        const pages = []
+        const links = []
+        this.pageList.forEach((page, index) => {
+          if (HIDDEN_TAB_PATHS.indexOf(page.path) === -1) {
+            pages.push(page)
+            links.push(this.linkList[index])
+          }
+        })
+        this.pageList = pages
+        this.linkList = links
+      },
       // 根据当前路由设置hasOpen
       isOpenIframePage() {
         const target = this.componentsArr.find(item => {

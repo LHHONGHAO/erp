@@ -77,6 +77,14 @@
     <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="aip-file" @change="onFilesChange" />
     <input ref="galleryInput" type="file" accept="image/*" class="aip-file" @change="onFilesChange" />
 
+    <!-- 商品主图添加前裁剪：1:1 裁剪框，拖动确定位置，压缩到 500KB 以内 -->
+    <crop-image-modal
+      :visible="cropVisible"
+      :file="cropFile"
+      @confirm="onCropConfirm"
+      @cancel="onCropCancel"
+      @error="onCropError" />
+
     <!-- 识别结果：复用商品表单的识别结果弹层，表单本体隐藏，仅用于承载识别流程与保存 -->
     <div v-if="recognizing" class="aip-hidden-form">
       <material-modal ref="form" inline aiMode @ok="onSaved" @agg-close="closeResult" />
@@ -86,6 +94,7 @@
 
 <script>
   import MaterialModal from './modules/MaterialModal'
+  import CropImageModal from '@/components/mobile/CropImageModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
   import { mixinDevice } from '@/utils/mixin.js'
   import { setMobileHeaderActions, clearMobileHeaderActions, setMobileHeaderTitle, clearMobileHeaderTitle } from '@/utils/mobilePageHeader'
@@ -100,7 +109,8 @@
   export default {
     name: 'MaterialAiAdd',
     components: {
-      MaterialModal
+      MaterialModal,
+      CropImageModal
     },
     mixins: [mixinDevice],
     data() {
@@ -118,6 +128,9 @@
         angleStartAngle: 0,
         angleDragValue: 0,
         pickedFrom: '',
+        // 商品主图裁剪弹层
+        cropVisible: false,
+        cropFile: null,
         // 商品类别
         categoryId: undefined,
         categoryTree: [],
@@ -210,7 +223,26 @@
         e.target.value = ''
         if (!files.length) return
         this.pickedFrom = fromCamera ? 'camera' : 'gallery'
-        this.addImage(files[0])
+        this.openCrop(files[0])
+      },
+      /** 选择图片后先裁剪，确认后再按原流程识别/上传 */
+      openCrop(file) {
+        this.cropFile = file
+        this.cropVisible = true
+      },
+      onCropConfirm(file) {
+        this.cropVisible = false
+        this.cropFile = null
+        if (file) this.addImage(file)
+      },
+      onCropCancel() {
+        this.cropVisible = false
+        this.cropFile = null
+      },
+      onCropError() {
+        this.cropVisible = false
+        this.cropFile = null
+        this.$message.error('图片裁剪失败，请重试')
       },
       addImage(file) {
         // origin 保留原图，旋转始终基于原图重绘，避免多次调整累积画质损失；

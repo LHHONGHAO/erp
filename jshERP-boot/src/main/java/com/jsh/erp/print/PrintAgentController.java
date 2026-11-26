@@ -221,8 +221,19 @@ public class PrintAgentController {
             printerId = firstPrinterId(deviceId);
         }
         JSONObject printerConfig = findPrinterConfig(deviceId, printerId);
-        // 型号只对应指令方式：标签尺寸、份数由打印请求决定，这里只按型号取指令集
-        JSONObject driver = printerStore.findByModel(printerConfig == null ? null : printerConfig.getString("model"));
+        // 打印机型号由代理上报，主机按型号库里的指令方式生成打印数据
+        String model = printerConfig == null ? null : printerConfig.getString("model");
+        if (model == null || model.trim().isEmpty()) {
+            res.code = 500;
+            res.data = "该打印机未配置型号，请先在打印代理设置页配置";
+            return res;
+        }
+        JSONObject driver = printerStore.findByModel(model);
+        if (driver == null) {
+            res.code = 500;
+            res.data = "型号「" + model + "」未在主机型号库中配置，请先在打印代理设置页配置";
+            return res;
+        }
         int copies = body.getIntValue("copies") > 0 ? body.getIntValue("copies") : 1;
         int width = body.getIntValue("width") > 0 ? body.getIntValue("width") : 320;
         int height = body.getIntValue("height") > 0 ? body.getIntValue("height") : 240;
@@ -231,11 +242,15 @@ public class PrintAgentController {
         JSONArray items = body.getJSONArray("items");
         String image = body.getString("image");
         logger.info("收到打印请求 device=" + deviceId + " printer=" + printerId
+                + " model=" + model
                 + " size=" + width + "x" + height + " copies=" + copies
                 + " image=" + (image != null && !image.isEmpty())
                 + " items=" + (items == null ? 0 : items.size()));
         try {
-            String cmdSet = resolvePrinterCmdSet(printerConfig, driver);
+            String cmdSet = driver.getString("cmdSet");
+            if (cmdSet == null || cmdSet.trim().isEmpty()) {
+                cmdSet = "TSPL";
+            }
             byte[] data = labelPrinterService.buildLabel(cmdSet, width, height, items, copies, image, density, speed);
             JSONObject task = dispatcher.dispatch(deviceId, printerId, data, 15000);
             res.code = 200;
@@ -309,16 +324,5 @@ public class PrintAgentController {
             }
         }
         return null;
-    }
-
-    /**
-     * 指令集优先级：打印机自身配置 > 型号库参数 > 默认 TSPL
-     */
-    private String resolvePrinterCmdSet(JSONObject printerConfig, JSONObject driver) {
-        String cmdSet = printerConfig == null ? null : printerConfig.getString("cmdSet");
-        if (cmdSet == null || cmdSet.trim().isEmpty()) {
-            cmdSet = driver == null ? null : driver.getString("cmdSet");
-        }
-        return cmdSet == null || cmdSet.trim().isEmpty() ? "TSPL" : cmdSet.trim();
     }
 }

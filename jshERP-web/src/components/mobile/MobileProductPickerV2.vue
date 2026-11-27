@@ -4,6 +4,7 @@
     <mobile-search-layout
       v-model="keyword"
       :show-filter="false"
+      :inline-input="true"
       placeholder="搜索商品名称 / 规格 / 条码"
       @search="handleSearch"
       @camera="ocrVisible = true">
@@ -121,6 +122,8 @@ export default {
     return {
       keyword: '',
       recentList: [],
+      // 最近常选就绪信号：第 1 页商品与它并行请求，两者都回来后再合并渲染一次
+      recentReadyPromise: null,
       // 已选商品（按首次点击顺序，数量存于 qtyMap）
       selectedGoods: [],
       // 各商品已选数量（key → 数量）
@@ -188,9 +191,9 @@ export default {
           limit: this.recentLimit,
           requireRaw: this.recentRequireRaw
         }
-        // 打开时只刷新一次商品流：等最近常选（店铺共享，失败回退本地）确定后再重建，
-        // 避免本地列表与服务端列表各触发一次重载导致的空白/不可滚动
-        this.loadSharedRecent(recentOpts)
+        // 最近常选（店铺共享，失败回退本地）：只记录就绪信号，不再单独重建商品流，
+        // 第 1 页数据与它并行请求、合并后一次渲染，避免首屏先渲染再被重置
+        this.recentReadyPromise = this.loadSharedRecent(recentOpts)
         // 每次打开都回到默认状态：展示全部商品（类目树里存在无商品的废弃类目，不默认选中任何类目）
         this.filterCategoryId = undefined
         this.favSpecs = []
@@ -538,26 +541,32 @@ export default {
       this.pickerResetKey += 1
     },
     /**
-     * 打开时先确定最近常选，再用它重建一次商品流（服务端为空也照样重建，展示全部商品按类目排序）。
-     * 接口超时/失败时回退本地记录，保证离线也能打开。
+     * 打开时确定最近常选：返回就绪 Promise，供商品流第 1 页并行等待。
+     * 服务端失败/超时回退本地记录，保证离线也能打开；不再单独触发商品流重置，
+     * 由第 1 页在两者都就绪后合并渲染，避免首屏空白与滚动位置跳动。
      */
     loadSharedRecent(opts) {
       var self = this
       var settled = false
-      var timer = setTimeout(function() {
-        if (settled) return
-        settled = true
-        self.recentList = getRecentGoods(opts)
-        self.resetFeed()
-      }, 2500)
-      fetchRecentGoods(opts).then(function(res) {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        if (!self.visible || !res || !res.list) return
-        if (res.fromServer) clearLocalGoodsUsage()
-        self.recentList = res.list
-        self.resetFeed()
+      return new Promise(function(resolve) {
+        var timer = setTimeout(function() {
+          if (settled) return
+          settled = true
+          self.recentList = getRecentGoods(opts)
+          resolve()
+        }, 2500)
+        fetchRecentGoods(opts).then(function(res) {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (!self.visible || !res || !res.list) {
+            resolve()
+            return
+          }
+          if (res.fromServer) clearLocalGoodsUsage()
+          self.recentList = res.list
+          resolve()
+        })
       })
     },
     filterActive() {
@@ -588,12 +597,37 @@ export default {
       }, this)
       return rows
     },
-    /** 标准商品流加载器：第 1 页并入最近使用，其余按接口分页；categoryId 跟随左侧类目导航 */
+    /**
+     * 标准商品流加载器：
+     * 第 1 页与最近常选并行请求，两者都就绪后合并去重、一次渲染（无常用商品时 head 为空，直接从第 1 页商品开始）；
+     * 其余页只按接口分页，categoryId 跟随左侧类目导航。
+     */
     loadPickerFeed({ page, pageSize }) {
       var self = this
-      if (page === 1) this.seenKeys = {}
-      var recentRows = page === 1 ? this.buildRecentFeedItems() : []
-      if (page === 1) this.recentNameKeys = {}
+      if (page !== 1) {
+        return this.requestPickerRows(page, pageSize).then(function(pageData) {
+          var list = []
+          pageData.rows.forEach(function(row) {
+            var item = self.toPickerItem(row)
+            // 跨页去重：同一 SKU 只展示一次
+            if (self.seenKeys[item.skuRowKey]) return
+            self.seenKeys[item.skuRowKey] = true
+            list.push(item)
+          })
+          return { list: list, total: pageData.total }
+        })
+      }
+      // 第 1 页：接口请求与最近常选并行，等两者都完成再合并，避免「先渲染再重置」导致的首屏空白
+      // 搜索/类目筛选时不展示常用商品，无需等待最近常选
+      var needRecent = !this.keyword && !this.filterActive() && this.recentReadyPromise
+      var recentReady = needRecent ? this.recentReadyPromise : Promise.resolve()
+      return Promise.all([recentReady, this.requestPickerRows(page, pageSize)]).then(function(results) {
+        return self.buildPickerPage(results[1].rows, results[1].total)
+      })
+    },
+    /** 请求一页商品数据：业务码非 200 时提示并抛出，由商品流中断本次自动补载 */
+    requestPickerRows(page, pageSize) {
+      var self = this
       var searchObj = {
         materialParam: this.keyword,
         categoryId: this.filterCategoryId,
@@ -607,34 +641,48 @@ export default {
         pageSize: pageSize
       }).then(function(res) {
         if (!(res && res.code === 200)) {
-          self.$message.error((res && res.data && res.data.message) || '商品加载失败')
-          return { list: [], total: 0 }
+          var message = (res && res.data && res.data.message) || '商品加载失败'
+          self.$message.error(message)
+          throw new Error(message)
         }
-        var rows = (res.data && res.data.rows) || []
-        var total = Number(res.data && res.data.total) || 0
-        var list = []
-        // 最近常选优先：近一周选择最多的商品固定在商品流最前（不受类目/规格排序影响），
-        // 与最近常选同名称+规格的最新商品不再重复展示（全部页次生效），避免最近常选区被去重清空
-        var head = []
-        recentRows.forEach(function(item) {
-          if (item.nameKey) self.recentNameKeys[item.nameKey] = true
-          if (self.seenKeys[item.skuRowKey]) return
-          self.seenKeys[item.skuRowKey] = true
-          head.push(item)
-        })
-        rows.forEach(function(row) {
-          var item = toGoodsFeedItem(row)
-          // 弹层卡片不展示库存：清空信息行（零售价独立定位，卡片高度不受影响）
-          item.items = []
-          // 规格文本已在 toGoodsFeedItem 内解析一次，去重键直接复用（此前每行重复解析 2 次）
-          var nameKey = item.name + '\u0000' + item.goods.spec
-          if (self.seenKeys[item.skuRowKey]) return
-          if (nameKey && self.recentNameKeys[nameKey]) return
-          self.seenKeys[item.skuRowKey] = true
-          list.push(item)
-        })
-        return { list: head.concat(list), total: total + head.length }
+        return {
+          rows: (res.data && res.data.rows) || [],
+          total: Number(res.data && res.data.total) || 0
+        }
       })
+    },
+    /** 接口行 → 弹层卡片数据（不展示库存，零售价独立定位） */
+    toPickerItem(row) {
+      var item = toGoodsFeedItem(row)
+      item.items = []
+      return item
+    },
+    /**
+     * 第 1 页合并：最近常选置顶（按类目/规格排序的接口数据紧随其后），
+     * 同名+规格的最新商品不再重复展示；返回的 total 计入置顶数量，保证分页判断正确。
+     */
+    buildPickerPage(rows, total) {
+      var self = this
+      this.seenKeys = {}
+      this.recentNameKeys = {}
+      var head = []
+      this.buildRecentFeedItems().forEach(function(item) {
+        if (item.nameKey) self.recentNameKeys[item.nameKey] = true
+        if (self.seenKeys[item.skuRowKey]) return
+        self.seenKeys[item.skuRowKey] = true
+        head.push(item)
+      })
+      var list = []
+      rows.forEach(function(row) {
+        var item = self.toPickerItem(row)
+        // 规格文本已在 toGoodsFeedItem 内解析一次，去重键直接复用
+        var nameKey = item.name + '\u0000' + item.goods.spec
+        if (self.seenKeys[item.skuRowKey]) return
+        if (nameKey && self.recentNameKeys[nameKey]) return
+        self.seenKeys[item.skuRowKey] = true
+        list.push(item)
+      })
+      return { list: head.concat(list), total: total + head.length }
     }
   }
 }

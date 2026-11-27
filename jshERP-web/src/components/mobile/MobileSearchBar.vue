@@ -6,7 +6,24 @@
         <a-icon type="camera" />
         <span class="msb-ai-tag">AI</span>
       </span>
-      <span class="msb-display" @click="inputVisible = true">
+      <!-- 内联模式：真实输入框，获得焦点后由父布局跟随键盘上移，不再弹独立输入弹层 -->
+      <input
+        v-if="inline"
+        ref="inlineInput"
+        class="msb-inline-input"
+        type="text"
+        :value="value"
+        :placeholder="placeholder"
+        enterkeyhint="search"
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+        autocomplete="off"
+        @input="onInlineInput"
+        @focus="$emit('focus')"
+        @blur="$emit('blur')"
+        @keyup.enter="onInlineEnter" />
+      <span v-else class="msb-display" @click="inputVisible = true">
         <span v-if="value" class="msb-display-text">{{ value }}</span>
         <span v-else class="msb-display-placeholder">{{ placeholder }}</span>
       </span>
@@ -16,8 +33,9 @@
     <slot name="before-filter"></slot>
     <a-button v-if="showFilter" class="msb-filter-btn" icon="filter" @click="$emit('filter')">筛选</a-button>
 
-    <!-- 标准输入弹层：输入内容后点按钮才触发搜索 -->
+    <!-- 标准输入弹层：输入内容后点按钮才触发搜索（内联模式下不使用） -->
     <mobile-input-popup
+      v-if="!inline"
       :visible="inputVisible"
       :value="value"
       :placeholder="placeholder"
@@ -61,6 +79,11 @@ export default {
     showFilter: {
       type: Boolean,
       default: true
+    },
+    /** 内联输入模式：搜索框直接渲染为真实输入框，聚焦后由父布局跟随键盘上移，不再弹独立输入弹层 */
+    inline: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -72,6 +95,15 @@ export default {
     }
   },
   methods: {
+    /** 内联模式：输入实时同步给父组件（v-model），不触发搜索 */
+    onInlineInput(e) {
+      this.$emit('input', (e && e.target && e.target.value) || '')
+    },
+    /** 内联模式：回车触发搜索 */
+    onInlineEnter(e) {
+      const text = (e && e.target && e.target.value) || this.value || ''
+      this.$emit('search', text)
+    },
     /** 输入弹层确认：回填关键字并触发搜索 */
     onInputConfirm(text) {
       this.inputVisible = false
@@ -133,6 +165,21 @@ export default {
   font-size: 19px;
   color: #999;
   cursor: pointer;
+}
+/* 内联输入模式：真实输入框，与展示态同高同字号 */
+.msb-inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #333;
+  -webkit-appearance: none;
+}
+.msb-inline-input::placeholder {
+  color: #b7b7b7;
 }
 /* 搜索框展示态：点击后弹出标准输入弹层 */
 .msb-display {

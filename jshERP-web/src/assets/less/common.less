@@ -386,6 +386,12 @@
   border-radius: 28px;
   background: #fff;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  /* 内联输入模式下随键盘上移：用过渡匹配键盘弹出/收起动画 */
+  transition: transform 0.25s ease;
+}
+/* 键盘展开后拖动页面：视觉视口实时平移，关闭过渡保证胶囊逐帧贴合键盘上沿 */
+.msearch-floatbar.is-vv-tracking {
+  transition: none;
 }
 /* 胶囊内的搜索框与筛选按钮改为浅灰内胆，与外层白色胶囊区分 */
 .msearch-layout .msearch-floatbar .msb-search-box {
@@ -395,6 +401,9 @@
   box-shadow: none;
 }
 .msearch-layout .msearch-floatbar .msb-display {
+  height: 40px;
+}
+.msearch-layout .msearch-floatbar .msb-inline-input {
   height: 40px;
 }
 .msearch-layout .msearch-floatbar .msb-filter-btn {

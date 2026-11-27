@@ -268,7 +268,19 @@ export default {
     measure() {
       const el = this.$refs.scroller
       if (!el) return
-      this.viewportHeight = el.clientHeight || window.innerHeight
+      const height = el.clientHeight
+      // 容器刚插入（如弹层打开首帧）时高度为 0：下一帧重测，避免按 0 高度裁剪可视区
+      if (!height) {
+        if (!this._measureRetry) {
+          this._measureRetry = true
+          requestAnimationFrame(() => {
+            this._measureRetry = false
+            this.measure()
+          })
+        }
+        return
+      }
+      this.viewportHeight = height
       const width = el.clientWidth || window.innerWidth
       if (width !== this.listWidth) this.listWidth = width
       this.recalcLayout()
@@ -410,7 +422,11 @@ export default {
             this.notifyFirstVisible()
           })
         })
-        .catch(() => {})
+        .catch(() => {
+          // 请求失败：停止本条件下的自动补载，避免空列表反复请求；重置条件后会重新加载
+          if (seq !== this.reqSeq) return
+          this.hasMore = false
+        })
         .finally(() => {
           if (seq !== this.reqSeq) return
           this.loading = false
@@ -448,8 +464,11 @@ export default {
       if (!this.hasMore || this.loading) return
       const el = this.$refs.scroller
       if (!el) return
-      const distance = this.totalHeight - (el.scrollTop + el.clientHeight)
-      if (distance < el.clientHeight * 2) this.loadPage()
+      // 容器尚未布局时不判断：避免按 0 高度得出「已到底」而停止补载
+      const viewport = el.clientHeight || this.viewportHeight
+      if (!viewport) return
+      const distance = this.totalHeight - (el.scrollTop + viewport)
+      if (distance < viewport * 2) this.loadPage()
     },
     /**
      * 通知父级视口顶部的首个可见商品（scroll-spy）：

@@ -208,7 +208,7 @@ echo "stage ready"
 '@
         $stage = $stage -replace '__DIR__', $RemoteDir
         Invoke-InnasScript -Script $stage | Out-Null
-        Copy-ToInnas -Path $distDir -RemotePath "$RemoteDir/dist-upload" -Recurse
+        Copy-ToInnasDir -LocalDir $distDir -RemotePath "$RemoteDir/dist-upload"
 
         # 容器把 ./frontend-dist 挂到 /app/frontend-dist，必须解包到该目录
         # pscp -r 传目录本身，远端暂存结构为 dist-upload/dist/<files>

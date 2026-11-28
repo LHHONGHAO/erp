@@ -11,7 +11,11 @@
         <span v-if="order > 0" class="mpc-card__order">{{ order }}</span>
         <slot name="nameExtra"></slot>
       </div>
-      <div v-for="(line, index) in specs" :key="'spec-' + index" class="mpc-card__spec">
+      <div
+        v-for="(line, index) in specs"
+        :key="'spec-' + index"
+        class="mpc-card__spec"
+        :class="{ 'is-hl': isSpecHit(line) }">
         <span class="mpc-card__spec-label">{{ line.label ? line.label + '：' : '' }}</span>
         <span class="mpc-card__spec-value">{{ line.value }}</span>
       </div>
@@ -39,7 +43,7 @@
  *   name    商品名称（nameExtra 插槽用于放序/批等标签）
  *   imgUrl  缩略图地址，为空显示占位图标
  *   specs   规格行数组 [{ label, value }]
- *   items   信息行数组 [{ label, value }]，值位最小宽 40px
+ *   items   信息行数组 [{ label, value }]，值紧跟标签、左对齐
  *   price   零售价，左边缘对齐卡片水平中点、与库存行同行显示
  *   alt     是否使用交替浅灰底色（列表偶数项）
  *   order   选中序号，大于 0 时显示在名称后
@@ -58,7 +62,9 @@ export default {
     price: { type: [String, Number], default: '' },
     alt: { type: Boolean, default: false },
     order: { type: Number, default: 0 },
-    fill: { type: Boolean, default: false }
+    fill: { type: Boolean, default: false },
+    /** 需要高亮底色的规格值（常用规格点击后定位到该规格，卡片内对应规格行高亮） */
+    highlightSpec: { type: String, default: '' }
   },
   computed: {
     /** 卡片缩略图：原图接口切到后端缩略图接口（200px，约 20KB），原图 3MB 只留给大图预览 */
@@ -79,6 +85,11 @@ export default {
     }
   },
   methods: {
+    /** 规格行是否命中高亮值（忽略空白差异，与左侧常用规格标签的取值规则一致） */
+    isSpecHit(line) {
+      if (!this.highlightSpec || !line) return false
+      return String(line.value || '').replace(/\s+/g, '') === this.highlightSpec
+    },
     onClick(event) {
       if (this.clickable) this.$emit('click', event)
     }
@@ -236,6 +247,17 @@ export default {
   min-width: 0;
   word-break: break-all;
 }
+/* 常用规格点击定位后：命中的规格值加底色高亮；收缩到文字宽度，并用负外边距抵消内边距，不改变文字位置 */
+.mpc-card__spec.is-hl .mpc-card__spec-value {
+  flex: none;
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #e3f0ff;
+  color: #1554ad;
+}
 /* 信息行：与规格行保持同样行距，四行内容（名称/花色/规格/价格）垂直间距均匀；
    空信息行（仅零售价模式）也须占住 18px 行高，否则高度塌陷会让贴底价格与规格行重叠 */
 .mpc-card__meta {
@@ -245,8 +267,8 @@ export default {
   align-items: center;
   justify-content: flex-start;
   flex-wrap: nowrap;
-  padding-left: 50%;
-  gap: 16px;
+  padding-left: 44%;
+  gap: 12px;
   font-size: 14px;
   line-height: 20px;
   color: #999999;
@@ -255,7 +277,7 @@ export default {
 .mpc-card__kv {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   white-space: nowrap;
 }
 .mpc-card__kv-label {
@@ -263,9 +285,9 @@ export default {
 }
 .mpc-card__kv-value {
   display: inline-block;
-  min-width: 40px;
+  min-width: 0;
   padding: 0 2px;
-  text-align: right;
+  text-align: left;
 }
 /* 右侧操作列：垂直居中，与卡片内容等高 */
 .mpc-card__side {

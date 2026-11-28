@@ -25,19 +25,20 @@ export function normalizePickerGoods(goods) {
   })
 }
 
-function recentFeedItems(list) {
+/** 最近常选也走标准行映射，卡片结构（名称/图片/规格/价格/信息行）与普通商品完全一致 */
+function recentFeedItems(list, compact) {
   return list.map(normalizePickerGoods).filter(function(goods) { return !!goods.name }).map(function(goods) {
-    return {
-      skuRowKey: goods.key,
-      nameKey: goods.name + '\u0000' + goods.spec,
-      recentFlag: true,
+    var raw = goods.raw || {}
+    var stock = raw.stock != null ? raw.stock : (raw.currentStock != null ? raw.currentStock : goods.stock)
+    var item = toGoodsFeedItem(Object.assign({}, raw, {
       name: goods.name,
-      imgUrl: goods.imgUrl,
-      specs: goods.specLines,
-      items: [],
-      price: goods.price,
-      goods: goods
-    }
+      spec: goods.spec,
+      stock: stock
+    }))
+    if (compact !== false) item.items = []
+    item.recentFlag = true
+    item.nameKey = item.name + '\u0000' + item.goods.spec
+    return item
   })
 }
 
@@ -77,13 +78,18 @@ export function createGoodsPickerFeed(options) {
     return recentReady
   }
 
+  /**
+   * 标准商品分页请求：页面只提供业务查询条件（getSearch），
+   * 关键字与「按类目+规格排序」由本模块统一注入，保证类目/规格锚点始终可用。
+   */
   function requestRows(current, page, pageSize) {
-    return getAction('/material/listSku', {
-      search: JSON.stringify(filterObj({
-        materialParam: current.keyword,
-        orderByCategory: current.keyword ? '' : '1',
-        mpList: getMpListShort(Vue.ls.get('materialPropertyList'))
-      })),
+    var search = Object.assign({}, options.getSearch ? options.getSearch() : {}, {
+      materialParam: current.keyword,
+      orderByCategory: current.keyword ? '' : '1'
+    })
+    if (!search.mpList) search.mpList = getMpListShort(Vue.ls.get('materialPropertyList'))
+    return getAction(options.getUrl ? options.getUrl() : (options.url || '/material/listSku'), {
+      search: JSON.stringify(filterObj(search)),
       currentPage: page,
       pageSize: pageSize
     }).then(function(res) {
@@ -108,10 +114,10 @@ export function createGoodsPickerFeed(options) {
       if (session !== current || !results[1]) return { list: [], total: 0, hasMore: false }
       var list = []
       if (page === 1) {
-        recentFeedItems(results[0]).forEach(function(item) {
+        recentFeedItems(results[0], options.compact).forEach(function(item) {
           current.recentNames[item.nameKey] = true
           if (current.seen[item.skuRowKey]) return
-          current.seen[item.skuRowKey] = true
+          current.seen[item.skuRowKey] = item
           list.push(item)
         })
         current.headCount = list.length
@@ -120,9 +126,16 @@ export function createGoodsPickerFeed(options) {
       data.rows.forEach(function(row) {
         var item = toGoodsFeedItem(row)
         var nameKey = item.name + '\u0000' + item.goods.spec
-        if (current.seen[item.skuRowKey] || (page === 1 && current.recentNames[nameKey])) return
-        current.seen[item.skuRowKey] = true
-        item.items = []
+        var pinned = current.seen[item.skuRowKey]
+        if (pinned) {
+          // 已完成去重：若置顶的最近常选用的是历史快照，这里用最新接口行刷新库存
+          if (options.compact === false && typeof pinned === 'object') pinned.items = item.items
+          return
+        }
+        if (page === 1 && current.recentNames[nameKey]) return
+        current.seen[item.skuRowKey] = item
+        // 选择场景卡片只保留名称/图片/规格/价格，信息行由业务页面按需补充
+        if (options.compact !== false) item.items = []
         list.push(item)
       })
       return { list: list, total: data.total + current.headCount, hasMore: data.rows.length > 0 && page * pageSize < data.total }

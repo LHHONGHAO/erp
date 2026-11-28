@@ -15,10 +15,16 @@
       @first-visible="$emit('first-visible', $event)">
       <template #item="{ item, deferImage }">
         <div class="mgf-item" :class="{ 'mgf-item--swipe': swipeEdit }">
-          <!-- 卡片右滑后露出的编辑按钮（位于卡片左侧） -->
-          <div v-if="swipeEdit" class="mgf-swipe-btn" @click.stop="emitEdit(item)">
-            <a-icon type="edit" />
-            <span>编辑</span>
+          <!-- 卡片左滑后露出的操作按钮（位于卡片右侧）：详情、编辑 -->
+          <div v-if="swipeEdit" class="mgf-swipe-actions">
+            <div class="mgf-swipe-btn mgf-swipe-btn--detail" @click.stop="emitDetail(item)">
+              <a-icon type="file-text" />
+              <span>详情</span>
+            </div>
+            <div class="mgf-swipe-btn mgf-swipe-btn--edit" @click.stop="emitEdit(item)">
+              <a-icon type="edit" />
+              <span>编辑</span>
+            </div>
           </div>
           <div
             class="mgf-swipe-content"
@@ -33,7 +39,8 @@
               :img-url="deferImage ? '' : item.imgUrl"
               :specs="item.specs"
               :items="item.items"
-              :price="item.price"
+              :price="showPrice ? item.price : ''"
+              :highlight-spec="highlightSpec"
               fill
               @click="onCardClick(item)">
               <template #nameExtra>
@@ -69,8 +76,8 @@ import VirtualWaterfall from './VirtualWaterfall'
 import MobileProductCard from './MobileProductCard'
 import { cardHeightOf } from './goodsFeedItem'
 
-/** 右滑露出的编辑按钮宽度 */
-const SWIPE_WIDTH = 68
+/** 左滑露出的操作按钮总宽度（详情 + 编辑各 60px） */
+const SWIPE_WIDTH = 120
 
 /**
  * 标准商品流模块：卡片布局 + 虚拟滚动 + 分页刷新
@@ -99,6 +106,10 @@ export default {
     prependItems: { type: Array, default: () => [] },
     /** 信息行右侧打印标签按钮 */
     showPrint: { type: Boolean, default: false },
+    /** 卡片是否显示零售价（业务页面可按需关闭） */
+    showPrice: { type: Boolean, default: true },
+    /** 需要高亮底色的规格值（常用规格点击定位后，匹配的卡片规格行高亮） */
+    highlightSpec: { type: String, default: '' },
     /** 卡片右滑露出编辑按钮 */
     swipeEdit: { type: Boolean, default: false },
     /** 卡片上下间距（px），透传给虚拟瀑布流 */
@@ -164,7 +175,7 @@ export default {
       if (!this.swipeEdit) return null
       const offset = this.dragKey === item._key
         ? this.dragOffset
-        : (this.swipeOpenKey === item._key ? SWIPE_WIDTH : 0)
+        : (this.swipeOpenKey === item._key ? -SWIPE_WIDTH : 0)
       return { transform: 'translateX(' + offset + 'px)' }
     },
     onTouchStart(event, item) {
@@ -188,14 +199,15 @@ export default {
       }
       if (this.touchAxis !== 'x') return
       event.preventDefault()
-      const base = this.swipeOpenKey === item._key ? SWIPE_WIDTH : 0
+      // 左滑展开：只允许向左位移，收起时从 0 开始
+      const base = this.swipeOpenKey === item._key ? -SWIPE_WIDTH : 0
       this.dragKey = item._key
-      this.dragOffset = Math.max(0, Math.min(SWIPE_WIDTH, base + dx))
+      this.dragOffset = Math.min(0, Math.max(-SWIPE_WIDTH, base + dx))
     },
     onTouchEnd(item) {
       if (!this.swipeEdit || this.touchItemKey !== item._key) return
       if (this.touchAxis === 'x') {
-        this.swipeOpenKey = this.dragOffset > SWIPE_WIDTH / 2 ? item._key : ''
+        this.swipeOpenKey = this.dragOffset < -SWIPE_WIDTH / 2 ? item._key : ''
       }
       this.touchAxis = ''
       this.touchItemKey = ''
@@ -208,6 +220,11 @@ export default {
         return
       }
       this.$emit('item-click', item)
+    },
+    /** 点击详情按钮：收起按钮并通知调用页（暂未接入详情页） */
+    emitDetail(item) {
+      this.swipeOpenKey = ''
+      this.$emit('detail', item)
     },
     /** 点击编辑按钮：收起按钮并通知调用页进入编辑 */
     emitEdit(item) {
@@ -227,25 +244,34 @@ export default {
   position: relative;
   height: 100%;
 }
-/* 右滑编辑：卡片可横向拖动，左侧露出编辑按钮 */
+/* 左滑操作：卡片可横向拖动，右侧露出详情/编辑按钮 */
 .mgf-item--swipe {
   overflow: hidden;
   border-radius: 14px;
 }
-.mgf-swipe-btn {
+.mgf-swipe-actions {
   position: absolute;
-  left: 0;
+  right: 0;
   top: 0;
   bottom: 0;
-  width: 68px;
+  display: flex;
+  border-radius: 0 14px 14px 0;
+  overflow: hidden;
+}
+.mgf-swipe-btn {
+  width: 60px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #1890ff;
   color: #fff;
-  border-radius: 14px 0 0 14px;
   font-size: 12px;
+}
+.mgf-swipe-btn--detail {
+  background: #8c8c8c;
+}
+.mgf-swipe-btn--edit {
+  background: #1890ff;
 }
 .mgf-swipe-btn .anticon {
   font-size: 18px;
@@ -255,6 +281,8 @@ export default {
   position: relative;
   z-index: 1;
   height: 100%;
+  /* 白底遮住右侧操作按钮：未左滑时按钮完全隐藏，滑动距离即为按钮露出宽度 */
+  background: #fff;
   transition: transform 0.2s ease;
 }
 .mgf-swipe-content.is-dragging {

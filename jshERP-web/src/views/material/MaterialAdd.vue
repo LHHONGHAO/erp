@@ -141,6 +141,11 @@
         form.disableSubmit = false
         form.showOkFlag = true
         form.edit(record)
+        // 商品卡片「编辑」入口：加载完成后直接打开价格设置页（标题显示为编辑商品）
+        if (sessionStorage.getItem('materialEditPrice') === '1') {
+          sessionStorage.removeItem('materialEditPrice')
+          this.$nextTick(() => form.openPriceSheetForEdit())
+        }
       },
       // 返回上一页（商品列表）：直接回退历史记录，避免新增一条历史导致列表与编辑页来回循环
       handleBack () {
@@ -158,8 +163,13 @@
       onSaved () {
         sessionStorage.setItem('materialListDirty', '1')
       },
-      // 表单关闭（取消或重置）：回到空白的人工添加表单
+      // 表单关闭（取消或重置）：编辑模式返回商品列表，新增模式回到空白的人工添加表单
       onClose () {
+        if (this.isEdit) {
+          this.isEdit = false
+          this.handleBack()
+          return
+        }
         this.$nextTick(() => this.openForm())
       },
       // 打开基础属性设置弹窗

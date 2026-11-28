@@ -625,11 +625,11 @@
       <template slot="title">
         <div v-if="isMobileView" class="mm-sheet-header">
           <div class="mm-sheet-title-block">
-            <div class="mm-sheet-title">价格设置</div>
+            <div class="mm-sheet-title">{{ action === 'edit' ? '编辑商品' : '价格设置' }}</div>
           </div>
           <a-icon type="close" class="mm-sheet-close" @click="closePriceSheet" />
         </div>
-        <span v-else>价格设置</span>
+        <span v-else>{{ action === 'edit' ? '编辑商品' : '价格设置' }}</span>
       </template>
       <template slot="footer">
         <div class="price-sheet-footer">
@@ -639,6 +639,16 @@
       </template>
       <!-- 价格设置页：输入框使用原生键盘，不接管键盘输入弹层 -->
       <div class="price-sheet-body" data-kb-overlay="off">
+      <!-- 编辑商品：按卡片标签展示该商品已设置的全部规格与颜色 -->
+      <div v-if="priceSheetSpecTags.length" class="price-block">
+        <div class="price-block-title">已设置规格</div>
+        <div v-for="group in priceSheetSpecTags" :key="'ps-tag-' + group.name" class="sheet-choice-row">
+          <span class="sheet-choice-name">{{ group.name }}</span>
+          <div class="sheet-choice-values">
+            <span v-for="text in group.values" :key="group.name + '-' + text" class="sheet-choice-tag is-on">{{ text }}</span>
+          </div>
+        </div>
+      </div>
       <div class="price-block">
         <div class="price-block-title">规格设置</div>
         <div v-for="(module, mIndex) in specModules" :key="'sheet-spec-' + mIndex">
@@ -1214,6 +1224,16 @@
         if (this.batchStock === '' || this.batchStock === null || this.batchStock === undefined) return false
         let num = Number(this.batchStock)
         return !isNaN(num) && num > 0
+      },
+      // 编辑商品价格页：该商品已设置的全部规格与颜色（卡片标签只读展示）
+      priceSheetSpecTags() {
+        if (this.action !== 'edit') return []
+        return this.specModules
+          .filter(module => module.name && (module.values || []).some(v => (v.text || '').trim()))
+          .map(module => ({
+            name: module.name,
+            values: (module.values || []).map(v => (v.text || '').trim()).filter(Boolean)
+          }))
       },
       // 价格弹层规格选择框：品类已配置且有值的规格类
       sheetSpecChoices() {
@@ -3302,6 +3322,21 @@
             this.priceSheetVisible = true
           })
         })
+      },
+      /** 从商品卡片「编辑」直接进入价格页：等该商品的 SKU 行加载完成后再打开 */
+      openPriceSheetForEdit() {
+        let tries = 0
+        const open = () => {
+          if (this.action !== 'edit') return
+          if (!(this.meTable.dataSource || []).length) {
+            if (tries++ < 40) setTimeout(open, 100)
+            return
+          }
+          this.loadAllCategorySpecSuggestions()
+          this.initSheetSpecSelection()
+          this.priceSheetVisible = true
+        }
+        this.$nextTick(open)
       },
       closePriceSheet() {
         this.priceSheetVisible = false

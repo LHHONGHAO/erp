@@ -3,66 +3,67 @@
   <!-- ==================== 手机端布局（标准信息搜索页面） ==================== -->
   <mobile-search-page
     v-if="isNarrowScreen"
-    ref="mobileSearchPage"
-    v-model="mobileSearchKeyword"
-    :auto-scan-close="false"
+    bare
     title="商品信息"
-    placeholder="搜索商品 / 条码"
-    :filter-visible.sync="filterDrawerVisible"
-    :filter-groups="mobileFilterGroups"
-    @back="$router.back()"
-    @search="mobileSearch"
-    @scan-result="onProductScanResult"
-    @camera="ocrVisible = true"
-    @filter-change="onMobileFilterChange"
-    @filter-clear="resetMobileFilter">
+    @back="$router.back()">
       <template #actions>
         <mobile-header-actions :actions="mobileHeaderActions" />
       </template>
 
-    <!-- 信息列表：标准商品流模块（卡片布局 + 虚拟滚动 + 分页刷新），点击卡片进入商品详情 -->
-    <mobile-goods-feed
+    <!-- 商品浏览框架：与添加商品页同一个模块，搜索胶囊 / 左栏导航 / 常用规格 / 商品流全部一致 -->
+    <mobile-goods-browse
       ref="mobileFeed"
+      v-model="mobileSearchKeyword"
       feed-key="material_list"
-      :loader="loadMobileFeed"
+      :url="url.list"
+      :query="queryParam"
+      :recent="mobileRecentConfig"
+      :compact="false"
       :reset-key="mobileFeedResetKey"
+      :auto-scan-close="false"
+      :show-filter="true"
+      :filter-visible.sync="filterDrawerVisible"
+      :filter-groups="mobileFilterGroups"
       selectable
       show-print
       :swipe-edit="canMobileEdit"
       :selected-keys="feedPickedKeys"
       empty-text="暂无商品"
+      @scan-result="onProductScanResult"
+      @camera="ocrVisible = true"
+      @item-click="toggleFeedPick"
+      @error="$message.warning($event)"
+      @filter-change="onMobileFilterChange"
+      @filter-clear="resetMobileFilter"
       @print="handleFeedPrint"
       @edit="handleFeedEdit"
       @select="toggleFeedPick">
-    </mobile-goods-feed>
 
-    <!-- 条件筛选：商品类别（统一筛选面板内） -->
-    <template #filter-extra>
-      <div class="msearch-filter__field">
-        <span class="msearch-filter__field-label">商品类别</span>
-        <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
-          :treeData="categoryTree" v-model="queryParam.categoryId" placeholder="请选择类别"
-          @change="onMobileCategoryChange">
-        </a-tree-select>
-      </div>
-    </template>
+      <!-- 条件筛选：商品类别（业务筛选项，统一放在框架筛选面板内） -->
+      <template #filter-extra>
+        <div class="msearch-filter__field">
+          <span class="msearch-filter__field-label">商品类别</span>
+          <a-tree-select style="width:100%" :dropdownStyle="{maxHeight:'200px',overflow:'auto'}" allow-clear
+            :treeData="categoryTree" v-model="queryParam.categoryId" placeholder="请选择类别"
+            @change="onMobileCategoryChange">
+          </a-tree-select>
+        </div>
+      </template>
 
-    <!-- 浮层：弹窗 -->
-    <template #overlay>
-    <!-- 标准手机底边栏由 mobile-search-page 统一提供 -->
-
-    <!-- 弹窗组件（手机端也复用） -->
-    <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
-    <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
-    <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
-    <label-edit-modal-page ref="labelEditor" />
-    <ocr-recognize-modal
-      :visible="ocrVisible"
-      :extractOnly="true"
-      @ok="onOcrOk"
-      @cancel="ocrVisible = false"
-    />
-    </template>
+      <!-- 浮层：弹窗 -->
+      <template #overlay>
+        <material-modal ref="modalForm" @ok="modalFormOk"></material-modal>
+        <import-file-modal ref="modalImportForm" @ok="modalFormOk"></import-file-modal>
+        <label-print-modal ref="labelPrintModal" @edit="handleEditLabel"></label-print-modal>
+        <label-edit-modal-page ref="labelEditor" />
+        <ocr-recognize-modal
+          :visible="ocrVisible"
+          :extractOnly="true"
+          @ok="onOcrOk"
+          @cancel="ocrVisible = false"
+        />
+      </template>
+    </mobile-goods-browse>
   </mobile-search-page>
 
   <!-- ==================== 电脑端布局（保持原样） ==================== -->
@@ -249,11 +250,11 @@
   import { LabelPrintModal } from '@/views/material/labelPrint'
   import OcrRecognizeModal from './modules/OcrRecognizeModal'
   import { queryMaterialCategoryTreeList } from '@/api/api'
-  import { postAction, deleteAction, getAction } from '@/api/manage'
+  import { postAction, deleteAction } from '@/api/manage'
   import { getMpListShort } from '@/utils/util'
   import { JeecgListMixin } from '@/mixins/JeecgListMixin'
   import MaterialTable from '@/components/material/MaterialTable'
-  import MobileGoodsFeed from '@/components/mobile/MobileGoodsFeed'
+  import MobileGoodsBrowse from '@/components/mobile/MobileGoodsBrowse'
   import { toGoodsFeedItem } from '@/components/mobile/goodsFeedItem'
   import MobileSearchPage from '@/components/mobile/MobileSearchPage'
   import MobileHeaderActions from '@/components/mobile/MobileHeaderActions'
@@ -272,7 +273,7 @@
       LabelPrintModal,
       OcrRecognizeModal,
       MaterialTable,
-      MobileGoodsFeed,
+      MobileGoodsBrowse,
       MobileSearchPage,
       MobileHeaderActions
     },
@@ -416,6 +417,10 @@
       /** 手机端卡片已勾选的唯一键 */
       feedPickedKeys() {
         return this.mobileSelectedItems.map(sel => sel.key)
+      },
+      /** 最近常选配置：与添加商品页一致（近一周高频商品置顶到左栏「最近常选」） */
+      mobileRecentConfig() {
+        return { days: 7, limit: 20, requireRaw: true }
       },
       /** 手机端是否可编辑商品（由按钮权限控制） */
       canMobileEdit() {
@@ -565,30 +570,15 @@
       },
 
       // ============ 手机端专属方法 ============
-      /** 标准商品流加载器：复用列表查询条件，按页静默拉取 */
-      loadMobileFeed({ page, pageSize }) {
-        const params = this.getQueryParams()
-        params.currentPage = page
-        params.pageSize = pageSize
-        return getAction(this.url.list, params).then(res => {
-          if (res && res.code === 200 && res.data) {
-            const rows = Array.isArray(res.data.rows) ? res.data.rows : []
-            return {
-              list: rows.map(toGoodsFeedItem),
-              total: Number(res.data.total) || 0
-            }
-          }
-          if (res && res.code === 510) this.$message.warning(res.data)
-          return { list: [], total: 0 }
-        })
-      },
       /** 卡片打印标签 */
       handleFeedPrint(item) {
         if (item && item.raw) this.handlePrintSkuLabel(item.raw)
       },
-      /** 卡片右滑点编辑：进入商品编辑页，加载该商品完整信息 */
+      /** 卡片左滑点编辑：进入商品编辑页并直接打开价格设置页 */
       handleFeedEdit(item) {
-        if (item && item.raw) this.handleEdit(item.raw)
+        if (!item || !item.raw) return
+        sessionStorage.setItem('materialEditPrice', '1')
+        this.handleEdit(item.raw)
       },
       /** 查询条件/数据变化后重置商品流（回到顶部重新加载第 1 页） */
       bumpMobileFeed() {
@@ -671,11 +661,6 @@
       clearMobileSelection() {
         this.mobileSelectedMaterialIds = []
         this.mobileSelectedItems = []
-      },
-      /** 底边栏搜索 */
-      mobileSearch() {
-        this.queryParam.materialParam = this.mobileSearchKeyword
-        if (this.isNarrowScreen) { this.bumpMobileFeed() } else { this.loadData(1) }
       },
       /** 标准扫码页识别结果：条码精确查询；文字按「条码→品名→品类」级联查询，命中回列表展示 */
       onProductScanResult(payload) {
@@ -864,14 +849,14 @@
       },
       /** 未命中时停留在标准扫码页并提示 */
       stayOnScanPage(message) {
-        if (this.$refs.mobileSearchPage && this.$refs.mobileSearchPage.setScanTip) {
-          this.$refs.mobileSearchPage.setScanTip(message, true)
+        if (this.$refs.mobileFeed && this.$refs.mobileFeed.setScanTip) {
+          this.$refs.mobileFeed.setScanTip(message, true)
         }
       },
       /** 关闭标准扫码页 */
       closeScanPage() {
-        if (this.$refs.mobileSearchPage && this.$refs.mobileSearchPage.closeScanPage) {
-          this.$refs.mobileSearchPage.closeScanPage()
+        if (this.$refs.mobileFeed && this.$refs.mobileFeed.closeScanPage) {
+          this.$refs.mobileFeed.closeScanPage()
         }
       },
       /** OCR 文字提取完成：把识别到的文字填入搜索框并自动搜索 */

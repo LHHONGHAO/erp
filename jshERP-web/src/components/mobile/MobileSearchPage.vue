@@ -7,8 +7,15 @@
       </template>
     </mobile-top-bar>
 
+    <!-- 仅顶栏模式：内容组件自带标准搜索框架（如 MobileGoodsBrowse），避免重复渲染搜索胶囊 -->
+    <div v-if="bare" class="mobile-search-page__bare">
+      <slot></slot>
+      <slot name="overlay"></slot>
+    </div>
+
     <!-- 统一搜索布局：内容区 + 悬浮搜索胶囊 + 右侧悬浮筛选面板 -->
     <mobile-search-layout
+      v-else
       ref="layout"
       :value="value"
       :placeholder="placeholder"
@@ -97,6 +104,11 @@ export default {
     scrollBody: {
       type: Boolean,
       default: false
+    },
+    /** 仅渲染顶栏：搜索胶囊与筛选面板由内容组件（如 MobileGoodsBrowse）统一提供 */
+    bare: {
+      type: Boolean,
+      default: false
     }
   },
   methods: {
@@ -129,5 +141,11 @@ export default {
   background: #fff;
   overflow: hidden;
   z-index: 10;
+}
+.mobile-search-page__bare {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>

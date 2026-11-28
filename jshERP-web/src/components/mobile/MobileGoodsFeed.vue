@@ -15,8 +15,8 @@
       @first-visible="$emit('first-visible', $event)">
       <template #item="{ item, deferImage }">
         <div class="mgf-item" :class="{ 'mgf-item--swipe': swipeEdit }">
-          <!-- 卡片左滑后露出的操作按钮（位于卡片右侧）：详情、编辑 -->
-          <div v-if="swipeEdit" class="mgf-swipe-actions">
+          <!-- 卡片左滑后露出的操作按钮（位于卡片右侧）：详情、编辑；仅在拖动/展开时渲染 -->
+          <div v-if="swipeEdit && (dragKey === item._key || swipeOpenKey === item._key)" class="mgf-swipe-actions">
             <div class="mgf-swipe-btn mgf-swipe-btn--detail" @click.stop="emitDetail(item)">
               <a-icon type="file-text" />
               <span>详情</span>

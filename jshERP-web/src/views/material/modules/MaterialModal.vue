@@ -1,12 +1,13 @@
 <template>
   <component
-    is="JModal"
-    v-bind="modalProps"
+    :is="inline ? 'div' : 'JModal'"
+    v-bind="inline ? { id: prefixNo } : modalProps"
+    :class="inline ? 'mm-inline-form' : ''"
     @input.capture="markDirty"
     @change.capture="markDirty"
     @cancel="handleCancel"
-    :style="modalStyle">
-    <template slot="footer">
+    :style="inline ? '' : modalStyle">
+    <template v-if="!inline" slot="footer">
       <a-button key="back" @click="handleCancel">取消</a-button>
       <a-button type="primary" v-if="showOkFlag" :loading="confirmLoading" @click="handleOk">保存（Ctrl+S）</a-button>
     </template>
@@ -301,6 +302,22 @@
             </div>
             <!-- 第 3 页：价格设置 -->
             <div class="mm-page">
+            <!-- 手机端：顶部以商品卡片展示该商品已设置的全部规格信息 -->
+            <div v-if="isMobileView && skuSummaryCards.length" class="mm-set-spec-bar">
+              <div class="mm-set-spec-head">
+                <span class="mm-set-spec-title">已设置规格</span>
+                <span class="mm-set-spec-count">共 {{ skuSummaryCards.length }} 个</span>
+              </div>
+              <div class="mm-set-spec-cards">
+                <mobile-product-card
+                  v-for="(card, cardIndex) in skuSummaryCards"
+                  :key="cardIndex"
+                  :name="card.name"
+                  :img-url="card.imgUrl"
+                  :specs="card.specs"
+                  :price="card.price" />
+              </div>
+            </div>
             <div style="margin-top:8px;" id="materialDetailModal">
               <div class="price-setting-wrapper">
                 <!-- 价格设置标题和进度 -->
@@ -794,6 +811,7 @@
   import BatchSetPriceModal from './BatchSetPriceModal'
   import OcrRecognizeModal from './OcrRecognizeModal'
   import JEditableTable from '@/components/jeecg/JEditableTable'
+  import MobileProductCard from '@/components/mobile/MobileProductCard'
   import { FormTypes, getRefPromise, VALIDATE_NO_PASSED, validateFormAndTables } from '@/utils/JEditableTableUtil'
   import { changeNameToPinYin, checkMaterial, checkMaterialCode, checkSkuBarCodes, getMaterialAttributeNameList, getMaterialCategorySpecValues, deleteMaterialCategorySpecValue, getMaxBarCode, queryMaterialCategoryTreeList, getDepotList } from '@/api/api'
   import { autoJumpNextInput, handleIntroJs, removeByVal, addBigNumbers } from '@/utils/util'
@@ -811,6 +829,10 @@
 
   export default {
     name: "MaterialModal",
+    props: {
+      // 内联模式：表单直接铺在页面中，不再以弹层形式出现
+      inline: { type: Boolean, default: false }
+    },
     components: {
       BatchSetPriceModal,
       OcrRecognizeModal,
@@ -818,6 +840,7 @@
       JDate,
       JModal,
       JEditableTable,
+      MobileProductCard,
       VNodes: {
         functional: true,
         render: (h, ctx) => ctx.props.vnodes,
@@ -1315,6 +1338,38 @@
         }
         let rows = this.meTable.dataSource || []
         return rows.filter(row => filters.every(f => f.values.indexOf(row['skuField' + (f.mIndex + 1)]) !== -1))
+      },
+      // 手机端价格页顶部：以商品卡片展示该商品已设置的全部规格信息
+      skuSummaryCards() {
+        const modules = this.specModules || []
+        if (!modules.length) return []
+        const rows = this.meTable.dataSource || []
+        const materialName = (this.model && this.model.name) || ''
+        const defaultImg = this.fileList || ''
+        return rows.map(row => {
+          const specs = []
+          let imgUrl = ''
+          for (let i = 0; i < modules.length; i++) {
+            const module = modules[i] || {}
+            const text = row['skuField' + (i + 1)]
+            if (!text) continue
+            const moduleName = (module.name || '').trim() || ('规格' + (i + 1))
+            const values = Array.isArray(module.values) ? module.values : []
+            for (let j = 0; j < values.length; j++) {
+              const value = values[j] || {}
+              if (value.text === text && value.image && !imgUrl) {
+                imgUrl = value.image
+              }
+            }
+            specs.push({ label: moduleName, value: text })
+          }
+          return {
+            name: materialName,
+            imgUrl: imgUrl || defaultImg,
+            specs: specs,
+            price: row.commodityDecimal
+          }
+        })
       }
     },
     watch: {
@@ -1424,6 +1479,18 @@
         }
         this.mobilePageIndex = index
       },
+      // 手机端编辑：进入编辑页后直接定位到第 3 页（价格设置）
+      jumpToMobilePricePage() {
+        const apply = () => {
+          const el = this.$refs.mmPages
+          if (!el) return
+          el.scrollLeft = (el.clientWidth || 1) * 2
+          this.mobilePageIndex = 2
+        }
+        this.$nextTick(apply)
+        // 内联表单首次渲染时宽度可能尚未稳定，布局完成后再校正一次
+        setTimeout(apply, 60)
+      },
       // 手机端卡片：规格值组合文本
       getSkuCardSpecText(row) {
         const arr = []
@@ -1513,6 +1580,18 @@
         this.visible = true
         this.meDeleteIdList = []
         this.modalStyle = 'top: 24px;'
+        // 手机端编辑：直接定位到第 3 页（价格设置）；新增则回到第 1 页
+        if (this.isMobileView) {
+          if (this.action === 'edit') {
+            this.jumpToMobilePricePage()
+          } else {
+            this.$nextTick(() => {
+              const el = this.$refs.mmPages
+              if (el) el.scrollLeft = 0
+              this.mobilePageIndex = 0
+            })
+          }
+        }
         if(JSON.stringify(record) === '{}') {
           this.fileList = []
         } else {
@@ -5192,6 +5271,13 @@
   .mm-pages.is-mobile::-webkit-scrollbar {
     display: none;
   }
+  /* 内联（编辑页）：表单直接铺在页面中，按手机端页面高度铺满 */
+  .mm-inline-form {
+    width: 100%;
+  }
+  .mm-inline-form .mm-pages.is-mobile {
+    height: calc(100vh - 95px - env(safe-area-inset-bottom, 0px));
+  }
   .mm-pages.is-mobile > .mm-page {
     flex: 0 0 100%;
     flex-shrink: 0;
@@ -5250,6 +5336,33 @@
   }
   .mm-page-tab.active .mm-page-tab-bar {
     background: #1890ff;
+  }
+  /* 手机端价格页顶部：已设置规格（商品卡片样式） */
+  .mm-set-spec-bar {
+    padding: 12px 12px 4px;
+    margin-bottom: 8px;
+    background: #fff;
+    border-radius: 12px;
+  }
+  .mm-set-spec-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .mm-set-spec-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1d2129;
+  }
+  .mm-set-spec-count {
+    font-size: 12px;
+    color: #86909c;
+  }
+  .mm-set-spec-cards {
+    max-height: 300px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   /* 手机端：属性标题与输入框同行显示，标题与内容底边对齐，输入框高度压缩 */
   .mm-pages.is-mobile ::v-deep .ant-form-item {

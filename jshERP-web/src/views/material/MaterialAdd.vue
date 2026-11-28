@@ -230,12 +230,15 @@
   .ma-body {
     padding-bottom: 24px;
   }
-  /* 手机端：不限制容器高度，内容随页面整体滚动到底部 */
+  /* 手机端：表单已内联铺满一屏，不再限制容器高度，也不需要额外的底部留白 */
   @media (max-width: 768px) {
     .material-add-page {
       height: auto !important;
       overflow: visible;
-      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      padding-bottom: 0;
+    }
+    .ma-body {
+      padding-bottom: 0;
     }
   }
 </style>

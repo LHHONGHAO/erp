@@ -15,7 +15,7 @@
           <div
             ref="navItemAll"
             class="pkv2-nav__item"
-            :class="{ 'is-on': filterCategoryId === undefined && !navSpyId }"
+            :class="{ 'is-on': !navSpyId }"
             @click="selectNavAll">最近常选</div>
           <div
             v-for="cat in navCategories"
@@ -40,6 +40,7 @@
             ref="feed"
             feed-key="goods_picker_v2"
             :loader="loadPickerFeed"
+            :page-size="pageSize"
             :gap="16"
             :reset-key="pickerResetKey"
             qty-mode
@@ -73,15 +74,13 @@
 <script>
 import { getAction } from '@/api/manage'
 import { queryMaterialCategoryTreeList } from '@/api/api'
-import { getMpListShort, filterObj } from '@/utils/util'
-import { getRowImgUrl } from '@/views/material/utils/materialDisplay'
-import { toGoodsFeedItem, splitSpecValues, parseSpecLines } from '@/components/mobile/goodsFeedItem'
-import Vue from 'vue'
+import { createGoodsPickerFeed, normalizePickerGoods } from './goodsPickerFeed'
+import { secondLevelCategories, buildCatParentMap, itemCategoryId, matchesCategory, itemSpec, matchesSpec, normalizeFavRows } from './goodsPickerNavigation'
 import MobileModalPage from './MobileModalPage'
 import MobileSearchLayout from './MobileSearchLayout'
 import MobileGoodsFeed from './MobileGoodsFeed'
 import OcrRecognizeModal from '@/views/material/modules/OcrRecognizeModal'
-import { recordGoodsUsage, getRecentGoods, fetchRecentGoods, clearLocalGoodsUsage } from './goodsUsage'
+import { recordGoodsUsage } from './goodsUsage'
 
 /**
  * 标准商品选择/添加弹层（唯一复用模块）：所有需要「添加商品」的页面统一复用本组件，
@@ -121,21 +120,17 @@ export default {
   data() {
     return {
       keyword: '',
-      recentList: [],
-      // 最近常选就绪信号：第 1 页商品与它并行请求，两者都回来后再合并渲染一次
-      recentReadyPromise: null,
+      pickerFeed: createGoodsPickerFeed({
+        getKeyword: () => this.keyword,
+        onError: message => this.$message.error(message)
+      }),
       // 已选商品（按首次点击顺序，数量存于 qtyMap）
       selectedGoods: [],
       // 各商品已选数量（key → 数量）
       qtyMap: {},
       // 商品流条件重置信号
       pickerResetKey: 0,
-      // 本次加载已出现过的商品键（最近使用与分页去重）
-      seenKeys: {},
-      // 最近常选商品的「名称+规格」键：最新列表中同键商品不重复展示（全部页次生效）
-      recentNameKeys: {},
-      // 左侧类目导航：当前激活的二级类目 id（undefined = 全部商品）
-      filterCategoryId: undefined,
+      // 左侧类目导航：点击类目为锚点滚动（商品流保持全量连续列表，不过滤不重置）
       // 常用规格卡：当前类目下最常用的 4 个规格值（点击为锚点滚动定位，不做过滤）
       favSpecs: [],
       // 常用规格请求序号：类目快速切换时丢弃旧响应，避免覆盖
@@ -163,15 +158,7 @@ export default {
     },
     /** 左侧导航：遍历类目树取所有二级节点 */
     navCategories() {
-      var list = []
-      function walk(nodes) {
-        ;(nodes || []).forEach(function(node) {
-          if (String(node.categoryLevel) === '2') list.push(node)
-          walk(node.children)
-        })
-      }
-      walk(this.categoryTree)
-      return list
+      return secondLevelCategories(this.categoryTree)
     }
   },
   watch: {
@@ -193,9 +180,8 @@ export default {
         }
         // 最近常选（店铺共享，失败回退本地）：只记录就绪信号，不再单独重建商品流，
         // 第 1 页数据与它并行请求、合并后一次渲染，避免首屏先渲染再被重置
-        this.recentReadyPromise = this.loadSharedRecent(recentOpts)
+        this.pickerFeed.prepareRecent(recentOpts)
         // 每次打开都回到默认状态：展示全部商品（类目树里存在无商品的废弃类目，不默认选中任何类目）
-        this.filterCategoryId = undefined
         this.favSpecs = []
         // 导航联动回到初始状态，等待商品流加载后按首个可见商品联动
         this.spyCategoryId = ''
@@ -208,29 +194,20 @@ export default {
         if (this.$store && this.$store.commit) {
           this.$store.commit('goodsFeed/CLEAR_FEED_STATE', 'goods_picker_v2')
         }
+      } else {
+        this.pickerFeed.invalidate(true)
+        this.favSeq += 1
       }
     }
+  },
+  beforeDestroy() {
+    this.pickerFeed.invalidate(true)
+    this.favSeq += 1
   },
   methods: {
     /** 最近使用只存了名称+规格展示文本，回填前补齐规格值（规格解析复用 goodsFeedItem 标准模块） */
     normalizeGoods(goods) {
-      var values = [goods.spec1, goods.spec2, goods.spec3]
-      if (!values[0] && !values[1] && !values[2] && goods.spec) {
-        values = splitSpecValues(goods.spec, 3)
-      }
-      return {
-        key: goods.key || (goods.name + '_' + (goods.spec || '')),
-        name: goods.name || '',
-        spec: goods.spec || '',
-        spec1: values[0] || '',
-        spec2: values[1] || '',
-        spec3: values[2] || '',
-        imgUrl: goods.imgUrl || (goods.raw ? getRowImgUrl(goods.raw) : ''),
-        specLines: parseSpecLines(goods.spec, 2),
-        price: (goods.raw && goods.raw.commodityDecimal != null) ? goods.raw.commodityDecimal : '-',
-        stock: (goods.raw && goods.raw.stock != null) ? goods.raw.stock : '-',
-        raw: goods.raw || null
-      }
+      return normalizePickerGoods(goods)
     },
     /** 点击商品卡片：数量 +1（首次点击加入已选） */
     addQty(goods) {
@@ -302,78 +279,45 @@ export default {
     },
     /** 类目 id → 二级祖先节点映射：商品行 categoryId 可能挂在三级叶子类目上，规格统计按二级类目取 */
     buildCatParentMap() {
-      var map = {}
-      function walk(nodes, anchor) {
-        ;(nodes || []).forEach(function(node) {
-          var next = String(node.categoryLevel) === '2' ? node : anchor
-          if (next) map[String(node.id)] = next
-          walk(node.children, next)
-        })
-      }
-      walk(this.categoryTree, null)
-      this.catParentMap = map
+      this.catParentMap = buildCatParentMap(this.categoryTree)
     },
     /**
-     * 商品流首个可见商品（scroll-spy）：仅「最近常选」模式联动——
+     * 商品流首个可见商品（scroll-spy）：全程联动——
      * 最近常选区（近一周高频商品）保持「最近常选」高亮；
-     * 其余商品 categoryId 解析到二级祖先类目后，联动左侧导航高亮。
-     * 类目显式选中时不联动。
+     * 其余商品 categoryId 解析到二级祖先类目后，联动左侧导航高亮与常用规格卡。
      */
     onFeedFirstVisible(item) {
-      // 常用规格卡滚动联动高亮：所有模式都跟随视口顶部商品（最近常选区商品不参与，保持无高亮）
-      this.updateActiveSpec(item)
-      if (this.filterCategoryId !== undefined) return
-      // 最近常选区：导航回到「最近常选」高亮
+      if (!this.visible) return
       if (item && item.recentFlag) {
-        if (this.navSpyId) {
-          this.navSpyId = ''
-          this.scrollNavIntoView()
-        }
+        this.clearNavZone()
         return
       }
-      var goods = item && item.goods
-      var cid = goods ? ((goods.categoryId || (goods.raw && goods.raw.categoryId)) || '') : ''
-      var node = cid ? this.catParentMap[String(cid)] : null
-      if (!node) return
-      var id = String(node.id)
+      var id = itemCategoryId(item, this.catParentMap)
+      if (!id) {
+        this.activeSpec = ''
+        return
+      }
       if (id !== this.spyCategoryId) {
         this.spyCategoryId = id
+        this.loadFavSpecs()
       }
       if (this.navSpyId !== id) {
         this.navSpyId = id
         this.scrollNavIntoView()
       }
+      this.updateActiveSpec(item)
     },
     /**
      * 视口顶部商品的规格值 → 标签浅蓝高亮。
-     * 仅当商品属于当前类目区（显式选中或滚动联动的类目）时生效；
+     * 仅当商品属于滚动联动解析到的当前类目区时生效；
      * 最近常选区商品与跨类目滚动期间不高亮（activeSpec 置空）
      */
     updateActiveSpec(item) {
-      var spec = ''
-      var goods = item && !item.recentFlag ? item.goods : null
-      var lines = goods && goods.specLines
-      if (lines) {
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i]
-          if (line && (line.label === '尺寸' || line.label === '规格') && line.value) {
-            spec = String(line.value).replace(/\s+/g, '')
-            break
-          }
-        }
-      }
-      if (spec) {
-        // 商品类目需与当前类目区一致，否则置空避免跨区误高亮
-        var zone = this.filterCategoryId !== undefined ? String(this.filterCategoryId) : (this.spyCategoryId || '')
-        var cid = goods.categoryId || (goods.raw && goods.raw.categoryId) || ''
-        var node = cid ? this.catParentMap[String(cid)] : null
-        if (!zone || !node || String(node.id) !== String(zone)) spec = ''
-      }
-      if (spec !== this.activeSpec) this.activeSpec = spec
+      this.activeSpec = this.spyCategoryId && matchesCategory(item, this.spyCategoryId, this.catParentMap)
+        ? itemSpec(item) : ''
     },
-    /** 左侧导航类目高亮：显式选中按选中态，否则跟随滚动联动 */
+    /** 左侧导航类目高亮：全程跟随滚动联动 */
     isNavActive(cat) {
-      if (this.filterCategoryId !== undefined) return this.isActiveCategory(cat)
       return !!this.navSpyId && this.navSpyId === String(cat.id)
     },
     /** 导航联动高亮后，让目标类目在导航栏内居中可见（导航栏自身滚动，不影响页面） */
@@ -389,82 +333,68 @@ export default {
         nav.scrollTop = Math.max(0, Math.min(max, target))
       })
     },
-    /** 类目是否激活（id 统一按字符串比较） */
-    isActiveCategory(cat) {
-      return String(this.filterCategoryId) === String(cat.id)
-    },
-    /** 点击左侧「最近常选」：清空类目过滤；已在最近常选时仅回到顶部（顶部为近一周高频商品） */
+    /** 点击左侧「最近常选」：回到顶部（顶部为近一周高频商品），商品流不重置 */
     selectNavAll() {
-      if (this.filterCategoryId !== undefined) {
-        this.filterCategoryId = undefined
-        this.resetFeed()
-        this.loadFavSpecs()
-        // 导航联动清空，等待商品流加载后按首个可见商品重新联动
-        this.spyCategoryId = ''
-        this.navSpyId = ''
-        this.activeSpec = ''
-      } else if (this.$refs.feed) {
-        this.$refs.feed.scrollToTop()
-      }
+      this.clearNavZone()
+      if (this.$refs.feed) this.$refs.feed.scrollToTop()
     },
-    /** 点击左侧类目：再次点击取消（回到最近常选） */
+    clearNavZone() {
+      var changed = !!this.spyCategoryId
+      this.spyCategoryId = ''
+      this.navSpyId = ''
+      this.activeSpec = ''
+      this.scrollNavIntoView()
+      if (changed) this.loadFavSpecs()
+    },
+    /**
+     * 点击左侧类目：锚点滚动到该类目（含子类目）第一个商品处，商品流保持全量连续列表。
+     * 已加载范围找不到时由 scrollToItem 继续翻页查找；仍找不到（类目无商品）时
+     * 不跳转、不清空流，仅轻量提示，上下滑动照常浏览其他类目商品。
+     */
     selectNavCategory(cat) {
-      var selected = !this.isActiveCategory(cat)
-      this.filterCategoryId = selected ? cat.id : undefined
-      // 类目切换后常用规格随类目刷新
-      this.resetFeed()
-      this.loadFavSpecs()
-      if (selected) {
-        // 显式选中类目：导航高亮该类目（滚动联动停用）
-        this.spyCategoryId = String(cat.id)
-        this.navSpyId = String(cat.id)
-      } else {
-        // 返回最近常选：联动清空，等待商品流加载后按首个可见商品重新联动
-        this.spyCategoryId = ''
-        this.navSpyId = ''
-        this.activeSpec = ''
-      }
+      if (!this.$refs.feed) return
+      var self = this
+      var id = String(cat.id)
+      return this.$refs.feed.scrollToItemResult(function(item) {
+        return matchesCategory(item, id, self.catParentMap)
+      }).then(function(result) {
+        self.showNavigationResult(result, '该类目暂无商品')
+      })
+    },
+    showNavigationResult(result, emptyText) {
+      if (!this.visible || !result) return
+      if (result.status === 'exhausted') this.$message.info(emptyText)
+      if (result.status === 'limit') this.$message.info('本次查找已达分页上限，请继续浏览或搜索')
+      if (result.status === 'failed') this.$message.info('商品加载失败，请稍后重试')
     },
     /**
      * 点击规格标签（常用规格卡，锚点模式）：商品流滚动到该规格商品处并带到视口顶部。
      * 列表不过滤，其他商品位置不变；商品流已按类目+规格排序，同规格商品相邻。
-     * 优先定位当前类目区内的该规格（显式选中的类目或滚动联动解析到的类目），找不到再定位全流首个匹配。
+     * 优先定位滚动联动解析到的当前类目区内的规格，仅在查完无匹配后定位全流首个匹配。
      */
     scrollToSpec(tag) {
       if (!this.$refs.feed) return
       var self = this
       var text = String(tag.text || '')
-      var zone = this.filterCategoryId !== undefined ? String(this.filterCategoryId) : (this.spyCategoryId || '')
-      function specMatch(item, sameZone) {
-        // 最近常选区不受规格影响：锚点定位跳过该区商品
-        if (!item || item.recentFlag) return false
-        var goods = item.goods
-        var lines = goods && goods.specLines
-        if (!lines) return false
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i]
-          if (!line || (line.label !== '尺寸' && line.label !== '规格')) continue
-          if (String(line.value || '').replace(/\s+/g, '') !== text) continue
-          if (!sameZone) return true
-          var cid = goods.categoryId || (goods.raw && goods.raw.categoryId) || ''
-          var node = cid ? self.catParentMap[String(cid)] : null
-          return !!node && String(node.id) === String(zone)
-        }
-        return false
-      }
-      if (zone) {
-        this.$refs.feed.scrollToItem(function(item) { return specMatch(item, true) }).then(function(found) {
-          if (!found && self.$refs.feed) {
-            return self.$refs.feed.scrollToItem(function(item) { return specMatch(item, false) })
-          }
+      var zone = this.spyCategoryId || ''
+      var feed = this.$refs.feed
+      function locate(inZone) {
+        return feed.scrollToItemResult(function(item) {
+          return matchesSpec(item, text, inZone, self.catParentMap)
         })
-      } else {
-        this.$refs.feed.scrollToItem(function(item) { return specMatch(item, false) })
       }
+      return locate(zone).then(function(result) {
+        if (zone && result.status === 'exhausted' && self.visible && self.$refs.feed === feed) {
+          return locate('')
+        }
+        return result
+      }).then(function(result) {
+        self.showNavigationResult(result, '暂无该规格商品')
+      })
     },
     /**
      * 常用规格卡：按当前类目取规格值频次 Top4。
-     * 类目选中 → /material/listCategorySkuValueStats（SQL 按类目+直接子类目统计，返回全部属性名），
+     * 联动类目（滚动高亮）→ /material/listCategorySkuValueStats（SQL 按类目+直接子类目统计，返回全部属性名），
      * 「全部」→ /material/listSkuAttributeValueStats（全租户按属性名统计）。
      * 属性名沿用旧版约定：优先「尺寸」，无值退「规格」。
      */
@@ -472,12 +402,12 @@ export default {
       var self = this
       var seq = ++this.favSeq
       var promise
-      if (this.filterCategoryId === undefined) {
+      if (!this.spyCategoryId) {
         promise = this.fetchFavRows('尺寸').then(function(rows) {
           return rows.length ? rows : self.fetchFavRows('规格')
         })
       } else {
-        promise = getAction('/material/listCategorySkuValueStats', { categoryId: this.filterCategoryId })
+        promise = getAction('/material/listCategorySkuValueStats', { categoryId: this.spyCategoryId })
           .then(function(res) {
             var rows = (res && res.data && res.data.rows) || []
             var sizeRows = rows.filter(function(row) { return row.fieldName === '尺寸' })
@@ -489,7 +419,7 @@ export default {
       promise.then(function(rows) {
         // 请求期间类目已再次切换：丢弃旧响应
         if (seq !== self.favSeq) return
-        self.favSpecs = self.normalizeFavRows(rows)
+        self.favSpecs = normalizeFavRows(rows)
       })
     },
     /** 全部商品维度：按属性名统计规格值频次（rows 统一补 fieldName 后返回） */
@@ -501,29 +431,6 @@ export default {
           })
         })
         .catch(function() { return [] })
-    },
-    /**
-     * 规格值清洗与聚合（与旧版规则一致）：
-     * 多值取第一段（200x230cm/245x250cm → 200x230cm）、去不可见空白、按频次累加后排序
-     * limit：取前 N 个（左侧常用规格卡 4 个）
-     */
-    normalizeFavRows(rows, limit) {
-      var counts = {}
-      var order = []
-      ;(rows || []).forEach(function(row) {
-        var text = row && row.valueText ? String(row.valueText).split('/')[0] : ''
-        text = text.replace(/\s+/g, '')
-        if (!text) return
-        if (!counts[text]) {
-          counts[text] = 0
-          order.push(text)
-        }
-        counts[text] += Number(row.valueCount) || 0
-      })
-      return order
-        .map(function(text) { return { text: text, count: counts[text] } })
-        .sort(function(a, b) { return b.count - a.count || (a.text < b.text ? -1 : 1) })
-        .slice(0, limit || 4)
     },
     /** AI 拍照识别完成：优先使用识别出的商品名称作为搜索词 */
     onOcrOk(res) {
@@ -538,151 +445,13 @@ export default {
     },
     /** 条件变化：商品流回到顶部重新加载第 1 页 */
     resetFeed() {
+      this.pickerFeed.invalidate()
+      this.clearNavZone()
       this.pickerResetKey += 1
     },
-    /**
-     * 打开时确定最近常选：返回就绪 Promise，供商品流第 1 页并行等待。
-     * 服务端失败/超时回退本地记录，保证离线也能打开；不再单独触发商品流重置，
-     * 由第 1 页在两者都就绪后合并渲染，避免首屏空白与滚动位置跳动。
-     */
-    loadSharedRecent(opts) {
-      var self = this
-      var settled = false
-      return new Promise(function(resolve) {
-        var timer = setTimeout(function() {
-          if (settled) return
-          settled = true
-          self.recentList = getRecentGoods(opts)
-          resolve()
-        }, 2500)
-        fetchRecentGoods(opts).then(function(res) {
-          if (settled) return
-          settled = true
-          clearTimeout(timer)
-          if (!self.visible || !res || !res.list) {
-            resolve()
-            return
-          }
-          if (res.fromServer) clearLocalGoodsUsage()
-          self.recentList = res.list
-          resolve()
-        })
-      })
-    },
-    filterActive() {
-      return !!this.filterCategoryId
-    },
-    /** 最近使用 → 商品流卡片数据（仅在无搜索、无筛选时并入首页） */
-    buildRecentFeedItems() {
-      if (this.keyword || this.filterActive()) return []
-      var rows = []
-      this.recentList.forEach(function(goods) {
-        var g = this.normalizeGoods(goods)
-        if (!g.name) return
-        rows.push({
-          skuRowKey: g.key,
-          // 名称+规格用于和接口最新商品做去重：最新数据优先，避免沿用旧 SKU 编码
-          nameKey: g.name + '\u0000' + (g.spec || ''),
-          // 最近常选区标记：滚动联动时保持「最近常选」导航高亮
-          recentFlag: true,
-          name: g.name,
-          imgUrl: g.imgUrl,
-          specs: g.specLines,
-          // 弹层卡片不展示库存
-          items: [],
-          // 零售价：卡片名称行右侧
-          price: g.price,
-          goods: g
-        })
-      }, this)
-      return rows
-    },
-    /**
-     * 标准商品流加载器：
-     * 第 1 页与最近常选并行请求，两者都就绪后合并去重、一次渲染（无常用商品时 head 为空，直接从第 1 页商品开始）；
-     * 其余页只按接口分页，categoryId 跟随左侧类目导航。
-     */
-    loadPickerFeed({ page, pageSize }) {
-      var self = this
-      if (page !== 1) {
-        return this.requestPickerRows(page, pageSize).then(function(pageData) {
-          var list = []
-          pageData.rows.forEach(function(row) {
-            var item = self.toPickerItem(row)
-            // 跨页去重：同一 SKU 只展示一次
-            if (self.seenKeys[item.skuRowKey]) return
-            self.seenKeys[item.skuRowKey] = true
-            list.push(item)
-          })
-          return { list: list, total: pageData.total }
-        })
-      }
-      // 第 1 页：接口请求与最近常选并行，等两者都完成再合并，避免「先渲染再重置」导致的首屏空白
-      // 搜索/类目筛选时不展示常用商品，无需等待最近常选
-      var needRecent = !this.keyword && !this.filterActive() && this.recentReadyPromise
-      var recentReady = needRecent ? this.recentReadyPromise : Promise.resolve()
-      return Promise.all([recentReady, this.requestPickerRows(page, pageSize)]).then(function(results) {
-        return self.buildPickerPage(results[1].rows, results[1].total)
-      })
-    },
-    /** 请求一页商品数据：业务码非 200 时提示并抛出，由商品流中断本次自动补载 */
-    requestPickerRows(page, pageSize) {
-      var self = this
-      var searchObj = {
-        materialParam: this.keyword,
-        categoryId: this.filterCategoryId,
-        // 无关键字时按左侧类目树顺序 + 类目内规格值排序（配合导航联动与规格标签锚点滚动；搜索时保持接口默认排序）
-        orderByCategory: this.keyword ? '' : '1',
-        mpList: getMpListShort(Vue.ls.get('materialPropertyList'))
-      }
-      return getAction('/material/listSku', {
-        search: JSON.stringify(filterObj(searchObj)),
-        currentPage: page,
-        pageSize: pageSize
-      }).then(function(res) {
-        if (!(res && res.code === 200)) {
-          var message = (res && res.data && res.data.message) || '商品加载失败'
-          self.$message.error(message)
-          throw new Error(message)
-        }
-        return {
-          rows: (res.data && res.data.rows) || [],
-          total: Number(res.data && res.data.total) || 0
-        }
-      })
-    },
-    /** 接口行 → 弹层卡片数据（不展示库存，零售价独立定位） */
-    toPickerItem(row) {
-      var item = toGoodsFeedItem(row)
-      item.items = []
-      return item
-    },
-    /**
-     * 第 1 页合并：最近常选置顶（按类目/规格排序的接口数据紧随其后），
-     * 同名+规格的最新商品不再重复展示；返回的 total 计入置顶数量，保证分页判断正确。
-     */
-    buildPickerPage(rows, total) {
-      var self = this
-      this.seenKeys = {}
-      this.recentNameKeys = {}
-      var head = []
-      this.buildRecentFeedItems().forEach(function(item) {
-        if (item.nameKey) self.recentNameKeys[item.nameKey] = true
-        if (self.seenKeys[item.skuRowKey]) return
-        self.seenKeys[item.skuRowKey] = true
-        head.push(item)
-      })
-      var list = []
-      rows.forEach(function(row) {
-        var item = self.toPickerItem(row)
-        // 规格文本已在 toGoodsFeedItem 内解析一次，去重键直接复用
-        var nameKey = item.name + '\u0000' + item.goods.spec
-        if (self.seenKeys[item.skuRowKey]) return
-        if (nameKey && self.recentNameKeys[nameKey]) return
-        self.seenKeys[item.skuRowKey] = true
-        list.push(item)
-      })
-      return { list: head.concat(list), total: total + head.length }
+    /** 数据会话、最近常选合并与跨页去重由独立模块维护。 */
+    loadPickerFeed(params) {
+      return this.pickerFeed.load(params)
     }
   }
 }

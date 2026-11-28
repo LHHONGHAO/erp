@@ -141,10 +141,6 @@ export default {
     reload() {
       if (this.$refs.waterfall) this.$refs.waterfall.reload(true)
     },
-    /** 条件微调（如规格标签切换）：重新加载但保持当前滚动位置，从原停留处继续浏览 */
-    reloadKeepPosition() {
-      if (this.$refs.waterfall) this.$refs.waterfall.reload(false)
-    },
     /** 仅回到顶部（不重新加载数据，滚动联动会随滚动事件自动更新） */
     scrollToTop() {
       if (this.$refs.waterfall) this.$refs.waterfall.scrollToTop()
@@ -153,6 +149,11 @@ export default {
     scrollToItem(matchFn) {
       if (this.$refs.waterfall) return this.$refs.waterfall.scrollToItem(matchFn)
       return Promise.resolve(false)
+    },
+    /** 多状态锚点定位：区分命中/真正耗尽/扫描上限/失败/取消 */
+    scrollToItemResult(matchFn) {
+      if (this.$refs.waterfall) return this.$refs.waterfall.scrollToItemResult(matchFn)
+      return Promise.resolve({ status: 'failed' })
     },
     /** 直接替换列表数据（如扫码精确结果），不再走分页加载 */
     replaceItems(rows) {

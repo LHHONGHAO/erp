@@ -58,11 +58,6 @@ export function parseSpecLines(specText, maxLines) {
   return lines
 }
 
-/** 兼容保留：按接口行解析规格行 */
-export function buildSpecLines(record, maxLines) {
-  return parseSpecLines(specTextOf(record), maxLines)
-}
-
 /** 标准信息行：库存 */
 export function buildInfoItems(record) {
   return [

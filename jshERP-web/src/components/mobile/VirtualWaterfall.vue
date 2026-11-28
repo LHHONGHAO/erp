@@ -1,5 +1,17 @@
 <template>
-  <div class="vw" ref="scroller" @scroll.passive="onScroll">
+  <div
+    class="vw"
+    ref="scroller"
+    @scroll.passive="onScroll"
+    @touchstart="onPullTouchStart"
+    @touchmove="onPullTouchMove"
+    @touchend="onPullTouchEnd"
+    @touchcancel="onPullTouchEnd">
+    <!-- 下拉刷新指示条：位于流顶部，高度跟随下拉距离，把下方内容自然推下去 -->
+    <div class="vw-pull" :style="{ height: pullY + 'px' }">
+      <a-icon v-if="refreshing" type="loading" />
+      <span>{{ pullText }}</span>
+    </div>
     <!-- 占位容器：按双列最大高度撑开滚动条，卡片绝对定位，节点数与数据量无关 -->
     <div class="vw-phantom" :style="{ height: totalHeight + 'px' }">
       <div
@@ -27,7 +39,10 @@
 </template>
 
 <script>
-import { getAction } from '@/api/manage'
+/** 下拉刷新触发阈值（px） */
+const PULL_THRESHOLD = 50
+/** 下拉位移最大值（px），阻尼系数 0.4 */
+const PULL_MAX = 80
 
 /**
  * 高性能双列虚拟瀑布流（Vue 2.7 / 纯自研，无第三方虚拟列表依赖）
@@ -102,10 +117,22 @@ export default {
       reqSeq: 0,
       settleTimer: null,
       saveTimer: null,
-      internalResetKey: this.resetKey
+      internalResetKey: this.resetKey,
+      /** 下拉刷新：当前下拉位移（px），0 表示未下拉 */
+      pullY: 0,
+      /** 下拉刷新请求进行中 */
+      refreshing: false,
+      /** 手势跟踪中（touchstart 已记录起点） */
+      pullTracking: false,
+      pullStartY: 0
     }
   },
   computed: {
+    /** 下拉指示文案：刷新中 / 松开刷新 / 下拉刷新 */
+    pullText() {
+      if (this.refreshing) return '刷新中...'
+      return this.pullY >= PULL_THRESHOLD ? '松开刷新' : '下拉刷新'
+    },
     /** 可视区 + 缓冲区的卡片：坐标/样式已在排布时冻结，这里只做二分裁剪，零对象分配 */
     visibleCells() {
       const total = this.cells.length
@@ -169,6 +196,12 @@ export default {
   created() {
     // 非响应式：记录上一次通知父级的首个可见项键，键不变不重复 emit
     this._lastSpyKey = undefined
+    // 锚点定位令牌：新的定位/回到顶部/重载/销毁会使旧定位失效
+    this._navSeq = 0
+    // 在途分页请求：锚点定位需要等它结束再判断数据范围
+    this._loadPromise = null
+    // 最近一次加载是否失败：失败后 hasMore 也会置 false，但不能据此判定「无数据」
+    this._loadFailed = false
   },
   mounted() {
     const saved = this.readFeedState()
@@ -204,6 +237,7 @@ export default {
     this.saveFeedState()
   },
   beforeDestroy() {
+    this._navSeq += 1
     window.removeEventListener('resize', this.onResize)
     if (this._resizeObserver) {
       this._resizeObserver.disconnect()
@@ -257,6 +291,9 @@ export default {
       this.hasMore = true
       this.loading = false
       this.deferImages = false
+      this._navSeq += 1
+      this._loadPromise = null
+      this._loadFailed = false
       if (resetScroll && this.$refs.scroller) {
         this.$refs.scroller.scrollTop = 0
         this.scrollTop = 0
@@ -287,33 +324,71 @@ export default {
     },
     /** 仅回到顶部（不重新加载，滚动事件会触发联动通知） */
     scrollToTop() {
+      // 回到顶部视为新的浏览意图，取消尚未完成的锚点定位
+      this._navSeq += 1
       const el = this.$refs.scroller
       if (el) el.scrollTop = 0
     },
     /**
-     * 规格标签锚点：滚动到首个满足 matchFn 的卡片并带到视口顶部，返回 Promise<boolean>。
-     * 已加载范围找不到时按页继续加载查找（最多再找 30 页），仍找不到返回 false
+     * 锚点定位：滚动到首个满足 matchFn 的卡片并带到视口顶部，返回 Promise<boolean>。
+     * 保留布尔契约供既有调用方使用；需要区分「无匹配/超限/失败」的调用方请用 scrollToItemResult
      */
     scrollToItem(matchFn) {
+      return this.scrollToItemResult(matchFn).then(function(result) {
+        return result.status === 'found'
+      })
+    },
+    /**
+     * 多状态锚点定位（核心实现）：滚动到首个满足 matchFn 的卡片并带到视口顶部。
+     * 返回 Promise<{ status }>：
+     *   found     已定位；
+     *   exhausted 数据已全部取完仍无匹配（可据此判定「该类目无商品」）；
+     *   limit     达到分页扫描上限，不代表无匹配；
+     *   failed    加载失败；
+     *   cancelled 期间发生新的定位/回到顶部/重载/关闭，本次作废。
+     * 已加载范围找不到时继续翻页查找（最多再找 30 页），并等待在途请求与布局完成。
+     */
+    scrollToItemResult(matchFn) {
       const self = this
-      function findInCells() {
+      const token = ++this._navSeq
+      const maxScan = 30
+      let failed = false
+
+      function findCell() {
         for (let i = 0; i < self.order.length; i++) {
           const cell = self.cells[self.order[i]]
           if (cell && matchFn(cell.item)) return cell
         }
         return null
       }
-      function run(remain) {
-        const cell = findInCells()
+      function nextTick() {
+        return new Promise(resolve => self.$nextTick(resolve))
+      }
+      function step(remain) {
+        if (token !== self._navSeq) return { status: 'cancelled' }
+        const cell = findCell()
         if (cell) {
           const el = self.$refs.scroller
           if (el) el.scrollTop = cell.top
-          return Promise.resolve(true)
+          return { status: 'found' }
         }
-        if (!self.hasMore || self.loading || remain <= 0) return Promise.resolve(false)
-        return self.loadPage().then(() => run(remain - 1))
+        if (failed) return { status: 'failed' }
+        // 有在途请求先等它结束，避免并发翻页、也避免读到尚未排布的半成品
+        if (self.loading && self._loadPromise) {
+          return self._loadPromise.then(function(res) {
+            if (res && res.ok === false) failed = true
+            return nextTick().then(function() { return step(remain - 1) })
+          })
+        }
+        if (self._loadFailed) return { status: 'failed' }
+        if (!self.hasMore) return { status: 'exhausted' }
+        if (remain <= 0) return { status: 'limit' }
+        return self.loadPage().then(function(res) {
+          if (res && res.ok === false) failed = true
+          return nextTick().then(function() { return step(remain - 1) })
+        })
       }
-      return run(30)
+      return Promise.resolve(step(maxScan))
     },
     /** 置顶数据变化：重新冻结并排布，不重新请求 */
     rebuildPrepend() {
@@ -399,40 +474,57 @@ export default {
       }
       return this.defaultRatio || 1
     },
-    /** 加载下一页并增量计算坐标 */
+    /**
+     * 加载下一页并增量计算坐标。
+     * loader 可返回 { list, total, hasMore }：提供布尔 hasMore 时按接口原始进度判定，
+     * 避免上层去重后展示条数变少被误判为「已到底」；未提供时沿用展示条数判定。
+     * 返回 Promise<{ ok }>，ok=false 表示本次请求失败（供锚点定位区分失败与真正耗尽）
+     */
     loadPage() {
-      if (this.loading || !this.hasMore) return Promise.resolve()
+      if (this.loading) return this._loadPromise || Promise.resolve({ ok: true })
+      if (!this.hasMore) return Promise.resolve({ ok: true })
       this.loading = true
       const nextPage = this.page + 1
       // 请求序号：重置后丢弃旧条件下的返回，避免覆盖新列表
       const seq = ++this.reqSeq
-      return Promise.resolve(this.loader({ page: nextPage, pageSize: this.pageSize }))
+      const promise = Promise.resolve(this.loader({ page: nextPage, pageSize: this.pageSize }))
         .then(res => {
-          if (seq !== this.reqSeq) return
+          if (seq !== this.reqSeq) return { ok: true }
           const rows = (res && res.list) || []
           const total = Number(res && res.total) || 0
           const items = rows.map(row => this.normalizeItem(row))
           this.total = total || this.total
           this.page = nextPage
+          this._loadFailed = false
           this.list = this.page === 1 ? items : this.list.concat(items)
-          // 接口没有更多数据（或返回空页）时停止
-          this.hasMore = items.length > 0 && this.list.length < this.total
+          if (res && typeof res.hasMore === 'boolean') {
+            this.hasMore = res.hasMore
+          } else {
+            // 接口没有更多数据（或返回空页）时停止
+            this.hasMore = items.length > 0 && this.list.length < this.total
+          }
           this.$nextTick(() => {
             this.measure()
             this.notifyFirstVisible()
           })
+          return { ok: true }
         })
         .catch(() => {
           // 请求失败：停止本条件下的自动补载，避免空列表反复请求；重置条件后会重新加载
-          if (seq !== this.reqSeq) return
+          if (seq !== this.reqSeq) return { ok: true }
+          this._loadFailed = true
           this.hasMore = false
+          return { ok: false }
         })
         .finally(() => {
           if (seq !== this.reqSeq) return
           this.loading = false
+          this._loadPromise = null
           // 数据不足一屏时继续补载（放在 loading 复位之后，避免补载被拦截）
           this.$nextTick(() => this.checkNeedMore())
         })
+      this._loadPromise = promise
+      return promise
     },
     /** 冻结商品对象并补齐虚拟渲染所需字段，避免 Vue 2 深度劫持 */
     normalizeItem(row) {
@@ -443,6 +535,9 @@ export default {
     /** 直接替换列表数据（如扫码精确结果），不再走分页加载 */
     replaceItems(rows) {
       this.reqSeq += 1
+      this._navSeq += 1
+      this._loadPromise = null
+      this._loadFailed = false
       const list = (rows || []).map(row => this.normalizeItem(row))
       this.list = list
       this.total = list.length
@@ -492,6 +587,39 @@ export default {
       this._lastSpyKey = key
       this.$emit('first-visible', item)
     },
+    /** 下拉刷新手势：仅在列表顶部（含空列表）向下拖动时生效，超过阈值松手即重载第 1 页 */
+    onPullTouchStart(event) {
+      if (this.refreshing) return
+      this.pullTracking = true
+      this.pullStartY = event.touches[0].clientY
+    },
+    onPullTouchMove(event) {
+      if (!this.pullTracking || this.refreshing) return
+      const el = this.$refs.scroller
+      if (!el || el.scrollTop > 0) return
+      const dy = event.touches[0].clientY - this.pullStartY
+      if (dy <= 0) {
+        this.pullY = 0
+        return
+      }
+      // 阻尼跟随，并拦住浏览器自身的下拉回弹，保证指示条可见
+      this.pullY = Math.min(Math.round(dy * 0.4), PULL_MAX)
+      if (event.cancelable) event.preventDefault()
+    },
+    onPullTouchEnd() {
+      if (!this.pullTracking) return
+      this.pullTracking = false
+      if (this.pullY >= PULL_THRESHOLD) {
+        this.refreshing = true
+        this.pullY = 40
+        Promise.resolve(this.reload(true)).finally(() => {
+          this.refreshing = false
+          this.pullY = 0
+        })
+      } else {
+        this.pullY = 0
+      }
+    },
     onScroll() {
       if (this.rafPending) return
       this.rafPending = true
@@ -529,6 +657,18 @@ export default {
 .vw-phantom {
   position: relative;
   width: 100%;
+}
+/* 下拉刷新指示条：高度随手势变化，内容底对齐 */
+.vw-pull {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  padding-bottom: 6px;
+  font-size: 13px;
+  color: #9aa3ad;
 }
 /* 可视卡片：绝对定位 + GPU 偏移，contain 隔离重绘 */
 .vw-cell {

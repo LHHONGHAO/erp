@@ -4,7 +4,6 @@
     <div class="lem-elem-text">
       <span class="lem-elem-cn">{{ attr.isSpecBlock ? attr.label : (attr.comment || attr.label) }}</span>
       <span v-if="attr.isSpecBlock" class="lem-elem-key">{{ attr.specText || ('规格块 · ' + attr.valueCount + ' 个值') }}</span>
-      <span v-else class="lem-elem-key">{{ attr.key }}</span>
     </div>
     <a-icon
       :type="loaded ? 'check-circle' : 'plus-circle'"

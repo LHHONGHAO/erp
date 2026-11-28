@@ -74,13 +74,13 @@
     <a-modal
       :visible="bookVisible"
       :footer="null"
+      :closable="false"
       :width="'96%'"
       :zIndex="zIndex + 10"
       wrapClassName="addr-book-modal"
       @cancel="bookVisible = false">
       <div class="addr-book__head">
         <span class="addr-book__title">地址簿</span>
-        <a-icon type="close" class="addr-book__close" @click="bookVisible = false" />
       </div>
       <div class="addr-book__search">
         <a-icon type="search" class="addr-book__search-icon" />
@@ -750,13 +750,6 @@ export default {
   font-weight: 600;
   color: #262626;
   text-align: center;
-}
-.addr-book__close {
-  position: absolute;
-  top: 2px;
-  right: 0;
-  font-size: 16px;
-  color: #8c8c8c;
 }
 .addr-book__search {
   display: flex;

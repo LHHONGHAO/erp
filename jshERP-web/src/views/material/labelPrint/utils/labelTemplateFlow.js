@@ -9,10 +9,39 @@ import { replaceReceiptGoodsWithItems, isReceiptItemKey, isReceiptItemHidden } f
 import { fetchLabelTemplates, saveLabelTemplate, deleteLabelTemplate } from './labelTemplateStore'
 import { fetchDeliveryTemplate, saveDeliveryTemplate } from './deliveryNoteTemplateStore'
 import { normalizeEditorData } from './templateEditDataModel'
+import { normalizeSpecBlocks, parseSpecItemKey } from './goodsSpecBlocks'
+import { flattenSpecMapping } from './categorySpec'
 
 /** 元素数据（属性面板结构）：保存模板、还原面板共用同一份结构 */
 function buildEditorData(attrs, title, specBlocks) {
   return normalizeEditorData({ fields: attrs, title: title, specBlocks: specBlocks })
+}
+
+/** 编辑态规格块：映射表优先，其次由属性清单还原，最后回退编辑态 specBlocks */
+function collectSpecBlocks(vm) {
+  var mapped = normalizeSpecBlocks(flattenSpecMapping(vm.specMapping || []))
+  if (mapped.length || vm.specMappingReady === true) return mapped
+  var blocks = {}
+  ;(vm.allAttrs || []).forEach(function(attr) {
+    var parsed = parseSpecItemKey(attr.key)
+    if (!parsed || parsed.rowNo !== 1) return
+    var id = String(parsed.categoryId || '') + ':' + parsed.blockNo
+    var block = blocks[id]
+    if (!block) {
+      block = blocks[id] = { name: '', values: [], blockNo: parsed.blockNo }
+      if (parsed.categoryId != null) block.categoryId = String(parsed.categoryId)
+      if (attr.categoryName) block.categoryName = attr.categoryName
+      if (Array.isArray(attr.categoryMemberIds)) block.categoryMemberIds = attr.categoryMemberIds.slice()
+      if (attr.specSourceName) block.sourceName = attr.specSourceName
+      if (Array.isArray(attr.specSourceValues)) block.sourceValues = attr.specSourceValues.slice()
+    }
+    var text = attr.value == null ? '' : String(attr.value)
+    if (parsed.kind === 'name') block.name = text.replace(/：$/, '')
+    else block.values[parsed.valueNo - 1] = text
+  })
+  var collected = normalizeSpecBlocks(Object.keys(blocks).map(function(key) { return blocks[key] }))
+  if (collected.length) return collected
+  return normalizeSpecBlocks(vm.specBlocks)
 }
 
 /**
@@ -127,7 +156,7 @@ export function buildTemplateSnapshot(vm, cfg, name, meta, options) {
   var info = meta || {}
   var o = options || {}
   var isDelivery = cfg && cfg.storage === 'deliveryTemplate'
-  var specBlocks = vm.collectSpecBlocks()
+  var specBlocks = collectSpecBlocks(vm)
   // 编辑页关闭的规格名/规格值随模板保存，重开编辑页/打印时保持不显示
   var hiddenItemKeys
   if (!o.skipHidden) {

@@ -1,6 +1,16 @@
 <template>
   <div ref="container">
+    <!-- 手机端：复用标准信息添加页 -->
+    <supplier-info-form-page
+      v-if="isMobileView"
+      type="客户"
+      :visible="visible"
+      :record="model"
+      :read-only="isReadOnly"
+      @ok="handleStandardOk"
+      @close="close" />
     <a-modal
+      v-else
       :title="title"
       :width="1200"
       :visible="visible"
@@ -111,9 +121,13 @@
   import {addSupplier,editSupplier,checkSupplier } from '@/api/api'
   import {autoJumpNextInput} from "@/utils/util"
   import {mixinDevice} from '@/utils/mixin'
+  import SupplierInfoFormPage from './SupplierInfoFormPage'
   export default {
     name: "CustomerModal",
     mixins: [mixinDevice],
+    components: {
+      SupplierInfoFormPage
+    },
     data () {
       return {
         title:"操作",
@@ -141,6 +155,11 @@
         },
       }
     },
+    computed: {
+      isMobileView () {
+        return this.device === 'mobile'
+      }
+    },
     created () {
     },
     methods: {
@@ -152,11 +171,16 @@
         this.model = Object.assign({}, record);
         this.visible = true;
         this.$nextTick(() => {
+          if (this.isMobileView) return;
           this.form.setFieldsValue(pick(this.model,'supplier', 'contacts', 'telephone', 'email',
             'phoneNum', 'fax', 'beginNeedGet', 'allNeedGet', 'taxNum', 'taxRate',
             'bankName', 'accountNumber', 'address', 'sort', 'description'))
           autoJumpNextInput('customerModal')
         });
+      },
+      // 标准页保存成功
+      handleStandardOk (formData) {
+        this.$emit('ok', formData);
       },
       close () {
         this.$emit('close');

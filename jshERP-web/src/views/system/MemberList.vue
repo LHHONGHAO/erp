@@ -39,14 +39,13 @@
         <div v-if="!loading && dataSource.length === 0" class="mm-empty">暂无会员</div>
       </div>
 
-      <div v-if="ipagination.total > ipagination.pageSize" class="mm-pager">
-        <a-pagination
-          simple
-          :current="ipagination.current"
-          :page-size="ipagination.pageSize"
-          :total="ipagination.total"
-          @change="onMobilePageChange" />
+      <!-- 商品流模式：滚动到底部自动加载，不再显示分页 -->
+      <div ref="mobileSentinel" class="mm-sentinel"></div>
+      <div v-if="mobileLoadingMore" class="mm-loadmore">
+        <a-spin size="small" />
+        <span class="mm-loadtext">加载中...</span>
       </div>
+      <div v-else-if="!loading && dataSource.length > 0 && !mobileHasMore" class="mm-no-more">没有更多了</div>
 
       <!-- 条件筛选：统一筛选面板内的输入项 -->
       <template #filter-extra>
@@ -209,6 +208,11 @@
         mobileKeyword: '',
         // 手机端条件筛选抽屉
         filterDrawerVisible: false,
+        // 手机端商品流：是否正在触底加载、底部哨兵监听
+        mobileLoadingMore: false,
+        mobileObserver: null,
+        mobileScrollEl: null,
+        mobileScrollHandler: null,
         labelCol: {
           span: 5
         },
@@ -280,16 +284,35 @@
     mounted() {
       this.isNarrowScreen = window.innerWidth <= 768
       this._onResize = () => {
-        this.isNarrowScreen = window.innerWidth <= 768
+        const mobile = window.innerWidth <= 768
+        if (mobile === this.isNarrowScreen) return
+        this.isNarrowScreen = mobile
+        this.$nextTick(() => {
+          if (mobile) {
+            this.bindMobileSentinel()
+            this.checkMobileSentinel()
+          } else {
+            this.unbindMobileSentinel()
+          }
+        })
       }
       window.addEventListener('resize', this._onResize)
+      this.$nextTick(() => {
+        this.bindMobileSentinel()
+        this.checkMobileSentinel()
+      })
     },
     beforeDestroy() {
       window.removeEventListener('resize', this._onResize)
+      this.unbindMobileSentinel()
     },
     computed: {
       importExcelUrl: function () {
         return `${window._CONFIG['domianURL']}${this.url.importExcelUrl}`;
+      },
+      /** 手机端是否还有下一页：按已加载条数与总条数比较 */
+      mobileHasMore() {
+        return this.dataSource.length < (Number(this.ipagination.total) || 0)
       },
       // 手机端顶栏图标按钮（与商品信息页共用 MobileHeaderActions 组件）
       mobileHeaderActions() {
@@ -305,6 +328,18 @@
       }
     },
     methods: {
+      /** 手机端首屏/条件变化时整页重置，触底加载时由 onMobileLoadMore 追加合并 */
+      loadData(arg) {
+        const mobile = this.isNarrowScreen
+        if (mobile && arg === 1) {
+          this.mobileLoadingMore = false
+        }
+        const p = JeecgListMixin.methods.loadData.call(this, arg)
+        if (mobile && p && p.then) {
+          p.then(() => this.$nextTick(this.checkMobileSentinel))
+        }
+        return p
+      },
       // 手机端搜索：数字按电话查询，其它按联系人（姓名）查询
       mobileSearch() {
         const kw = (this.mobileKeyword || '').trim()
@@ -328,9 +363,84 @@
         }
         this.loadData(1)
       },
-      onMobilePageChange(page) {
-        this.ipagination.current = page
-        this.loadData(page)
+      /** 手机端滚动容器：优先取可滚动祖先，取不到则用窗口 */
+      resolveMobileScrollEl(el) {
+        let node = el && el.parentElement
+        while (node && node !== document.body && node !== document.documentElement) {
+          const style = window.getComputedStyle(node)
+          if (/(auto|scroll)/.test(style.overflowY)) return node
+          node = node.parentElement
+        }
+        return window
+      },
+      /** 监听底部哨兵：滚动到列表末尾时自动加载下一页 */
+      bindMobileSentinel() {
+        this.unbindMobileSentinel()
+        if (!this.isNarrowScreen) return
+        const el = this.$refs.mobileSentinel
+        if (!el) return
+        this.mobileScrollEl = this.resolveMobileScrollEl(el)
+        this.mobileScrollHandler = () => this.checkMobileSentinel()
+        this.mobileScrollEl.addEventListener('scroll', this.mobileScrollHandler, { passive: true })
+        if (typeof IntersectionObserver !== 'undefined') {
+          const root = this.mobileScrollEl === window ? null : this.mobileScrollEl
+          this.mobileObserver = new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) this.onMobileLoadMore()
+          }, { root: root, rootMargin: '0px 0px 80px 0px' })
+          this.mobileObserver.observe(el)
+        }
+      },
+      unbindMobileSentinel() {
+        if (this.mobileObserver) {
+          this.mobileObserver.disconnect()
+          this.mobileObserver = null
+        }
+        if (this.mobileScrollHandler && this.mobileScrollEl) {
+          this.mobileScrollEl.removeEventListener('scroll', this.mobileScrollHandler)
+        }
+        this.mobileScrollHandler = null
+        this.mobileScrollEl = null
+      },
+      /** 哨兵是否已进入可视区域（数据到达后补载，避免首屏不满一页时无法继续加载） */
+      checkMobileSentinel() {
+        if (!this.isNarrowScreen) return
+        const el = this.$refs.mobileSentinel
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const containerBottom = (this.mobileScrollEl && this.mobileScrollEl !== window)
+          ? this.mobileScrollEl.getBoundingClientRect().bottom
+          : (window.innerHeight || document.documentElement.clientHeight)
+        if (rect.top <= containerBottom + 80) this.onMobileLoadMore()
+      },
+      /** 触底加载下一页：把新一页数据追加到现有卡片流末尾 */
+      onMobileLoadMore() {
+        if (this.mobileLoadingMore || this.loading) return
+        if (!this.mobileHasMore) return
+        const prev = this.dataSource.slice()
+        const exists = {}
+        prev.forEach(row => { if (row && row.id != null) exists[row.id] = true })
+        this.mobileLoadingMore = true
+        this.ipagination.current = (this.ipagination.current || 1) + 1
+        this.loadData().then(() => {
+          const rows = Array.isArray(this.dataSource) ? this.dataSource : []
+          const appended = prev.slice()
+          rows.forEach(row => {
+            if (row && row.id != null && !exists[row.id]) {
+              exists[row.id] = true
+              appended.push(row)
+            }
+          })
+          // 返回的全是已存在数据说明已到底，避免重复请求
+          if (appended.length === prev.length) {
+            this.ipagination.total = prev.length
+            this.ipagination.current = Math.max(1, this.ipagination.current - 1)
+          }
+          this.dataSource = appended
+          this.mobileLoadingMore = false
+          this.$nextTick(this.checkMobileSentinel)
+        }).catch(() => {
+          this.mobileLoadingMore = false
+        })
       },
       // 手机端筛选抽屉：按条件重新查询
       applyMobileFilter() {
@@ -492,9 +602,25 @@
     font-size: 14px;
     color: #999;
   }
-  .mm-pager {
+  /* 商品流：底部哨兵 + 加载中 / 到底提示 */
+  .mm-sentinel {
+    height: 1px;
+  }
+  .mm-loadmore {
     display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 6px 0 12px;
+    padding: 10px 0 16px;
+    font-size: 13px;
+    color: #999;
+  }
+  .mm-loadtext {
+    margin-left: 6px;
+  }
+  .mm-no-more {
+    padding: 10px 0 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #b0b0b0;
   }
 </style>

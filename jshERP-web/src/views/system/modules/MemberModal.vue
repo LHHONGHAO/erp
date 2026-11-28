@@ -1,6 +1,16 @@
 <template>
   <div ref="container">
+    <!-- 手机端/全屏：复用标准信息添加页 -->
+    <supplier-info-form-page
+      v-if="useStandardPage"
+      type="会员"
+      :visible="visible"
+      :record="model"
+      :read-only="isReadOnly"
+      @ok="handleStandardOk"
+      @close="close" />
     <a-modal
+      v-else
       :width="modalWidth"
       :visible="visible"
       :confirmLoading="confirmLoading"
@@ -146,6 +156,7 @@
   import {autoJumpNextInput} from "@/utils/util"
   import {mixinDevice} from '@/utils/mixin'
   import OcrMemberRecognizeModal from './OcrMemberRecognizeModal'
+  import SupplierInfoFormPage from './SupplierInfoFormPage'
   export default {
     name: "MemberModal",
     mixins: [mixinDevice],
@@ -157,7 +168,8 @@
       fullScreen: { type: Boolean, default: false }
     },
     components: {
-      OcrMemberRecognizeModal
+      OcrMemberRecognizeModal,
+      SupplierInfoFormPage
     },
     data () {
       return {
@@ -193,6 +205,10 @@
       }
     },
     computed: {
+      /** 手机端或整页模式复用标准信息添加页 */
+      useStandardPage () {
+        return this.fullScreen || this.device === 'mobile'
+      },
       containerFn () {
         if (this.attachToBody) {
           return () => document.body
@@ -232,8 +248,10 @@
     },
     methods: {
       add () {
-        var that = this;
         this.edit({});
+        // 标准页内部会自动生成会员卡号
+        if (this.useStandardPage) return;
+        var that = this;
         // 自动生成会员卡号
         postAction('/supplier/generateMemberId', {}).then(function(res) {
           if (res && res.code === 200 && res.data && res.data.memberId) {
@@ -346,6 +364,10 @@
       close () {
         this.$emit('close');
         this.visible = false;
+      },
+      // 标准页保存成功
+      handleStandardOk (formData) {
+        this.$emit('ok', formData);
       },
       handleOk () {
         const that = this;

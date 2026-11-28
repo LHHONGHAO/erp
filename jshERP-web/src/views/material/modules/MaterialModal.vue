@@ -11,7 +11,7 @@
       <a-button key="back" @click="handleCancel">取消</a-button>
       <a-button type="primary" v-if="showOkFlag" :loading="confirmLoading" @click="handleOk">保存（Ctrl+S）</a-button>
     </template>
-    <a-spin :spinning="confirmLoading">
+    <a-spin v-show="!directPriceEdit" :spinning="confirmLoading">
       <a-form :form="form">
         <a-tabs v-model:activeKey="activeKey" size="small" :class="{ 'mm-tabs-mobile': isMobileView }">
           <a-tab-pane key="1" tab="基本信息" id="materialHeadModal" forceRender>
@@ -840,7 +840,9 @@
     name: "MaterialModal",
     props: {
       // 内联模式：表单直接铺在页面中，不再以弹层形式出现
-      inline: { type: Boolean, default: false }
+      inline: { type: Boolean, default: false },
+      // 直接编辑模式：不渲染标准编辑表单，只加载“编辑商品”价格页
+      directPriceEdit: { type: Boolean, default: false }
     },
     components: {
       BatchSetPriceModal,
@@ -1842,6 +1844,7 @@
         this.$emit('close')
         this.visible = false
         this.modalStyle = ''
+        this.priceSheetVisible = false
         this.specModules = []
         this.skuColumnSignature = null
         this.specValueSuggestionCache = {}
@@ -2150,11 +2153,16 @@
           }
         }
         // 并发校验：商品码 + SKU条码
-        // 商品码核对不排除自身：只要库中存在该商品码就弹窗，由用户选择“更新商品”或“添加商品”
+        // 编辑时商品码核对排除自身：直接覆盖更新原商品，不再弹“更新商品/添加商品”
+        // 新增时仍核对全部商品码，撞库时由用户选择更新或新增
         // SKU条码核对排除当前商品自身，避免自己的条码与自己冲突
         const checks = []
         if (materialCode) {
-          checks.push(checkMaterialCode({ code: materialCode }).then(res => ({
+          const codeParams = { code: materialCode }
+          if (materialId) {
+            codeParams.id = materialId
+          }
+          checks.push(checkMaterialCode(codeParams).then(res => ({
             type: 'material',
             res: res
           })).catch(() => ({ type: 'material', res: null })))
@@ -2206,6 +2214,12 @@
       },
       /** 商品码冲突处理 */
       handleMaterialCodeCheck(formData, materialExist, materialExistId) {
+        // 编辑已有商品：命中的就是自身商品码，直接覆盖更新原商品
+        if (materialExist && this.model.id && String(materialExistId) === String(this.model.id)) {
+          formData.id = this.model.id
+          this.doSaveMaterial(formData)
+          return
+        }
         if (materialExist) {
           const materialCode = formData.code || this.model.code
           this.$confirm({
@@ -3423,17 +3437,24 @@
         let tries = 0
         const open = () => {
           if (this.action !== 'edit') return
-          if (!(this.meTable.dataSource || []).length) {
-            if (tries++ < 40) setTimeout(open, 100)
+          // 等待 SKU 行加载；超时也打开，避免直接编辑模式停留在空白页
+          if (!(this.meTable.dataSource || []).length && tries++ < 40) {
+            setTimeout(open, 100)
             return
           }
           this.loadAllCategorySpecSuggestions()
           this.initSheetSpecSelection()
           this.priceSheetVisible = true
+          this.$emit('price-sheet-open')
         }
         this.$nextTick(open)
       },
       closePriceSheet() {
+        // 直接编辑模式没有编辑表单可回退，关闭价格页即离开编辑页返回商品列表
+        if (this.directPriceEdit) {
+          this.confirmIfDirty(() => this.close())
+          return
+        }
         this.priceSheetVisible = false
       },
       /** 价格弹层「保存」：同步价格到全部 SKU 后保存商品 */
@@ -3454,6 +3475,8 @@
             }
             // 校验未通过时收起价格弹层，在识别结果页定位并聚焦缺失的必填项
             this.aggSaving = false
+            // 直接编辑模式没有编辑表单可回退，保持在价格页，仅提示
+            if (this.directPriceEdit) return
             this.priceSheetVisible = false
             this.focusAggregateRequiredField()
           })

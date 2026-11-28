@@ -65,9 +65,9 @@
 
   <update id="updatePrices" parameterType="com.jsh.erp.datasource.entities.Sku">
     UPDATE `sku`
-    SET purchase_decimal  = #{purchaseDecimal},
-        commodity_decimal = #{commodityDecimal},
-        market_price      = #{marketPrice},
+    SET purchase_decimal  = IFNULL(#{purchaseDecimal}, 0),
+        commodity_decimal = IFNULL(#{commodityDecimal}, 0),
+        market_price      = IFNULL(#{marketPrice}, 0),
         version           = version + 1
     WHERE id = #{id} AND deleted_at IS NULL
   </update>

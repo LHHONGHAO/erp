@@ -12,7 +12,18 @@
     </div>
     <!-- 人工添加 / 编辑商品表单直接铺在页面中 -->
     <div class="ma-body">
-      <material-modal ref="form" inline @ok="onSaved" @close="onClose" />
+      <material-modal
+        ref="form"
+        inline
+        :direct-price-edit="directPriceEdit"
+        @ok="onSaved"
+        @close="onClose"
+        @price-sheet-open="directEditLoading = false" />
+    </div>
+    <!-- 直接编辑模式：价格页打开前的加载状态，标准编辑表单不渲染 -->
+    <div v-if="directEditLoading" class="ma-direct-loading">
+      <a-spin size="large" />
+      <div class="ma-direct-loading-text">加载商品信息…</div>
     </div>
   </div>
 </template>
@@ -34,7 +45,11 @@
         // 容器高度，页面内容超出时出现纵向滚动条
         cardStyle: '',
         // 是否为编辑模式
-        isEdit: false
+        isEdit: false,
+        // 商品卡片「编辑」入口：直接加载“编辑商品”价格页，不渲染标准编辑表单
+        directPriceEdit: false,
+        // 直接编辑模式下价格页打开前的加载状态
+        directEditLoading: false
       }
     },
     mounted () {
@@ -71,6 +86,12 @@
       },
       // 注册手机端顶部按钮：设置（属性设置）、重置、保存
       registerHeaderActions () {
+        // 直接编辑模式：顶部由价格页自带，不注册编辑表单的操作按钮
+        if (this.directPriceEdit) {
+          setMobileHeaderActions([])
+          this.updateHeaderTitle()
+          return
+        }
         setMobileHeaderActions([
           { key: 'setting', icon: 'setting', handler: this.handlePropertyConfig },
           { key: 'reset', icon: 'reload', handler: this.handleReset },
@@ -84,6 +105,10 @@
       },
       // 从 sessionStorage 读取商品数据并加载到表单（编辑模式），否则打开新增表单
       loadRecordFromStorage () {
+        // 商品卡片「编辑」入口：标记直接编辑模式后再决定顶栏按钮
+        this.directPriceEdit = sessionStorage.getItem('materialEditPrice') === '1'
+        this.directEditLoading = this.directPriceEdit
+        this.registerHeaderActions()
         const recordStr = sessionStorage.getItem('materialEditRecord')
         if (recordStr) {
           try {
@@ -111,7 +136,10 @@
         const form = this.$refs.form
         if (!form) return
         this.isEdit = false
-        this.updateHeaderTitle()
+        // 新增模式不进入直接编辑
+        this.directPriceEdit = false
+        this.directEditLoading = false
+        this.registerHeaderActions()
         form.action = 'add'
         form.disableSubmit = false
         form.showOkFlag = true
@@ -136,13 +164,13 @@
         const form = this.$refs.form
         if (!form) return
         this.isEdit = true
-        this.updateHeaderTitle()
+        this.registerHeaderActions()
         form.action = 'edit'
         form.disableSubmit = false
         form.showOkFlag = true
         form.edit(record)
-        // 商品卡片「编辑」入口：加载完成后直接打开价格设置页（标题显示为编辑商品）
-        if (sessionStorage.getItem('materialEditPrice') === '1') {
+        // 商品卡片「编辑」入口：直接打开价格页（“编辑商品”页），不加载标准编辑表单
+        if (this.directPriceEdit) {
           sessionStorage.removeItem('materialEditPrice')
           this.$nextTick(() => form.openPriceSheetForEdit())
         }
@@ -187,6 +215,8 @@
     },
     // 离开本页（顶栏返回、手势返回、路由跳转）前，若页面数据会丢失则确认
     beforeRouteLeave (to, from, next) {
+      // 清理「直接编辑」标记，避免残留影响下一次进入本页
+      sessionStorage.removeItem('materialEditPrice')
       const form = this.$refs.form
       if (form && form.hasUnsavedData()) {
         form.confirmIfDirty(() => next(), () => next(false))
@@ -229,6 +259,23 @@
   }
   .ma-body {
     padding-bottom: 24px;
+  }
+  /* 直接编辑模式：价格页打开前的整屏加载提示 */
+  .ma-direct-loading {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #f5f7fa;
+    color: #8c8c8c;
+    font-size: 13px;
+    z-index: 5;
   }
   /* 手机端：表单已内联铺满一屏，不再限制容器高度，也不需要额外的底部留白 */
   @media (max-width: 768px) {

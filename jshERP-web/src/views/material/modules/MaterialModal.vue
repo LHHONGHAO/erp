@@ -661,13 +661,15 @@
       <!-- 编辑商品：顶部展示商品基础信息 -->
       <div v-if="action === 'edit'" class="price-block">
         <div class="price-block-title">基础信息</div>
-        <div v-for="item in sheetBasicInfo" :key="'ps-basic-' + item.label" class="sheet-basic-row">
+        <div v-for="item in sheetBaseFields" :key="'ps-basic-' + item.field" class="sheet-basic-row">
           <span class="sheet-basic-label">{{ item.label }}</span>
-          <span class="sheet-basic-value">{{ item.value }}</span>
+          <a-input-number v-if="item.field === 'weight' && item.editable" :value="model.weight" size="small" :placeholder="'请输入' + item.label" @change="onSheetBaseNumber(item.field, $event)" />
+          <a-input v-else-if="item.editable" :value="model[item.field]" size="small" :placeholder="'请输入' + item.label" @input="onSheetBaseInput(item.field, $event.target.value)" />
+          <span v-else class="sheet-basic-value">{{ sheetBaseDisplay(item.field) }}</span>
         </div>
       </div>
       <div class="price-block">
-        <div class="price-block-title">规格设置</div>
+        <div class="price-block-title">已添加规格</div>
         <div v-for="(module, mIndex) in specModules" :key="'sheet-spec-' + mIndex">
           <div v-if="module.name" class="sheet-spec-module">
             <div v-if="(module.childNames || []).length" class="sheet-spec-module-name">{{ module.name }}</div>
@@ -791,7 +793,7 @@
         <div v-else class="sheet-choice-empty">{{ sheetHasSelection ? '当前组合暂无 SKU，请检查规格设置' : '请先选择规格值' }}</div>
       </div>
       <div class="price-block">
-        <div class="price-block-title">已填写组合</div>
+        <div class="price-block-title">规格具体信息</div>
         <div class="sheet-combo-list">
           <div v-for="(row, rIndex) in sheetComboRows" :key="'sheet-combo-' + rIndex" class="sheet-combo-row"
                :class="{ 'is-on': sheetSelectedRows.indexOf(row) !== -1 }" @click="selectSheetSkuRow(row)">
@@ -1259,17 +1261,15 @@
         let num = Number(this.batchStock)
         return !isNaN(num) && num > 0
       },
-      // 编辑商品价格页：该商品的基础信息（只读展示）
-      sheetBasicInfo() {
+      // 编辑商品价格页：基础信息全部字段（商品编码、条码、助记码只读）
+      sheetBaseFields() {
         if (this.action !== 'edit') return []
-        const m = this.model || {}
-        return [
-          { label: '商品名称', value: m.name },
-          { label: '单位', value: m.unit },
-          { label: '品牌', value: m.brand },
-          { label: '条码', value: m.barCode },
-          { label: '备注', value: m.remark }
-        ].filter(item => item.value)
+        const readonlyFields = ['id', 'barCode', 'mnemonic', 'categoryId', 'enableSerialNumber']
+        return (this.basePropertyList || []).map(p => ({
+          field: p.field,
+          label: p.field === 'id' ? '商品编码' : (p.anotherName || p.nativeName),
+          editable: readonlyFields.indexOf(p.field) === -1
+        }))
       },
       // 价格弹层规格选择框：品类已配置且有值的规格类
       sheetSpecChoices() {
@@ -3455,6 +3455,33 @@
             this.focusAggregateRequiredField()
           })
         })
+      },
+      /** 价格弹层基础信息编辑：写回 model 与主表单，保存时一并提交 */
+      onSheetBaseInput(field, value) {
+        this.$set(this.model, field, value)
+        if (this.form && this.form.setFieldsValue) {
+          const patch = {}
+          patch[field] = value
+          this.form.setFieldsValue(patch)
+        }
+        if (field === 'name') this.handleNameChange()
+      },
+      onSheetBaseNumber(field, value) {
+        this.$set(this.model, field, value)
+        if (this.form && this.form.setFieldsValue) {
+          const patch = {}
+          patch[field] = value
+          this.form.setFieldsValue(patch)
+        }
+      },
+      /** 基础信息只读字段展示值：类别显示名称，序列号显示是/否 */
+      sheetBaseDisplay(field) {
+        if (field === 'categoryId') {
+          const node = this.categoryTree && this.model.categoryId ? this.findNodeById(this.categoryTree, this.model.categoryId) : null
+          return node ? node.title : (this.model.categoryId || '')
+        }
+        if (field === 'enableSerialNumber') return Number(this.model.enableSerialNumber) === 1 ? '是' : '否'
+        return this.model[field]
       },
       /** 价格弹层规格选择框：默认不选中任何规格值（文本黑色），点选后变绿 */
       initSheetSpecSelection() {
@@ -5828,10 +5855,10 @@
 }
 .price-block-title {
   margin-bottom: 12px;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
-  line-height: 22px;
-  color: #1a1a1a;
+  line-height: 24px;
+  color: #1f2023;
 }
 /* 价格填写框标题行：标题左、批量设置按钮右 */
 .price-block-head {
@@ -6168,14 +6195,44 @@
 }
 .sheet-basic-label {
   flex: none;
-  width: 72px;
-  color: #8a8a8a;
+  width: 76px;
+  font-size: 13px;
+  color: #8c8c8c;
 }
 .sheet-basic-value {
   flex: 1;
   min-width: 0;
-  color: #1a1a1a;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1f2023;
   word-break: break-all;
+}
+/* 基础信息行内输入框：与只读值同样式，去掉边框 */
+.sheet-basic-row .ant-input {
+  flex: 1;
+  height: 21px;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 21px;
+  color: #1f2023;
+}
+.sheet-basic-row .ant-input-number {
+  flex: 1;
+  width: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.sheet-basic-row .ant-input-number-input {
+  height: 21px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1f2023;
 }
 .sheet-combo-row.is-on {
   border-color: #37c871;

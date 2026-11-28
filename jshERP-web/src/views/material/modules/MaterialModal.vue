@@ -1686,9 +1686,12 @@
           }
           tab.dataSource = res.data.rows || []
           this.meOldDataSource = res.data.rows || []
-          // 编辑时按已有 SKU 还原规格模块，保证规格卡片与 SKU 表格列一一对应
-          if (tab === this.meTable && this.specModules.length === 0) {
-            this.restoreSpecModulesFromSkuRows(res.data.rows)
+          // 编辑时按已有 SKU 还原规格模块；已按类别补全但还没有规格值时同样以 SKU 数据为准
+          if (tab === this.meTable) {
+            const hasSpecValues = this.specModules.some(m => (m.values || []).some(v => v.text))
+            if (!hasSpecValues) {
+              this.restoreSpecModulesFromSkuRows(res.data.rows)
+            }
           }
           // 将后端 imgUrl 映射到前端 image 字段
           for (let i = 0; i < this.meOldDataSource.length; i++) {
@@ -2428,7 +2431,7 @@
       applyCategoryImageStateFromCategory() {
         if (!this.categoryImageStatePending) return
         this.categoryImageStatePending = false
-        if (!this.model || !this.model.categoryId || !this.specModules.length) return
+        if (!this.model || !this.model.categoryId) return
         const node = this.findNodeById(this.categoryTree, this.model.categoryId)
         if (!node || !node.specConfig) return
         let specs = []
@@ -3483,9 +3486,13 @@
         if (field === 'enableSerialNumber') return Number(this.model.enableSerialNumber) === 1 ? '是' : '否'
         return this.model[field]
       },
-      /** 价格弹层规格选择框：默认不选中任何规格值（文本黑色），点选后变绿 */
+      // 价格弹层规格选择框：新增默认不选中；编辑默认选中已有规格值，直接回显该商品已有的组合
       initSheetSpecSelection() {
         this.sheetCommonOff = {}
+        if (this.action === 'edit') {
+          this.sheetSpecSelection = this.specModules.map(module => (module.values || []).map(v => v.text).filter(Boolean))
+          return
+        }
         this.sheetSpecSelection = this.specModules.map(() => [])
       },
       isSheetSpecSelected(mIndex, text) {

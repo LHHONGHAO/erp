@@ -22,19 +22,25 @@ public interface GoodsUsageDailyMapper {
             "name = VALUES(name), spec = VALUES(spec), snapshot = VALUES(snapshot)")
     int upsert(GoodsUsageDaily record);
 
-    @Select("SELECT sku_id AS skuId, SUM(pick_count) AS pickCount, MAX(last_pick_time) AS lastPickTime " +
-            "FROM jsh_goods_usage_daily " +
-            "WHERE tenant_id = #{tenantId} AND stat_date >= DATE_SUB(CURDATE(), INTERVAL #{days} DAY) " +
-            "GROUP BY sku_id ORDER BY pickCount DESC, lastPickTime DESC LIMIT #{limit}")
+    // 只统计仍然有效的 SKU 与商品：商品被删除或 SKU 被删除后不再出现在最近常选
+    @Select("SELECT g.sku_id AS skuId, SUM(g.pick_count) AS pickCount, MAX(g.last_pick_time) AS lastPickTime " +
+            "FROM jsh_goods_usage_daily g " +
+            "JOIN sku s ON s.id = g.sku_id AND s.deleted_at IS NULL " +
+            "JOIN jsh_material m ON m.id = s.spu_id AND IFNULL(m.delete_flag,'0') != '1' " +
+            "WHERE g.tenant_id = #{tenantId} AND g.stat_date >= DATE_SUB(CURDATE(), INTERVAL #{days} DAY) " +
+            "GROUP BY g.sku_id ORDER BY pickCount DESC, lastPickTime DESC LIMIT #{limit}")
     List<Map<String, Object>> selectRecentStat(@Param("tenantId") Long tenantId,
                                                @Param("days") Integer days,
                                                @Param("limit") Integer limit);
 
     @Select({"<script>",
-            "SELECT sku_id AS skuId, name, spec, snapshot, last_pick_time AS lastPickTime ",
-            "FROM jsh_goods_usage_daily WHERE tenant_id = #{tenantId} AND sku_id IN ",
+            "SELECT g.sku_id AS skuId, g.name, g.spec, g.snapshot, g.last_pick_time AS lastPickTime ",
+            "FROM jsh_goods_usage_daily g ",
+            "JOIN sku s ON s.id = g.sku_id AND s.deleted_at IS NULL ",
+            "JOIN jsh_material m ON m.id = s.spu_id AND IFNULL(m.delete_flag,'0') != '1' ",
+            "WHERE g.tenant_id = #{tenantId} AND g.sku_id IN ",
             "<foreach collection='skuIds' item='skuId' open='(' separator=',' close=')'>#{skuId}</foreach>",
-            " ORDER BY last_pick_time DESC",
+            " ORDER BY g.last_pick_time DESC",
             "</script>"})
     List<Map<String, Object>> selectLatestSnapshots(@Param("tenantId") Long tenantId,
                                                     @Param("skuIds") List<Long> skuIds);

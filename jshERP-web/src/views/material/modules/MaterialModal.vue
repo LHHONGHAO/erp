@@ -16,16 +16,17 @@
         <a-tabs v-model:activeKey="activeKey" size="small" :class="{ 'mm-tabs-mobile': isMobileView }">
           <a-tab-pane key="1" tab="基本信息" id="materialHeadModal" forceRender>
             <!-- 手机端：顶部三个页签动态条，按页显示标题 -->
-            <div v-if="isMobileView" class="mm-page-tabs">
+            <div v-if="isMobileView && !isInlineMobile" class="mm-page-tabs">
               <div v-for="(t, i) in mobilePageTitles" :key="i" class="mm-page-tab" :class="{ active: mobilePageIndex === i }" @click="goMobilePage(i)">
                 <span class="mm-page-tab-text">{{ t }}</span>
                 <span class="mm-page-tab-bar"></span>
               </div>
             </div>
-            <!-- 手机端：基本信息 / 商品信息 / 价格设置 三页横向滑动切换 -->
-            <div class="mm-pages" :class="{ 'is-mobile': isMobileView }" ref="mmPages" @scroll="onPagesScroll">
+            <!-- 手机端：编辑页内联时三页纵向堆叠；新增时三页横向滑动切换 -->
+            <div class="mm-pages" :class="{ 'is-mobile': isMobileView, 'is-stack': isInlineMobile }" ref="mmPages" @scroll="onPagesScroll">
             <!-- 第 1 页：基本信息 -->
             <div class="mm-page">
+            <div v-if="isInlineMobile" class="mm-section-title">基础信息</div>
             <div style="margin-bottom: 8px; text-align: right;">
               <a-button size="small" icon="setting" @click="openPropertyConfig">属性设置</a-button>
             </div>
@@ -133,7 +134,7 @@
                   </a-form-item>
                   <!-- 条码 -->
                   <a-form-item v-else-if="prop.field==='barCode'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
-                    <a-input :placeholder="'请输入'+prop.anotherName+'（非必填）'" v-decorator="[ 'barCode' ]" />
+                    <a-input :placeholder="'请输入'+prop.anotherName+'（非必填）'" v-decorator="[ 'barCode' ]" :readOnly="true" />
                   </a-form-item>
                   <!-- 商品ID -->
                   <a-form-item v-else-if="prop.field==='id'" :labelCol="labelCol" :wrapperCol="wrapperCol" :label="prop.anotherName">
@@ -150,7 +151,7 @@
               <a-input v-decorator="[ 'categoryId', validatorRules.categoryId ]" />
             </a-form-item>
             <!-- 商品信息卡片：规格模块 -->
-            <a-card title="商品信息" size="small" :bordered="true" style="margin-top: 12px;">
+            <a-card :title="isInlineMobile ? '已添加规格' : '商品信息'" size="small" :bordered="true" style="margin-top: 12px;">
               <div v-if="!categorySelected" style="text-align: center; padding: 40px 0; color: #999;">
                 <a-icon type="info-circle" style="font-size: 24px;" />
                 <div style="margin-top: 8px;">请先选择种类，规格将自动加载</div>
@@ -302,8 +303,9 @@
             </div>
             <!-- 第 3 页：价格设置 -->
             <div class="mm-page">
+            <div v-if="isInlineMobile" class="mm-section-title">规格具体信息</div>
             <!-- 手机端：顶部以商品卡片展示该商品已设置的全部规格信息 -->
-            <div v-if="isMobileView && skuSummaryCards.length" class="mm-set-spec-bar">
+            <div v-if="isMobileView && !isInlineMobile && skuSummaryCards.length" class="mm-set-spec-bar">
               <div class="mm-set-spec-head">
                 <span class="mm-set-spec-title">已设置规格</span>
                 <span class="mm-set-spec-count">共 {{ skuSummaryCards.length }} 个</span>
@@ -321,7 +323,7 @@
             <div style="margin-top:8px;" id="materialDetailModal">
               <div class="price-setting-wrapper">
                 <!-- 价格设置标题和进度 -->
-                <div class="price-setting-top-bar">
+                <div v-if="!isInlineMobile" class="price-setting-top-bar">
                   <div class="price-setting-top-bar-left">
                     <span class="price-setting-title"><span class="required-mark">*</span> 价格设置</span>
                     <span class="progress-label">价格填写进度</span>
@@ -330,7 +332,7 @@
                   </div>
                 </div>
                 <!-- 批量设置工具栏 -->
-                <div class="price-setting-batch-bar">
+                <div v-if="!isInlineMobile" class="price-setting-batch-bar">
                   <div class="price-setting-batch-row">
                   <a-popover trigger="click" placement="bottomLeft" :overlayClassName="'spec-filter-popover'">
                     <template slot="content">
@@ -1072,6 +1074,10 @@
       }
     },
     computed: {
+      // 编辑页内联表单：手机端三页改为纵向堆叠展示（基础信息 → 已添加规格 → 规格具体信息）
+      isInlineMobile() {
+        return this.isMobileView && !!this.inline
+      },
       labelCol() {
         return this.isMobileView
           ? { xs: { span: 7 }, sm: { span: 6 } }
@@ -5284,6 +5290,34 @@
   }
   .mm-inline-form .mm-pages.is-mobile {
     height: calc(100vh - 95px - env(safe-area-inset-bottom, 0px));
+  }
+  /* 编辑页内联：三页改为纵向堆叠，按 基础信息 → 已添加规格 → 规格具体信息 顺序浏览 */
+  .mm-pages.is-mobile.is-stack {
+    display: block;
+    height: auto;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+  .mm-pages.is-mobile.is-stack > .mm-page {
+    flex: none;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+    scroll-snap-align: none;
+    padding: 16px 14px;
+    margin-bottom: 12px;
+    background: #fff;
+    border: 1px solid #ededf0;
+    border-radius: 14px;
+    box-sizing: border-box;
+  }
+  .mm-section-title {
+    margin-bottom: 8px;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 24px;
+    color: #1f2023;
   }
   .mm-pages.is-mobile > .mm-page {
     flex: 0 0 100%;

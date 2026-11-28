@@ -656,14 +656,12 @@
       </template>
       <!-- 价格设置页：输入框使用原生键盘，不接管键盘输入弹层 -->
       <div class="price-sheet-body" data-kb-overlay="off">
-      <!-- 编辑商品：按卡片标签展示该商品已设置的全部规格与颜色 -->
-      <div v-if="priceSheetSpecTags.length" class="price-block">
-        <div class="price-block-title">已设置规格</div>
-        <div v-for="group in priceSheetSpecTags" :key="'ps-tag-' + group.name" class="sheet-choice-row">
-          <span class="sheet-choice-name">{{ group.name }}</span>
-          <div class="sheet-choice-values">
-            <span v-for="text in group.values" :key="group.name + '-' + text" class="sheet-choice-tag is-on">{{ text }}</span>
-          </div>
+      <!-- 编辑商品：顶部展示商品基础信息 -->
+      <div v-if="action === 'edit'" class="price-block">
+        <div class="price-block-title">基础信息</div>
+        <div v-for="item in sheetBasicInfo" :key="'ps-basic-' + item.label" class="sheet-basic-row">
+          <span class="sheet-basic-label">{{ item.label }}</span>
+          <span class="sheet-basic-value">{{ item.value }}</span>
         </div>
       </div>
       <div class="price-block">
@@ -795,8 +793,15 @@
         <div class="sheet-combo-list">
           <div v-for="(row, rIndex) in sheetComboRows" :key="'sheet-combo-' + rIndex" class="sheet-combo-row"
                :class="{ 'is-on': sheetSelectedRows.indexOf(row) !== -1 }" @click="selectSheetSkuRow(row)">
-            <span class="sheet-combo-name">{{ shortSkuText(row) }}</span>
-            <span class="sheet-combo-tag" :class="{ 'is-done': row.commodityDecimal }">{{ row.commodityDecimal ? '已填' : '待填' }}</span>
+            <div class="sheet-combo-head">
+              <span class="sheet-combo-name">{{ shortSkuText(row) }}</span>
+              <span class="sheet-combo-tag" :class="{ 'is-done': row.commodityDecimal }">{{ row.commodityDecimal ? '已填' : '待填' }}</span>
+            </div>
+            <div class="sheet-combo-detail">
+              <span>零售价 {{ row.commodityDecimal || '-' }}</span>
+              <span>库存 {{ row.stock || 0 }}</span>
+              <span v-if="row.barCode">条码 {{ row.barCode }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1248,15 +1253,17 @@
         let num = Number(this.batchStock)
         return !isNaN(num) && num > 0
       },
-      // 编辑商品价格页：该商品已设置的全部规格与颜色（卡片标签只读展示）
-      priceSheetSpecTags() {
+      // 编辑商品价格页：该商品的基础信息（只读展示）
+      sheetBasicInfo() {
         if (this.action !== 'edit') return []
-        return this.specModules
-          .filter(module => module.name && (module.values || []).some(v => (v.text || '').trim()))
-          .map(module => ({
-            name: module.name,
-            values: (module.values || []).map(v => (v.text || '').trim()).filter(Boolean)
-          }))
+        const m = this.model || {}
+        return [
+          { label: '商品名称', value: m.name },
+          { label: '单位', value: m.unit },
+          { label: '品牌', value: m.brand },
+          { label: '条码', value: m.barCode },
+          { label: '备注', value: m.remark }
+        ].filter(item => item.value)
       },
       // 价格弹层规格选择框：品类已配置且有值的规格类
       sheetSpecChoices() {
@@ -6091,14 +6098,50 @@
 }
 .sheet-combo-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 14px;
   border: 1px solid #e6e6e6;
   border-radius: 10px;
   background: #fff;
   font-size: 14px;
   cursor: pointer;
+}
+.sheet-combo-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sheet-combo-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #8a8a8a;
+}
+/* 编辑商品：基础信息只读行 */
+.sheet-basic-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed #f0f0f0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.sheet-basic-row:last-child {
+  border-bottom: none;
+}
+.sheet-basic-label {
+  flex: none;
+  width: 72px;
+  color: #8a8a8a;
+}
+.sheet-basic-value {
+  flex: 1;
+  min-width: 0;
+  color: #1a1a1a;
+  word-break: break-all;
 }
 .sheet-combo-row.is-on {
   border-color: #37c871;

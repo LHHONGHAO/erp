@@ -18,7 +18,6 @@
       :url="url.list"
       :query="queryParam"
       :recent="mobileRecentConfig"
-      :compact="false"
       :reset-key="mobileFeedResetKey"
       :auto-scan-close="false"
       :show-filter="true"
@@ -37,6 +36,7 @@
       @filter-clear="resetMobileFilter"
       @print="handleFeedPrint"
       @edit="handleFeedEdit"
+      @detail="handleFeedDetail"
       @select="toggleFeedPick">
 
       <!-- 条件筛选：商品类别（业务筛选项，统一放在框架筛选面板内） -->
@@ -573,6 +573,12 @@
       /** 卡片打印标签 */
       handleFeedPrint(item) {
         if (item && item.raw) this.handlePrintSkuLabel(item.raw)
+      },
+      /** 卡片左滑点详情：查看商品完整信息（打开商品页默认位置） */
+      handleFeedDetail(item) {
+        if (!item || !item.raw) return
+        sessionStorage.removeItem('materialEditPrice')
+        this.handleEdit(item.raw)
       },
       /** 卡片左滑点编辑：进入商品编辑页并直接打开价格设置页 */
       handleFeedEdit(item) {
